@@ -2,6 +2,9 @@ version = 1
 revision = 1
 requires-python = ">=3.13"
 
+[manifest]
+overrides = [{ name = "ruff", specifier = ">=0.15.18" }]
+
 [[package]]
 name = "altair"
 version = "6.2.1"
@@ -181,6 +184,28 @@ wheels = [
 ]
 
 [[package]]
+name = "code-eval"
+version = "0.1.1"
+source = { editable = "../code-eval" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "datasets", marker = "extra == 'synthetic'", specifier = ">=3.0,<4" },
+    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.112,<7" },
+    { name = "pydantic", specifier = ">=2.9,<3" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<9" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6,<4" },
+    { name = "ruff", specifier = "==0.8.4" },
+    { name = "ty", marker = "extra == 'ty'", specifier = ">=0.0.1a8" },
+    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12,<1" },
+]
+provides-extras = ["dev", "synthetic", "cli", "ty"]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -212,6 +237,7 @@ name = "dr-code"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "code-eval" },
     { name = "marimo", extra = ["recommended"] },
     { name = "pydantic" },
     { name = "typer" },
@@ -226,6 +252,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "code-eval", editable = "../code-eval" },
     { name = "marimo", extras = ["recommended"], specifier = ">=0.23.10" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "typer", specifier = ">=0.26.7" },
