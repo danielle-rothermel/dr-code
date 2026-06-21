@@ -6,6 +6,7 @@ Design docs for the compression–correctness evaluation pipeline.
 
 1. [Investigation synthesis](../investigation/synthesis.md) — starting state of sibling repos (June 2026).
 2. [Overview](./overview.md) — goals, decisions, stage map, future work.
+3. [code-eval integration status](../code-eval-work-needed.md) — prelim freeze checklist and dr-code path dep (when working on stage 2).
 
 ## Stage design docs
 

@@ -64,11 +64,15 @@ Stage docs:
 
 **Reason:** nl-code’s dataset layer is rich but heavy for a single-benchmark harness; we only need a stable contract we control. nl-code remains the dependency for **execution**, not for stage-1 loading.
 
-### 3. code-eval as a direct dependency (local path while in flux)
+### 3. code-eval as a direct dependency (local path; PyPI deferred)
 
-**Decision:** Stage 2 calls `LLMCodeValidator.validate()` from [code-eval](../../code-eval); install via path dependency `../code-eval` until published/stable.
+**Decision:** Stage 2 calls `LLMCodeValidator.validate()` from [code-eval](../../code-eval) using `EXTRACTION_CONFIG` and `result.best_valid_source()`. Installed as an editable path dependency on `../code-eval` (PyPI publish deferred — name conflict on PyPI).
 
-**Reason:** Real pool outputs need full extract/repair/normalize provenance; reimplementing fences/repairs would drift. Update code-eval in place when needed.
+**Status (2026-06-21):** Wired in `pyproject.toml` as `code-eval==0.1.1` from `../code-eval`. Keep the sibling checkout at tag **`v0.1.1-frozen`** (or equivalent `main` tree). Integration tracker: [code-eval work needed](../code-eval-work-needed.md).
+
+**Reason:** Real pool outputs need full extract/repair provenance; reimplementing fences/repairs would drift. `EXTRACTION_CONFIG` (`normalizers=()`) avoids subprocess normalization on ~172k parse jobs — stage 3 only needs extracted source.
+
+**Note:** code-eval pins `ruff==0.8.4` for its normalizers; dr-code dev lint uses a newer ruff via `[tool.uv] override-dependencies`. Safe for stage 2 because `EXTRACTION_CONFIG` skips normalization subprocess work.
 
 ### 4. dr-providers for stage 1b generation only
 
@@ -128,12 +132,12 @@ Write functional code in Python according to the description.
 
 ## Local dependencies (initial)
 
-| Package | Path / source | Used in |
-|---------|---------------|---------|
-| code-eval | `../code-eval` | Stage 2 |
-| dr-providers | `../dr-providers` | Stage 1b |
-| nl-code | `../nl-code` (TBD path dep) | Stage 3 |
-| dr-queues | `../dr-queues` or published | Stages 2–3 orchestration |
+| Package | Path / source | Status | Used in |
+|---------|---------------|--------|---------|
+| code-eval | `../code-eval` editable, pin `0.1.1` / `v0.1.1-frozen` | **Wired** in `pyproject.toml` | Stage 2 |
+| dr-providers | `../dr-providers` | Not wired | Stage 1b |
+| nl-code | `../nl-code` (TBD path dep) | Not wired | Stage 3 |
+| dr-queues | `../dr-queues` or published | Not wired | Stages 2–3 orchestration |
 
 ---
 
@@ -189,7 +193,7 @@ An agent picking up work should treat each bullet as a plannable phase; details 
 1. **Schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome`, run config
 2. **Stage 1a** — pool Parquet/JSONL → `AttemptRecord` export
 3. **Stage 1b** — HumanEval+ loader + dr-providers batch → same export
-4. **Stage 2 handler** — code-eval adapter + unit tests on pool samples
+4. **Stage 2 handler** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; reuse or mirror [code-eval pool samples](../../code-eval/tests/corpus/pool_samples.jsonl) fixtures
 5. **Stage 3 handler** — nl-code batch adapter + Docker smoke tests
 6. **Pipeline** — dr-queues workflow (parse → test), Mongo sink, seed CLI
 7. **Stage 4** — analysis script + marimo notebook on completed run
