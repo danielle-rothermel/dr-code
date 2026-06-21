@@ -140,6 +140,7 @@ class AttemptRecord(FrozenModel):
         raw_output: str,
         run_id: str,
         model: str,
+        profile_id: str | None = None,
     ) -> AttemptRecord:
         """Build a fresh_stub AttemptRecord for stage 1b generation."""
         return cls(
@@ -152,6 +153,7 @@ class AttemptRecord(FrozenModel):
             provenance=AttemptProvenance(
                 source=AttemptSource.FRESH_STUB,
                 model=model,
+                dec_llm_config_id=profile_id,
             ),
         )
 

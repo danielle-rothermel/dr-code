@@ -78,6 +78,8 @@ Stage docs:
 
 **Decision:** Fresh decoder runs use [dr-providers](../../dr-providers) (`OpenRouterProvider` + `LlmRequest`), not LiteLLM or DSPy.
 
+**Status (2026-06-21):** Wired in `pyproject.toml` as editable path dep on `../dr-providers`. Batch runner in `dr_code.generation.batch`; OpenRouter profiles in `configs/openrouter_profiles.yaml` (mirrors dr-bottleneck demos).
+
 **Reason:** Thin typed transport; DSPy comes later for encoder optimization, not for baseline batch collection.
 
 ### 5. Stub-as-description for initial fresh runs
@@ -135,7 +137,7 @@ Write functional code in Python according to the description.
 | Package | Path / source | Status | Used in |
 |---------|---------------|--------|---------|
 | code-eval | `../code-eval` editable, pin `0.1.1` / `v0.1.1-frozen` | **Wired** in `pyproject.toml` | Stage 2 |
-| dr-providers | `../dr-providers` | Not wired | Stage 1b |
+| dr-providers | `../dr-providers` editable, pin `0.1.0` | **Wired** in `pyproject.toml` | Stage 1b |
 | nl-code | `../nl-code` (TBD path dep) | Not wired | Stage 3 |
 | dr-queues | `../dr-queues` or published | Not wired | Stages 2–3 orchestration |
 
@@ -143,17 +145,19 @@ Write functional code in Python according to the description.
 
 ## Repository layout (target)
 
-Not prescriptive for phase planning, but intended direction:
+Current layout matches the plan for stages 1–2 prep; `parsing/`, `testing/`, `pipeline/`, and `analysis/` are not yet implemented.
 
 ```text
 src/dr_code/
-  datasets/          # HumanEval+ loader, pool loader, AttemptRecord
-  generation/        # dr-providers batch runner, prompt templates
-  parsing/           # code-eval adapter, ParseOutcome projection
-  testing/           # nl-code adapter, TestOutcome projection
-  pipeline/          # dr-queues workflow defs, handlers, seeding
-  analysis/          # zstd joins, export helpers
+  datasets/          # HumanEval+ loader, pool loader, export, stats, display
+  generation/        # dr-providers batch runner, profiles, prompts
+  models/            # AttemptRecord, HumanEvalPlusTask, ParseOutcome (skeleton)
+  parsing/           # (stage 2) code-eval adapter, ParseOutcome projection
+  testing/           # (stage 3) nl-code adapter, TestOutcome projection
+  pipeline/          # (stage 2–3) dr-queues workflow defs, handlers, seeding
+  analysis/          # (stage 4) zstd joins, export helpers
 scripts/             # typer CLIs per stage + full eval driver
+configs/             # openrouter_profiles.yaml
 nbs/                 # marimo analysis notebooks
 docs/
   investigation/     # sibling repo notes (existing)
@@ -190,16 +194,18 @@ Prerequisite: working eval pipeline, train/dev/eval task splits, and `fresh_enco
 
 An agent picking up work should treat each bullet as a plannable phase; details live in stage docs.
 
-1. **Schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome`, run config
-2. **Stage 1a** — pool Parquet/JSONL → `AttemptRecord` export
-3. **Stage 1b** — HumanEval+ loader + dr-providers batch → same export
-4. **Stage 2 handler** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; reuse or mirror [code-eval pool samples](../../code-eval/tests/corpus/pool_samples.jsonl) fixtures
+1. ~~**Schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome`, run config~~ — **Done** (`AttemptRecord` + `GenerationRunConfig` shipped; `ParseOutcome`/`TestOutcome` are skeletons)
+2. ~~**Stage 1a** — pool Parquet/JSONL → `AttemptRecord` export~~ — **Done**
+3. ~~**Stage 1b** — HumanEval+ loader + dr-providers batch → same export~~ — **Done**
+4. **Stage 2 handler** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; reuse or mirror [code-eval pool samples](../../code-eval/tests/corpus/pool_samples.jsonl) fixtures — **Next**
 5. **Stage 3 handler** — nl-code batch adapter + Docker smoke tests
 6. **Pipeline** — dr-queues workflow (parse → test), Mongo sink, seed CLI
 7. **Stage 4** — analysis script + marimo notebook on completed run
-8. **Documentation** — update README, runbook for local RabbitMQ/Mongo
+8. **Documentation** — runbook for local RabbitMQ/Mongo (README updated for stage 1)
 
 Cross-cutting: idempotent Mongo writes keyed by `(run_id, sample_id)`; parse-fail short-circuit to test stage with explicit skip reason.
+
+**Stage 2 entry point:** [Stage 2 handoff](./stage-02-handoff.md)
 
 ---
 

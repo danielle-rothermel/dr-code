@@ -2,6 +2,8 @@
 
 [← Overview](./overview.md)
 
+**Status: complete** (2026-06-21). Both 1a (pool import) and 1b (fresh generation via dr-providers) are implemented and verified with `scripts/demo_stage1.py` (live OpenRouter call confirmed).
+
 ## Purpose
 
 Produce a **unified dataset of decoder attempts**: each row describes what the decoder saw, what the model returned (raw, unparsed), and enough provenance to slice analysis later.
@@ -144,6 +146,54 @@ Both are valid; tag and slice separately in stage 4.
 
 ---
 
+## Implementation (shipped)
+
+### Library
+
+| Module | Role |
+|--------|------|
+| `src/dr_code/models/attempts.py` | `AttemptRecord`, `AttemptProvenance`, `AttemptSource` |
+| `src/dr_code/models/humaneval.py` | `HumanEvalPlusTask` |
+| `src/dr_code/datasets/humaneval_loader.py` | HF + offline snapshot loader |
+| `src/dr_code/datasets/pool_loader.py` | Parquet, dedup JSONL, dedup+Parquet join |
+| `src/dr_code/datasets/export.py` | Parquet/JSONL read/write |
+| `src/dr_code/datasets/stats.py` | Summary stats for exports |
+| `src/dr_code/datasets/display.py` | Side-by-side pool vs fresh spot check |
+| `src/dr_code/generation/prompts.py` | Decoder prompt template |
+| `src/dr_code/generation/profiles.py` | OpenRouter profile registry resolver |
+| `src/dr_code/generation/run_config.py` | `GenerationRunConfig` |
+| `src/dr_code/generation/batch.py` | `select_tasks`, `generate_attempts` |
+
+### Scripts
+
+| Script | Role |
+|--------|------|
+| `scripts/import_pool_attempts.py` | Pool Parquet/JSONL → export |
+| `scripts/generate_decoder_attempts.py` | Fresh generation CLI (`--profile`, `--list-profiles`) |
+| `scripts/demo_stage1.py` | End-to-end verification demo |
+| `scripts/build_humaneval_snapshot.py` | Rebuild offline HumanEval+ snapshot |
+
+### Config & fixtures
+
+- `configs/openrouter_profiles.yaml` — 8 demo profiles (mirrors dr-bottleneck)
+- `tests/corpus/humanevalplus_snapshot.json` — pinned offline task snapshot (164 tasks)
+- `tests/fixtures/pool/` — sample Parquet + dedup JSONL for unit tests and demo
+
+### Resolved design choices
+
+| Open question | Decision |
+|---------------|----------|
+| `sample_id` | SHA-256 of `task_id + NUL + raw_output`, first 16 hex chars |
+| Dedup JSONL without Parquet | `decoder_input` falls back to `task.prompt`; Parquet join preferred for provenance |
+| Snapshot pinning | Committed at `tests/corpus/humanevalplus_snapshot.json` |
+| 1b concurrency | Sequential HTTP (v1) |
+| Export location | `exports/` under repo (`exports/attempts/`, `exports/demo/`) |
+| Fresh provenance | `provenance.model` = OpenRouter model id; `provenance.dec_llm_config_id` = profile id |
+
+Still deferred: `fresh_encoded` mode, parallel generation, test-field parsing strategy (stage 3 concern).
+
+---
+
 ## CLI / scripts (target)
 
 - `scripts/import_pool_attempts.py` — Parquet/JSONL → attempt export
@@ -162,11 +212,7 @@ Both are valid; tag and slice separately in stage 4.
 
 ---
 
-## Open questions
+## Open questions (remaining)
 
-- **`sample_id` strategy:** hash of `(task_id, raw_output)` vs pool `attempt_id` vs synthetic uuid for dedup rows?
-- **Dedup JSONL without Parquet:** how to recover `decoder_input` when only `{out, count}` is present — task-level join, modal input from Parquet, or require Parquet for eval?
-- **Snapshot pinning:** commit offline HumanEval+ snapshot in repo vs HF-only?
 - **Test field handling:** raw string on task vs parse at load vs delegate entirely to nl-code in stage 3?
-- **1b concurrency:** simple sequential batch vs parallel HTTP for generation phase?
-- **Export location convention:** under repo `exports/` vs external data dir like pool artifacts?
+- **`fresh_encoded` mode:** real encoder output at a budget (for DSPy and pool-comparable runs)

@@ -1,6 +1,8 @@
 # Stage 2 — Parsing
 
-[← Overview](./overview.md)
+[← Overview](./overview.md) · [Stage 2 handoff](./stage-02-handoff.md) (start here)
+
+**Status:** Not started. Stage 1 exports (`AttemptRecord` Parquet/JSONL) and `code-eval` path dep are ready. `ParseOutcome` in `src/dr_code/models/outcomes.py` is a skeleton.
 
 ## Purpose
 

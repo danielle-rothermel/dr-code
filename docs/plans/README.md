@@ -10,18 +10,20 @@ Design docs for the compression–correctness evaluation pipeline.
 
 ## Stage design docs
 
-| Stage | Doc | Summary |
-|-------|-----|---------|
-| 1 | [Generation & dataset](./stage-01-generation-dataset.md) | Unified raw-generation dataset from pool replay or fresh dr-providers runs |
-| 2 | [Parsing](./stage-02-parsing.md) | code-eval extraction/recovery; parse-stage queue workers |
-| 3 | [Testing](./stage-03-testing.md) | nl-code Docker execution; test-stage queue workers; Mongo telemetry |
-| 4 | [Analysis](./stage-04-analysis.md) | zstd compression joins, aggregates, marimo exploration |
+| Stage | Doc | Status | Summary |
+|-------|-----|--------|---------|
+| 1 | [Generation & dataset](./stage-01-generation-dataset.md) | **Done** (2026-06-21) | Unified raw-generation dataset from pool replay or fresh dr-providers runs |
+| 2 | [Parsing](./stage-02-parsing.md) | Next | code-eval extraction/recovery; parse-stage queue workers |
+| 3 | [Testing](./stage-03-testing.md) | Planned | nl-code Docker execution; test-stage queue workers; Mongo telemetry |
+| 4 | [Analysis](./stage-04-analysis.md) | Planned | zstd compression joins, aggregates, marimo exploration |
 
 Implement stages in order. Stages 2–3 share the [dr-queues](https://github.com/danielle-rothermel/dr-queues) pipeline runtime from the initial version (not a later add-on).
+
+**Picking up Stage 2?** Start with [Stage 2 handoff](./stage-02-handoff.md).
 
 ## Future (out of initial scope)
 
 Described in [Overview → Future steps](./overview.md#future-steps-out-of-initial-scope):
 
 - dr-bottleneck integration (reuse stages 1–4 at scale)
-- DSPy encoder prompt optimization (compression + correctness objective)
+- DSPy encoder optimization (compression + correctness objective)
