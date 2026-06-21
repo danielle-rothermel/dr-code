@@ -1,7 +1,7 @@
 [project]
 name = "dr-code"
 version = "0.1.0"
-description = "Add your description here"
+description = "Compression–correctness evaluation harness for HumanEval+ decoder attempts"
 readme = "README.md"
 authors = [
     { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
@@ -9,7 +9,9 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "code-eval==0.1.1",
+    "datasets>=3.0,<4",
     "marimo[recommended]>=0.23.10",
+    "pyarrow>=24.0.0",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
 ]

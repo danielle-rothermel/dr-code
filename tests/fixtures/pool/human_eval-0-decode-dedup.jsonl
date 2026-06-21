@@ -1,0 +1,3 @@
+{"out": "```python\ndef has_close_elements(numbers, threshold):\n    return False\n```", "count": 42}
+{"out": "def has_close_elements(numbers, threshold):\n    pass\n", "count": 7}
+{"out": "def has_close_elements(numbers, threshold):\n    return True\n", "count": 3}
