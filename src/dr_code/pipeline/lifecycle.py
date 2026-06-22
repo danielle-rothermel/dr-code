@@ -27,6 +27,7 @@ from dr_code.pipeline.definition import build_eval_pipeline
 from dr_code.pipeline.export import RunExportPaths, export_run_artifacts
 from dr_code.pipeline.handlers import registry
 from dr_code.pipeline.jobs import build_seed_jobs
+from dr_code.pipeline.preflight import PreflightReport, run_preflight
 from dr_code.pipeline.runner import (
     DEFAULT_HANDLERS_MODULE,
     DEFAULT_WORKERS,
@@ -35,6 +36,12 @@ from dr_code.pipeline.runner import (
     run_eval_pipeline,
 )
 from dr_code.pipeline.seed import load_proof_attempts
+
+
+class PreflightEvalRunResult(FrozenModel):
+    """Evaluation run pre-flight checks."""
+
+    report: PreflightReport
 
 
 class InitEvalRunResult(FrozenModel):
@@ -92,6 +99,23 @@ class RunEvalOnceResult(FrozenModel):
 
     run_id: str
     pipeline_result: PipelineRunResult
+
+
+def preflight_eval_run(
+    *,
+    dump_dir: Path | str,
+    task_indices: list[int] | tuple[int, ...],
+    require_docker: bool = False,
+    require_dump: bool = True,
+) -> PreflightEvalRunResult:
+    """Run Evaluation run pre-flight checks."""
+    report = run_preflight(
+        dump_dir=dump_dir,
+        task_indices=task_indices,
+        require_docker=require_docker,
+        require_dump=require_dump,
+    )
+    return PreflightEvalRunResult(report=report)
 
 
 def init_eval_run(
@@ -235,15 +259,40 @@ def stop_eval_workers(
     run_id: str,
     worker_id: str | None = None,
     stage: str | None = None,
+    worker_ids: list[str] | tuple[str, ...] | None = None,
+    stages: list[str] | tuple[str, ...] | None = None,
     run_store: MongoRunStore | None = None,
 ) -> StopEvalWorkersResult:
     """Request Evaluation run workers to stop."""
-    workers = stop_workers(
-        run_id=run_id,
-        worker_id=worker_id,
-        stage=stage,
-        run_store=run_store,
+    selected_worker_ids = list(
+        worker_ids or ([worker_id] if worker_id else [])
     )
+    selected_stages = list(stages or ([stage] if stage else []))
+    if selected_worker_ids and selected_stages:
+        msg = "Stop by worker_id or stage, not both."
+        raise ValueError(msg)
+    if selected_worker_ids:
+        workers = [
+            worker
+            for selected_worker_id in selected_worker_ids
+            for worker in stop_workers(
+                run_id=run_id,
+                worker_id=selected_worker_id,
+                run_store=run_store,
+            )
+        ]
+    elif selected_stages:
+        workers = [
+            worker
+            for selected_stage in selected_stages
+            for worker in stop_workers(
+                run_id=run_id,
+                stage=selected_stage,
+                run_store=run_store,
+            )
+        ]
+    else:
+        workers = stop_workers(run_id=run_id, run_store=run_store)
     return StopEvalWorkersResult(run_id=run_id, workers=workers)
 
 
@@ -318,6 +367,7 @@ __all__ = [
     "EvalStatusResult",
     "ExportEvalRunResult",
     "InitEvalRunResult",
+    "PreflightEvalRunResult",
     "RunEvalOnceResult",
     "SeedEvalRunResult",
     "StartEvalWorkersResult",
@@ -326,6 +376,7 @@ __all__ = [
     "export_eval_run",
     "get_eval_status",
     "init_eval_run",
+    "preflight_eval_run",
     "run_eval_once",
     "seed_eval_run",
     "start_eval_workers",
