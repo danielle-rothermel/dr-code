@@ -108,24 +108,31 @@ Offline joins on export files (or Mongo snapshots):
 
 ## Pipeline (dr-queues)
 
-Parse → test workflow with Mongo sinks and file exports under `exports/runs/{run_id}/`.
+Parse → test workflow with Mongo-backed lifecycle state and derived file
+exports under `exports/runs/{run_id}/`.
 
 | Component | Location |
 |-----------|----------|
 | Workflow definition | `dr_code.pipeline.definition` |
 | Handlers | `dr_code.pipeline.handlers` |
 | Seeding | `dr_code.pipeline.seed` |
-| Orchestration | `dr_code.pipeline.runner` |
+| Lifecycle orchestration | `dr_code.pipeline.lifecycle` |
 | Worker tuning | `dr_code.pipeline.tune`, `scripts/tune_test_workers.py` |
 
 **Mongo collections:**
 
+- `run_manifests` — dr-queues run manifests
 - `pipeline_events` — dr-queues lifecycle telemetry
 - `eval_results` — upserted `TestOutcome` keyed by `(run_id, sample_id)`
 
-**Scripts:** `demo_pipeline.py`, `run_eval_pipeline.py`, `tune_test_workers.py`
+**Scripts:** `demo_pipeline.py`, `eval_run.py`, `tune_test_workers.py`
 
 See [Pipeline runbook](./pipeline-runbook.md) for commands, proof acceptance, and tuning results.
+
+Manual smoke verification on 2026-06-22 covered CLI help, preflight,
+in-process runs, split detached lifecycle commands, one-shot detached runs,
+export reconstruction, worker cleanup, dump-backed seeding, and stage 4 analysis
+joins. The log is in `.scratch/eval-run-lifecycle/manual-testing-2026-06-22.md`.
 
 ---
 
@@ -181,7 +188,7 @@ src/dr_code/
   models/            # AttemptRecord, ParseOutcome, TestOutcome
   parsing/           # code-eval adapter
   testing/           # HumanEval test parser and local fork runner
-  pipeline/          # dr-queues workflow, handlers, tune, export, report
+  pipeline/          # dr-queues workflow, lifecycle, handlers, tune, export, report
   analysis/          # zstd joins, aggregates
 scripts/             # typer CLIs per stage + pipeline + tune
 configs/             # openrouter_profiles.yaml
@@ -189,8 +196,7 @@ nbs/                 # marimo analysis notebook
 docs/
   investigation/     # sibling repo notes
   plans/             # this directory
-exports/runs/        # run artifacts (gitignored)
-.runs/               # dr-queues manifests (gitignored)
+exports/runs/        # derived run artifacts (gitignored)
 ```
 
 ---
@@ -215,7 +221,7 @@ Run `proof-20840125` on 20260621_manual pool dump:
 
 ### Full pool replay
 
-Remaining ~163 HumanEval task indices (~172k dedup unique strings). Same CLI, expand `--task-indices` or add `--all-tasks`.
+Remaining ~163 HumanEval task indices (~172k dedup unique strings). Use `scripts/eval_run.py run`, expand `--task-indices`, or add `--all-tasks`.
 
 ### dr-bottleneck integration
 
@@ -238,6 +244,6 @@ Prerequisites: `fresh_encoded` generation mode, train/dev/eval splits.
 | Mongo layout | Both `pipeline_events` and `eval_results` |
 | dr-queues dep | Editable path on `../dr-queues` |
 | Test parallelism | One child process per sample; tune `test` worker count empirically |
-| Run manifest | `.runs/{run_id}/manifest.json` (dr-queues convention) |
+| Run manifest | Mongo `run_manifests` via dr-queues |
 | Parse failures | Forward to test with skip; handler catches code-eval exceptions |
 | Analysis input | Export-first Parquet/JSONL; Mongo query optional later |

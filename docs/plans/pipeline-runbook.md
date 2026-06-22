@@ -15,10 +15,10 @@ Defaults:
 - `AMQP_URL=amqp://guest:guest@localhost:5672/`
 - `MONGODB_URL=mongodb://localhost:27017/dr_queues`
 
-Pre-flight (automatic in CLIs, or manual):
+Pre-flight (automatic in `run`, or manual):
 
 ```bash
-uv run python -c "from dr_code.pipeline.preflight import run_preflight; run_preflight().raise_if_failed()"
+uv run scripts/eval_run.py preflight
 ```
 
 Requires:
@@ -39,7 +39,7 @@ uv run scripts/demo_pipeline.py --limit 3
 ### In-process (debug / medium runs)
 
 ```bash
-uv run scripts/run_eval_pipeline.py \
+uv run scripts/eval_run.py run \
   --mode in-process \
   --task-indices 0 \
   --limit-per-task 10 \
@@ -51,7 +51,7 @@ uv run scripts/run_eval_pipeline.py \
 Recommended on Mac Mini after tuning (`proof-20840125`):
 
 ```bash
-uv run scripts/run_eval_pipeline.py \
+uv run scripts/eval_run.py run \
   --mode detached \
   --task-indices 0,1,2,3,4 \
   --workers parse=8,test=8 \
@@ -59,6 +59,41 @@ uv run scripts/run_eval_pipeline.py \
 ```
 
 For all remaining pool tasks, expand `--task-indices` or pass the full index list.
+
+### Split lifecycle (manual / resumable)
+
+Use split commands when you want to inspect or control lifecycle state between
+steps:
+
+```bash
+RUN_ID=YOUR_RUN_ID
+
+uv run scripts/eval_run.py init \
+  --run-id "$RUN_ID" \
+  --workers parse=8,test=8
+
+uv run scripts/eval_run.py seed \
+  --run-id "$RUN_ID" \
+  --dump-dir /path/to/pool-dump \
+  --task-indices 0,1,2,3,4
+
+uv run scripts/eval_run.py start \
+  --run-id "$RUN_ID" \
+  --workers parse=8,test=8
+
+uv run scripts/eval_run.py wait \
+  --run-id "$RUN_ID" \
+  --target terminal \
+  --timeout 28800
+
+uv run scripts/eval_run.py status --run-id "$RUN_ID"
+uv run scripts/eval_run.py export --run-id "$RUN_ID"
+uv run scripts/eval_run.py stop --run-id "$RUN_ID"
+```
+
+`status` reads persisted run state from Mongo and RabbitMQ queue snapshots.
+`stop` requests detached workers to exit; run it after terminal completion so
+idle workers do not remain attached to the queues.
 
 ## Outputs
 
@@ -74,12 +109,16 @@ Each run writes under `exports/runs/{run_id}/`:
 | `tune_report.json` | Live worker sweep results (when tuned) |
 | `analysis/` | Stage 4 enriched Parquet + summary (after analyze CLI) |
 
+Evaluation run lifecycle state is persisted in MongoDB through `dr-queues`.
+The files above are derived exports for inspection, analysis, and sharing; they
+are not required to continue or resume a run.
+
 Mongo collections:
 
+- `run_manifests` — dr-queues run manifests
+- seed/job/worker state collections managed by `dr-queues`
 - `pipeline_events` — dr-queues lifecycle telemetry
 - `eval_results` — upserted TestOutcome documents keyed by `(run_id, sample_id)`
-
-Run manifest: `.runs/{run_id}/manifest.json`
 
 ## Proof bar acceptance (HumanEval/0–4)
 
@@ -97,6 +136,24 @@ uv run scripts/analyze_eval_run.py \
 ```
 
 5. Zero join failures in analysis `summary.json`
+
+## Manual smoke verification
+
+The lifecycle refactor was manually smoke-tested on 2026-06-22. Details live in
+`.scratch/eval-run-lifecycle/manual-testing-2026-06-22.md`.
+
+Validated paths:
+
+- CLI help for all lifecycle subcommands.
+- `preflight` with and without dump validation.
+- `run --mode in-process` on a two-attempt fixture: 2/2 terminals.
+- Split `init -> seed -> start -> wait -> export -> stop`: 2/2 terminals and
+  detached workers stopped.
+- `run --mode detached` on the same fixture: 2/2 terminals and detached workers
+  stopped.
+- Dump-backed `run --mode in-process --task-indices 0 --limit-per-task 1`: 1/1
+  terminal.
+- Stage 4 analysis on each exported run: `missing_test: 0`.
 
 ### Proof run `proof-20840125` (2026-06-21)
 
@@ -129,7 +186,8 @@ uv run scripts/tune_test_workers.py \
 ### Algorithm
 
 1. Measure baseline at `start_workers` (no swap if already running).
-2. Double workers (`×2`) each step: swap via `dr-queues-stage-worker --replace`.
+2. Double workers (`×2`) each step: replace test workers through the
+   `dr-queues` worker lifecycle.
 3. **Warmup** 15 s after each swap (in-flight jobs requeue).
 4. **Measure** 60 s — poll Mongo `terminal` event count.
 5. **Stop** when throughput drops (regression) or gain vs previous step is < 10%.
@@ -137,7 +195,7 @@ uv run scripts/tune_test_workers.py \
 
 Also stops parse workers automatically once parse stage completes (frees CPU).
 
-Writes `exports/runs/{run_id}/tune_report.json`. Does **not** stop the main `run_eval_pipeline.py` driver.
+Writes `exports/runs/{run_id}/tune_report.json`. Does **not** stop the main `scripts/eval_run.py run` driver.
 
 ### Mac Mini results (`proof-20840125`)
 
@@ -158,12 +216,10 @@ watch -n 10 'mongosh mongodb://localhost:27017/dr_queues --quiet --eval "db.pipe
 ## Detached workers (manual)
 
 ```bash
-dr-queues-stage-worker \
+uv run scripts/eval_run.py start \
   --run-id YOUR_RUN_ID \
   --stage test \
-  --workers 8 \
-  --handlers-module dr_code.pipeline.handlers \
-  --replace
+  --workers parse=0,test=8
 ```
 
 Parse workers can be stopped manually after parse completes (optional — tune script does this).

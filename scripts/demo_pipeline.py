@@ -8,13 +8,13 @@ import typer
 
 from dr_code.datasets.pool_loader import load_pool_dedup_jsonl
 from dr_code.pipeline.jobs import stamp_run_id
-from dr_code.pipeline.preflight import run_preflight
-from dr_code.pipeline.runner import (
+from dr_code.pipeline.lifecycle import (
     DEFAULT_WORKERS,
     echo_proof_summary,
     echo_run_metadata,
     new_run_id,
-    run_eval_pipeline,
+    preflight_eval_run,
+    run_eval_once,
 )
 
 app = typer.Typer(add_completion=False)
@@ -91,7 +91,11 @@ def main(
         raise typer.BadParameter(msg)
 
     if not skip_preflight:
-        report = run_preflight(require_dump=False)
+        report = preflight_eval_run(
+            dump_dir=Path("."),
+            task_indices=[],
+            require_dump=False,
+        ).report
         for check in report.checks:
             typer.echo(f"preflight ok: {check}")
         report.raise_if_failed()
@@ -108,13 +112,14 @@ def main(
         workers=workers,
     )
 
-    result = run_eval_pipeline(
+    result = run_eval_once(
         attempts,
         run_id=resolved_run_id,
         mode="in-process",
         workers=workers,
         completion_timeout=completion_timeout,
-    )
+        skip_preflight=True,
+    ).pipeline_result
 
     _section("Proof summary")
     echo_proof_summary(result)

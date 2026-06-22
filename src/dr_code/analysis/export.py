@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,10 +10,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from dr_code.analysis.join import EnrichedRow
+from dr_code.models.base import FrozenModel
 
 
-@dataclass(frozen=True)
-class AnalysisArtifacts:
+class AnalysisArtifacts(FrozenModel):
     """Paths written by export_analysis."""
 
     output_dir: Path
