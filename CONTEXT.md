@@ -48,6 +48,10 @@ _Avoid_: Test result, verdict
 A bounded execution of the pipeline over a selected set of decoder attempts, identified by a run id and producing exported artifacts.
 _Avoid_: Batch, job, experiment
 
+**Evaluation run lifecycle**:
+The progression of an Evaluation run from declaration, through seeded Decoder attempts and Pipeline stage execution, to exported artifacts for analysis.
+_Avoid_: Driver, orchestration flow
+
 **Pipeline stage**:
 A named phase in the evaluation flow: generation dataset, parsing, testing, or analysis.
 _Avoid_: Step, phase
