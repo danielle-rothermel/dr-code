@@ -1,6 +1,6 @@
 # Stage 3 — Testing
 
-[← Overview](./overview.md)
+[← Overview](./overview.md) · [Stage 3 handoff](./stage-03-handoff.md) (start here)
 
 ## Purpose
 

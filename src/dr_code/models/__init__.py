@@ -8,7 +8,13 @@ from dr_code.models.attempts import (
 )
 from dr_code.models.base import FrozenModel
 from dr_code.models.humaneval import HumanEvalPlusTask
-from dr_code.models.outcomes import ParseOutcome, TestOutcome
+from dr_code.models.outcomes import (
+    InfraErrorProjection,
+    ParseOutcome,
+    TestCaseResultProjection,
+    TestOutcome,
+    TestOutcomeKind,
+)
 
 __all__ = [
     "AttemptProvenance",
@@ -16,7 +22,10 @@ __all__ = [
     "AttemptSource",
     "FrozenModel",
     "HumanEvalPlusTask",
+    "InfraErrorProjection",
     "ParseOutcome",
+    "TestCaseResultProjection",
     "TestOutcome",
+    "TestOutcomeKind",
     "compute_sample_id",
 ]

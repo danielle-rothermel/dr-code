@@ -19,7 +19,7 @@ Design docs for the compression–correctness evaluation pipeline.
 
 Implement stages in order. Stages 2–3 share the [dr-queues](https://github.com/danielle-rothermel/dr-queues) pipeline runtime from the initial version (not a later add-on).
 
-**Picking up Stage 2?** Start with [Stage 2 handoff](./stage-02-handoff.md).
+**Picking up Stage 3?** Start with [Stage 3 handoff](./stage-03-handoff.md).
 
 ## Future (out of initial scope)
 

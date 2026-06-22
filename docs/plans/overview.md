@@ -205,7 +205,7 @@ An agent picking up work should treat each bullet as a plannable phase; details 
 
 Cross-cutting: idempotent Mongo writes keyed by `(run_id, sample_id)`; parse-fail short-circuit to test stage with explicit skip reason.
 
-**Stage 2 entry point:** [Stage 2 handoff](./stage-02-handoff.md)
+**Stage 3 entry point:** [Stage 3 handoff](./stage-03-handoff.md)
 
 ---
 
