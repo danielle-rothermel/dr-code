@@ -72,14 +72,27 @@ uv run scripts/eval_run.py init \
   --run-id "$RUN_ID" \
   --workers parse=8,test=8
 
+uv run scripts/eval_run.py start \
+  --run-id "$RUN_ID" \
+  --stage test \
+  --workers parse=8,test=8
+
+uv run scripts/eval_run.py start \
+  --run-id "$RUN_ID" \
+  --stage parse \
+  --workers parse=8,test=8
+
 uv run scripts/eval_run.py seed \
   --run-id "$RUN_ID" \
   --dump-dir /path/to/pool-dump \
   --task-indices 0,1,2,3,4
 
-uv run scripts/eval_run.py start \
+uv run scripts/eval_run.py wait \
   --run-id "$RUN_ID" \
-  --workers parse=8,test=8
+  --target parse \
+  --timeout 28800
+
+uv run scripts/eval_run.py stop --run-id "$RUN_ID" --stage parse
 
 uv run scripts/eval_run.py wait \
   --run-id "$RUN_ID" \
@@ -87,6 +100,7 @@ uv run scripts/eval_run.py wait \
   --timeout 28800
 
 uv run scripts/eval_run.py status --run-id "$RUN_ID"
+uv run scripts/eval_run.py workers --run-id "$RUN_ID"
 uv run scripts/eval_run.py export --run-id "$RUN_ID"
 uv run scripts/eval_run.py stop --run-id "$RUN_ID"
 ```
@@ -94,6 +108,9 @@ uv run scripts/eval_run.py stop --run-id "$RUN_ID"
 `status` reads persisted run state from Mongo and RabbitMQ queue snapshots.
 `stop` requests detached workers to exit; run it after terminal completion so
 idle workers do not remain attached to the queues.
+`export` can write partial `parse.jsonl` and `test.jsonl` for in-flight runs;
+`proof_report.json` is written only after terminal completion reaches the
+expected job count.
 
 ## Outputs
 
@@ -116,6 +133,7 @@ are not required to continue or resume a run.
 Mongo collections:
 
 - `run_manifests` — dr-queues run manifests
+- `eval_run_metadata` — dr-code seed/source metadata for continuation safety
 - seed/job/worker state collections managed by `dr-queues`
 - `pipeline_events` — dr-queues lifecycle telemetry
 - `eval_results` — upserted TestOutcome documents keyed by `(run_id, sample_id)`
@@ -189,7 +207,7 @@ uv run scripts/tune_test_workers.py \
 2. Double workers (`×2`) each step: replace test workers through the
    `dr-queues` worker lifecycle.
 3. **Warmup** 15 s after each swap (in-flight jobs requeue).
-4. **Measure** 60 s — poll Mongo `terminal` event count.
+4. **Measure** 60 s — poll `dr-queues` runtime status.
 5. **Stop** when throughput drops (regression) or gain vs previous step is < 10%.
 6. **Apply best** — leave winning worker count running (`--apply-best`, default).
 
@@ -210,7 +228,7 @@ Writes `exports/runs/{run_id}/tune_report.json`. Does **not** stop the main `scr
 Monitor during tuning:
 
 ```bash
-watch -n 10 'mongosh mongodb://localhost:27017/dr_queues --quiet --eval "db.pipeline_events.countDocuments({run_id:\"YOUR_RUN_ID\", event:\"terminal\"})"'
+watch -n 10 'uv run scripts/eval_run.py status --run-id YOUR_RUN_ID'
 ```
 
 ## Detached workers (manual)
@@ -222,7 +240,31 @@ uv run scripts/eval_run.py start \
   --workers parse=0,test=8
 ```
 
+Replace test workers intentionally:
+
+```bash
+uv run scripts/eval_run.py replace \
+  --run-id YOUR_RUN_ID \
+  --stage test \
+  --workers parse=0,test=8
+```
+
 Parse workers can be stopped manually after parse completes (optional — tune script does this).
+
+Use lower-level `dr-queues-run` commands for replay, holds, failure details,
+and attempt history:
+
+```bash
+dr-queues-run failures --run-id YOUR_RUN_ID
+dr-queues-run attempts --run-id YOUR_RUN_ID
+dr-queues-run replay --run-id YOUR_RUN_ID --status retry_waiting --force
+```
+
+Optional read-only dashboard:
+
+```bash
+dr-queues-viewer --run-id YOUR_RUN_ID
+```
 
 ## Dump path
 

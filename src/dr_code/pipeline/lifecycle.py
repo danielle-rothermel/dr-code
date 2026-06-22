@@ -14,7 +14,9 @@ from dr_queues import (
     attach_run_queues,
     filter_run_events,
     get_run_status,
+    list_workers,
     parse_workers_arg,
+    replace_stage_workers,
     run_in_process,
     seed_run,
     setup_run_queues,
@@ -36,6 +38,15 @@ from dr_code.pipeline.export import (
 )
 from dr_code.pipeline.handlers import registry
 from dr_code.pipeline.jobs import build_seed_jobs
+from dr_code.pipeline.metadata import (
+    EvalRunAlreadySeededError,
+    EvalRunInitMetadata,
+    EvalRunMetadataStore,
+    EvalRunSeedMetadata,
+    EvalSeedSource,
+    build_init_metadata,
+    build_seed_metadata,
+)
 from dr_code.pipeline.preflight import PreflightReport, run_preflight
 from dr_code.pipeline.report import (
     ProofReport,
@@ -60,6 +71,7 @@ class InitEvalRunResult(FrozenModel):
     run_id: str
     manifest: RunManifest
     workers_by_stage: dict[str, int]
+    metadata: EvalRunInitMetadata
 
 
 class SeedEvalRunResult(FrozenModel):
@@ -67,6 +79,7 @@ class SeedEvalRunResult(FrozenModel):
 
     run_id: str
     expected_jobs: int
+    metadata: EvalRunSeedMetadata
 
 
 class StartEvalWorkersResult(FrozenModel):
@@ -76,8 +89,23 @@ class StartEvalWorkersResult(FrozenModel):
     pids: list[int]
 
 
+class ReplaceEvalWorkersResult(FrozenModel):
+    """Replaced one Evaluation run worker process."""
+
+    run_id: str
+    stage: str
+    pid: int
+
+
 class StopEvalWorkersResult(FrozenModel):
     """Stopped Evaluation run workers."""
+
+    run_id: str
+    workers: list[WorkerRecord]
+
+
+class ListEvalWorkersResult(FrozenModel):
+    """Listed Evaluation run worker records."""
 
     run_id: str
     workers: list[WorkerRecord]
@@ -148,6 +176,7 @@ def init_eval_run(
     run_id: str | None = None,
     workers: str = DEFAULT_WORKERS,
     run_store: MongoRunStore | None = None,
+    metadata_store: EvalRunMetadataStore | None = None,
     overwrite: bool = False,
 ) -> InitEvalRunResult:
     """Create the dr-queues manifest and queues for an Evaluation run."""
@@ -165,10 +194,26 @@ def init_eval_run(
         run_store=run_store,
         overwrite=overwrite,
     )
+    metadata = build_init_metadata(
+        worker_spec=workers,
+        workers_by_stage=workers_by_stage,
+    )
+    store = metadata_store or EvalRunMetadataStore()
+    close_store = metadata_store is None
+    try:
+        store.record_init(
+            run_id=resolved_run_id,
+            metadata=metadata,
+            overwrite=overwrite,
+        )
+    finally:
+        if close_store:
+            store.close()
     return InitEvalRunResult(
         run_id=resolved_run_id,
         manifest=manifest,
         workers_by_stage=workers_by_stage,
+        metadata=metadata,
     )
 
 
@@ -181,24 +226,64 @@ def seed_eval_run(
     task_indices: list[int] | tuple[int, ...] | None = None,
     limit_per_task: int | None = None,
     run_store: MongoRunStore | None = None,
+    metadata_store: EvalRunMetadataStore | None = None,
 ) -> SeedEvalRunResult:
     """Publish Evaluation run attempts to the parse stage."""
-    manifest = attach_run_queues(
-        run_id=run_id,
-        pipeline=build_eval_pipeline(registry),
-        run_store=run_store,
-    )
-    records = _load_seed_attempts(
-        attempts=attempts,
-        attempts_path=attempts_path,
-        dump_dir=dump_dir,
-        task_indices=task_indices,
-        run_id=run_id,
-        limit_per_task=limit_per_task,
-    )
-    jobs = build_seed_jobs(records, run_id=run_id)
-    seed_run(manifest, jobs, run_store=run_store)
-    return SeedEvalRunResult(run_id=run_id, expected_jobs=len(jobs))
+    store = run_store or MongoRunStore()
+    close_store = run_store is None
+    meta_store = metadata_store or EvalRunMetadataStore()
+    close_meta_store = metadata_store is None
+    try:
+        expected_jobs = store.expected_job_count(run_id)
+        if expected_jobs:
+            msg = (
+                f"Eval run {run_id!r} already has {expected_jobs} "
+                "active seeded jobs."
+            )
+            raise EvalRunAlreadySeededError(msg)
+        if meta_store.get(run_id) is None:
+            msg = f"Eval run {run_id!r} does not have init metadata."
+            raise RuntimeError(msg)
+        manifest = attach_run_queues(
+            run_id=run_id,
+            pipeline=build_eval_pipeline(registry),
+            run_store=store,
+        )
+        records = _load_seed_attempts(
+            attempts=attempts,
+            attempts_path=attempts_path,
+            dump_dir=dump_dir,
+            task_indices=task_indices,
+            run_id=run_id,
+            limit_per_task=limit_per_task,
+        )
+        metadata = build_seed_metadata(
+            records=records,
+            source=_seed_source(
+                attempts=attempts,
+                attempts_path=attempts_path,
+                dump_dir=dump_dir,
+            ),
+            source_path=_seed_source_path(
+                attempts_path=attempts_path,
+                dump_dir=dump_dir,
+            ),
+            task_indices=task_indices,
+            limit_per_task=limit_per_task,
+        )
+        jobs = build_seed_jobs(records, run_id=run_id)
+        seed_run(manifest, jobs, run_store=store)
+        meta_store.record_seed(run_id=run_id, metadata=metadata)
+        return SeedEvalRunResult(
+            run_id=run_id,
+            expected_jobs=len(jobs),
+            metadata=metadata,
+        )
+    finally:
+        if close_meta_store:
+            meta_store.close()
+        if close_store:
+            store.close()
 
 
 def _load_seed_attempts(
@@ -277,6 +362,40 @@ def start_eval_workers(
     )
 
 
+def replace_eval_workers(
+    *,
+    run_id: str,
+    stage: str,
+    workers: str = DEFAULT_WORKERS,
+    handlers_module: str = DEFAULT_HANDLERS_MODULE,
+    run_store: MongoRunStore | None = None,
+) -> ReplaceEvalWorkersResult:
+    """Replace detached workers for one Evaluation run stage."""
+    pipeline = build_eval_pipeline(registry)
+    attach_run_queues(
+        run_id=run_id,
+        pipeline=pipeline,
+        run_store=run_store,
+    )
+    workers_by_stage = parse_workers_arg(
+        workers,
+        pipeline.step_names(),
+        default=2,
+    )
+    process = replace_stage_workers(
+        run_id=run_id,
+        stage=stage,
+        workers=workers_by_stage[stage],
+        handlers_module=handlers_module,
+        run_store=run_store,
+    )
+    return ReplaceEvalWorkersResult(
+        run_id=run_id,
+        stage=stage,
+        pid=process.pid,
+    )
+
+
 def stop_eval_workers(
     *,
     run_id: str,
@@ -317,6 +436,17 @@ def stop_eval_workers(
     else:
         workers = stop_workers(run_id=run_id, run_store=run_store)
     return StopEvalWorkersResult(run_id=run_id, workers=workers)
+
+
+def list_eval_workers(
+    run_id: str,
+    *,
+    stage: str | None = None,
+    run_store: MongoRunStore | None = None,
+) -> ListEvalWorkersResult:
+    """List Evaluation run worker records."""
+    workers = list_workers(run_id, stage=stage, run_store=run_store)
+    return ListEvalWorkersResult(run_id=run_id, workers=workers)
 
 
 def wait_for_eval_run(
@@ -509,6 +639,32 @@ def _load_outcomes_from_export(
     return parse_outcomes, test_outcomes
 
 
+def _seed_source(
+    *,
+    attempts: list[AttemptRecord] | None,
+    attempts_path: Path | str | None,
+    dump_dir: Path | str | None,
+) -> EvalSeedSource:
+    if attempts is not None:
+        return EvalSeedSource.IN_MEMORY
+    if attempts_path is not None:
+        return EvalSeedSource.ATTEMPTS_PATH
+    if dump_dir is not None:
+        return EvalSeedSource.DUMP_DIR
+    msg = "Cannot determine seed source."
+    raise ValueError(msg)
+
+
+def _seed_source_path(
+    *,
+    attempts_path: Path | str | None,
+    dump_dir: Path | str | None,
+) -> Path | str | None:
+    if attempts_path is not None:
+        return attempts_path
+    return dump_dir
+
+
 def echo_run_metadata(
     *,
     run_id: str,
@@ -538,8 +694,10 @@ __all__ = [
     "ExportEvalRunResult",
     "IN_PROCESS_MODE",
     "InitEvalRunResult",
+    "ListEvalWorkersResult",
     "PipelineRunResult",
     "PreflightEvalRunResult",
+    "ReplaceEvalWorkersResult",
     "RunEvalOnceResult",
     "SeedEvalRunResult",
     "StartEvalWorkersResult",
@@ -550,8 +708,10 @@ __all__ = [
     "export_eval_run",
     "get_eval_status",
     "init_eval_run",
+    "list_eval_workers",
     "new_run_id",
     "preflight_eval_run",
+    "replace_eval_workers",
     "run_eval_once",
     "seed_eval_run",
     "start_eval_workers",

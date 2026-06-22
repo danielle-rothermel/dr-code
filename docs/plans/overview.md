@@ -122,6 +122,7 @@ exports under `exports/runs/{run_id}/`.
 **Mongo collections:**
 
 - `run_manifests` — dr-queues run manifests
+- `eval_run_metadata` — dr-code seed/source metadata for continuation safety
 - `pipeline_events` — dr-queues lifecycle telemetry
 - `eval_results` — upserted `TestOutcome` keyed by `(run_id, sample_id)`
 
@@ -241,7 +242,7 @@ Prerequisites: `fresh_encoded` generation mode, train/dev/eval splits.
 
 | Question | Resolution |
 |----------|------------|
-| Mongo layout | Both `pipeline_events` and `eval_results` |
+| Mongo layout | `dr-queues` runtime collections plus `eval_run_metadata` and `eval_results` |
 | dr-queues dep | Editable path on `../dr-queues` |
 | Test parallelism | One child process per sample; tune `test` worker count empirically |
 | Run manifest | Mongo `run_manifests` via dr-queues |
