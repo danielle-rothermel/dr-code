@@ -4,7 +4,9 @@ Research harness for the compression–correctness evaluation pipeline: given a 
 
 Design docs: [docs/plans/README.md](docs/plans/README.md)
 
-**Status:** Stages 1–4 complete. Pipeline (dr-queues parse→test) wired — see [pipeline runbook](docs/plans/pipeline-runbook.md).
+**Status:** Stages 1–4 complete. The Mongo-backed Evaluation run lifecycle is
+wired and manually smoke-tested for in-process, detached, split-command, export,
+and analysis flows — see [pipeline runbook](docs/plans/pipeline-runbook.md).
 
 ## Pipeline demo
 
@@ -26,7 +28,22 @@ uv run scripts/eval_run.py run \
   --workers parse=8,test=8
 ```
 
-Outputs: `exports/runs/{run_id}/` (attempts, parse/test JSONL, `proof_report.json`). Tune test workers mid-run with `scripts/tune_test_workers.py`. Full runbook: [docs/plans/pipeline-runbook.md](docs/plans/pipeline-runbook.md).
+Lifecycle state lives in MongoDB through `dr-queues`; files under
+`exports/runs/{run_id}/` are derived artifacts for inspection and analysis
+(`attempts.parquet`, parse/test JSONL, `manifest.json`, `proof_report.json`).
+Tune test workers mid-run with `scripts/tune_test_workers.py`. Full runbook:
+[docs/plans/pipeline-runbook.md](docs/plans/pipeline-runbook.md).
+
+For manual control, the same lifecycle is exposed as split commands:
+
+```bash
+uv run scripts/eval_run.py init --run-id YOUR_RUN_ID --workers parse=8,test=8
+uv run scripts/eval_run.py seed --run-id YOUR_RUN_ID --dump-dir /path/to/dump
+uv run scripts/eval_run.py start --run-id YOUR_RUN_ID --workers parse=8,test=8
+uv run scripts/eval_run.py wait --run-id YOUR_RUN_ID --target terminal
+uv run scripts/eval_run.py export --run-id YOUR_RUN_ID
+uv run scripts/eval_run.py stop --run-id YOUR_RUN_ID
+```
 
 ## Stage 4 demo
 

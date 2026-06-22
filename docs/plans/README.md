@@ -20,4 +20,7 @@ Design and operations docs for the compression–correctness evaluation pipeline
 
 ## Status
 
-All initial-scope work is complete: stages 1–4, dr-queues pipeline, proof bar on HumanEval/0–4. Next operational step: full pool replay at tuned worker counts (see runbook).
+All initial-scope work is complete: stages 1–4, dr-queues pipeline, proof bar
+on HumanEval/0–4, and manual smoke verification of the new Evaluation run
+lifecycle. Next operational step: full pool replay at tuned worker counts (see
+runbook).
