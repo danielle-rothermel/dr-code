@@ -13,7 +13,7 @@ from dr_code.pipeline.tune import (
     format_sweep_table,
     run_sweep,
 )
-from dr_queues.manifest import load_run_manifest, manifest_path, read_pid, stage_pid_path
+from dr_queues import MongoRunStore, list_workers
 
 app = typer.Typer(add_completion=False)
 
@@ -40,8 +40,11 @@ def main(
     skip_preflight: bool = typer.Option(False, "--skip-preflight"),
 ) -> None:
     """Sweep test worker counts on a live detached eval run."""
-    manifest = load_run_manifest(manifest_path(run_id))
-    expected_jobs = manifest.expected_jobs
+    store = MongoRunStore()
+    try:
+        expected_jobs = store.expected_job_count(run_id)
+    finally:
+        store.close()
 
     if not skip_preflight:
         _run_preflight(run_id, expected_jobs=expected_jobs)
@@ -82,11 +85,13 @@ def main(
 def _run_preflight(run_id: str, *, expected_jobs: int) -> None:
     terminals = count_terminals(run_id)
     parse_done = count_stage_completions(run_id, "parse")
-    test_pid = read_pid(stage_pid_path(run_id, "test"))
+    test_workers = list_workers(run_id, stage="test")
 
     typer.echo(f"preflight terminals={terminals}/{expected_jobs}")
     typer.echo(f"preflight parse_completions={parse_done}/{expected_jobs}")
-    typer.echo(f"preflight test_worker_pid={test_pid}")
+    typer.echo(
+        f"preflight test_worker_pids={[worker.pid for worker in test_workers]}"
+    )
 
     if terminals >= expected_jobs:
         msg = "Run already complete; nothing to tune."

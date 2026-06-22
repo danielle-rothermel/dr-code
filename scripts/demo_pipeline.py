@@ -19,7 +19,9 @@ from dr_code.pipeline.runner import (
 
 app = typer.Typer(add_completion=False)
 
-_DEFAULT_FIXTURE_DEDUP = Path("tests/fixtures/pool/human_eval-0-decode-dedup.jsonl")
+_DEFAULT_FIXTURE_DEDUP = Path(
+    "tests/fixtures/pool/human_eval-0-decode-dedup.jsonl"
+)
 _DEFAULT_MONGODB_URL = "mongodb://localhost:27017/dr_queues"
 
 

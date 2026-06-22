@@ -7,7 +7,10 @@ from pathlib import Path
 
 import typer
 
-from dr_code.datasets.humaneval_loader import load_humaneval_plus, save_snapshot
+from dr_code.datasets.humaneval_loader import (
+    load_humaneval_plus,
+    save_snapshot,
+)
 
 app = typer.Typer(add_completion=False)
 

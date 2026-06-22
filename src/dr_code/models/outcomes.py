@@ -39,7 +39,7 @@ class ParseOutcome(FrozenModel):
 
 
 class InfraErrorProjection(FrozenModel):
-    """Structured infrastructure failure from nl-code execution."""
+    """Structured infrastructure failure from test execution."""
 
     stage: str
     execution_mode: str
@@ -48,6 +48,8 @@ class InfraErrorProjection(FrozenModel):
 
 class TestCaseResultProjection(FrozenModel):
     """Per-case HumanEval+ test result."""
+
+    __test__ = False
 
     input_value: Any
     expected_output: Any
@@ -60,6 +62,8 @@ class TestCaseResultProjection(FrozenModel):
 
 class TestOutcome(FrozenModel):
     """Test-stage result projection (stage 3)."""
+
+    __test__ = False
 
     sample_id: str
     run_id: str | None

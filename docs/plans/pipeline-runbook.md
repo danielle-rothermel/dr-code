@@ -24,7 +24,6 @@ uv run python -c "from dr_code.pipeline.preflight import run_preflight; run_pref
 Requires:
 
 - RabbitMQ and Mongo reachable
-- Docker daemon (nl-code eval image)
 - Pool dump at `DEFAULT_DUMP_DIR` (see `src/dr_code/pipeline/seed.py`)
 
 ## Simple demo (in-process smoke)
@@ -186,8 +185,8 @@ Scale: ~172k dedup unique raw strings across 163 tasks; indices 0–4 alone are 
 | Symptom | Check |
 |---------|-------|
 | Jobs requeued forever | Handler exception — check worker stderr; parse handler should catch code-eval throws |
-| Terminal count stall | Test workers alive; Docker OOM; raise `--completion-timeout` |
-| High `infra_error` | Reduce test workers; `docker info`; nl-code image |
+| Terminal count stall | Test workers alive; raise `--completion-timeout` |
+| High `infra_error` | Reduce test workers; inspect worker stderr and fork timeout stages |
 | RabbitMQ port conflict | Another broker on 5672 — existing instance OK if reachable |
 | Log quiet after parse burst | Normal — only test stage logs once parse finishes |
 | Oversized pool sample | Parse records failure (`parse_handler_error`); does not infinite-loop |

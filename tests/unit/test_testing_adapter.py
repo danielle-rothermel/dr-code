@@ -35,7 +35,7 @@ def _load_failure_row() -> dict[str, object]:
     pytest.skip("no expect_success=false row in pool_samples.jsonl")
 
 
-def test_parse_fail_skips_without_docker() -> None:
+def test_parse_fail_skips_without_execution() -> None:
     row = _load_failure_row()
     task_id = str(row["task_id"])
     raw_output = str(row["raw_output"])
@@ -68,7 +68,6 @@ def test_build_eval_code_wraps_entry_point_helper() -> None:
     assert "return has_close_elements(*input_value)" in code
 
 
-@pytest.mark.docker
 def test_canonical_solution_passes_humaneval_0() -> None:
     task = get_task("HumanEval/0", prefer_snapshot=True)
     canonical_code = task.prompt + task.canonical_solution
@@ -98,7 +97,6 @@ def test_canonical_solution_passes_humaneval_0() -> None:
     assert outcome.test_case_results
 
 
-@pytest.mark.docker
 def test_known_bad_stub_fails_tests_not_infra() -> None:
     task = get_task("HumanEval/0", prefer_snapshot=True)
     bad_code = (
@@ -130,16 +128,15 @@ def test_known_bad_stub_fails_tests_not_infra() -> None:
     assert outcome.test_case_results
 
 
-@pytest.mark.docker
-def test_bad_docker_image_reports_infra_error() -> None:
+def test_unparseable_candidate_fails_tests_not_infra() -> None:
     task = get_task("HumanEval/0", prefer_snapshot=True)
     record = AttemptRecord(
-        sample_id="infra-he0",
+        sample_id="syntax-he0",
         run_id="test-run",
         task_id=task.task_id,
         entry_point=task.entry_point,
         decoder_input="fixture",
-        raw_output=task.prompt + task.canonical_solution,
+        raw_output="def has_close_elements(:\n",
         provenance=AttemptProvenance(source=AttemptSource.POOL),
     )
     parse_outcome = ParseOutcome(
@@ -147,17 +144,13 @@ def test_bad_docker_image_reports_infra_error() -> None:
         run_id=record.run_id,
         task_id=record.task_id,
         parse_success=True,
-        extracted_code=task.prompt + task.canonical_solution,
+        extracted_code="def has_close_elements(:\n",
     )
-    outcome = testing_adapter.test_parsed_sample(
-        record,
-        parse_outcome,
-        task=task,
-        docker_image="nl-code/nonexistent-eval-image:missing",
-    )
+    outcome = testing_adapter.test_parsed_sample(record, parse_outcome, task=task)
 
-    assert outcome.outcome_kind == "infra_error"
-    assert outcome.tests_ran is False
-    assert outcome.all_tests_passed is None
-    assert outcome.infra_error is not None
-    assert outcome.test_case_results == ()
+    assert outcome.outcome_kind == "tested"
+    assert outcome.tests_ran is True
+    assert outcome.all_tests_passed is False
+    assert outcome.infra_error is None
+    assert outcome.test_case_results
+    assert outcome.test_case_results[0].compile_error is not None

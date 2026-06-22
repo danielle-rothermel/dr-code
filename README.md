@@ -8,7 +8,7 @@ Design docs: [docs/plans/README.md](docs/plans/README.md)
 
 ## Pipeline demo
 
-In-process smoke on a few pool dedup samples (requires RabbitMQ, Mongo, Docker):
+In-process smoke on a few pool dedup samples (requires RabbitMQ and Mongo):
 
 ```bash
 cd ../dr-queues && docker compose up -d
@@ -44,7 +44,7 @@ uv run marimo run nbs/analyze_eval_run.py
 
 ## Stage 3 demo
 
-Batch-test a parse export (requires Docker for live runs):
+Batch-test a parse export with local fork workers:
 
 ```bash
 uv run scripts/test_attempts.py \

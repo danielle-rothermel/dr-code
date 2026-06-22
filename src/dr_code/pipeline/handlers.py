@@ -58,7 +58,7 @@ def parse_attempt_handler(job: JobEnvelope) -> JobEnvelope:
 
 @registry.register("run_tests")
 def run_tests_handler(job: JobEnvelope) -> JobEnvelope:
-    """Run HumanEval+ Docker tests or emit explicit skip/error outcome."""
+    """Run HumanEval+ local fork tests or emit explicit skip/error outcome."""
     record = attempt_from_job(job)
     parse_outcome = _parse_outcome_from_job(job)
     if parse_outcome is None:

@@ -22,7 +22,9 @@ _DEFAULT_OUTPUT = Path("exports/attempts/pool.parquet")
 
 @app.command()
 def main(
-    input_path: Path = typer.Option(..., "--input", help="Parquet or dedup JSONL"),
+    input_path: Path = typer.Option(
+        ..., "--input", help="Parquet or dedup JSONL"
+    ),
     output: Path = typer.Option(
         _DEFAULT_OUTPUT,
         "--output",

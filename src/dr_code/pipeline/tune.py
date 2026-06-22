@@ -9,12 +9,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dr_queues import manifest_path, spawn_stage_worker_process
-from dr_queues.events.mongo import MongoEventSink
-from dr_queues.manifest import read_pid, stage_pid_path
+from dr_queues import replace_stage_workers, stop_workers
 from pymongo import MongoClient
 
-from dr_code.pipeline.mongo import EVAL_RESULTS_COLLECTION, _database_name, mongodb_url
+from dr_code.pipeline.mongo import (
+    EVAL_RESULTS_COLLECTION,
+    _database_name,
+    mongodb_url,
+)
 from dr_code.pipeline.runner import DEFAULT_HANDLERS_MODULE
 
 PIPELINE_EVENTS_COLLECTION = "pipeline_events"
@@ -85,7 +87,9 @@ def count_terminals(run_id: str, *, mongo_url: str | None = None) -> int:
     try:
         database = client.get_database(_database_name(mongodb_url()))
         collection = database[PIPELINE_EVENTS_COLLECTION]
-        return collection.count_documents({"run_id": run_id, "event": "terminal"})
+        return collection.count_documents(
+            {"run_id": run_id, "event": "terminal"}
+        )
     finally:
         client.close()
 
@@ -160,13 +164,12 @@ def replace_test_workers(
     *,
     handlers_module: str = DEFAULT_HANDLERS_MODULE,
 ) -> subprocess.Popen[bytes]:
-    """Hot-swap test stage workers via dr-queues --replace."""
-    return spawn_stage_worker_process(
-        manifest_path=manifest_path(run_id),
+    """Hot-swap test stage workers."""
+    return replace_stage_workers(
+        run_id=run_id,
         stage=TEST_STAGE,
         workers=workers,
         handlers_module=handlers_module,
-        replace=True,
     )
 
 
@@ -175,18 +178,7 @@ def stop_parse_worker_if_idle(run_id: str, *, expected_jobs: int) -> bool:
     parse_done = count_stage_completions(run_id, "parse")
     if parse_done < expected_jobs:
         return False
-    pid_path = stage_pid_path(run_id, "parse")
-    pid = read_pid(pid_path)
-    if pid is None:
-        return False
-    try:
-        import os
-        import signal
-
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return False
-    return True
+    return bool(stop_workers(run_id=run_id, stage="parse"))
 
 
 def run_sweep(
@@ -237,7 +229,11 @@ def run_sweep(
         infra_before = count_infra_errors(run_id) if not dry_run else 0
 
         if dry_run:
-            rate, t_before, t_after = 0.0, count_terminals(run_id), count_terminals(run_id)
+            rate, t_before, t_after = (
+                0.0,
+                count_terminals(run_id),
+                count_terminals(run_id),
+            )
             reliable = False
         else:
             rate, t_before, t_after = measure_throughput(
@@ -284,7 +280,9 @@ def run_sweep(
         previous_rate = rate if reliable else previous_rate
         next_workers = workers * multiplier
         if next_workers > max_workers:
-            report.stop_reason = report.stop_reason or f"reached max_workers={max_workers}"
+            report.stop_reason = (
+                report.stop_reason or f"reached max_workers={max_workers}"
+            )
             break
         workers = next_workers
 

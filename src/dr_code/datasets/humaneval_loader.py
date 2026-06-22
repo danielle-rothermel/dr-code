@@ -97,7 +97,9 @@ def task_index(
     prefer_snapshot: bool = True,
 ) -> dict[str, HumanEvalPlusTask]:
     """Return task_id → task mapping."""
-    loaded = tasks if tasks is not None else load_humaneval_plus(prefer_snapshot)
+    loaded = (
+        tasks if tasks is not None else load_humaneval_plus(prefer_snapshot)
+    )
     return {task.task_id: task for task in loaded}
 
 

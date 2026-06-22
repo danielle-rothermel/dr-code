@@ -14,7 +14,9 @@ _JOINT_OBJECTIVE_NOTE = (
 )
 
 
-def build_summary(rows: list[EnrichedRow], join_report: JoinReport) -> dict[str, Any]:
+def build_summary(
+    rows: list[EnrichedRow], join_report: JoinReport
+) -> dict[str, Any]:
     """Build headline summary JSON for a run."""
     outcome_kind_counts = Counter(
         row.outcome_kind for row in rows if row.has_test_outcome
@@ -32,9 +34,7 @@ def build_summary(rows: list[EnrichedRow], join_report: JoinReport) -> dict[str,
         for row in rows
         if row.has_test_outcome and row.outcome_kind == "tested"
     ]
-    tested_pass = sum(
-        1 for row in tested_rows if row.all_tests_passed is True
-    )
+    tested_pass = sum(1 for row in tested_rows if row.all_tests_passed is True)
     tested_fail = sum(
         1 for row in tested_rows if row.all_tests_passed is not True
     )
@@ -86,7 +86,9 @@ def build_summary(rows: list[EnrichedRow], join_report: JoinReport) -> dict[str,
     }
 
 
-def build_aggregates(rows: list[EnrichedRow]) -> dict[str, list[dict[str, Any]]]:
+def build_aggregates(
+    rows: list[EnrichedRow],
+) -> dict[str, list[dict[str, Any]]]:
     """Build all slice aggregate tables."""
     return {
         "by_source": aggregate_by_source(rows),
@@ -103,7 +105,9 @@ def aggregate_by_source(rows: list[EnrichedRow]) -> list[dict[str, Any]]:
 def aggregate_by_model(rows: list[EnrichedRow]) -> list[dict[str, Any]]:
     return _aggregate_slice(
         rows,
-        lambda row: row.provenance_model if row.provenance_model else "(unknown)",
+        lambda row: (
+            row.provenance_model if row.provenance_model else "(unknown)"
+        ),
     )
 
 
@@ -144,9 +148,7 @@ def _aggregate_slice(
         tested_weighted = sum(
             row.provenance_occurrence_count for row in tested
         )
-        pass_count = sum(
-            1 for row in tested if row.all_tests_passed is True
-        )
+        pass_count = sum(1 for row in tested if row.all_tests_passed is True)
         weighted_pass = sum(
             row.provenance_occurrence_count
             for row in tested

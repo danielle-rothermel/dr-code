@@ -34,7 +34,9 @@ def export_analysis(
     aggregates_dir = output_dir / "aggregates"
     aggregates_dir.mkdir(parents=True, exist_ok=True)
 
-    enriched_path = write_enriched_rows(enriched, output_dir / "enriched.parquet")
+    enriched_path = write_enriched_rows(
+        enriched, output_dir / "enriched.parquet"
+    )
     summary_path = write_summary(summary, output_dir / "summary.json")
 
     aggregate_paths: dict[str, Path] = {}

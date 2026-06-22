@@ -55,7 +55,9 @@ def _select_record(
         msg = f"No records found for task_id={task_id!r} in input export"
         raise typer.BadParameter(msg)
     if index < 0 or index >= len(matches):
-        msg = f"--index {index} out of range for {len(matches)} matching row(s)"
+        msg = (
+            f"--index {index} out of range for {len(matches)} matching row(s)"
+        )
         raise typer.BadParameter(msg)
     return matches[index]
 
@@ -120,7 +122,9 @@ def _print_mongo_commands(
         f").limit(1).pretty()'"
     )
     typer.echo("")
-    typer.echo("# Query projected eval result (future eval_results collection)")
+    typer.echo(
+        "# Query projected eval result (future eval_results collection)"
+    )
     typer.echo(
         f"mongosh {mongodb_url} \\\n"
         f"  --eval 'db.eval_results.findOne("

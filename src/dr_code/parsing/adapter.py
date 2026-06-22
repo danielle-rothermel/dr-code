@@ -53,7 +53,9 @@ def project_validation_result(
             config_fingerprint=result.config_fingerprint,
             extractor_path=best.extractor_path if best is not None else None,
             repairs_applied=best.repairs_applied if best is not None else None,
-            extraction_log_summary=_summarize_extraction_log(result.extraction_log),
+            extraction_log_summary=_summarize_extraction_log(
+                result.extraction_log
+            ),
         )
     else:
         skip_reason = _SKIP_NO_VALID

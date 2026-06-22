@@ -111,8 +111,7 @@ def main(
                 spot_task,
                 decoder_input=spot_task.prompt,
                 raw_output=(
-                    "def has_close_elements(numbers, threshold):\n"
-                    "    pass\n"
+                    "def has_close_elements(numbers, threshold):\n    pass\n"
                 ),
                 run_id=run_id,
                 model="demo/model",
@@ -150,16 +149,22 @@ def main(
             f"{len(fresh_roundtrip)} != {len(fresh_records)}"
         )
         raise RuntimeError(msg)
-    typer.echo(f"Pool export OK: {len(pool_roundtrip)} records at {_DEMO_POOL_EXPORT}")
+    typer.echo(
+        f"Pool export OK: {len(pool_roundtrip)} records at {_DEMO_POOL_EXPORT}"
+    )
     typer.echo(
         f"Fresh export OK: {len(fresh_roundtrip)} records at {_DEMO_FRESH_EXPORT}"
     )
 
     _section("Stats — pool")
-    typer.echo(format_summary(summarize_attempts(pool_records, sample_count=2)))
+    typer.echo(
+        format_summary(summarize_attempts(pool_records, sample_count=2))
+    )
 
     _section("Stats — fresh_stub")
-    typer.echo(format_summary(summarize_attempts(fresh_records, sample_count=2)))
+    typer.echo(
+        format_summary(summarize_attempts(fresh_records, sample_count=2))
+    )
 
     _section("Side-by-side spot check")
     typer.echo(

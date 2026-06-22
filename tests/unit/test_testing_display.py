@@ -55,12 +55,12 @@ def test_banner_infra_error() -> None:
         parse_success=True,
         outcome_kind="infra_error",
         infra_error=InfraErrorProjection(
-            stage="docker_timeout",
-            execution_mode="docker_worker",
+            stage="worker_timeout",
+            execution_mode="local_fork_worker",
             detail="timed out",
         ),
     )
-    assert format_outcome_banner(outcome) == "[INFRA ERROR: docker_timeout]"
+    assert format_outcome_banner(outcome) == "[INFRA ERROR: worker_timeout]"
 
 
 def test_banner_internal_error() -> None:
@@ -106,12 +106,12 @@ def test_walkthrough_shows_infra_detail_not_case_table() -> None:
         outcome_kind="infra_error",
         extracted_code="pass",
         infra_error=InfraErrorProjection(
-            stage="docker_unavailable",
-            execution_mode="docker_worker",
-            detail="daemon down",
+            stage="worker_timeout",
+            execution_mode="local_fork_worker",
+            detail="timed out",
         ),
     )
     rendered = format_test_walkthrough(_record(), _parse_outcome(), outcome)
-    assert "[INFRA ERROR: docker_unavailable]" in rendered
+    assert "[INFRA ERROR: worker_timeout]" in rendered
     assert "per-case results not available" in rendered
     assert "Per-case results:" not in rendered

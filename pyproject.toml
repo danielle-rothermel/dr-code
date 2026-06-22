@@ -13,7 +13,6 @@ dependencies = [
     "dr-providers==0.1.0",
     "dr-queues",
     "marimo[recommended]>=0.23.10",
-    "nl-code[docker]>=0.7.0",
     "pyarrow>=24.0.0",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
@@ -24,7 +23,6 @@ dependencies = [
 [tool.uv.sources]
 code-eval = { path = "../code-eval", editable = true }
 dr-providers = { path = "../dr-providers", editable = true }
-nl-code = { path = "../nl-code", editable = true }
 dr-queues = { path = "../dr-queues", editable = true }
 
 # code-eval pins ruff==0.8.4 for subprocess normalizers; dr-code parse workers
@@ -45,10 +43,6 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = [
-    "docker: requires Docker daemon and nl-code eval image",
-]
-
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py"]
 line-length = 79

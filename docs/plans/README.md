@@ -13,7 +13,7 @@ Design and operations docs for the compression–correctness evaluation pipeline
 | Doc | Topic |
 |-----|-------|
 | [code-eval](../investigation/code-eval.md) | Parse library internals |
-| [nl-code](../investigation/nl-code.md) | Docker test execution |
+| [nl-code](../investigation/nl-code.md) | Former Docker test execution reference |
 | [dr-providers](../investigation/dr-providers.md) | Fresh generation transport |
 | [dr-llm pool](../investigation/dr-llm-humaneval-pool.md) | Pool dump artifacts |
 | [dr-bottleneck](../investigation/dr-bottleneck.md) | Related enc/dec experiments |

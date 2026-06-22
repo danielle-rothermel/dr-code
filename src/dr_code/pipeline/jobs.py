@@ -10,7 +10,9 @@ from dr_code.pipeline.definition import PIPELINE_ID
 _ATTEMPT_KEY = "attempt"
 
 
-def stamp_run_id(records: list[AttemptRecord], run_id: str) -> list[AttemptRecord]:
+def stamp_run_id(
+    records: list[AttemptRecord], run_id: str
+) -> list[AttemptRecord]:
     """Return copies of records with run_id set."""
     return [record.model_copy(update={"run_id": run_id}) for record in records]
 
