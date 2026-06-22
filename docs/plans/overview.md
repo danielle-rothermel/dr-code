@@ -138,20 +138,20 @@ Write functional code in Python according to the description.
 |---------|---------------|--------|---------|
 | code-eval | `../code-eval` editable, pin `0.1.1` / `v0.1.1-frozen` | **Wired** in `pyproject.toml` | Stage 2 |
 | dr-providers | `../dr-providers` editable, pin `0.1.0` | **Wired** in `pyproject.toml` | Stage 1b |
-| nl-code | `../nl-code` (TBD path dep) | Not wired | Stage 3 |
-| dr-queues | `../dr-queues` or published | Not wired | Stages 2–3 orchestration |
+| nl-code | `../nl-code` editable, `[docker]` extra | **Wired** in `pyproject.toml` | Stage 3 |
+| dr-queues | `../dr-queues` or published | Not wired | Pipeline (stages 2–3 orchestration) |
 
 ---
 
 ## Repository layout (target)
 
-Current layout matches the plan for stages 1–2; `testing/`, `pipeline/`, and `analysis/` are not yet implemented.
+Current layout matches the plan for stages 1–3; `pipeline/` and `analysis/` are not yet implemented.
 
 ```text
 src/dr_code/
   datasets/          # HumanEval+ loader, pool loader, export, stats, display
   generation/        # dr-providers batch runner, profiles, prompts
-  models/            # AttemptRecord, HumanEvalPlusTask, ParseOutcome (skeleton)
+  models/            # AttemptRecord, HumanEvalPlusTask, ParseOutcome, TestOutcome
   parsing/           # (stage 2) code-eval adapter, ParseOutcome projection
   testing/           # (stage 3) nl-code adapter, TestOutcome projection
   pipeline/          # (stage 2–3) dr-queues workflow defs, handlers, seeding
@@ -198,14 +198,14 @@ An agent picking up work should treat each bullet as a plannable phase; details 
 2. ~~**Stage 1a** — pool Parquet/JSONL → `AttemptRecord` export~~ — **Done**
 3. ~~**Stage 1b** — HumanEval+ loader + dr-providers batch → same export~~ — **Done**
 4. ~~**Stage 2 adapter** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; pool_samples fixtures~~ — **Done**
-5. **Stage 3 handler** — nl-code batch adapter + Docker smoke tests — **Next**
-6. **Pipeline** — dr-queues workflow (parse → test), Mongo sink, seed CLI
+5. ~~**Stage 3 adapter** — nl-code test adapter + Docker smoke tests + demo/CLI~~ — **Done**
+6. **Pipeline** — dr-queues workflow (parse → test), Mongo sink, seed CLI — **Next**
 7. **Stage 4** — analysis script + marimo notebook on completed run
 8. **Documentation** — runbook for local RabbitMQ/Mongo (README updated for stage 1)
 
 Cross-cutting: idempotent Mongo writes keyed by `(run_id, sample_id)`; parse-fail short-circuit to test stage with explicit skip reason.
 
-**Stage 3 entry point:** [Stage 3 handoff](./stage-03-handoff.md)
+**Stage 4 entry point:** [Stage 4 handoff](./stage-04-handoff.md)
 
 ---
 

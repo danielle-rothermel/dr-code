@@ -1,6 +1,6 @@
 # Stage 3 — Testing
 
-[← Overview](./overview.md) · [Stage 3 handoff](./stage-03-handoff.md) (start here)
+[← Overview](./overview.md) · **Status:** Done (2026-06-21). Adapter in `src/dr_code/testing/`, expanded `TestOutcome`, unit tests, `scripts/test_attempts.py`, and `scripts/demo_stage3.py`. dr-queues handler wiring deferred to pipeline phase. Next: [Stage 4 handoff](./stage-04-handoff.md).
 
 ## Purpose
 
