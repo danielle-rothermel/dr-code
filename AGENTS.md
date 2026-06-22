@@ -11,9 +11,6 @@
   in scope to fix, even when the issue is outside the files you touched.
 - Read failed check output from `.cache/pre-check/`.
 
-## Tests
-
-- Do not add tests unless the user explicitly asks for tests.
 
 ## Commits
 
