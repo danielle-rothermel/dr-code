@@ -295,7 +295,7 @@ wheels = [
 
 [[package]]
 name = "code-eval"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "../code-eval" }
 dependencies = [
     { name = "pydantic" },
@@ -307,6 +307,7 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'synthetic'", specifier = ">=3.0,<4" },
     { name = "pydantic", specifier = ">=2.9,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<9" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "ruff", specifier = "==0.8.4" },
     { name = "ty", marker = "extra == 'ty'", specifier = ">=0.0.1a8" },
 ]
@@ -456,7 +457,7 @@ dev = [
 
 [[package]]
 name = "dr-queues"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "../dr-queues" }
 dependencies = [
     { name = "pika" },

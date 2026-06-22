@@ -38,6 +38,7 @@ _POOL_PROVENANCE_MAP = {
 class AttemptSource(StrEnum):
     """Origin of a decoder attempt row."""
 
+    BOTTLENECK = "bottleneck"
     POOL = "pool"
     FRESH_STUB = "fresh_stub"
 
@@ -154,6 +155,45 @@ class AttemptRecord(FrozenModel):
                 source=AttemptSource.FRESH_STUB,
                 model=model,
                 dec_llm_config_id=profile_id,
+            ),
+        )
+
+    @classmethod
+    def from_bottleneck_output(
+        cls,
+        *,
+        run_id: str,
+        task_id: str,
+        entry_point: str,
+        decoder_input: str,
+        raw_output: str,
+        decode_model: str | None = None,
+        encode_model: str | None = None,
+        decode_profile_id: str | None = None,
+        encode_profile_id: str | None = None,
+        extra: dict[str, str | int | float | None] | None = None,
+    ) -> AttemptRecord:
+        """Build an AttemptRecord from a dr-bottleneck encode/decode job."""
+        return cls(
+            sample_id=compute_sample_id(task_id, raw_output),
+            run_id=run_id,
+            task_id=task_id,
+            entry_point=entry_point,
+            decoder_input=decoder_input,
+            raw_output=raw_output,
+            provenance=AttemptProvenance(
+                source=AttemptSource.BOTTLENECK,
+                model=decode_model,
+                enc_llm_config_id=encode_profile_id,
+                dec_llm_config_id=decode_profile_id,
+                extra={
+                    **(extra or {}),
+                    **(
+                        {"encode_model": encode_model}
+                        if encode_model is not None
+                        else {}
+                    ),
+                },
             ),
         )
 

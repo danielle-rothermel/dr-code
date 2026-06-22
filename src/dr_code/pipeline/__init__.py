@@ -8,6 +8,11 @@ from dr_code.pipeline.jobs import (
     stamp_run_id,
 )
 from dr_code.pipeline.mongo import EvalResultsSink
+from dr_code.pipeline.metadata import (
+    EvalRunMetadata,
+    EvalRunMetadataStore,
+    EvalSeedSource,
+)
 from dr_code.pipeline.preflight import PreflightReport, run_preflight
 from dr_code.pipeline.report import ProofReport, build_proof_report
 from dr_code.pipeline.seed import (
@@ -22,6 +27,9 @@ __all__ = [
     "DEFAULT_PROOF_INDICES",
     "PIPELINE_ID",
     "EvalResultsSink",
+    "EvalRunMetadata",
+    "EvalRunMetadataStore",
+    "EvalSeedSource",
     "PreflightReport",
     "ProofReport",
     "RunExportPaths",

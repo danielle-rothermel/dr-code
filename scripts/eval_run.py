@@ -11,13 +11,16 @@ from dr_code.pipeline.lifecycle import (
     DEFAULT_HANDLERS_MODULE,
     DEFAULT_WORKERS,
     EvalStatusResult,
+    ListEvalWorkersResult,
     WaitEvalRunResult,
     echo_proof_summary,
     echo_run_metadata,
     export_eval_run,
     get_eval_status,
     init_eval_run,
+    list_eval_workers,
     preflight_eval_run,
+    replace_eval_workers,
     run_eval_once,
     seed_eval_run,
     start_eval_workers,
@@ -45,12 +48,87 @@ def _echo_status_summary(result: EvalStatusResult | WaitEvalRunResult) -> None:
         f"run_id={result.run_id} terminals={status.terminal_jobs}/"
         f"{status.expected_jobs} complete={status.is_complete}",
     )
+    _echo_counts("job_states", getattr(status, "job_state_counts", {}))
     for stage in status.stages:
+        workers = list(getattr(stage, "workers", []))
+        active_workers = [
+            worker
+            for worker in workers
+            if _worker_status(worker)
+            in {
+                "running",
+                "stop_requested",
+            }
+        ]
+        stale_workers = [
+            worker for worker in workers if _worker_status(worker) == "stale"
+        ]
+        stop_requested_workers = [
+            worker
+            for worker in workers
+            if _worker_status(worker) == "stop_requested"
+        ]
+        active_concurrency = sum(
+            int(getattr(worker, "concurrency", 0)) for worker in active_workers
+        )
+        input_queue = stage.input_queue
+        output_queue = getattr(stage, "output_queue", None)
+        output_ready = (
+            getattr(output_queue, "ready_messages", 0)
+            if output_queue is not None
+            else 0
+        )
+        output_consumers = (
+            getattr(output_queue, "consumers", 0)
+            if output_queue is not None
+            else 0
+        )
         typer.echo(
             f"  {stage.stage}: completed={stage.completed_jobs}/"
             f"{stage.expected_jobs} in_flight={stage.in_flight_jobs} "
-            f"ready={stage.input_queue.ready_messages} "
-            f"workers={len(stage.workers)}",
+            f"input_ready={input_queue.ready_messages} "
+            f"input_consumers={getattr(input_queue, 'consumers', 0)} "
+            f"output_ready={output_ready} "
+            f"output_consumers={output_consumers} "
+            f"active_workers={len(active_workers)}/{len(workers)} "
+            f"active_concurrency={active_concurrency} "
+            f"stale_workers={len(stale_workers)} "
+            f"stop_requested={len(stop_requested_workers)}",
+        )
+        _echo_counts(
+            f"  {stage.stage} job_states",
+            getattr(stage, "job_state_counts", {}),
+        )
+
+
+def _echo_counts(label: str, counts: object) -> None:
+    if not isinstance(counts, dict):
+        return
+    parts = [
+        f"{_count_key(key)}={count}" for key, count in counts.items() if count
+    ]
+    if parts:
+        typer.echo(f"{label} {' '.join(parts)}")
+
+
+def _count_key(key: object) -> str:
+    return str(getattr(key, "value", key))
+
+
+def _worker_status(worker: object) -> str:
+    status = getattr(worker, "status", "")
+    return str(getattr(status, "value", status))
+
+
+def _echo_worker_records(result: ListEvalWorkersResult) -> None:
+    if not result.workers:
+        typer.echo(f"run_id={result.run_id} workers=0")
+        return
+    for worker in result.workers:
+        typer.echo(
+            f"worker_id={worker.worker_id} stage={worker.stage} "
+            f"status={worker.status} pid={worker.pid} host={worker.host} "
+            f"runtime={worker.runtime} concurrency={worker.concurrency}",
         )
 
 
@@ -149,6 +227,26 @@ def start(
 
 
 @app.command()
+def replace(
+    run_id: Annotated[str, typer.Option("--run-id")],
+    stage: Annotated[str, typer.Option("--stage")],
+    workers: Annotated[str, typer.Option("--workers")] = DEFAULT_WORKERS,
+    handlers_module: Annotated[
+        str,
+        typer.Option("--handlers-module"),
+    ] = DEFAULT_HANDLERS_MODULE,
+) -> None:
+    """Replace detached workers for one stage."""
+    result = replace_eval_workers(
+        run_id=run_id,
+        stage=stage,
+        workers=workers,
+        handlers_module=handlers_module,
+    )
+    typer.echo(f"run_id={result.run_id} stage={result.stage} pid={result.pid}")
+
+
+@app.command()
 def stop(
     run_id: Annotated[str, typer.Option("--run-id")],
     stage: Annotated[
@@ -167,6 +265,22 @@ def stop(
         worker_ids=worker_id,
     )
     typer.echo(f"run_id={result.run_id} stop_requested={len(result.workers)}")
+
+
+@app.command()
+def workers(
+    run_id: Annotated[str, typer.Option("--run-id")],
+    stage: Annotated[str | None, typer.Option("--stage")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """List Evaluation run worker records."""
+    result = list_eval_workers(run_id, stage=stage)
+    if json_output:
+        typer.echo(
+            f"[{','.join(worker.model_dump_json() for worker in result.workers)}]"
+        )
+        return
+    _echo_worker_records(result)
 
 
 @app.command()

@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "code-eval==0.1.1",
+    "code-eval==0.2.0",
     "datasets>=3.0,<4",
     "dr-providers==0.1.0",
     "dr-queues",

@@ -8,7 +8,12 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from dr_queues import replace_stage_workers, stop_workers
+from dr_queues import (
+    MongoRunStore,
+    get_run_status,
+    replace_stage_workers,
+    stop_workers,
+)
 from pymongo import MongoClient
 from pydantic import Field
 
@@ -20,7 +25,6 @@ from dr_code.pipeline.mongo import (
 )
 from dr_code.pipeline.constants import DEFAULT_HANDLERS_MODULE
 
-PIPELINE_EVENTS_COLLECTION = "pipeline_events"
 TEST_STAGE = "test"
 
 
@@ -81,23 +85,21 @@ class SweepReport(FrozenModel):
 
 
 def count_terminals(run_id: str, *, mongo_url: str | None = None) -> int:
-    """Count TERMINAL pipeline events for a run."""
-    client = MongoClient(mongo_url or mongodb_url())
+    """Count terminal jobs for a run from dr-queues runtime status."""
+    store = MongoRunStore(url=mongo_url) if mongo_url is not None else None
     try:
-        database = client.get_database(_database_name(mongodb_url()))
-        collection = database[PIPELINE_EVENTS_COLLECTION]
-        return collection.count_documents(
-            {"run_id": run_id, "event": "terminal"}
-        )
+        return get_run_status(run_id, run_store=store).terminal_jobs
     finally:
-        client.close()
+        if store is not None:
+            store.close()
 
 
 def count_infra_errors(run_id: str, *, mongo_url: str | None = None) -> int:
     """Count infra_error eval results for a run."""
-    client = MongoClient(mongo_url or mongodb_url())
+    resolved_url = mongo_url or mongodb_url()
+    client = MongoClient(resolved_url)
     try:
-        database = client.get_database(_database_name(mongodb_url()))
+        database = client.get_database(_database_name(resolved_url))
         collection = database[EVAL_RESULTS_COLLECTION]
         return collection.count_documents(
             {"run_id": run_id, "outcome_kind": "infra_error"},
@@ -112,16 +114,25 @@ def count_stage_completions(
     *,
     mongo_url: str | None = None,
 ) -> int:
-    """Count stage_output events for a pipeline stage."""
-    client = MongoClient(mongo_url or mongodb_url())
+    """Count completed jobs for a stage from dr-queues runtime status."""
+    store = MongoRunStore(url=mongo_url) if mongo_url is not None else None
     try:
-        database = client.get_database(_database_name(mongodb_url()))
-        collection = database[PIPELINE_EVENTS_COLLECTION]
-        return collection.count_documents(
-            {"run_id": run_id, "stage": stage, "event": "stage_output"},
+        status = get_run_status(run_id, run_store=store)
+        stage_status = next(
+            (
+                candidate
+                for candidate in status.stages
+                if candidate.stage == stage
+            ),
+            None,
         )
+        if stage_status is None:
+            msg = f"Unknown stage {stage!r} for run {run_id!r}."
+            raise ValueError(msg)
+        return stage_status.completed_jobs
     finally:
-        client.close()
+        if store is not None:
+            store.close()
 
 
 def measure_throughput(

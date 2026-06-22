@@ -101,38 +101,33 @@ the original plan called for:
 
 Gaps that remain in `dr-code`:
 
-- `pipeline.tune` still counts terminals, stage completions, and infra errors
-  through direct Mongo queries. It should move to `get_run_status` and
-  `MongoRunStore` where possible, leaving only `eval_results` queries in
-  `dr-code`.
-- The split commands do not yet persist or validate eval-specific seed metadata
-  such as dump directory, task indices, limit, attempts path, and source hash.
-  `dr-queues` validates the pipeline definition and job IDs, but not those
-  `dr-code` domain constraints.
+- `pipeline.tune` now reads terminal and stage progress through `dr-queues`
+  runtime status. It still queries `eval_results` directly for eval-specific
+  infra-error counts.
+- The split commands now persist eval-specific init and seed metadata in
+  `eval_run_metadata`, and `seed` refuses runs that already have active seeded
+  jobs.
 - `start_eval_workers` selects stages but does not yet expose target selectors,
   replay, holds, failures, or attempts through the `dr-code` CLI.
-- `status` output is intentionally minimal and does not yet include the full
-  eval-oriented view: seeded attempts, parse outputs, test terminals,
-  failed/held/retry jobs, active worker concurrency, stale workers, and queue
-  depths in one summary.
+- `status` output includes terminal progress, stage completions, queue depths,
+  active/stale/stop-requested workers, active concurrency, and job-state counts.
 - `export` supports partial parse/test JSONL, but proof report generation is
   final-only. There is not yet a named partial report for in-flight runs.
-- The one-shot detached path starts workers after seeding. The split commands
-  can support "workers first, seed later", but that recipe still needs a smoke
-  test.
+- The one-shot detached path starts workers after seeding. The split runbook
+  recipe starts test and parse workers before seed.
 
 ## Feature Status
 
 | Feature | Current status | Notes |
 |---------|----------------|-------|
 | Stage-selective execution | Mostly supported | `eval_run.py start --stage parse` and repeated `--stage` work; one-shot `run` remains full-pipeline. |
-| Reusable/resumable run IDs | Mostly supported | `attach_run_queues` validates the pipeline definition and Mongo state persists across commands. `dr-code` still needs eval-specific seed metadata validation. |
-| Decoupled seeding from worker startup | Supported by runtime, needs workers-before-seed smoke in `dr-code` | Workers can idle on empty queues and seeding is separate. Seed-before-workers split lifecycle passed on 2026-06-22. |
+| Reusable/resumable run IDs | Mostly supported | `attach_run_queues` validates the pipeline definition and Mongo state persists across commands. `dr-code` now records eval-specific seed metadata and blocks duplicate seed. |
+| Decoupled seeding from worker startup | Supported by runtime, needs workers-before-seed smoke in `dr-code` | Workers can idle on empty queues and seeding is separate. The runbook now documents workers-before-seed. |
 | Blocking idle workers | Supported | RabbitMQ consumers wait on empty queues until stopped. |
 | Independent stage scaling | Supported | Worker specs like `parse=8,test=2` are parsed in both repos. |
-| Stage-specific lifecycle control | Supported at runtime, partially surfaced in `dr-code` | Start/stop by stage exists. Replace, worker listing, holds, replay, and failure views are not all wrapped by `dr-code`. |
-| Incremental continuation | Mostly supported | Init, seed, start, wait, status, and export are split. Stronger `dr-code` metadata checks are still needed. |
-| Partial completion awareness | Supported by runtime, partially surfaced | `wait --target parse` and per-stage completion counts exist. `dr-code` should improve status/export UX. |
+| Stage-specific lifecycle control | Supported at runtime, partially surfaced in `dr-code` | Start/stop/replace/list by stage exist in `dr-code`. Holds, replay, attempts, and failure views stay on `dr-queues-run`. |
+| Incremental continuation | Mostly supported | Init, seed, start, wait, status, and export are split. Duplicate seeding is blocked; additive seed batches remain out of scope. |
+| Partial completion awareness | Supported by runtime, partially surfaced | `wait --target parse`, per-stage completion counts, and partial exports exist. Proof reports are final-only. |
 | Pipeline-shaped queue topology | Supported | Parse and test remain separate pipeline stages, with stage output queues chained into downstream input. |
 | Dynamic worker scaling | Supported | `dr-queues` has start and replace. `dr-code` tuning uses replace for test workers; additive scale-up can use start but should be documented. |
 | Failure hold/retry/replay controls | Runtime supported, not eval-wrapped | Useful for provider-like target partitions later; immediate value is replaying failed/held jobs manually. |
@@ -162,14 +157,14 @@ Use the latest `../dr-queues` safely in `dr-code` by completing these updates:
    in `dr-code` after changes in the sibling repo.
 2. Keep runbook and overview references aligned with Mongo `run_manifests`,
    not `.runs/{run_id}` filesystem manifests.
-3. Prefer `uv run scripts/eval_run.py start/stop` recipes in `dr-code` docs;
-   use lower-level `dr-queues-run replace` only for controls not wrapped by
-   `dr-code`.
+3. Prefer `uv run scripts/eval_run.py start/stop/replace/workers` recipes in
+   `dr-code` docs; use lower-level `dr-queues-run` for replay, holds,
+   failures, and attempts.
 4. Add a workers-before-seed smoke check with a tiny attempts fixture.
 5. Add a continuation smoke check:
    initialize once, seed once, stop/restart workers, wait, export, and confirm
    terminal count equals `MongoRunStore.expected_job_count(run_id)`.
-6. Persist eval-specific run metadata during init or seed: seed source,
+6. Persist eval-specific run metadata during init and seed: seed source,
    attempts path or dump dir, task indices, limit, expected task/sample counts,
    and enough source identity to detect accidental continuation against the
    wrong input.
@@ -182,11 +177,9 @@ Use the latest `../dr-queues` safely in `dr-code` by completing these updates:
 9. Surface `dr-queues` worker records in `scripts/eval_run.py status`,
     including active/stale/stop-requested workers and active concurrency by
     stage.
-10. Add `scripts/eval_run.py workers` or document `dr-queues-run workers` as
-    the supported worker-list command.
-11. Decide whether `dr-code` should wrap `dr-queues` `replace`, `replay`,
-    `failures`, `attempts`, and `holds`, or explicitly tell operators to use
-    `dr-queues-run` for those lower-level controls.
+10. Use `scripts/eval_run.py workers` as the supported eval worker-list command.
+11. Keep replay, failures, attempts, and holds on `dr-queues-run` and document
+    that boundary.
 12. Verify partial export behavior on a parse-complete/test-incomplete run and
     document that `proof_report.json` appears only after terminal completion.
 13. Ensure detached worker commands always pass
@@ -197,8 +190,6 @@ Use the latest `../dr-queues` safely in `dr-code` by completing these updates:
 ## Near-Term Recommended Sequence
 
 1. Run the split lifecycle on a tiny fixture with workers started before seed.
-2. Add eval-specific metadata validation before trusting continuation for large
-   pool runs.
-3. Move tuning progress reads onto `dr-queues` runtime status.
-4. Run a medium detached proof with the split commands rather than the one-shot
+2. Run a workers-before-seed smoke with the updated split lifecycle recipe.
+3. Run a medium detached proof with the split commands rather than the one-shot
    driver, then freeze the operational recipe for full-pool replay.
