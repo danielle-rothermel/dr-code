@@ -11,6 +11,7 @@ dependencies = [
     "code-eval==0.1.1",
     "datasets>=3.0,<4",
     "dr-providers==0.1.0",
+    "dr-queues",
     "marimo[recommended]>=0.23.10",
     "nl-code[docker]>=0.7.0",
     "pyarrow>=24.0.0",
@@ -24,6 +25,7 @@ dependencies = [
 code-eval = { path = "../code-eval", editable = true }
 dr-providers = { path = "../dr-providers", editable = true }
 nl-code = { path = "../nl-code", editable = true }
+dr-queues = { path = "../dr-queues", editable = true }
 
 # code-eval pins ruff==0.8.4 for subprocess normalizers; dr-code parse workers
 # use EXTRACTION_CONFIG (no normalizers) and dev lint needs a current ruff.

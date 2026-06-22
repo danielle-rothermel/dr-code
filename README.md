@@ -4,7 +4,29 @@ Research harness for the compression–correctness evaluation pipeline: given a 
 
 Design docs: [docs/plans/README.md](docs/plans/README.md)
 
-**Status:** Stages 1–4 complete (export-first). Next: [pipeline phase](docs/plans/overview.md#implementation-phasing-suggested) (dr-queues orchestration at scale).
+**Status:** Stages 1–4 complete. Pipeline (dr-queues parse→test) wired — see [pipeline runbook](docs/plans/pipeline-runbook.md).
+
+## Pipeline demo
+
+In-process smoke on a few pool dedup samples (requires RabbitMQ, Mongo, Docker):
+
+```bash
+cd ../dr-queues && docker compose up -d
+uv run scripts/demo_pipeline.py --limit 3
+```
+
+## Pipeline proof / batch run
+
+Detached parallel eval on pool dump artifacts:
+
+```bash
+uv run scripts/run_eval_pipeline.py \
+  --mode detached \
+  --task-indices 0,1,2,3,4 \
+  --workers parse=8,test=8
+```
+
+Outputs: `exports/runs/{run_id}/` (attempts, parse/test JSONL, `proof_report.json`). Tune test workers mid-run with `scripts/tune_test_workers.py`. Full runbook: [docs/plans/pipeline-runbook.md](docs/plans/pipeline-runbook.md).
 
 ## Stage 4 demo
 

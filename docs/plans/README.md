@@ -1,29 +1,23 @@
 # dr-code plans
 
-Design docs for the compression–correctness evaluation pipeline.
+Design and operations docs for the compression–correctness evaluation pipeline.
 
 ## Read first
 
 1. [Investigation synthesis](../investigation/synthesis.md) — starting state of sibling repos (June 2026).
-2. [Overview](./overview.md) — goals, decisions, stage map, future work.
-3. [code-eval integration status](../code-eval-work-needed.md) — prelim freeze checklist and dr-code path dep (when working on stage 2).
+2. [Overview](./overview.md) — architecture, stages, design decisions, proof results.
+3. [Pipeline runbook](./pipeline-runbook.md) — commands, tuning, troubleshooting.
 
-## Stage design docs
+## Investigation notes (sibling repos)
 
-| Stage | Doc | Status | Summary |
-|-------|-----|--------|---------|
-| 1 | [Generation & dataset](./stage-01-generation-dataset.md) | **Done** (2026-06-21) | Unified raw-generation dataset from pool replay or fresh dr-providers runs |
-| 2 | [Parsing](./stage-02-parsing.md) | **Done** (2026-06-21) | code-eval adapter, unit tests, parse CLI, demo (`scripts/demo_stage2.py`) |
-| 3 | [Testing](./stage-03-testing.md) | **Done** (2026-06-21) | nl-code adapter, `TestOutcome`, unit tests, `scripts/test_attempts.py`, `scripts/demo_stage3.py` |
-| 4 | [Analysis](./stage-04-analysis.md) | **Done** (2026-06-21) | zstd22 joins, weighted aggregates, `scripts/analyze_eval_run.py`, marimo notebook |
+| Doc | Topic |
+|-----|-------|
+| [code-eval](../investigation/code-eval.md) | Parse library internals |
+| [nl-code](../investigation/nl-code.md) | Docker test execution |
+| [dr-providers](../investigation/dr-providers.md) | Fresh generation transport |
+| [dr-llm pool](../investigation/dr-llm-humaneval-pool.md) | Pool dump artifacts |
+| [dr-bottleneck](../investigation/dr-bottleneck.md) | Related enc/dec experiments |
 
-Stages 1–4 are implemented export-first (local Parquet/JSONL). Stages 2–3 share the [dr-queues](https://github.com/danielle-rothermel/dr-queues) pipeline runtime when wired at scale (pipeline phase — **next**).
+## Status
 
-**Stage 4 reference:** [Stage 4 handoff](./stage-04-handoff.md) (implementation notes and verification).
-
-## Future (out of initial scope)
-
-Described in [Overview → Future steps](./overview.md#future-steps-out-of-initial-scope):
-
-- dr-bottleneck integration (reuse stages 1–4 at scale)
-- DSPy encoder optimization (compression + correctness objective)
+All initial-scope work is complete: stages 1–4, dr-queues pipeline, proof bar on HumanEval/0–4. Next operational step: full pool replay at tuned worker counts (see runbook).
