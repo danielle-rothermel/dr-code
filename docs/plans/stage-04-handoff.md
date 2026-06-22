@@ -1,12 +1,26 @@
 # Stage 4 handoff — Analysis
 
-Brief context for the agent implementing Stage 4. Read the full design in [stage-04-analysis.md](./stage-04-analysis.md) and [overview.md](./overview.md) first.
+**Status:** Done (2026-06-21). Implementation reference for stage 4; see [stage-04-analysis.md](./stage-04-analysis.md) for design and [overview.md](./overview.md) for pipeline context.
+
+Brief context for agents extending analysis or wiring the pipeline phase. Read the full design in [stage-04-analysis.md](./stage-04-analysis.md) first.
 
 ---
 
-## Your mission
+## Mission (complete)
 
-Build the **offline analysis layer** that joins compression metrics on decoder inputs with test outcomes from stage 3, sliced by experiment metadata (model, source, pool, template, etc.). Stage 4 scope is a deterministic Typer CLI plus a marimo exploration notebook — not live queue/Mongo orchestration (that remains the **pipeline** phase between stages 3 and 4 at scale).
+Build the **offline analysis layer** that joins compression metrics on decoder inputs with test outcomes from stage 3, sliced by experiment metadata (model, source, pool, template, etc.). Delivered as a deterministic Typer CLI plus a marimo exploration notebook — export-first v1. Live queue/Mongo orchestration remains the **pipeline** phase at scale.
+
+### Implemented layout
+
+```text
+src/dr_code/analysis/
+  compress.py       # zstd22 on decoder_input
+  join.py           # AttemptRecord + ParseOutcome + TestOutcome → EnrichedRow
+  aggregate.py      # pass rate by model/source/task/quartile; weighted counts
+  export.py         # Parquet + summary JSON writers
+scripts/analyze_eval_run.py
+nbs/analyze_eval_run.py
+```
 
 ---
 
@@ -98,7 +112,7 @@ These affect how stage 4 should treat outcomes:
 
 ---
 
-## Suggested implementation shape
+## Suggested implementation shape (shipped)
 
 ```text
 src/dr_code/analysis/
@@ -122,9 +136,9 @@ nbs/analyze_eval_run.py       # marimo exploration (loads script exports)
 
 | Dep | Status | Stage 4 usage |
 |-----|--------|---------------|
-| `zstandard` or stdlib | **Not wired yet** | zstd level 22 on `decoder_input` |
-| Stage 3 exports | **Available locally** | `test.jsonl` + attempt parquet + optional `parse.jsonl` |
-| Mongo `eval_results` | **Not wired yet** | Optional `--mongodb-url` later; v1 can be export-first |
+| `zstandard` | **Wired** in `pyproject.toml` | zstd level 22 on `decoder_input` |
+| Stage 3 exports | **Available locally** | `test.jsonl` + attempt parquet + `parse.jsonl` |
+| Mongo `eval_results` | **Not wired yet** | Optional `--mongodb-url` later; v1 is export-first |
 
 Pipeline phase (before large-scale stage 4): wire dr-queues parse → test handlers, Mongo sink, seed CLI — see overview phasing bullets 6–8. Stage 4 v1 can run entirely from JSONL/Parquet exports produced by local CLIs.
 
@@ -153,14 +167,14 @@ Success criteria for stage 4 v1 (export-first):
 
 ---
 
-## Open decisions (resolve during stage 4)
+## Open decisions (resolved in v1)
 
 From [stage-04-analysis.md](./stage-04-analysis.md):
 
-- **Export-first vs live Mongo query:** recommend Parquet snapshot default for notebook reproducibility
-- **Binning:** fixed byte buckets vs per-run quantiles for compression charts
-- **Comparison runs:** convention for two `run_id`s in one notebook
-- **Joint objective preview:** document `pass - λ * compressed_len` scalar for future DSPy — do not optimize yet
+- **Export-first vs live Mongo query:** Parquet snapshot default for notebook reproducibility
+- **Binning:** per-run quantiles (Q1–Q4) on `decoder_input_len_zstd22`
+- **Comparison runs:** single-run v1; multi-run loads multiple enriched Parquet files
+- **Joint objective preview:** documented in summary JSON; not optimized yet
 
 ---
 

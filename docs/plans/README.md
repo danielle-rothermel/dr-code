@@ -15,11 +15,11 @@ Design docs for the compression–correctness evaluation pipeline.
 | 1 | [Generation & dataset](./stage-01-generation-dataset.md) | **Done** (2026-06-21) | Unified raw-generation dataset from pool replay or fresh dr-providers runs |
 | 2 | [Parsing](./stage-02-parsing.md) | **Done** (2026-06-21) | code-eval adapter, unit tests, parse CLI, demo (`scripts/demo_stage2.py`) |
 | 3 | [Testing](./stage-03-testing.md) | **Done** (2026-06-21) | nl-code adapter, `TestOutcome`, unit tests, `scripts/test_attempts.py`, `scripts/demo_stage3.py` |
-| 4 | [Analysis](./stage-04-analysis.md) | Planned | zstd compression joins, aggregates, marimo exploration |
+| 4 | [Analysis](./stage-04-analysis.md) | **Done** (2026-06-21) | zstd22 joins, weighted aggregates, `scripts/analyze_eval_run.py`, marimo notebook |
 
-Implement stages in order. Stages 2–3 share the [dr-queues](https://github.com/danielle-rothermel/dr-queues) pipeline runtime from the initial version (not a later add-on).
+Stages 1–4 are implemented export-first (local Parquet/JSONL). Stages 2–3 share the [dr-queues](https://github.com/danielle-rothermel/dr-queues) pipeline runtime when wired at scale (pipeline phase — **next**).
 
-**Picking up Stage 4?** Start with [Stage 4 handoff](./stage-04-handoff.md).
+**Stage 4 reference:** [Stage 4 handoff](./stage-04-handoff.md) (implementation notes and verification).
 
 ## Future (out of initial scope)
 

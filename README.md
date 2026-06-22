@@ -4,7 +4,34 @@ Research harness for the compression–correctness evaluation pipeline: given a 
 
 Design docs: [docs/plans/README.md](docs/plans/README.md)
 
-**Status:** Stages 1–2 complete. Stage 3 (testing) is next — see [Stage 3 plan](docs/plans/stage-03-testing.md).
+**Status:** Stages 1–4 complete (export-first). Next: [pipeline phase](docs/plans/overview.md#implementation-phasing-suggested) (dr-queues orchestration at scale).
+
+## Stage 4 demo
+
+Join attempt, parse, and test exports; write enriched Parquet, summary JSON, and aggregate tables. Explore in marimo.
+
+```bash
+uv run scripts/analyze_eval_run.py \
+  --attempts exports/demo/pool.parquet \
+  --parse exports/demo/parse.jsonl \
+  --test exports/demo/test.jsonl \
+  --output-dir exports/demo/analysis
+
+uv run marimo run nbs/analyze_eval_run.py
+```
+
+## Stage 3 demo
+
+Batch-test a parse export (requires Docker for live runs):
+
+```bash
+uv run scripts/test_attempts.py \
+  --attempts exports/demo/pool.parquet \
+  --parse exports/demo/parse.jsonl \
+  --output exports/demo/test.jsonl
+
+uv run scripts/demo_stage3.py --show-failure
+```
 
 ## Stage 2 demo
 

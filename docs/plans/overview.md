@@ -139,13 +139,14 @@ Write functional code in Python according to the description.
 | code-eval | `../code-eval` editable, pin `0.1.1` / `v0.1.1-frozen` | **Wired** in `pyproject.toml` | Stage 2 |
 | dr-providers | `../dr-providers` editable, pin `0.1.0` | **Wired** in `pyproject.toml` | Stage 1b |
 | nl-code | `../nl-code` editable, `[docker]` extra | **Wired** in `pyproject.toml` | Stage 3 |
+| zstandard | PyPI | **Wired** in `pyproject.toml` | Stage 4 (zstd level 22 on `decoder_input`) |
 | dr-queues | `../dr-queues` or published | Not wired | Pipeline (stages 2–3 orchestration) |
 
 ---
 
 ## Repository layout (target)
 
-Current layout matches the plan for stages 1–3; `pipeline/` and `analysis/` are not yet implemented.
+Stages 1–4 and `analysis/` are implemented export-first. `pipeline/` (dr-queues orchestration) is not yet implemented.
 
 ```text
 src/dr_code/
@@ -155,7 +156,7 @@ src/dr_code/
   parsing/           # (stage 2) code-eval adapter, ParseOutcome projection
   testing/           # (stage 3) nl-code adapter, TestOutcome projection
   pipeline/          # (stage 2–3) dr-queues workflow defs, handlers, seeding
-  analysis/          # (stage 4) zstd joins, export helpers
+  analysis/          # (stage 4) zstd joins, aggregates, export helpers
 scripts/             # typer CLIs per stage + full eval driver
 configs/             # openrouter_profiles.yaml
 nbs/                 # marimo analysis notebooks
@@ -200,12 +201,12 @@ An agent picking up work should treat each bullet as a plannable phase; details 
 4. ~~**Stage 2 adapter** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; pool_samples fixtures~~ — **Done**
 5. ~~**Stage 3 adapter** — nl-code test adapter + Docker smoke tests + demo/CLI~~ — **Done**
 6. **Pipeline** — dr-queues workflow (parse → test), Mongo sink, seed CLI — **Next**
-7. **Stage 4** — analysis script + marimo notebook on completed run
+7. ~~**Stage 4** — analysis script + marimo notebook on completed run~~ — **Done**
 8. **Documentation** — runbook for local RabbitMQ/Mongo (README updated for stage 1)
 
 Cross-cutting: idempotent Mongo writes keyed by `(run_id, sample_id)`; parse-fail short-circuit to test stage with explicit skip reason.
 
-**Stage 4 entry point:** [Stage 4 handoff](./stage-04-handoff.md)
+**Pipeline entry point:** dr-queues workflow wiring (see stage 2–3 docs for handler contracts). Stage 4 reference: [Stage 4 handoff](./stage-04-handoff.md).
 
 ---
 
