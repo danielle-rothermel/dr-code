@@ -1,6 +1,6 @@
 # Stage 4 — Analysis
 
-[← Overview](./overview.md)
+[← Overview](./overview.md) · **Status:** Done (2026-06-21). Module in `src/dr_code/analysis/`, unit tests, `scripts/analyze_eval_run.py`, and `nbs/analyze_eval_run.py`. Export-first v1; Mongo query deferred to pipeline phase. Next: [pipeline phase](./overview.md#implementation-phasing-suggested).
 
 ## Purpose
 
@@ -59,21 +59,20 @@ From `ParseOutcome`:
 
 ### Bulk processing script
 
-Deterministic CLI (typer) e.g. `scripts/analyze_eval_run.py`:
+Deterministic CLI `scripts/analyze_eval_run.py`:
 
-- Args: `--run-id`, Mongo URL or `--export-path`, output dir
+- Args: `--attempts`, `--parse`, `--test`, `--output-dir` (optional `--limit`)
 - Produces:
-  - Aggregated tables (Parquet/CSV): pass rate by model, source, task, compression quartile
-  - Row-level enriched table: every sample with zstd metrics + test flags + provenance
-  - Summary JSON: headline numbers for run comparison
+  - `enriched.parquet` — row-level table with zstd metrics + test flags + provenance
+  - `summary.json` — headline numbers, parse funnel, join failures, joint-objective preview
+  - `aggregates/*.parquet` — pass rate by source, model, task, compression quartile
 
 ### Marimo notebook
 
-e.g. `nbs/analyze_eval_run.py`:
+`nbs/analyze_eval_run.py`:
 
-- Load enriched table or query Mongo
-- Charts: pass rate vs compressed description size; slices by `provenance.source`
-- Task-level failure inspection (link task id → repeated raw outputs)
+- Loads `exports/demo/analysis/` (or any `--output-dir` from the CLI)
+- Charts: compression vs pass scatter, parse funnel, source comparison, task hardness table
 - Not the source of truth for metrics — script exports are
 
 ---
@@ -107,13 +106,18 @@ e.g. `nbs/analyze_eval_run.py`:
 
 ---
 
-## Open questions
+## Resolved decisions (v1)
 
-- **Export-first vs query Mongo live:** default to Parquet snapshot for notebook reproducibility?
-- **Binning strategy:** fixed byte buckets vs quantiles per run?
-- **Joint objective preview:** single scalar for future DSPy (e.g. `pass - λ * compressed_len`) — document in analysis but don’t optimize yet?
-- **Join failures:** samples in stage 1 export but missing eval results — report in summary?
-- **Comparison runs:** convention for comparing two `run_id`s in one notebook?
+- **Export-first vs query Mongo live:** Parquet/JSONL exports are the default; Mongo `--mongodb-url` deferred.
+- **Binning strategy:** per-run quantiles (Q1–Q4 on `decoder_input_len_zstd22`), stored on enriched rows.
+- **Joint objective preview:** documented in `summary.json` as `pass - λ * compressed_len`; not optimized.
+- **Join failures:** reported in `summary.json` (`join_failures.missing_test_sample_ids`).
+- **Comparison runs:** single-run v1; multi-run comparison loads multiple enriched Parquet files (documented in summary schema note).
+
+## Open questions (deferred)
+
+- Fixed byte buckets as an alternative to per-run quantile binning
+- Side-by-side multi-`run_id` comparison UI in marimo
 
 ---
 
@@ -123,5 +127,7 @@ When encoder optimization lands, stage 4 metrics become the **reporting layer** 
 
 - Same analysis script keyed by optimization trial id
 - Add encoder prompt version / DSPy program hash to provenance dimensions
+- Per-test-case breakdown charts in marimo (failure mode inspection)
+- Mongo live query path when pipeline writes `eval_results`
 
-Not implemented in initial dr-code scope; schema should leave room in `provenance` for extra keys.
+Schema leaves room in `provenance.extra` for additional optimization dimensions.
