@@ -1,51 +1,14 @@
-"""Unit tests for execute_sample_tests containment and classification."""
+"""Unit tests for local fork test execution and classification."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
-from nl_code.code_execution.models import (
-    CodeExecutionInfrastructureError,
-    TestCase,
-    TestCaseResult,
-)
-
 from dr_code.models.outcomes import InfraErrorProjection, TestCaseResultProjection
+from dr_code.testing.bridge import TestCase
 from dr_code.testing.execution import (
     SampleExecutionResult,
     classify_execution_outcome,
     execute_sample_tests,
 )
-
-
-def test_infra_exception_maps_to_structured_infra_result() -> None:
-    exc = CodeExecutionInfrastructureError(
-        stage="docker_timeout",
-        execution_mode="docker_worker",
-        detail="timed out",
-    )
-
-    with patch(
-        "dr_code.testing.execution.run_test_cases",
-        side_effect=exc,
-    ):
-        result = execute_sample_tests(
-            extracted_code="def f():\n    return 1\n",
-            entry_point="f",
-            test_cases=[TestCase(input_value=(), expected_output=1)],
-            timeout_seconds=1.0,
-            docker_image=None,
-            sample_id="sample-1",
-        )
-
-    assert result.outcome_kind == "infra_error"
-    assert result.test_case_results == ()
-    assert result.test_pass_rate is None
-    assert result.infra_error == InfraErrorProjection(
-        stage="docker_timeout",
-        execution_mode="docker_worker",
-        detail="timed out",
-    )
 
 
 def test_heuristic_reclassification_promotes_shared_worker_error() -> None:
@@ -90,49 +53,14 @@ def test_distinct_compile_errors_stay_tested() -> None:
     assert classified.outcome_kind == "tested"
 
 
-def test_unexpected_exception_returns_internal_error() -> None:
-    with patch(
-        "dr_code.testing.execution.run_test_cases",
-        side_effect=RuntimeError("boom"),
-    ):
-        result = execute_sample_tests(
-            extracted_code="def f():\n    return 1\n",
-            entry_point="f",
-            test_cases=[TestCase(input_value=(), expected_output=1)],
-            timeout_seconds=1.0,
-            docker_image=None,
-            sample_id="sample-2",
-        )
-
-    assert result.outcome_kind == "internal_error"
-    assert result.test_case_results == ()
-    assert result.test_pass_rate is None
-    assert result.internal_error is not None
-    assert "RuntimeError: boom" in result.internal_error
-
-
 def test_successful_execution_returns_tested_with_results() -> None:
-    fake_results = [
-        TestCaseResult(
-            input_value=(1, 2),
-            expected_output=3,
-            actual_output=3,
-            passed=True,
-        ),
-    ]
-
-    with patch(
-        "dr_code.testing.execution.run_test_cases",
-        return_value=(fake_results, 1.0),
-    ):
-        result = execute_sample_tests(
-            extracted_code="def add(a, b):\n    return a + b\n",
-            entry_point="add",
-            test_cases=[TestCase(input_value=(1, 2), expected_output=3)],
-            timeout_seconds=1.0,
-            docker_image=None,
-            sample_id="sample-3",
-        )
+    result = execute_sample_tests(
+        extracted_code="def add(a, b):\n    return a + b\n",
+        entry_point="add",
+        test_cases=[TestCase(input_value=(1, 2), expected_output=3)],
+        timeout_seconds=1.0,
+        sample_id="sample-3",
+    )
 
     assert result.outcome_kind == "tested"
     assert result.test_pass_rate == 1.0
@@ -140,23 +68,91 @@ def test_successful_execution_returns_tested_with_results() -> None:
     assert result.infra_error is None
 
 
-def test_infra_result_never_sets_pass_rate() -> None:
-    exc = CodeExecutionInfrastructureError(
-        stage="docker_unavailable",
-        execution_mode="docker_worker",
-        detail="daemon down",
+def test_syntax_error_returns_per_case_failures() -> None:
+    result = execute_sample_tests(
+        extracted_code="def nope(:\n    return 1\n",
+        entry_point="nope",
+        test_cases=[TestCase(input_value=(), expected_output=1)],
+        timeout_seconds=1.0,
+        sample_id="syntax-error",
     )
-    with patch(
-        "dr_code.testing.execution.run_test_cases",
-        side_effect=exc,
-    ):
-        result = execute_sample_tests(
-            extracted_code="pass",
-            entry_point="f",
-            test_cases=[TestCase(input_value=(), expected_output=1)],
-            timeout_seconds=1.0,
-            docker_image=None,
-            sample_id="sample-4",
-        )
+
+    assert result.outcome_kind == "tested"
+    assert result.test_pass_rate == 0.0
+    assert result.test_case_results[0].compile_success is False
+    assert result.test_case_results[0].compile_error is not None
+
+
+def test_execution_resets_namespace_between_samples() -> None:
+    code = (
+        "counter = 0\n"
+        "def value():\n"
+        "    global counter\n"
+        "    counter += 1\n"
+        "    return counter\n"
+    )
+    first = execute_sample_tests(
+        extracted_code=code,
+        entry_point="value",
+        test_cases=[
+            TestCase(input_value=(), expected_output=1),
+            TestCase(input_value=(), expected_output=2),
+        ],
+        timeout_seconds=1.0,
+        sample_id="namespace-reset-1",
+    )
+    second = execute_sample_tests(
+        extracted_code=code,
+        entry_point="value",
+        test_cases=[TestCase(input_value=(), expected_output=1)],
+        timeout_seconds=1.0,
+        sample_id="namespace-reset-2",
+    )
+
+    assert first.outcome_kind == "tested"
+    assert first.test_pass_rate == 1.0
+    assert [case.actual_output for case in first.test_case_results] == [1, 2]
+    assert second.outcome_kind == "tested"
+    assert second.test_pass_rate == 1.0
+    assert [case.actual_output for case in second.test_case_results] == [1]
+
+
+def test_printed_output_does_not_corrupt_worker_payload() -> None:
+    result = execute_sample_tests(
+        extracted_code=(
+            "def noisy(x):\n"
+            "    print('hello from candidate')\n"
+            "    return x\n"
+        ),
+        entry_point="noisy",
+        test_cases=[TestCase(input_value=(3,), expected_output=3)],
+        timeout_seconds=1.0,
+        sample_id="noisy",
+    )
+
+    assert result.outcome_kind == "tested"
+    assert result.test_pass_rate == 1.0
+
+
+def test_timeout_maps_to_structured_infra_result() -> None:
+    result = execute_sample_tests(
+        extracted_code=(
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n"
+        ),
+        entry_point="spin",
+        test_cases=[TestCase(input_value=(), expected_output=1)],
+        timeout_seconds=0.1,
+        sample_id="timeout",
+    )
+
     assert isinstance(result, SampleExecutionResult)
+    assert result.outcome_kind == "infra_error"
+    assert result.test_case_results == ()
     assert result.test_pass_rate is None
+    assert result.infra_error == InfraErrorProjection(
+        stage="worker_timeout",
+        execution_mode="local_fork_worker",
+        detail="worker timed out after 0.1s",
+    )

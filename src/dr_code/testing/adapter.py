@@ -11,9 +11,15 @@ from dr_code.models.outcomes import (
     TestOutcome,
     TestOutcomeKind,
 )
-from dr_code.testing.config import default_docker_image, default_timeout_seconds
-from dr_code.testing.execution import SampleExecutionResult, execute_sample_tests
-from dr_code.testing.bridge import load_test_cases, supports_function_call_tests
+from dr_code.testing.config import default_timeout_seconds
+from dr_code.testing.execution import (
+    SampleExecutionResult,
+    execute_sample_tests,
+)
+from dr_code.testing.bridge import (
+    load_test_cases,
+    supports_function_call_tests,
+)
 
 _SKIP_PARSE_FAILED = "parse_failed"
 _SKIP_UNSUPPORTED_TEST = "unsupported_test_shape"
@@ -25,16 +31,12 @@ def test_parsed_sample(
     *,
     task: HumanEvalPlusTask | None = None,
     timeout_seconds: float | None = None,
-    docker_image: str | None = None,
 ) -> TestOutcome:
     """Run HumanEval+ tests for one parsed sample or emit an explicit skip."""
     active_timeout = (
         timeout_seconds
         if timeout_seconds is not None
         else default_timeout_seconds()
-    )
-    active_image = (
-        docker_image if docker_image is not None else default_docker_image()
     )
     base = _base_outcome(record, parse_outcome)
 
@@ -77,7 +79,6 @@ def test_parsed_sample(
         entry_point=record.entry_point,
         test_cases=load_test_cases(resolved_task),
         timeout_seconds=active_timeout,
-        docker_image=active_image,
         sample_id=record.sample_id,
     )
     return _project_execution(

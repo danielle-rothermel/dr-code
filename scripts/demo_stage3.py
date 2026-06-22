@@ -16,13 +16,16 @@ from dr_code.models.attempts import (
     AttemptSource,
     compute_sample_id,
 )
-from dr_code.models.outcomes import ParseOutcome
+from dr_code.models.outcomes import ParseOutcome, TestOutcome
 from dr_code.parsing.adapter import parse_attempt
 from dr_code.parsing.config import config_fingerprint
 from dr_code.parsing.display import format_parse_walkthrough
 from dr_code.testing.adapter import test_parsed_sample
-from dr_code.testing.bridge import load_test_cases, supports_function_call_tests
-from dr_code.testing.config import default_docker_image, default_timeout_seconds
+from dr_code.testing.bridge import (
+    load_test_cases,
+    supports_function_call_tests,
+)
+from dr_code.testing.config import default_timeout_seconds
 from dr_code.testing.display import (
     format_eval_result_reference,
     format_outcome_banner,
@@ -62,7 +65,9 @@ def _select_record(
         msg = f"No records found for task_id={task_id!r} in input export"
         raise typer.BadParameter(msg)
     if index < 0 or index >= len(matches):
-        msg = f"--index {index} out of range for {len(matches)} matching row(s)"
+        msg = (
+            f"--index {index} out of range for {len(matches)} matching row(s)"
+        )
         raise typer.BadParameter(msg)
     return matches[index]
 
@@ -100,8 +105,7 @@ def _print_mongo_commands(
 ) -> None:
     typer.echo("")
     typer.echo(
-        "Reference eval_results document shape "
-        "(from this demo's TestOutcome):"
+        "Reference eval_results document shape (from this demo's TestOutcome):"
     )
     typer.echo(outcome_json)
     typer.echo("")
@@ -118,7 +122,9 @@ def _print_mongo_commands(
         f")'"
     )
     typer.echo("")
-    typer.echo("# Query projected eval result (future eval_results collection)")
+    typer.echo(
+        "# Query projected eval result (future eval_results collection)"
+    )
     typer.echo(
         f"mongosh {mongodb_url} \\\n"
         f"  --eval 'db.eval_results.findOne("
@@ -136,7 +142,7 @@ def _run_walkthrough(
     record: AttemptRecord,
     *,
     label: str | None = None,
-) -> tuple[ParseOutcome, object]:
+) -> tuple[ParseOutcome, TestOutcome]:
     if label is not None:
         _section(label)
 
@@ -173,11 +179,10 @@ def _run_walkthrough(
     typer.echo(format_parse_walkthrough(record, parse_outcome))
 
     _section("Stage 3 — Run tests")
-    typer.echo("One Docker container per sample (run_test_cases).")
-    typer.echo(f"docker_image: {default_docker_image()}")
+    typer.echo("One local fork worker per sample.")
     typer.echo(f"timeout_seconds: {default_timeout_seconds()}")
     if not parse_outcome.parse_success:
-        typer.echo("Parse failed — test stage will skip Docker.")
+        typer.echo("Parse failed — test stage will skip execution.")
 
     test_outcome = test_parsed_sample(record, parse_outcome, task=task)
 

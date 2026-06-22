@@ -14,7 +14,11 @@ from dr_code.pipeline.runner import (
     new_run_id,
     run_eval_pipeline,
 )
-from dr_code.pipeline.seed import DEFAULT_DUMP_DIR, DEFAULT_PROOF_INDICES, load_proof_attempts
+from dr_code.pipeline.seed import (
+    DEFAULT_DUMP_DIR,
+    DEFAULT_PROOF_INDICES,
+    load_proof_attempts,
+)
 
 app = typer.Typer(add_completion=False)
 

@@ -26,7 +26,11 @@ from dr_code.pipeline.definition import build_eval_pipeline
 from dr_code.pipeline.export import RunExportPaths, export_run_artifacts
 from dr_code.pipeline.handlers import registry
 from dr_code.pipeline.jobs import build_seed_jobs
-from dr_code.pipeline.report import ProofReport, build_proof_report, format_proof_summary
+from dr_code.pipeline.report import (
+    ProofReport,
+    build_proof_report,
+    format_proof_summary,
+)
 
 DEFAULT_HANDLERS_MODULE = "dr_code.pipeline.handlers"
 DEFAULT_WORKERS = "parse=2,test=1"
@@ -61,7 +65,9 @@ def run_eval_pipeline(
     """Seed, execute, export, and report on an eval pipeline run."""
     resolved_run_id = run_id or new_run_id()
     pipeline = build_eval_pipeline(registry)
-    workers_by_stage = parse_workers_arg(workers, pipeline.step_names(), default=2)
+    workers_by_stage = parse_workers_arg(
+        workers, pipeline.step_names(), default=2
+    )
     jobs = build_seed_jobs(attempts, run_id=resolved_run_id)
     expected_jobs = len(jobs)
 
@@ -115,7 +121,9 @@ def run_eval_pipeline(
         raise ValueError(msg)
 
     wall_seconds = time.perf_counter() - started
-    events = filter_run_events(event_sink.read_by_run_id(resolved_run_id), resolved_run_id)
+    events = filter_run_events(
+        event_sink.read_by_run_id(resolved_run_id), resolved_run_id
+    )
     export_paths = export_run_artifacts(
         run_id=resolved_run_id,
         attempts=attempts,
@@ -137,7 +145,9 @@ def run_eval_pipeline(
     proof_report.write_json(report_path)
     event_sink.close()
 
-    terminals = [event for event in events if event.event == EventKind.TERMINAL]
+    terminals = [
+        event for event in events if event.event == EventKind.TERMINAL
+    ]
     if len(terminals) != expected_jobs:
         msg = (
             f"Terminal count mismatch: {len(terminals)} != {expected_jobs} "
@@ -174,11 +184,15 @@ def _load_outcomes_from_export(
     parse_outcomes: list[ParseOutcome] = []
     test_outcomes: list[TestOutcome] = []
     if export_paths.parse_jsonl.is_file():
-        for line in export_paths.parse_jsonl.read_text(encoding="utf-8").splitlines():
+        for line in export_paths.parse_jsonl.read_text(
+            encoding="utf-8"
+        ).splitlines():
             if line.strip():
                 parse_outcomes.append(ParseOutcome.model_validate_json(line))
     if export_paths.test_jsonl.is_file():
-        for line in export_paths.test_jsonl.read_text(encoding="utf-8").splitlines():
+        for line in export_paths.test_jsonl.read_text(
+            encoding="utf-8"
+        ).splitlines():
             if line.strip():
                 test_outcomes.append(TestOutcome.model_validate_json(line))
     return parse_outcomes, test_outcomes

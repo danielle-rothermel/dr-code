@@ -83,7 +83,9 @@ def format_proof_summary(report: ProofReport) -> str:
     for stage, rate in payload["throughput"]["by_stage"].items():
         lines.append(f"  {stage}_samples_per_second={rate:.3f}")
     lines.append("outcome_kind_counts:")
-    for kind, count in sorted(payload["outcomes"]["outcome_kind_counts"].items()):
+    for kind, count in sorted(
+        payload["outcomes"]["outcome_kind_counts"].items()
+    ):
         lines.append(f"  {kind}={count}")
     return "\n".join(lines)
 
@@ -93,7 +95,10 @@ def _stage_timing(events: list[PipelineEvent]) -> dict[tuple[str, str], float]:
     started: dict[tuple[str, str], datetime] = {}
     latency: dict[tuple[str, str], float] = {}
     for event in events:
-        if event.event not in {EventKind.STAGE_STARTED, EventKind.STAGE_OUTPUT}:
+        if event.event not in {
+            EventKind.STAGE_STARTED,
+            EventKind.STAGE_OUTPUT,
+        }:
             continue
         key = (event.job_id, event.stage)
         ts = datetime.fromisoformat(event.timestamp)

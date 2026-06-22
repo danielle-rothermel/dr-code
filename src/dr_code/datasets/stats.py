@@ -97,7 +97,9 @@ def _preview_record(
         "task_id": record.task_id,
         "source": record.provenance.source.value,
         "occurrence_count": record.provenance.occurrence_count,
-        "decoder_input_preview": _truncate(record.decoder_input, preview_chars),
+        "decoder_input_preview": _truncate(
+            record.decoder_input, preview_chars
+        ),
         "raw_output_preview": _truncate(record.raw_output, preview_chars),
     }
 

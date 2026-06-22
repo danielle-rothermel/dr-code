@@ -22,7 +22,9 @@ class PreflightReport:
 
     def raise_if_failed(self) -> None:
         if not self.ok:
-            msg = "Pre-flight failed:\n" + "\n".join(f"  - {e}" for e in self.errors)
+            msg = "Pre-flight failed:\n" + "\n".join(
+                f"  - {e}" for e in self.errors
+            )
             raise RuntimeError(msg)
 
 
@@ -30,12 +32,17 @@ def run_preflight(
     *,
     dump_dir: Path | str = DEFAULT_DUMP_DIR,
     task_indices: list[int] | tuple[int, ...] = DEFAULT_PROOF_INDICES,
-    require_docker: bool = True,
+    require_docker: bool = False,
     require_dump: bool = True,
 ) -> PreflightReport:
-    """Verify RabbitMQ, Mongo, Docker, and dump artifacts."""
+    """Verify RabbitMQ, Mongo, and dump artifacts."""
     report = PreflightReport(ok=True)
-    _check_tcp("RabbitMQ", os.environ.get("AMQP_URL", "amqp://guest:guest@localhost:5672/"), 5672, report)
+    _check_tcp(
+        "RabbitMQ",
+        os.environ.get("AMQP_URL", "amqp://guest:guest@localhost:5672/"),
+        5672,
+        report,
+    )
     _check_tcp(
         "MongoDB",
         os.environ.get("MONGODB_URL", "mongodb://localhost:27017/dr_queues"),
@@ -50,7 +57,9 @@ def run_preflight(
     return report
 
 
-def _check_tcp(label: str, url: str, default_port: int, report: PreflightReport) -> None:
+def _check_tcp(
+    label: str, url: str, default_port: int, report: PreflightReport
+) -> None:
     parsed = urlparse(url.replace("amqp://", "http://"))
     host = parsed.hostname or "localhost"
     port = parsed.port or default_port
@@ -74,7 +83,9 @@ def _check_docker(report: PreflightReport) -> None:
         check=False,
     )
     if result.returncode != 0:
-        report.errors.append("docker daemon not available (docker info failed)")
+        report.errors.append(
+            "docker daemon not available (docker info failed)"
+        )
     else:
         report.checks.append("Docker daemon available")
 

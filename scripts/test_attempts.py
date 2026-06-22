@@ -12,7 +12,7 @@ from dr_code.datasets.export import read_attempts
 from dr_code.models.attempts import AttemptRecord
 from dr_code.models.outcomes import ParseOutcome, TestOutcome
 from dr_code.testing.adapter import missing_parse_outcome, test_parsed_sample
-from dr_code.testing.config import default_docker_image, default_timeout_seconds
+from dr_code.testing.config import default_timeout_seconds
 
 app = typer.Typer(add_completion=False)
 
@@ -129,7 +129,6 @@ def main(
     typer.echo(f"  tested_fail: {tested_fail}")
     typer.echo(f"  infra_error: {counts['infra_error']}")
     typer.echo(f"  internal_error: {counts['internal_error']}")
-    typer.echo(f"  docker_image: {default_docker_image()}")
     typer.echo(f"  timeout_seconds: {default_timeout_seconds()}")
     typer.echo(f"Wrote {output_path}")
 

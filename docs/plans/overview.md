@@ -7,7 +7,7 @@
 It connects historical and fresh decoder outputs to:
 
 1. **Parsing** — recover valid Python from messy LLM text (code-eval)
-2. **Testing** — run HumanEval+ cases in Docker (nl-code)
+2. **Testing** — run HumanEval+ cases in local fork workers
 3. **Analysis** — relate description compression (zstd22) to test outcomes, sliced by experiment metadata
 
 Ultimate downstream goal (not in initial scope): **DSPy optimization of encoder prompts** for the joint compression + correctness objective. dr-bottleneck will later adopt the same stage contracts for large-scale enc/dec runs.
@@ -31,7 +31,7 @@ Background: [Investigation synthesis](../investigation/synthesis.md). Operations
 ┌─────────────────────────────────────────────────────────────────┐
 │ Stages 2–3 — Eval pipeline (dr-queues)                           │
 │  parse queue → code-eval workers (in-process)                    │
-│  test queue  → Docker workers (nl-code, one container per sample)  │
+│  test queue  → local fork workers (one child process per sample)   │
 │  → pipeline_events + eval_results (Mongo) + file exports         │
 └────────────────────────────┬────────────────────────────────────┘
                              │
@@ -82,9 +82,9 @@ Turn `raw_output` into **ParseOutcome** via code-eval `EXTRACTION_CONFIG` (no su
 
 ## Stage 3 — Testing
 
-Run HumanEval+ functional tests on extracted code via nl-code Docker execution.
+Run HumanEval+ functional tests on extracted code via local fork execution.
 
-**TestOutcome** uses authoritative `outcome_kind`: `tested` | `skipped` | `infra_error` | `internal_error`. Per-case results only when `tests_ran=true`. v1: one Docker container per sample.
+**TestOutcome** uses authoritative `outcome_kind`: `tested` | `skipped` | `infra_error` | `internal_error`. Per-case results only when `tests_ran=true`. v1: one forked child process per sample.
 
 **Scripts:** `test_attempts.py`, `demo_stage3.py`  
 **Modules:** `dr_code.testing.*`  
@@ -132,12 +132,12 @@ See [Pipeline runbook](./pipeline-runbook.md) for commands, proof acceptance, an
 ## Major design decisions
 
 1. **Unified `AttemptRecord`** for pool and fresh sources — slice on `provenance.source`, never merge pass rates blindly.
-2. **Lightweight HumanEval+ loader in dr-code** — nl-code for execution only.
+2. **Lightweight HumanEval+ loader in dr-code** — snapshot-first, offline-capable.
 3. **code-eval `EXTRACTION_CONFIG`** — not `DEFAULT_CONFIG` at pool scale; use `best_valid_source()` for selection.
 4. **dr-providers for fresh generation only** — DSPy deferred.
 5. **Stub-as-description for v1 fresh runs** — official prompt stub, not encoder output.
 6. **dr-queues + Mongo from v1** — not a throwaway prototype.
-7. **nl-code for Docker execution only** — do not reimplement HumanEval+ testing.
+7. **Local fork execution** — reset candidate state by child process exit, not Docker container teardown.
 8. **Dedup-aware seeding** — `occurrence_count` preserved for weighted analysis.
 9. **Transport-agnostic schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome` independent of queue layout.
 10. **Analysis offline** — export-first; repeatable without live infrastructure.
@@ -167,7 +167,6 @@ Extend code-eval upstream for behavior gaps; do not fork parse logic into dr-cod
 |---------|--------|---------|
 | code-eval | `../code-eval` editable, `0.1.1` | Stage 2 |
 | dr-providers | `../dr-providers` editable, `0.1.0` | Stage 1b |
-| nl-code `[docker]` | `../nl-code` editable | Stage 3 |
 | dr-queues | `../dr-queues` editable | Pipeline |
 | zstandard | PyPI | Stage 4 |
 
@@ -181,7 +180,7 @@ src/dr_code/
   generation/        # dr-providers batch runner
   models/            # AttemptRecord, ParseOutcome, TestOutcome
   parsing/           # code-eval adapter
-  testing/           # nl-code adapter
+  testing/           # HumanEval test parser and local fork runner
   pipeline/          # dr-queues workflow, handlers, tune, export, report
   analysis/          # zstd joins, aggregates
 scripts/             # typer CLIs per stage + pipeline + tune
@@ -238,7 +237,7 @@ Prerequisites: `fresh_encoded` generation mode, train/dev/eval splits.
 |----------|------------|
 | Mongo layout | Both `pipeline_events` and `eval_results` |
 | dr-queues dep | Editable path on `../dr-queues` |
-| Test parallelism | One container per sample; tune `test` worker count empirically |
+| Test parallelism | One child process per sample; tune `test` worker count empirically |
 | Run manifest | `.runs/{run_id}/manifest.json` (dr-queues convention) |
 | Parse failures | Forward to test with skip; handler catches code-eval exceptions |
 | Analysis input | Export-first Parquet/JSONL; Mongo query optional later |

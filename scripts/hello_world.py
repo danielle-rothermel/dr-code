@@ -1,6 +1,6 @@
 import typer
 
-from workspace import hello
+from dr_code import hello
 
 
 def main(name: str = typer.Option(..., "--name")) -> None:

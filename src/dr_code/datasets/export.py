@@ -8,7 +8,11 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from dr_code.models.attempts import AttemptProvenance, AttemptRecord, AttemptSource
+from dr_code.models.attempts import (
+    AttemptProvenance,
+    AttemptRecord,
+    AttemptSource,
+)
 
 
 def write_attempts(records: list[AttemptRecord], path: Path | str) -> Path:
@@ -71,9 +75,15 @@ def _row_to_record(row: dict[str, object]) -> AttemptRecord:
         source=AttemptSource(str(row["provenance_source"])),
         model=_optional_str(row.get("provenance_model")),
         pool_name=_optional_str(row.get("provenance_pool_name")),
-        prompt_template_id=_optional_str(row.get("provenance_prompt_template_id")),
-        enc_llm_config_id=_optional_str(row.get("provenance_enc_llm_config_id")),
-        dec_llm_config_id=_optional_str(row.get("provenance_dec_llm_config_id")),
+        prompt_template_id=_optional_str(
+            row.get("provenance_prompt_template_id")
+        ),
+        enc_llm_config_id=_optional_str(
+            row.get("provenance_enc_llm_config_id")
+        ),
+        dec_llm_config_id=_optional_str(
+            row.get("provenance_dec_llm_config_id")
+        ),
         occurrence_count=_optional_int(
             row.get("provenance_occurrence_count"),
             default=1,

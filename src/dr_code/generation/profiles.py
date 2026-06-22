@@ -64,7 +64,9 @@ def resolve_profile(
 ) -> ResolvedProfile:
     """Resolve a profile id to dr-providers call settings."""
     resolved_path = (
-        Path(profiles_path) if profiles_path is not None else default_profiles_path()
+        Path(profiles_path)
+        if profiles_path is not None
+        else default_profiles_path()
     )
     config = load_profiles(resolved_path)
     profiles = config.get("profiles", {})
@@ -96,7 +98,9 @@ def resolve_profile(
     )
 
 
-def _reasoning_from_profile(profile_config: dict[str, Any]) -> ReasoningSpec | None:
+def _reasoning_from_profile(
+    profile_config: dict[str, Any],
+) -> ReasoningSpec | None:
     if profile_config.get("reasoning_disabled"):
         return ReasoningSpec(enabled=False)
     effort = profile_config.get("effort")

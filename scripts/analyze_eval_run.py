@@ -64,23 +64,14 @@ def main(
     artifacts = export_analysis(enriched, summary, aggregates, output_dir)
 
     typer.echo(f"Analyzed {join_report.attempt_count} attempt(s)")
-    typer.echo(
-        "  outcome_kind_counts: "
-        f"{summary['outcome_kind_counts']}"
-    )
-    typer.echo(
-        "  correctness_pass_rate: "
-        f"{summary['correctness_pass_rate']}"
-    )
+    typer.echo(f"  outcome_kind_counts: {summary['outcome_kind_counts']}")
+    typer.echo(f"  correctness_pass_rate: {summary['correctness_pass_rate']}")
     typer.echo(
         "  correctness_pass_rate_weighted: "
         f"{summary['correctness_pass_rate_weighted']}"
     )
     join_failures = summary["join_failures"]
-    typer.echo(
-        "  missing_test: "
-        f"{join_failures['missing_test_count']}"
-    )
+    typer.echo(f"  missing_test: {join_failures['missing_test_count']}")
     typer.echo(f"Wrote {artifacts.enriched_path}")
     typer.echo(f"Wrote {artifacts.summary_path}")
 

@@ -7,15 +7,13 @@ from pathlib import Path
 from statistics import median
 from typing import TypeVar
 
-from pydantic import BaseModel
-
 from dr_code.analysis.compress import decoder_input_compression
 from dr_code.datasets.export import read_attempts
 from dr_code.models.attempts import AttemptRecord
 from dr_code.models.base import FrozenModel
 from dr_code.models.outcomes import ParseOutcome, TestOutcome
 
-_TModel = TypeVar("_TModel", bound=BaseModel)
+_TOutcome = TypeVar("_TOutcome", ParseOutcome, TestOutcome)
 
 
 class JoinReport(FrozenModel):
@@ -149,14 +147,15 @@ def enrich_eval_run(
     return rows, report
 
 
-def _load_jsonl_outcomes(path: Path, model: type[_TModel]) -> dict[str, _TModel]:
-    by_sample_id: dict[str, _TModel] = {}
+def _load_jsonl_outcomes(
+    path: Path, model: type[_TOutcome]
+) -> dict[str, _TOutcome]:
+    by_sample_id: dict[str, _TOutcome] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         outcome = model.model_validate(json.loads(line))
-        sample_id = str(outcome.sample_id)  # type: ignore[attr-defined]
-        by_sample_id[sample_id] = outcome
+        by_sample_id[outcome.sample_id] = outcome
     return by_sample_id
 
 
@@ -190,7 +189,9 @@ def _run_ids_compatible(left: str | None, right: str | None) -> bool:
     return left == right
 
 
-def _assign_compression_quartiles(rows: list[EnrichedRow]) -> list[EnrichedRow]:
+def _assign_compression_quartiles(
+    rows: list[EnrichedRow],
+) -> list[EnrichedRow]:
     if not rows:
         return rows
     values = [row.decoder_input_len_zstd22 for row in rows]
@@ -208,7 +209,9 @@ def _assign_compression_quartiles(rows: list[EnrichedRow]) -> list[EnrichedRow]:
             quartile = "Q3"
         else:
             quartile = "Q4"
-        labeled.append(row.model_copy(update={"compression_quartile": quartile}))
+        labeled.append(
+            row.model_copy(update={"compression_quartile": quartile})
+        )
     return labeled
 
 
