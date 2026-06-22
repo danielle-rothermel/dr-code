@@ -79,6 +79,9 @@ def format_parse_walkthrough(
                 "",
                 "code_eval provenance:",
                 f"  config_fingerprint: {prov.config_fingerprint}",
+                f"  selected_candidate_id: {prov.selected_candidate_id}",
+                f"  selected_attempt_id: {prov.selected_attempt_id}",
+                f"  recovery_attempt_count: {prov.recovery_attempt_count}",
             ]
         )
         if prov.extractor_path is not None:

@@ -42,19 +42,23 @@ def project_validation_result(
     latency_ms: float | None = None,
 ) -> ParseOutcome:
     """Map a code-eval ValidationResult onto ParseOutcome."""
-    parse_success = result.overall_success
-    extracted_code = result.best_valid_source()
+    recovery = result.recovery
+    parse_success = recovery.overall_success
+    extracted_code = recovery.selected_source()
     code_eval_prov: CodeEvalProvenance | None = None
     skip_reason: str | None = None
 
     if parse_success:
-        best = result.best_valid_candidate()
+        best = recovery.selected_candidate()
         code_eval_prov = CodeEvalProvenance(
             config_fingerprint=result.config_fingerprint,
+            selected_candidate_id=recovery.selection.best_candidate_id,
+            selected_attempt_id=recovery.selection.best_attempt_id,
+            recovery_attempt_count=len(recovery.attempts),
             extractor_path=best.extractor_path if best is not None else None,
             repairs_applied=best.repairs_applied if best is not None else None,
             extraction_log_summary=_summarize_extraction_log(
-                result.extraction_log
+                result.extraction.extraction_log
             ),
         )
     else:
@@ -66,8 +70,8 @@ def project_validation_result(
         task_id=record.task_id,
         parse_success=parse_success,
         extracted_code=extracted_code,
-        candidate_count=len(result.candidates),
-        valid_count=len(result.valid_candidates),
+        candidate_count=len(recovery.candidates),
+        valid_count=len(recovery.valid_candidates),
         code_eval=code_eval_prov,
         skip_reason=skip_reason,
         latency_ms=latency_ms,

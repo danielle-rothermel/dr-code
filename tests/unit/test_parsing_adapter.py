@@ -70,6 +70,9 @@ def test_pool_samples_match_expect_success(row: dict[str, object]) -> None:
         assert outcome.skip_reason is None
         assert outcome.code_eval is not None
         assert outcome.code_eval.config_fingerprint
+        assert outcome.code_eval.selected_candidate_id
+        assert outcome.code_eval.selected_attempt_id
+        assert outcome.code_eval.recovery_attempt_count > 0
     else:
         assert outcome.extracted_code is None
         assert outcome.skip_reason == "no_valid_candidate"
@@ -129,5 +132,8 @@ def test_projection_sanity_on_success() -> None:
     assert outcome.candidate_count >= outcome.valid_count
     assert outcome.code_eval is not None
     assert outcome.code_eval.config_fingerprint
+    assert outcome.code_eval.selected_candidate_id
+    assert outcome.code_eval.selected_attempt_id
+    assert outcome.code_eval.recovery_attempt_count > 0
     assert result.normalizations == {}
     assert validator.config is EXTRACTION_CONFIG

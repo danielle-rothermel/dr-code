@@ -18,6 +18,9 @@ class CodeEvalProvenance(FrozenModel):
     """Slim code-eval provenance projected from ValidationResult."""
 
     config_fingerprint: str
+    selected_candidate_id: str | None = None
+    selected_attempt_id: str | None = None
+    recovery_attempt_count: int = 0
     extractor_path: tuple[str, ...] | None = None
     repairs_applied: tuple[str, ...] | None = None
     extraction_log_summary: tuple[str, ...] | None = None

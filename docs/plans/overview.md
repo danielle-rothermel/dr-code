@@ -70,7 +70,7 @@ Future: `fresh_encoded` — real encoder output at a budget (for DSPy and pool-c
 
 Turn `raw_output` into **ParseOutcome** via code-eval `EXTRACTION_CONFIG` (no subprocess normalizers at pool scale).
 
-- Call `LLMCodeValidator.validate()` → project with `best_valid_source()` / `best_valid_candidate()`
+- Call `LLMCodeValidator.validate()` → project with `result.recovery.selected_source()` / `selected_candidate()`
 - Parse handler catches exceptions (e.g. oversized samples) and records `parse_success=false` instead of requeue loops
 - Always forward to test stage; test emits explicit skip when parse failed
 
@@ -141,7 +141,7 @@ joins. The log is in `.scratch/eval-run-lifecycle/manual-testing-2026-06-22.md`.
 
 1. **Unified `AttemptRecord`** for pool and fresh sources — slice on `provenance.source`, never merge pass rates blindly.
 2. **Lightweight HumanEval+ loader in dr-code** — snapshot-first, offline-capable.
-3. **code-eval `EXTRACTION_CONFIG`** — not `DEFAULT_CONFIG` at pool scale; use `best_valid_source()` for selection.
+3. **code-eval `EXTRACTION_CONFIG`** — not `DEFAULT_CONFIG` at pool scale; use `result.recovery.selected_source()` for selection.
 4. **dr-providers for fresh generation only** — DSPy deferred.
 5. **Stub-as-description for v1 fresh runs** — official prompt stub, not encoder output.
 6. **dr-queues + Mongo from v1** — not a throwaway prototype.
@@ -154,13 +154,13 @@ joins. The log is in `.scratch/eval-run-lifecycle/manual-testing-2026-06-22.md`.
 
 ## code-eval integration
 
-Frozen at **`v0.1.1`** / tag **`v0.1.1-frozen`** on sibling `../code-eval`. Path dep in `pyproject.toml` (PyPI deferred — name conflict).
+Frozen at **`v0.2.0`** / tag **`v0.2.0-frozen`** on sibling `../code-eval`. Path dep in `pyproject.toml` (PyPI deferred — name conflict).
 
 | Requirement | How dr-code uses it |
 |-------------|---------------------|
 | Pool-scale parse | `EXTRACTION_CONFIG` (`normalizers=()`) |
-| Best extracted code | `ValidationResult.best_valid_source()` |
-| Provenance | Project from `best_valid_candidate()` into `ParseOutcome.code_eval` |
+| Best extracted code | `ValidationResult.recovery.selected_source()` |
+| Provenance | Project from `recovery.selected_candidate()` and `recovery.selection` into `ParseOutcome.code_eval` |
 | Slim storage | Store `ParseOutcome`, not full `ValidationResult` |
 
 **Ruff override:** dr-code uses `ruff>=0.15.18` via `[tool.uv] override-dependencies`; safe because `EXTRACTION_CONFIG` skips normalization subprocesses.
@@ -173,7 +173,7 @@ Extend code-eval upstream for behavior gaps; do not fork parse logic into dr-cod
 
 | Package | Source | Used in |
 |---------|--------|---------|
-| code-eval | `../code-eval` editable, `0.1.1` | Stage 2 |
+| code-eval | `../code-eval` editable, `0.2.0` | Stage 2 |
 | dr-providers | `../dr-providers` editable, `0.1.0` | Stage 1b |
 | dr-queues | `../dr-queues` editable | Pipeline |
 | zstandard | PyPI | Stage 4 |
