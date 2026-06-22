@@ -130,12 +130,12 @@ class EvalRunMetadataStore:
         if overwrite:
             self._collection.replace_one(
                 {"run_id": run_id},
-                document,
+                document.copy(),
                 upsert=True,
             )
         else:
             try:
-                self._collection.insert_one(document)
+                self._collection.insert_one(document.copy())
             except DuplicateKeyError:
                 existing = self.get(run_id)
                 if existing is None:

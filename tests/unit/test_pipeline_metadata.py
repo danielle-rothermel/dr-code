@@ -7,6 +7,8 @@ from pathlib import Path
 from dr_code.models.attempts import AttemptProvenance, AttemptRecord, AttemptSource
 from dr_code.pipeline.metadata import (
     EvalSeedSource,
+    EvalRunMetadataStore,
+    build_init_metadata,
     build_seed_metadata,
 )
 
@@ -44,3 +46,22 @@ def test_seed_metadata_hash_preserves_order() -> None:
     assert metadata.task_indices == (1, 0)
     assert metadata.source == EvalSeedSource.DUMP_DIR
     assert metadata.sample_ids_hash != reordered.sample_ids_hash
+
+
+def test_record_init_ignores_mongo_insert_id() -> None:
+    class _Collection:
+        def insert_one(self, document):
+            document["_id"] = object()
+
+    store = EvalRunMetadataStore.__new__(EvalRunMetadataStore)
+    store._collection = _Collection()
+
+    metadata = build_init_metadata(
+        worker_spec="parse=1,test=1",
+        workers_by_stage={"parse": 1, "test": 1},
+    )
+
+    stored = store.record_init(run_id="run-1", metadata=metadata)
+
+    assert stored.run_id == "run-1"
+    assert stored.init == metadata
