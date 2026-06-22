@@ -22,7 +22,11 @@ from dr_queues import (
 from dr_code.models.attempts import AttemptRecord
 from dr_code.models.base import FrozenModel
 from dr_code.pipeline.definition import build_eval_pipeline
-from dr_code.pipeline.export import RunExportPaths, export_run_artifacts
+from dr_code.pipeline.export import (
+    RunExportPaths,
+    export_run_artifacts,
+    wall_seconds_from_events,
+)
 from dr_code.pipeline.handlers import registry
 from dr_code.pipeline.jobs import build_seed_jobs
 from dr_code.pipeline.report import (
@@ -117,13 +121,13 @@ def run_eval_pipeline(
         msg = f"Unknown mode {mode!r}; expected in-process or detached"
         raise ValueError(msg)
 
-    wall_seconds = time.perf_counter() - started
+    elapsed_seconds = time.perf_counter() - started
     events = filter_run_events(
         event_sink.read_by_run_id(resolved_run_id), resolved_run_id
     )
+    wall_seconds = wall_seconds_from_events(events) or elapsed_seconds
     export_paths = export_run_artifacts(
         run_id=resolved_run_id,
-        attempts=attempts,
         mongo_sink=event_sink,
         output_root=output_root,
     )
@@ -138,8 +142,9 @@ def run_eval_pipeline(
         terminal_count=terminal_count,
         wall_seconds=wall_seconds,
     )
-    report_path = export_paths.run_dir / "proof_report.json"
-    proof_report.write_json(report_path)
+    if export_paths.proof_report is None:
+        report_path = export_paths.run_dir / "proof_report.json"
+        proof_report.write_json(report_path)
     event_sink.close()
 
     terminals = [

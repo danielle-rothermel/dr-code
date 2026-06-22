@@ -20,6 +20,7 @@ from dr_queues import (
     wait_for_run,
 )
 
+from dr_code.datasets.export import read_attempts
 from dr_code.models.attempts import AttemptRecord
 from dr_code.models.base import FrozenModel
 from dr_code.pipeline.definition import build_eval_pipeline
@@ -33,6 +34,7 @@ from dr_code.pipeline.runner import (
     new_run_id,
     run_eval_pipeline,
 )
+from dr_code.pipeline.seed import load_proof_attempts
 
 
 class InitEvalRunResult(FrozenModel):
@@ -122,9 +124,13 @@ def init_eval_run(
 
 
 def seed_eval_run(
-    attempts: list[AttemptRecord],
+    attempts: list[AttemptRecord] | None = None,
     *,
     run_id: str,
+    attempts_path: Path | str | None = None,
+    dump_dir: Path | str | None = None,
+    task_indices: list[int] | tuple[int, ...] | None = None,
+    limit_per_task: int | None = None,
     run_store: MongoRunStore | None = None,
 ) -> SeedEvalRunResult:
     """Publish Evaluation run attempts to the parse stage."""
@@ -133,9 +139,52 @@ def seed_eval_run(
         pipeline=build_eval_pipeline(registry),
         run_store=run_store,
     )
-    jobs = build_seed_jobs(attempts, run_id=run_id)
+    records = _load_seed_attempts(
+        attempts=attempts,
+        attempts_path=attempts_path,
+        dump_dir=dump_dir,
+        task_indices=task_indices,
+        run_id=run_id,
+        limit_per_task=limit_per_task,
+    )
+    jobs = build_seed_jobs(records, run_id=run_id)
     seed_run(manifest, jobs, run_store=run_store)
     return SeedEvalRunResult(run_id=run_id, expected_jobs=len(jobs))
+
+
+def _load_seed_attempts(
+    *,
+    attempts: list[AttemptRecord] | None,
+    attempts_path: Path | str | None,
+    dump_dir: Path | str | None,
+    task_indices: list[int] | tuple[int, ...] | None,
+    run_id: str,
+    limit_per_task: int | None,
+) -> list[AttemptRecord]:
+    sources = sum(
+        source is not None for source in (attempts, attempts_path, dump_dir)
+    )
+    if sources != 1:
+        msg = "Provide exactly one seed source: attempts, attempts_path, or dump_dir."
+        raise ValueError(msg)
+    if attempts is not None:
+        records = attempts
+    elif attempts_path is not None:
+        records = read_attempts(attempts_path)
+    else:
+        if dump_dir is None:
+            msg = "dump_dir is required when seeding from pool replay inputs."
+            raise ValueError(msg)
+        if task_indices is None:
+            msg = "task_indices is required when seeding from dump_dir."
+            raise ValueError(msg)
+        records = load_proof_attempts(
+            dump_dir,
+            task_indices,
+            run_id=run_id,
+            limit_per_task=limit_per_task,
+        )
+    return [record.model_copy(update={"run_id": run_id}) for record in records]
 
 
 def start_eval_workers(
@@ -228,7 +277,6 @@ def get_eval_status(
 
 
 def export_eval_run(
-    attempts: list[AttemptRecord],
     *,
     run_id: str,
     mongo_sink: MongoRunStore | None = None,
@@ -237,7 +285,6 @@ def export_eval_run(
     """Export Evaluation run artifacts from persisted run state."""
     export_paths = export_run_artifacts(
         run_id=run_id,
-        attempts=attempts,
         mongo_sink=mongo_sink,
         output_root=output_root,
     )
