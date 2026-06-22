@@ -1,8 +1,8 @@
 # Stage 2 — Parsing
 
-[← Overview](./overview.md) · [Stage 2 handoff](./stage-02-handoff.md) (start here)
+[← Overview](./overview.md)
 
-**Status:** Done (2026-06-21). Adapter in `src/dr_code/parsing/`, expanded `ParseOutcome`, unit tests, `scripts/parse_attempts.py`, and `scripts/demo_stage2.py`. dr-queues handler wiring deferred to stage 2–3 pipeline phase.
+**Status:** Done (2026-06-21). Adapter in `src/dr_code/parsing/`, expanded `ParseOutcome`, unit tests, `scripts/parse_attempts.py`, and `scripts/demo_stage2.py`. dr-queues handler wiring deferred to pipeline phase. Stage 3 complete — see [stage-03-testing.md](./stage-03-testing.md).
 
 ## Purpose
 
