@@ -6,13 +6,15 @@
 
 It connects historical and fresh decoder outputs to:
 
-1. **Parsing** — recover valid Python from messy LLM text
-2. **Testing** — run HumanEval+ cases in Docker
-3. **Analysis** — relate description compression (zstd) to test outcomes, sliced by experiment metadata
+1. **Parsing** — recover valid Python from messy LLM text (code-eval)
+2. **Testing** — run HumanEval+ cases in Docker (nl-code)
+3. **Analysis** — relate description compression (zstd22) to test outcomes, sliced by experiment metadata
 
 Ultimate downstream goal (not in initial scope): **DSPy optimization of encoder prompts** for the joint compression + correctness objective. dr-bottleneck will later adopt the same stage contracts for large-scale enc/dec runs.
 
-Background: [Investigation synthesis](../investigation/synthesis.md).
+Background: [Investigation synthesis](../investigation/synthesis.md). Operations: [Pipeline runbook](./pipeline-runbook.md).
+
+**Status (2026-06-21):** Stages 1–4 and the dr-queues pipeline are implemented and verified. Proof bar passed on HumanEval/0–4 (`proof-20840125`, 5,828 dedup rows).
 
 ---
 
@@ -27,195 +29,216 @@ Background: [Investigation synthesis](../investigation/synthesis.md).
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Stages 2–3 — Eval pipeline (dr-queues, v1)                       │
-│  parse queue → code-eval workers (in-process)                      │
-│  test queue  → Docker batch workers (nl-code)                      │
-│  → MongoDB event / result store                                    │
+│ Stages 2–3 — Eval pipeline (dr-queues)                           │
+│  parse queue → code-eval workers (in-process)                    │
+│  test queue  → Docker workers (nl-code, one container per sample)  │
+│  → pipeline_events + eval_results (Mongo) + file exports         │
 └────────────────────────────┬────────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Stage 4 — Analysis                                               │
-│  bulk script: zstd22(decoder_input) ⨝ test outcomes              │
-│  marimo notebook: slices & charts                                │
+│ Stage 4 — Analysis (offline)                                     │
+│  zstd22(decoder_input) ⨝ test outcomes → enriched Parquet/JSON   │
+│  marimo notebook for exploration                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Stage docs:
+---
 
-- [Stage 1 — Generation & dataset](./stage-01-generation-dataset.md)
-- [Stage 2 — Parsing](./stage-02-parsing.md)
-- [Stage 3 — Testing](./stage-03-testing.md)
-- [Stage 4 — Analysis](./stage-04-analysis.md)
+## Stage 1 — Generation & dataset
+
+Produce unified **AttemptRecord** rows from two sources:
+
+| Source | `provenance.source` | Input |
+|--------|---------------------|-------|
+| **1a Pool replay** | `pool` | dr-llm HumanEval pool extract (Parquet / dedup JSONL) |
+| **1b Fresh generation** | `fresh_stub` | HumanEval+ tasks + dr-providers batch decoder calls |
+
+Future: `fresh_encoded` — real encoder output at a budget (for DSPy and pool-comparable runs).
+
+**Key fields:** `sample_id` (SHA-256 of `task_id` + `raw_output`), `decoder_input`, `raw_output`, `task_id`, `entry_point`, `provenance.*` including `occurrence_count` for dedup rows.
+
+**Pool artifacts** (external): see [dr-llm pool investigation](../investigation/dr-llm-humaneval-pool.md). Prefer dedup JSONL + Parquet join for pipeline seeding.
+
+**Scripts:** `import_pool_attempts.py`, `generate_decoder_attempts.py`, `demo_stage1.py`, `build_humaneval_snapshot.py`
+
+**Modules:** `dr_code.datasets.*`, `dr_code.generation.*`
+
+---
+
+## Stage 2 — Parsing
+
+Turn `raw_output` into **ParseOutcome** via code-eval `EXTRACTION_CONFIG` (no subprocess normalizers at pool scale).
+
+- Call `LLMCodeValidator.validate()` → project with `best_valid_source()` / `best_valid_candidate()`
+- Parse handler catches exceptions (e.g. oversized samples) and records `parse_success=false` instead of requeue loops
+- Always forward to test stage; test emits explicit skip when parse failed
+
+**Scripts:** `parse_attempts.py`, `demo_stage2.py`  
+**Modules:** `dr_code.parsing.*`  
+**Pipeline handler:** `dr_code.pipeline.handlers.parse_attempt`
+
+---
+
+## Stage 3 — Testing
+
+Run HumanEval+ functional tests on extracted code via nl-code Docker execution.
+
+**TestOutcome** uses authoritative `outcome_kind`: `tested` | `skipped` | `infra_error` | `internal_error`. Per-case results only when `tests_ran=true`. v1: one Docker container per sample.
+
+**Scripts:** `test_attempts.py`, `demo_stage3.py`  
+**Modules:** `dr_code.testing.*`  
+**Pipeline handler:** `dr_code.pipeline.handlers.run_tests`
+
+---
+
+## Stage 4 — Analysis
+
+Offline joins on export files (or Mongo snapshots):
+
+- **Compression:** zstd level 22 on `decoder_input` (match dr-bottleneck convention)
+- **Correctness:** `all_tests_passed`, `test_pass_rate`, weighted by `occurrence_count`
+- **Slices:** source, model, task, compression quartile; parse funnel
+
+**Scripts:** `analyze_eval_run.py`  
+**Notebook:** `nbs/analyze_eval_run.py`  
+**Modules:** `dr_code.analysis.*`
+
+---
+
+## Pipeline (dr-queues)
+
+Parse → test workflow with Mongo sinks and file exports under `exports/runs/{run_id}/`.
+
+| Component | Location |
+|-----------|----------|
+| Workflow definition | `dr_code.pipeline.definition` |
+| Handlers | `dr_code.pipeline.handlers` |
+| Seeding | `dr_code.pipeline.seed` |
+| Orchestration | `dr_code.pipeline.runner` |
+| Worker tuning | `dr_code.pipeline.tune`, `scripts/tune_test_workers.py` |
+
+**Mongo collections:**
+
+- `pipeline_events` — dr-queues lifecycle telemetry
+- `eval_results` — upserted `TestOutcome` keyed by `(run_id, sample_id)`
+
+**Scripts:** `demo_pipeline.py`, `run_eval_pipeline.py`, `tune_test_workers.py`
+
+See [Pipeline runbook](./pipeline-runbook.md) for commands, proof acceptance, and tuning results.
 
 ---
 
 ## Major design decisions
 
-### 1. Unified stage-1 schema for two sources
-
-**Decision:** Pool replay (1a) and fresh generation (1b) must emit the same `AttemptRecord` shape so stages 2–4 are source-agnostic.
-
-**Reason:** Avoid forked analysis paths; enable direct comparison once metadata tags distinguish sources.
-
-### 2. Lightweight HumanEval+ loader in dr-code (not nl-code) for stage 1
-
-**Decision:** Own a minimal, frozen HumanEval+ task model in dr-code (task id, entry point, official prompt stub, tests for stage 3).
-
-**Reason:** nl-code’s dataset layer is rich but heavy for a single-benchmark harness; we only need a stable contract we control. nl-code remains the dependency for **execution**, not for stage-1 loading.
-
-### 3. code-eval as a direct dependency (local path; PyPI deferred)
-
-**Decision:** Stage 2 calls `LLMCodeValidator.validate()` from [code-eval](../../code-eval) using `EXTRACTION_CONFIG` and `result.best_valid_source()`. Installed as an editable path dependency on `../code-eval` (PyPI publish deferred — name conflict on PyPI).
-
-**Status (2026-06-21):** Wired in `pyproject.toml` as `code-eval==0.1.1` from `../code-eval`. Keep the sibling checkout at tag **`v0.1.1-frozen`** (or equivalent `main` tree). Integration tracker: [code-eval work needed](../code-eval-work-needed.md).
-
-**Reason:** Real pool outputs need full extract/repair provenance; reimplementing fences/repairs would drift. `EXTRACTION_CONFIG` (`normalizers=()`) avoids subprocess normalization on ~172k parse jobs — stage 3 only needs extracted source.
-
-**Note:** code-eval pins `ruff==0.8.4` for its normalizers; dr-code dev lint uses a newer ruff via `[tool.uv] override-dependencies`. Safe for stage 2 because `EXTRACTION_CONFIG` skips normalization subprocess work.
-
-### 4. dr-providers for stage 1b generation only
-
-**Decision:** Fresh decoder runs use [dr-providers](../../dr-providers) (`OpenRouterProvider` + `LlmRequest`), not LiteLLM or DSPy.
-
-**Status (2026-06-21):** Wired in `pyproject.toml` as editable path dep on `../dr-providers`. Batch runner in `dr_code.generation.batch`; OpenRouter profiles in `configs/openrouter_profiles.yaml` (mirrors dr-bottleneck demos).
-
-**Reason:** Thin typed transport; DSPy comes later for encoder optimization, not for baseline batch collection.
-
-### 5. Stub-as-description for initial fresh runs
-
-**Decision:** For 1b, pass the HumanEval **function signature + prompt docstring** as the `{description}` inside the same decoder prompt template dr-bottleneck uses:
-
-```text
-Write functional code in Python according to the description.
-
-"""
-{description}
-"""
-```
-
-**Reason:** Matches decoder **template shape** for pipeline validation. **Not** the same as pool rows (which use lossy encoder output at various budgets). Tag `provenance.source = pool | fresh_stub` in analysis.
-
-**Later:** Add `fresh_encoded` mode (real encoder → description) before DSPy optimization.
-
-### 6. dr-queues + MongoDB from v1 for stages 2–3
-
-**Decision:** Implement parse and test as a two-stage [dr-queues](../../dr-queues) pipeline with MongoDB sinks from the first shipping version—not an in-process prototype replaced later.
-
-**Reason:** Eval at pool scale (~172k deduped unique outputs × Docker tests) is the bottleneck; parallel multi-step eval is why the queue system exists.
-
-**Shape:** Parse workers (cheap, in-process code-eval) → test workers (Docker batch via nl-code, spin up container per batch, tear down, next batch). Align `JobEnvelope` / handler registration with dr-queues conventions so dr-bottleneck can reuse later.
-
-### 7. nl-code for stage 3 execution only
-
-**Decision:** Do not reimplement Docker HumanEval+ testing.
-
-**Reason:** nl-code already defines execution modes, batch runners, and infrastructure error contracts.
-
-### 8. Dedup-aware job seeding
-
-**Decision:** Prefer seeding eval jobs from **deduped** raw outputs (`out` + `count`) where possible; carry `occurrence_count` for weighted analysis.
-
-**Reason:** Cuts Docker cost dramatically on pool replay without losing aggregate statistics.
-
-### 9. Transport-agnostic result schemas
-
-**Decision:** Define Pydantic models for `AttemptRecord`, `ParseOutcome`, and `TestOutcome` independent of RabbitMQ/Mongo layout.
-
-**Reason:** Same schemas for unit tests, small local runs, and full queue pipeline; Mongo collections are projections.
-
-### 10. Stage 4 reads Mongo (or export), not live queues
-
-**Decision:** Analysis is offline against completed run artifacts.
-
-**Reason:** Repeatable notebooks and scripts without coupling to runtime infrastructure.
+1. **Unified `AttemptRecord`** for pool and fresh sources — slice on `provenance.source`, never merge pass rates blindly.
+2. **Lightweight HumanEval+ loader in dr-code** — nl-code for execution only.
+3. **code-eval `EXTRACTION_CONFIG`** — not `DEFAULT_CONFIG` at pool scale; use `best_valid_source()` for selection.
+4. **dr-providers for fresh generation only** — DSPy deferred.
+5. **Stub-as-description for v1 fresh runs** — official prompt stub, not encoder output.
+6. **dr-queues + Mongo from v1** — not a throwaway prototype.
+7. **nl-code for Docker execution only** — do not reimplement HumanEval+ testing.
+8. **Dedup-aware seeding** — `occurrence_count` preserved for weighted analysis.
+9. **Transport-agnostic schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome` independent of queue layout.
+10. **Analysis offline** — export-first; repeatable without live infrastructure.
 
 ---
 
-## Local dependencies (initial)
+## code-eval integration
 
-| Package | Path / source | Status | Used in |
-|---------|---------------|--------|---------|
-| code-eval | `../code-eval` editable, pin `0.1.1` / `v0.1.1-frozen` | **Wired** in `pyproject.toml` | Stage 2 |
-| dr-providers | `../dr-providers` editable, pin `0.1.0` | **Wired** in `pyproject.toml` | Stage 1b |
-| nl-code | `../nl-code` editable, `[docker]` extra | **Wired** in `pyproject.toml` | Stage 3 |
-| zstandard | PyPI | **Wired** in `pyproject.toml` | Stage 4 (zstd level 22 on `decoder_input`) |
-| dr-queues | `../dr-queues` or published | Not wired | Pipeline (stages 2–3 orchestration) |
+Frozen at **`v0.1.1`** / tag **`v0.1.1-frozen`** on sibling `../code-eval`. Path dep in `pyproject.toml` (PyPI deferred — name conflict).
+
+| Requirement | How dr-code uses it |
+|-------------|---------------------|
+| Pool-scale parse | `EXTRACTION_CONFIG` (`normalizers=()`) |
+| Best extracted code | `ValidationResult.best_valid_source()` |
+| Provenance | Project from `best_valid_candidate()` into `ParseOutcome.code_eval` |
+| Slim storage | Store `ParseOutcome`, not full `ValidationResult` |
+
+**Ruff override:** dr-code uses `ruff>=0.15.18` via `[tool.uv] override-dependencies`; safe because `EXTRACTION_CONFIG` skips normalization subprocesses.
+
+Extend code-eval upstream for behavior gaps; do not fork parse logic into dr-code. More detail: [code-eval investigation](../investigation/code-eval.md).
 
 ---
 
-## Repository layout (target)
+## Local dependencies
 
-Stages 1–4 and `analysis/` are implemented export-first. `pipeline/` (dr-queues orchestration) is not yet implemented.
+| Package | Source | Used in |
+|---------|--------|---------|
+| code-eval | `../code-eval` editable, `0.1.1` | Stage 2 |
+| dr-providers | `../dr-providers` editable, `0.1.0` | Stage 1b |
+| nl-code `[docker]` | `../nl-code` editable | Stage 3 |
+| dr-queues | `../dr-queues` editable | Pipeline |
+| zstandard | PyPI | Stage 4 |
+
+---
+
+## Repository layout
 
 ```text
 src/dr_code/
-  datasets/          # HumanEval+ loader, pool loader, export, stats, display
-  generation/        # dr-providers batch runner, profiles, prompts
-  models/            # AttemptRecord, HumanEvalPlusTask, ParseOutcome, TestOutcome
-  parsing/           # (stage 2) code-eval adapter, ParseOutcome projection
-  testing/           # (stage 3) nl-code adapter, TestOutcome projection
-  pipeline/          # (stage 2–3) dr-queues workflow defs, handlers, seeding
-  analysis/          # (stage 4) zstd joins, aggregates, export helpers
-scripts/             # typer CLIs per stage + full eval driver
+  datasets/          # HumanEval+ loader, pool loader, export
+  generation/        # dr-providers batch runner
+  models/            # AttemptRecord, ParseOutcome, TestOutcome
+  parsing/           # code-eval adapter
+  testing/           # nl-code adapter
+  pipeline/          # dr-queues workflow, handlers, tune, export, report
+  analysis/          # zstd joins, aggregates
+scripts/             # typer CLIs per stage + pipeline + tune
 configs/             # openrouter_profiles.yaml
-nbs/                 # marimo analysis notebooks
+nbs/                 # marimo analysis notebook
 docs/
-  investigation/     # sibling repo notes (existing)
+  investigation/     # sibling repo notes
   plans/             # this directory
+exports/runs/        # run artifacts (gitignored)
+.runs/               # dr-queues manifests (gitignored)
 ```
+
+---
+
+## Proof bar results (HumanEval/0–4)
+
+Run `proof-20840125` on 20260621_manual pool dump:
+
+| Metric | Value |
+|--------|-------|
+| Jobs | 5,828 / 5,828 |
+| Wall time | ~16.6 min |
+| Tested pass rate | ~25.3% (pool mess expected) |
+| Join failures | 0 |
+| Outcomes | 5,810 tested, 13 skipped, 5 infra_error |
+
+**Tuning (Mac Mini):** optimal `test=8` workers (~6.6 samples/sec). Recommended production flags: `--workers parse=8,test=8`. Details in [runbook tuning section](./pipeline-runbook.md#live-test-worker-tuning).
 
 ---
 
 ## Future steps (out of initial scope)
 
+### Full pool replay
+
+Remaining ~163 HumanEval task indices (~172k dedup unique strings). Same CLI, expand `--task-indices` or add `--all-tasks`.
+
 ### dr-bottleneck integration
 
-Replace dr-bottleneck’s AST-only evaluate step with calls into dr-code stages 2–4 (or shared libraries extracted from dr-code). Keep dr-bottleneck responsible for **LLM enc/dec orchestration at scale**; dr-code owns **eval semantics**.
-
-Prerequisite: stable stage schemas and dr-queues handler modules importable from both repos.
+Replace AST-only evaluate with dr-code stages 2–4 (or shared libraries). dr-bottleneck keeps enc/dec orchestration; dr-code owns eval semantics.
 
 ### DSPy encoder optimization
 
-Optimization loop:
-
 ```text
-encoder prompt/program (DSPy)
-  → encode (dr-providers or dr-bottleneck)
-  → decode (fixed decoder prompt/template)
-  → dr-code stages 2–4
-  → scalar objective: f(zstd22(description), test_pass_rate, …)
+encoder prompt (DSPy) → encode → decode → stages 2–4 → f(zstd22, pass_rate, …)
 ```
 
-Prerequisite: working eval pipeline, train/dev/eval task splits, and `fresh_encoded` generation mode (not stub-as-description only).
+Prerequisites: `fresh_encoded` generation mode, train/dev/eval splits.
 
 ---
 
-## Implementation phasing (suggested)
+## Resolved decisions
 
-An agent picking up work should treat each bullet as a plannable phase; details live in stage docs.
-
-1. ~~**Schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome`, run config~~ — **Done**
-2. ~~**Stage 1a** — pool Parquet/JSONL → `AttemptRecord` export~~ — **Done**
-3. ~~**Stage 1b** — HumanEval+ loader + dr-providers batch → same export~~ — **Done**
-4. ~~**Stage 2 adapter** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; pool_samples fixtures~~ — **Done**
-5. ~~**Stage 3 adapter** — nl-code test adapter + Docker smoke tests + demo/CLI~~ — **Done**
-6. **Pipeline** — dr-queues workflow (parse → test), Mongo sink, seed CLI — **Next**
-7. ~~**Stage 4** — analysis script + marimo notebook on completed run~~ — **Done**
-8. **Documentation** — runbook for local RabbitMQ/Mongo (README updated for stage 1)
-
-Cross-cutting: idempotent Mongo writes keyed by `(run_id, sample_id)`; parse-fail short-circuit to test stage with explicit skip reason.
-
-**Pipeline entry point:** dr-queues workflow wiring (see stage 2–3 docs for handler contracts). Stage 4 reference: [Stage 4 handoff](./stage-04-handoff.md).
-
----
-
-## Open questions (cross-cutting)
-
-See stage docs for stage-specific items. Repo-wide:
-
-- **Mongo layout:** extend dr-queues `pipeline_events` only vs dedicated `eval_results` collection (or both)?
-- **dr-queues dependency:** path dep on `../dr-queues` vs PyPI version pin?
-- **nl-code dependency:** full package vs minimal execution import surface?
-- **Test batch size default:** tune empirically (Docker startup vs throughput)?
-- **Run manifest location:** align with dr-queues `.runs/{run_id}/manifest.json` convention?
+| Question | Resolution |
+|----------|------------|
+| Mongo layout | Both `pipeline_events` and `eval_results` |
+| dr-queues dep | Editable path on `../dr-queues` |
+| Test parallelism | One container per sample; tune `test` worker count empirically |
+| Run manifest | `.runs/{run_id}/manifest.json` (dr-queues convention) |
+| Parse failures | Forward to test with skip; handler catches code-eval exceptions |
+| Analysis input | Export-first Parquet/JSONL; Mongo query optional later |
