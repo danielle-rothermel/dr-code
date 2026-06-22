@@ -349,15 +349,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", marker = "extra == 'synthetic'", specifier = ">=3.0,<4" },
-    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.112,<7" },
     { name = "pydantic", specifier = ">=2.9,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<9" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6,<4" },
     { name = "ruff", specifier = "==0.8.4" },
     { name = "ty", marker = "extra == 'ty'", specifier = ">=0.0.1a8" },
-    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12,<1" },
 ]
-provides-extras = ["dev", "synthetic", "cli", "ty"]
+provides-extras = ["dev", "synthetic", "ty"]
 
 [[package]]
 name = "colorama"
@@ -538,7 +535,7 @@ dev = [
 
 [[package]]
 name = "dr-queues"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "../dr-queues" }
 dependencies = [
     { name = "pika" },
