@@ -2,7 +2,7 @@
 
 [← Overview](./overview.md) · [Stage 2 handoff](./stage-02-handoff.md) (start here)
 
-**Status:** Not started. Stage 1 exports (`AttemptRecord` Parquet/JSONL) and `code-eval` path dep are ready. `ParseOutcome` in `src/dr_code/models/outcomes.py` is a skeleton.
+**Status:** Done (2026-06-21). Adapter in `src/dr_code/parsing/`, expanded `ParseOutcome`, unit tests, `scripts/parse_attempts.py`, and `scripts/demo_stage2.py`. dr-queues handler wiring deferred to stage 2–3 pipeline phase.
 
 ## Purpose
 

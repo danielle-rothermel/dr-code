@@ -145,7 +145,7 @@ Write functional code in Python according to the description.
 
 ## Repository layout (target)
 
-Current layout matches the plan for stages 1–2 prep; `parsing/`, `testing/`, `pipeline/`, and `analysis/` are not yet implemented.
+Current layout matches the plan for stages 1–2; `testing/`, `pipeline/`, and `analysis/` are not yet implemented.
 
 ```text
 src/dr_code/
@@ -194,11 +194,11 @@ Prerequisite: working eval pipeline, train/dev/eval task splits, and `fresh_enco
 
 An agent picking up work should treat each bullet as a plannable phase; details live in stage docs.
 
-1. ~~**Schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome`, run config~~ — **Done** (`AttemptRecord` + `GenerationRunConfig` shipped; `ParseOutcome`/`TestOutcome` are skeletons)
+1. ~~**Schemas** — `AttemptRecord`, `ParseOutcome`, `TestOutcome`, run config~~ — **Done**
 2. ~~**Stage 1a** — pool Parquet/JSONL → `AttemptRecord` export~~ — **Done**
 3. ~~**Stage 1b** — HumanEval+ loader + dr-providers batch → same export~~ — **Done**
-4. **Stage 2 handler** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; reuse or mirror [code-eval pool samples](../../code-eval/tests/corpus/pool_samples.jsonl) fixtures — **Next**
-5. **Stage 3 handler** — nl-code batch adapter + Docker smoke tests
+4. ~~**Stage 2 adapter** — code-eval adapter (`EXTRACTION_CONFIG`, `best_valid_source()`) + unit tests; pool_samples fixtures~~ — **Done**
+5. **Stage 3 handler** — nl-code batch adapter + Docker smoke tests — **Next**
 6. **Pipeline** — dr-queues workflow (parse → test), Mongo sink, seed CLI
 7. **Stage 4** — analysis script + marimo notebook on completed run
 8. **Documentation** — runbook for local RabbitMQ/Mongo (README updated for stage 1)

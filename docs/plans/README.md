@@ -13,7 +13,7 @@ Design docs for the compression–correctness evaluation pipeline.
 | Stage | Doc | Status | Summary |
 |-------|-----|--------|---------|
 | 1 | [Generation & dataset](./stage-01-generation-dataset.md) | **Done** (2026-06-21) | Unified raw-generation dataset from pool replay or fresh dr-providers runs |
-| 2 | [Parsing](./stage-02-parsing.md) | Next | code-eval extraction/recovery; parse-stage queue workers |
+| 2 | [Parsing](./stage-02-parsing.md) | **Done** (2026-06-21) | code-eval adapter, unit tests, parse CLI, demo (`scripts/demo_stage2.py`) |
 | 3 | [Testing](./stage-03-testing.md) | Planned | nl-code Docker execution; test-stage queue workers; Mongo telemetry |
 | 4 | [Analysis](./stage-04-analysis.md) | Planned | zstd compression joins, aggregates, marimo exploration |
 

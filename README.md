@@ -4,7 +4,23 @@ Research harness for the compression–correctness evaluation pipeline: given a 
 
 Design docs: [docs/plans/README.md](docs/plans/README.md)
 
-**Status:** Stage 1 (generation & dataset) is complete. Stage 2 (parsing) is next — see [Stage 2 handoff](docs/plans/stage-02-handoff.md).
+**Status:** Stages 1–2 complete. Stage 3 (testing) is next — see [Stage 3 plan](docs/plans/stage-03-testing.md).
+
+## Stage 2 demo
+
+Walk one `AttemptRecord` through code-eval parsing: raw output, extracted code, provenance, and mongosh inspect commands for when the pipeline is wired.
+
+```bash
+uv run scripts/demo_stage2.py --show-failure
+```
+
+Batch-parse an export to JSONL:
+
+```bash
+uv run scripts/parse_attempts.py \
+  --input exports/demo/pool.parquet \
+  --output exports/demo/parse.jsonl
+```
 
 ## Stage 1 demo
 

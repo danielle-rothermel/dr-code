@@ -98,8 +98,12 @@ Queue handler (later, with dr-queues): read `AttemptRecord` from job payload →
 
 ```bash
 uv run pytest tests/unit -q
-# After adapter exists:
-uv run scripts/parse_attempts.py --input exports/demo/pool.parquet  # TBD
+# Parse adapter + golden pool_samples:
+uv run pytest tests/unit/test_parsing_adapter.py -q
+# Single-example walkthrough:
+uv run scripts/demo_stage2.py --show-failure
+# Batch parse export:
+uv run scripts/parse_attempts.py --input exports/demo/pool.parquet --output exports/demo/parse.jsonl
 ```
 
 Success criteria for stage 2 adapter (before queue):

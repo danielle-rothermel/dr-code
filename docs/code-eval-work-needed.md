@@ -35,7 +35,7 @@ Keep `../code-eval` checked out at `v0.1.1-frozen` (or equivalent `main` with th
 | 7. Documentation drift | Done | — |
 | 8. Export enums / presets | Done (both exported) | — |
 | 8. Path dep in dr-code | — | **Done** |
-| Parse stage handler + `ParseOutcome` projection | — | **Not started** (stage 2) |
+| Parse stage adapter + `ParseOutcome` projection | — | **Done** (stage 2 adapter; dr-queues handler deferred) |
 
 ---
 
