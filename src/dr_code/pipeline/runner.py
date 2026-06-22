@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,6 +20,7 @@ from dr_queues import (
 )
 
 from dr_code.models.attempts import AttemptRecord
+from dr_code.models.base import FrozenModel
 from dr_code.pipeline.definition import build_eval_pipeline
 from dr_code.pipeline.export import RunExportPaths, export_run_artifacts
 from dr_code.pipeline.handlers import registry
@@ -35,8 +35,7 @@ DEFAULT_HANDLERS_MODULE = "dr_code.pipeline.handlers"
 DEFAULT_WORKERS = "parse=2,test=1"
 
 
-@dataclass(frozen=True)
-class PipelineRunResult:
+class PipelineRunResult(FrozenModel):
     """Artifacts from a completed pipeline run."""
 
     run_id: str

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -12,11 +11,11 @@ from typing import Any
 from dr_queues import EventKind, PipelineEvent, filter_run_events
 
 from dr_code.models.attempts import AttemptRecord
+from dr_code.models.base import FrozenModel
 from dr_code.models.outcomes import ParseOutcome, TestOutcome
 
 
-@dataclass(frozen=True)
-class ProofReport:
+class ProofReport(FrozenModel):
     """Structured proof report for a pipeline run."""
 
     run_id: str

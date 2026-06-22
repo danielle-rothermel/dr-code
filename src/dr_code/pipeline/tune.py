@@ -6,12 +6,13 @@ import json
 import subprocess
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from dr_queues import replace_stage_workers, stop_workers
 from pymongo import MongoClient
+from pydantic import Field
 
+from dr_code.models.base import FrozenModel
 from dr_code.pipeline.mongo import (
     EVAL_RESULTS_COLLECTION,
     _database_name,
@@ -23,8 +24,7 @@ PIPELINE_EVENTS_COLLECTION = "pipeline_events"
 TEST_STAGE = "test"
 
 
-@dataclass(frozen=True)
-class SweepStepResult:
+class SweepStepResult(FrozenModel):
     """Throughput measurement for one worker count."""
 
     workers: int
@@ -40,13 +40,12 @@ class SweepStepResult:
     reliable: bool
 
 
-@dataclass
-class SweepReport:
+class SweepReport(FrozenModel):
     """Full sweep report."""
 
     run_id: str
     expected_jobs: int
-    steps: list[SweepStepResult] = field(default_factory=list)
+    steps: list[SweepStepResult] = Field(default_factory=list)
     best_workers: int = 0
     best_samples_per_second: float = 0.0
     stop_reason: str = ""
@@ -198,10 +197,11 @@ def run_sweep(
     on_step: Callable[[SweepStepResult], None] | None = None,
 ) -> SweepReport:
     """Run N×multiplier sweep on live test workers."""
-    report = SweepReport(run_id=run_id, expected_jobs=expected_jobs)
+    steps: list[SweepStepResult] = []
     workers = start_workers
     best_rate = -1.0
     best_workers = start_workers
+    stop_reason = ""
     previous_rate: float | None = None
     worker_process: subprocess.Popen[bytes] | None = None
 
@@ -256,7 +256,7 @@ def run_sweep(
             infra_error_delta=infra_after - infra_before,
             reliable=reliable,
         )
-        report.steps.append(step)
+        steps.append(step)
         if on_step is not None:
             on_step(step)
 
@@ -266,12 +266,12 @@ def run_sweep(
 
         if previous_rate is not None and reliable:
             if rate < previous_rate:
-                report.stop_reason = f"regression at workers={workers}"
+                stop_reason = f"regression at workers={workers}"
                 break
             if previous_rate > 0:
                 gain = (rate - previous_rate) / previous_rate
                 if gain < stop_threshold:
-                    report.stop_reason = (
+                    stop_reason = (
                         f"diminishing returns at workers={workers} "
                         f"(gain={gain:.1%})"
                     )
@@ -280,17 +280,14 @@ def run_sweep(
         previous_rate = rate if reliable else previous_rate
         next_workers = workers * multiplier
         if next_workers > max_workers:
-            report.stop_reason = (
-                report.stop_reason or f"reached max_workers={max_workers}"
-            )
+            stop_reason = f"reached max_workers={max_workers}"
             break
         workers = next_workers
 
-    if not report.stop_reason:
-        report.stop_reason = "completed sweep range"
+    if not stop_reason:
+        stop_reason = "completed sweep range"
 
-    report.best_workers = best_workers
-    report.best_samples_per_second = best_rate if best_rate >= 0 else 0.0
+    best_samples_per_second = best_rate if best_rate >= 0 else 0.0
 
     if apply_best and not dry_run and best_workers > 0:
         if worker_process is None or best_workers != workers:
@@ -307,7 +304,14 @@ def run_sweep(
                 )
                 raise RuntimeError(msg)
 
-    return report
+    return SweepReport(
+        run_id=run_id,
+        expected_jobs=expected_jobs,
+        steps=steps,
+        best_workers=best_workers,
+        best_samples_per_second=best_samples_per_second,
+        stop_reason=stop_reason,
+    )
 
 
 def format_sweep_table(report: SweepReport) -> str:
