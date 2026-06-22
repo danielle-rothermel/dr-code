@@ -99,6 +99,48 @@ def test_status_can_print_json(monkeypatch) -> None:
     assert result.output.strip() == '{"run_id":"eval-1"}'
 
 
+def test_run_uses_default_worker_spec_and_lifecycle(monkeypatch) -> None:
+    cli_mod = _load_eval_run_module()
+    calls = []
+    pipeline_result = SimpleNamespace(
+        run_id="eval-1",
+        expected_jobs=2,
+        proof_report=SimpleNamespace(),
+        export_paths=SimpleNamespace(run_dir=Path("exports/runs/eval-1")),
+    )
+
+    def run_eval_once(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(pipeline_result=pipeline_result)
+
+    monkeypatch.setattr(cli_mod, "run_eval_once", run_eval_once)
+    monkeypatch.setattr(cli_mod, "echo_run_metadata", lambda **kwargs: None)
+    monkeypatch.setattr(cli_mod, "echo_proof_summary", lambda result: None)
+
+    result = CliRunner().invoke(
+        cli_mod.app,
+        ["run", "--run-id", "eval-1", "--skip-preflight"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        {
+            "mode": "in-process",
+            "attempts_path": None,
+            "dump_dir": cli_mod.DEFAULT_DUMP_DIR,
+            "task_indices": list(cli_mod.DEFAULT_PROOF_INDICES),
+            "limit_per_task": None,
+            "workers": "parse=8,test=8",
+            "run_id": "eval-1",
+            "handlers_module": "dr_code.pipeline.handlers",
+            "completion_timeout": 28800.0,
+            "output_root": Path("exports/runs"),
+            "skip_preflight": True,
+            "overwrite": False,
+        }
+    ]
+
+
 def _status():
     return SimpleNamespace(
         terminal_jobs=1,

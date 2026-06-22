@@ -20,7 +20,7 @@ uv run scripts/demo_pipeline.py --limit 3
 Detached parallel eval on pool dump artifacts:
 
 ```bash
-uv run scripts/run_eval_pipeline.py \
+uv run scripts/eval_run.py run \
   --mode detached \
   --task-indices 0,1,2,3,4 \
   --workers parse=8,test=8

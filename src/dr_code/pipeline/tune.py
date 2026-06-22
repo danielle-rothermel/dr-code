@@ -18,7 +18,7 @@ from dr_code.pipeline.mongo import (
     _database_name,
     mongodb_url,
 )
-from dr_code.pipeline.runner import DEFAULT_HANDLERS_MODULE
+from dr_code.pipeline.constants import DEFAULT_HANDLERS_MODULE
 
 PIPELINE_EVENTS_COLLECTION = "pipeline_events"
 TEST_STAGE = "test"

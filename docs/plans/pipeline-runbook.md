@@ -18,7 +18,7 @@ Defaults:
 Pre-flight (automatic in CLIs, or manual):
 
 ```bash
-uv run python -c "from dr_code.pipeline.preflight import run_preflight; run_preflight().raise_if_failed()"
+uv run scripts/eval_run.py preflight
 ```
 
 Requires:
@@ -39,7 +39,7 @@ uv run scripts/demo_pipeline.py --limit 3
 ### In-process (debug / medium runs)
 
 ```bash
-uv run scripts/run_eval_pipeline.py \
+uv run scripts/eval_run.py run \
   --mode in-process \
   --task-indices 0 \
   --limit-per-task 10 \
@@ -51,7 +51,7 @@ uv run scripts/run_eval_pipeline.py \
 Recommended on Mac Mini after tuning (`proof-20840125`):
 
 ```bash
-uv run scripts/run_eval_pipeline.py \
+uv run scripts/eval_run.py run \
   --mode detached \
   --task-indices 0,1,2,3,4 \
   --workers parse=8,test=8 \
@@ -137,7 +137,7 @@ uv run scripts/tune_test_workers.py \
 
 Also stops parse workers automatically once parse stage completes (frees CPU).
 
-Writes `exports/runs/{run_id}/tune_report.json`. Does **not** stop the main `run_eval_pipeline.py` driver.
+Writes `exports/runs/{run_id}/tune_report.json`. Does **not** stop the main `scripts/eval_run.py run` driver.
 
 ### Mac Mini results (`proof-20840125`)
 
@@ -158,12 +158,10 @@ watch -n 10 'mongosh mongodb://localhost:27017/dr_queues --quiet --eval "db.pipe
 ## Detached workers (manual)
 
 ```bash
-dr-queues-stage-worker \
+uv run scripts/eval_run.py start \
   --run-id YOUR_RUN_ID \
   --stage test \
-  --workers 8 \
-  --handlers-module dr_code.pipeline.handlers \
-  --replace
+  --workers parse=0,test=8
 ```
 
 Parse workers can be stopped manually after parse completes (optional — tune script does this).

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from dr_code.pipeline.runner import DEFAULT_HANDLERS_MODULE
+from dr_code.pipeline.constants import DEFAULT_HANDLERS_MODULE
 from dr_code.pipeline.tune import (
     count_stage_completions,
     count_terminals,

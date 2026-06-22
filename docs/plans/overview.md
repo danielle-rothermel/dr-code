@@ -115,7 +115,7 @@ Parse → test workflow with Mongo sinks and file exports under `exports/runs/{r
 | Workflow definition | `dr_code.pipeline.definition` |
 | Handlers | `dr_code.pipeline.handlers` |
 | Seeding | `dr_code.pipeline.seed` |
-| Orchestration | `dr_code.pipeline.runner` |
+| Lifecycle orchestration | `dr_code.pipeline.lifecycle` |
 | Worker tuning | `dr_code.pipeline.tune`, `scripts/tune_test_workers.py` |
 
 **Mongo collections:**
@@ -123,7 +123,7 @@ Parse → test workflow with Mongo sinks and file exports under `exports/runs/{r
 - `pipeline_events` — dr-queues lifecycle telemetry
 - `eval_results` — upserted `TestOutcome` keyed by `(run_id, sample_id)`
 
-**Scripts:** `demo_pipeline.py`, `run_eval_pipeline.py`, `tune_test_workers.py`
+**Scripts:** `demo_pipeline.py`, `eval_run.py`, `tune_test_workers.py`
 
 See [Pipeline runbook](./pipeline-runbook.md) for commands, proof acceptance, and tuning results.
 
@@ -215,7 +215,7 @@ Run `proof-20840125` on 20260621_manual pool dump:
 
 ### Full pool replay
 
-Remaining ~163 HumanEval task indices (~172k dedup unique strings). Same CLI, expand `--task-indices` or add `--all-tasks`.
+Remaining ~163 HumanEval task indices (~172k dedup unique strings). Use `scripts/eval_run.py run`, expand `--task-indices`, or add `--all-tasks`.
 
 ### dr-bottleneck integration
 

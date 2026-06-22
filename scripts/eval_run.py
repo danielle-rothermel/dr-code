@@ -8,18 +8,22 @@ from typing import Annotated
 import typer
 
 from dr_code.pipeline.lifecycle import (
+    DEFAULT_HANDLERS_MODULE,
+    DEFAULT_WORKERS,
     EvalStatusResult,
     WaitEvalRunResult,
+    echo_proof_summary,
+    echo_run_metadata,
     export_eval_run,
     get_eval_status,
     init_eval_run,
     preflight_eval_run,
+    run_eval_once,
     seed_eval_run,
     start_eval_workers,
     stop_eval_workers,
     wait_for_eval_run,
 )
-from dr_code.pipeline.runner import DEFAULT_HANDLERS_MODULE, DEFAULT_WORKERS
 from dr_code.pipeline.seed import DEFAULT_DUMP_DIR, DEFAULT_PROOF_INDICES
 
 app = typer.Typer(add_completion=False)
@@ -205,6 +209,68 @@ def export(
     """Export derived artifacts for an Evaluation run."""
     result = export_eval_run(run_id=run_id, output_root=output_root)
     typer.echo(f"run_id={result.run_id} exports={result.export_paths.run_dir}")
+
+
+@app.command()
+def run(
+    mode: Annotated[
+        str,
+        typer.Option("--mode", help="in-process or detached"),
+    ] = "in-process",
+    attempts: Annotated[
+        Path | None,
+        typer.Option("--attempts", help="AttemptRecord parquet export"),
+    ] = None,
+    dump_dir: Annotated[
+        Path,
+        typer.Option("--dump-dir", help="Root of pool dump artifacts"),
+    ] = DEFAULT_DUMP_DIR,
+    task_indices: Annotated[
+        str,
+        typer.Option("--task-indices", help="Comma-separated task indices"),
+    ] = _DEFAULT_TASK_INDICES,
+    limit_per_task: Annotated[
+        int | None, typer.Option("--limit-per-task")
+    ] = None,
+    workers: Annotated[str, typer.Option("--workers")] = DEFAULT_WORKERS,
+    run_id: Annotated[str | None, typer.Option("--run-id")] = None,
+    handlers_module: Annotated[
+        str,
+        typer.Option("--handlers-module"),
+    ] = DEFAULT_HANDLERS_MODULE,
+    completion_timeout: Annotated[
+        float,
+        typer.Option("--completion-timeout"),
+    ] = 28800.0,
+    output_root: Annotated[Path, typer.Option("--output-root")] = Path(
+        "exports/runs"
+    ),
+    skip_preflight: Annotated[bool, typer.Option("--skip-preflight")] = False,
+    overwrite: Annotated[bool, typer.Option("--overwrite")] = False,
+) -> None:
+    """Preflight, seed, execute, wait, export, and report."""
+    indices = _parse_task_indices(task_indices)
+    result = run_eval_once(
+        mode=mode,
+        attempts_path=attempts,
+        dump_dir=None if attempts else dump_dir,
+        task_indices=None if attempts else indices,
+        limit_per_task=limit_per_task,
+        workers=workers,
+        run_id=run_id,
+        handlers_module=handlers_module,
+        completion_timeout=completion_timeout,
+        output_root=output_root,
+        skip_preflight=skip_preflight,
+        overwrite=overwrite,
+    ).pipeline_result
+    echo_run_metadata(
+        run_id=result.run_id,
+        expected_jobs=result.expected_jobs,
+        mode=mode,
+        workers=workers,
+    )
+    echo_proof_summary(result)
 
 
 if __name__ == "__main__":

@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 from dr_queues import (
+    EventKind,
     MongoRunStore,
     RunManifest,
     RunStatus,
     WorkerRecord,
     attach_run_queues,
+    filter_run_events,
     get_run_status,
     parse_workers_arg,
+    run_in_process,
     seed_run,
     setup_run_queues,
-    spawn_all_stage_workers,
     start_stage_workers,
     stop_workers,
     wait_for_run,
@@ -23,19 +26,26 @@ from dr_queues import (
 from dr_code.datasets.export import read_attempts
 from dr_code.models.attempts import AttemptRecord
 from dr_code.models.base import FrozenModel
+from dr_code.models.outcomes import ParseOutcome, TestOutcome
+from dr_code.pipeline.constants import DEFAULT_HANDLERS_MODULE, DEFAULT_WORKERS
 from dr_code.pipeline.definition import build_eval_pipeline
-from dr_code.pipeline.export import RunExportPaths, export_run_artifacts
+from dr_code.pipeline.export import (
+    RunExportPaths,
+    export_run_artifacts,
+    wall_seconds_from_events,
+)
 from dr_code.pipeline.handlers import registry
 from dr_code.pipeline.jobs import build_seed_jobs
 from dr_code.pipeline.preflight import PreflightReport, run_preflight
-from dr_code.pipeline.runner import (
-    DEFAULT_HANDLERS_MODULE,
-    DEFAULT_WORKERS,
-    PipelineRunResult,
-    new_run_id,
-    run_eval_pipeline,
+from dr_code.pipeline.report import (
+    ProofReport,
+    build_proof_report,
+    format_proof_summary,
 )
 from dr_code.pipeline.seed import load_proof_attempts
+
+IN_PROCESS_MODE = "in-process"
+DETACHED_MODE = "detached"
 
 
 class PreflightEvalRunResult(FrozenModel):
@@ -94,11 +104,26 @@ class ExportEvalRunResult(FrozenModel):
     export_paths: RunExportPaths
 
 
+class PipelineRunResult(FrozenModel):
+    """Artifacts from a completed pipeline run."""
+
+    run_id: str
+    expected_jobs: int
+    terminal_count: int
+    wall_seconds: float
+    export_paths: RunExportPaths
+    proof_report: ProofReport
+
+
 class RunEvalOnceResult(FrozenModel):
     """Completed one-shot Evaluation run."""
 
     run_id: str
     pipeline_result: PipelineRunResult
+
+
+def new_run_id(prefix: str = "eval") -> str:
+    return f"{prefix}-{uuid4().hex[:8]}"
 
 
 def preflight_eval_run(
@@ -231,23 +256,21 @@ def start_eval_workers(
         pipeline.step_names(),
         default=2,
     )
-    if stages is None:
-        processes = spawn_all_stage_workers(
-            manifest=manifest,
-            workers_by_stage=workers_by_stage,
+    selected_stages = (
+        list(stages)
+        if stages is not None
+        else [stage.name for stage in reversed(manifest.stages)]
+    )
+    processes = [
+        start_stage_workers(
+            run_id=run_id,
+            stage=stage,
+            workers=workers_by_stage[stage],
             handlers_module=handlers_module,
+            run_store=run_store,
         )
-    else:
-        processes = [
-            start_stage_workers(
-                run_id=run_id,
-                stage=stage,
-                workers=workers_by_stage[stage],
-                handlers_module=handlers_module,
-                run_store=run_store,
-            )
-            for stage in stages
-        ]
+        for stage in selected_stages
+    ]
     return StartEvalWorkersResult(
         run_id=run_id,
         pids=[process.pid for process in processes],
@@ -341,41 +364,193 @@ def export_eval_run(
 
 
 def run_eval_once(
-    attempts: list[AttemptRecord],
+    attempts: list[AttemptRecord] | None = None,
     *,
     run_id: str | None = None,
-    mode: str = "in-process",
+    mode: str = IN_PROCESS_MODE,
     workers: str = DEFAULT_WORKERS,
     handlers_module: str = DEFAULT_HANDLERS_MODULE,
     completion_timeout: float = 7200.0,
     output_root: Path | str = Path("exports/runs"),
+    attempts_path: Path | str | None = None,
+    dump_dir: Path | str | None = None,
+    task_indices: list[int] | tuple[int, ...] | None = None,
+    limit_per_task: int | None = None,
+    skip_preflight: bool = False,
+    overwrite: bool = False,
 ) -> RunEvalOnceResult:
-    """Run the existing one-shot Evaluation pipeline."""
-    result = run_eval_pipeline(
-        attempts,
-        run_id=run_id,
-        mode=mode,
-        workers=workers,
-        handlers_module=handlers_module,
-        completion_timeout=completion_timeout,
-        output_root=output_root,
+    """Preflight, seed, execute, wait, export, and report on an eval run."""
+    if mode not in {IN_PROCESS_MODE, DETACHED_MODE}:
+        msg = f"Unknown mode {mode!r}; expected in-process or detached"
+        raise ValueError(msg)
+
+    resolved_run_id = run_id or new_run_id("proof")
+    if not skip_preflight:
+        preflight_eval_run(
+            dump_dir=dump_dir or Path("."),
+            task_indices=task_indices or [],
+            require_dump=dump_dir is not None,
+        ).report.raise_if_failed()
+    records = _load_seed_attempts(
+        attempts=attempts,
+        attempts_path=attempts_path,
+        dump_dir=dump_dir,
+        task_indices=task_indices,
+        run_id=resolved_run_id,
+        limit_per_task=limit_per_task,
     )
-    return RunEvalOnceResult(run_id=result.run_id, pipeline_result=result)
+
+    store = MongoRunStore()
+    try:
+        init_result = init_eval_run(
+            run_id=resolved_run_id,
+            workers=workers,
+            run_store=store,
+            overwrite=overwrite,
+        )
+        seed_result = seed_eval_run(
+            records,
+            run_id=resolved_run_id,
+            run_store=store,
+        )
+        pipeline = build_eval_pipeline(registry)
+        if mode == IN_PROCESS_MODE:
+            run_in_process(
+                manifest=init_result.manifest,
+                pipeline=pipeline,
+                workers_by_stage=init_result.workers_by_stage,
+                run_store=store,
+                completion_timeout=completion_timeout,
+            )
+            status = get_run_status(resolved_run_id, run_store=store)
+        else:
+            try:
+                start_eval_workers(
+                    run_id=resolved_run_id,
+                    workers=workers,
+                    handlers_module=handlers_module,
+                    stages=["test", "parse"],
+                    run_store=store,
+                )
+                status = wait_for_eval_run(
+                    run_id=resolved_run_id,
+                    timeout=completion_timeout,
+                    run_store=store,
+                ).status
+                if not status.is_complete:
+                    msg = "Timed out waiting for detached pipeline completion."
+                    raise TimeoutError(msg)
+            finally:
+                stop_eval_workers(run_id=resolved_run_id, run_store=store)
+
+        export_paths = export_eval_run(
+            run_id=resolved_run_id,
+            mongo_sink=store,
+            output_root=output_root,
+        ).export_paths
+        events = filter_run_events(
+            store.read_by_run_id(resolved_run_id), resolved_run_id
+        )
+        wall_seconds = wall_seconds_from_events(events)
+        parse_outcomes, test_outcomes = _load_outcomes_from_export(
+            export_paths
+        )
+        terminal_count = len(
+            [event for event in events if event.event == EventKind.TERMINAL]
+        )
+        proof_report = build_proof_report(
+            run_id=resolved_run_id,
+            attempts=records,
+            events=events,
+            parse_outcomes=parse_outcomes,
+            test_outcomes=test_outcomes,
+            expected_jobs=seed_result.expected_jobs,
+            terminal_count=terminal_count,
+            wall_seconds=wall_seconds,
+        )
+        if terminal_count != seed_result.expected_jobs:
+            msg = (
+                f"Terminal count mismatch: {terminal_count} != "
+                f"{seed_result.expected_jobs} (run_id={resolved_run_id})"
+            )
+            raise RuntimeError(msg)
+        return RunEvalOnceResult(
+            run_id=resolved_run_id,
+            pipeline_result=PipelineRunResult(
+                run_id=resolved_run_id,
+                expected_jobs=seed_result.expected_jobs,
+                terminal_count=terminal_count,
+                wall_seconds=wall_seconds,
+                export_paths=export_paths,
+                proof_report=proof_report,
+            ),
+        )
+    finally:
+        store.close()
+
+
+def _load_outcomes_from_export(
+    export_paths: RunExportPaths,
+) -> tuple[list[ParseOutcome], list[TestOutcome]]:
+    parse_outcomes: list[ParseOutcome] = []
+    test_outcomes: list[TestOutcome] = []
+    if export_paths.parse_jsonl.is_file():
+        for line in export_paths.parse_jsonl.read_text(
+            encoding="utf-8"
+        ).splitlines():
+            if line.strip():
+                parse_outcomes.append(ParseOutcome.model_validate_json(line))
+    if export_paths.test_jsonl.is_file():
+        for line in export_paths.test_jsonl.read_text(
+            encoding="utf-8"
+        ).splitlines():
+            if line.strip():
+                test_outcomes.append(TestOutcome.model_validate_json(line))
+    return parse_outcomes, test_outcomes
+
+
+def echo_run_metadata(
+    *,
+    run_id: str,
+    expected_jobs: int,
+    mode: str,
+    workers: str,
+) -> None:
+    import typer
+
+    typer.echo(f"run_id={run_id}")
+    typer.echo(f"manifest=mongodb://run_manifests/{run_id}")
+    typer.echo(f"expected_jobs={expected_jobs} mode={mode} workers={workers}")
+
+
+def echo_proof_summary(result: PipelineRunResult) -> None:
+    import typer
+
+    typer.echo(format_proof_summary(result.proof_report))
+    typer.echo(f"exports={result.export_paths.run_dir}")
 
 
 __all__ = [
+    "DEFAULT_HANDLERS_MODULE",
+    "DEFAULT_WORKERS",
+    "DETACHED_MODE",
     "EvalStatusResult",
     "ExportEvalRunResult",
+    "IN_PROCESS_MODE",
     "InitEvalRunResult",
+    "PipelineRunResult",
     "PreflightEvalRunResult",
     "RunEvalOnceResult",
     "SeedEvalRunResult",
     "StartEvalWorkersResult",
     "StopEvalWorkersResult",
     "WaitEvalRunResult",
+    "echo_proof_summary",
+    "echo_run_metadata",
     "export_eval_run",
     "get_eval_status",
     "init_eval_run",
+    "new_run_id",
     "preflight_eval_run",
     "run_eval_once",
     "seed_eval_run",
