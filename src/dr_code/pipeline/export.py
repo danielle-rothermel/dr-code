@@ -36,6 +36,35 @@ class RunExportPaths(FrozenModel):
     proof_report: Path | None = None
 
 
+class EvalRunOutcomes(FrozenModel):
+    """Parse and test outcomes reconstructed from a persisted eval run."""
+
+    parse_outcomes: list[ParseOutcome]
+    test_outcomes: list[TestOutcome]
+
+
+def read_eval_run_outcomes(
+    *,
+    run_id: str,
+    mongo_sink: MongoRunStore | None = None,
+) -> EvalRunOutcomes:
+    """Read parse and test outcomes from persisted dr-queues events."""
+    sink = mongo_sink or MongoRunStore()
+    owns_sink = mongo_sink is None
+    try:
+        events = filter_run_events(sink.read_by_run_id(run_id), run_id)
+        terminals = [
+            event for event in events if event.event == EventKind.TERMINAL
+        ]
+        return EvalRunOutcomes(
+            parse_outcomes=_parse_outcomes_from_events(events),
+            test_outcomes=_test_outcomes_from_terminals(terminals),
+        )
+    finally:
+        if owns_sink:
+            sink.close()
+
+
 def export_run_artifacts(
     *,
     run_id: str,
