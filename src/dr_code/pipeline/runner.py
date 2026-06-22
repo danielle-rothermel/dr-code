@@ -10,13 +10,12 @@ from uuid import uuid4
 
 from dr_queues import (
     EventKind,
-    MongoEventSink,
+    MongoRunStore,
     TerminalTap,
     filter_run_events,
-    manifest_path,
     parse_workers_arg,
     run_in_process,
-    seed_manifest_jobs,
+    seed_run,
     setup_run_queues,
     spawn_all_stage_workers,
 )
@@ -71,7 +70,7 @@ def run_eval_pipeline(
     jobs = build_seed_jobs(attempts, run_id=resolved_run_id)
     expected_jobs = len(jobs)
 
-    event_sink = MongoEventSink()
+    event_sink = MongoRunStore()
     started = time.perf_counter()
     worker_processes: list[subprocess.Popen[bytes]] = []
 
@@ -79,16 +78,16 @@ def run_eval_pipeline(
         pipeline=pipeline,
         run_id=resolved_run_id,
         workers_by_stage=workers_by_stage,
-        expected_jobs=expected_jobs,
+        run_store=event_sink,
     )
-    seed_manifest_jobs(manifest, jobs)
+    seed_run(manifest, jobs, run_store=event_sink)
 
     if mode == "in-process":
         run_in_process(
             manifest=manifest,
             pipeline=pipeline,
             workers_by_stage=workers_by_stage,
-            event_sink=event_sink,
+            run_store=event_sink,
             completion_timeout=completion_timeout,
         )
         terminal_count = expected_jobs
@@ -97,8 +96,7 @@ def run_eval_pipeline(
         tap = TerminalTap(
             completed_queue=final_stage.output_queue,
             run_id=resolved_run_id,
-            expected_count=expected_jobs,
-            event_sink=event_sink,
+            run_store=event_sink,
         )
         tap.start()
         worker_processes = spawn_all_stage_workers(
@@ -113,7 +111,7 @@ def run_eval_pipeline(
             raise TimeoutError(msg)
         tap.stop()
         tap.join(timeout=5)
-        terminal_count = tap.terminal_count
+        terminal_count = expected_jobs
         _stop_processes(worker_processes)
     else:
         event_sink.close()
@@ -208,7 +206,7 @@ def echo_run_metadata(
     import typer
 
     typer.echo(f"run_id={run_id}")
-    typer.echo(f"manifest={manifest_path(run_id)}")
+    typer.echo(f"manifest=mongodb://run_manifests/{run_id}")
     typer.echo(f"expected_jobs={expected_jobs} mode={mode} workers={workers}")
 
 

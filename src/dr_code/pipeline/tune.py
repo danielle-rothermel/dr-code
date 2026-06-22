@@ -9,8 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dr_queues import manifest_path, spawn_stage_worker_process
-from dr_queues.manifest import read_pid, stage_pid_path
+from dr_queues import replace_stage_workers, stop_workers
 from pymongo import MongoClient
 
 from dr_code.pipeline.mongo import (
@@ -165,13 +164,12 @@ def replace_test_workers(
     *,
     handlers_module: str = DEFAULT_HANDLERS_MODULE,
 ) -> subprocess.Popen[bytes]:
-    """Hot-swap test stage workers via dr-queues --replace."""
-    return spawn_stage_worker_process(
-        manifest_path=manifest_path(run_id),
+    """Hot-swap test stage workers."""
+    return replace_stage_workers(
+        run_id=run_id,
         stage=TEST_STAGE,
         workers=workers,
         handlers_module=handlers_module,
-        replace=True,
     )
 
 
@@ -180,18 +178,7 @@ def stop_parse_worker_if_idle(run_id: str, *, expected_jobs: int) -> bool:
     parse_done = count_stage_completions(run_id, "parse")
     if parse_done < expected_jobs:
         return False
-    pid_path = stage_pid_path(run_id, "parse")
-    pid = read_pid(pid_path)
-    if pid is None:
-        return False
-    try:
-        import os
-        import signal
-
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return False
-    return True
+    return bool(stop_workers(run_id=run_id, stage="parse"))
 
 
 def run_sweep(

@@ -467,18 +467,25 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", marker = "extra == 'viewer'", specifier = ">=0.115.0" },
+    { name = "httpx", marker = "extra == 'viewer'", specifier = ">=0.28.0" },
     { name = "pika", specifier = ">=1.4.1" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pymongo", specifier = ">=4.16.0" },
     { name = "typer", specifier = ">=0.26.7" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'viewer'", specifier = ">=0.34.0" },
 ]
+provides-extras = ["viewer"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "marimo", extras = ["recommended"], specifier = ">=0.23.10" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.15.18" },
     { name = "ty", specifier = ">=0.0.51" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
 
 [[package]]
