@@ -13,6 +13,11 @@ from dr_code.pipeline.metadata import (
     EvalRunMetadataStore,
     EvalSeedSource,
 )
+from dr_code.pipeline.one_job import (
+    OneJobEvalRequest,
+    OneJobEvalResult,
+    evaluate_generated_code,
+)
 from dr_code.pipeline.preflight import PreflightReport, run_preflight
 from dr_code.pipeline.report import ProofReport, build_proof_report
 from dr_code.pipeline.seed import (
@@ -30,6 +35,8 @@ __all__ = [
     "EvalRunMetadata",
     "EvalRunMetadataStore",
     "EvalSeedSource",
+    "OneJobEvalRequest",
+    "OneJobEvalResult",
     "PreflightReport",
     "ProofReport",
     "RunExportPaths",
@@ -39,6 +46,7 @@ __all__ = [
     "build_proof_report",
     "build_seed_jobs",
     "export_run_artifacts",
+    "evaluate_generated_code",
     "format_sweep_table",
     "load_proof_attempts",
     "run_preflight",

@@ -6,6 +6,7 @@ from dr_code.datasets.humaneval_loader import get_task
 from dr_code.models.attempts import AttemptRecord
 from dr_code.models.humaneval import HumanEvalPlusTask
 from dr_code.models.outcomes import (
+    CandidateFunction,
     InfraErrorProjection,
     ParseOutcome,
     TestOutcome,
@@ -17,12 +18,18 @@ from dr_code.testing.execution import (
     execute_sample_tests,
 )
 from dr_code.testing.bridge import (
+    TestCase,
     load_test_cases,
     supports_function_call_tests,
+)
+from dr_code.testing.functions import (
+    arity_matching_functions,
+    discover_candidate_functions,
 )
 
 _SKIP_PARSE_FAILED = "parse_failed"
 _SKIP_UNSUPPORTED_TEST = "unsupported_test_shape"
+_NO_ARITY_MATCHING_FUNCTIONS = "no_arity_matching_functions"
 
 
 def test_parsed_sample(
@@ -74,18 +81,59 @@ def test_parsed_sample(
             },
         )
 
-    execution = execute_sample_tests(
+    test_cases = load_test_cases(resolved_task)
+    try:
+        candidates = discover_candidate_functions(extracted_code)
+    except SyntaxError:
+        execution = execute_sample_tests(
+            extracted_code=extracted_code,
+            entry_point=resolved_task.entry_point,
+            test_cases=test_cases,
+            timeout_seconds=active_timeout,
+            sample_id=record.sample_id,
+        )
+        return _project_execution(
+            base,
+            selected_function_name=resolved_task.entry_point,
+            candidate_functions=(),
+            expected_entry_point_present=False,
+            extracted_code=extracted_code,
+            execution=execution,
+        )
+
+    expected_entry_point_present = any(
+        candidate.name == resolved_task.entry_point for candidate in candidates
+    )
+    eligible = arity_matching_functions(
+        candidates,
+        expected_arity=resolved_task.expected_arity,
+    )
+    if not eligible:
+        return base.model_copy(
+            update={
+                "outcome_kind": "tested",
+                "skipped": False,
+                "skip_reason": _NO_ARITY_MATCHING_FUNCTIONS,
+                "tests_ran": False,
+                "entry_point": None,
+                "selected_function_name": None,
+                "candidate_functions": candidates,
+                "expected_entry_point_present": expected_entry_point_present,
+                "extracted_code": extracted_code,
+                "test_pass_rate": 0.0,
+                "all_tests_passed": False,
+            }
+        )
+
+    return _select_best_execution(
+        base=base,
+        candidates=eligible,
+        all_candidates=candidates,
+        expected_entry_point_present=expected_entry_point_present,
         extracted_code=extracted_code,
-        entry_point=record.entry_point,
-        test_cases=load_test_cases(resolved_task),
+        test_cases=test_cases,
         timeout_seconds=active_timeout,
         sample_id=record.sample_id,
-    )
-    return _project_execution(
-        base,
-        entry_point=record.entry_point,
-        extracted_code=extracted_code,
-        execution=execution,
     )
 
 
@@ -123,7 +171,9 @@ def _base_outcome(
 def _project_execution(
     base: TestOutcome,
     *,
-    entry_point: str,
+    selected_function_name: str,
+    candidate_functions: tuple[CandidateFunction, ...],
+    expected_entry_point_present: bool,
     extracted_code: str,
     execution: SampleExecutionResult,
 ) -> TestOutcome:
@@ -131,7 +181,10 @@ def _project_execution(
     updates: dict[str, object] = {
         "outcome_kind": outcome_kind,
         "skipped": False,
-        "entry_point": entry_point,
+        "entry_point": selected_function_name,
+        "selected_function_name": selected_function_name,
+        "candidate_functions": candidate_functions,
+        "expected_entry_point_present": expected_entry_point_present,
         "extracted_code": extracted_code,
         "latency_ms": execution.latency_ms,
         "infra_error": execution.infra_error,
@@ -161,6 +214,46 @@ def _project_execution(
         _assert_non_tested_invariants(outcome_kind, execution)
 
     return base.model_copy(update=updates)
+
+
+def _select_best_execution(
+    *,
+    base: TestOutcome,
+    candidates: tuple[CandidateFunction, ...],
+    all_candidates: tuple[CandidateFunction, ...],
+    expected_entry_point_present: bool,
+    extracted_code: str,
+    test_cases: list[TestCase],
+    timeout_seconds: float,
+    sample_id: str,
+) -> TestOutcome:
+    outcomes: list[tuple[CandidateFunction, SampleExecutionResult]] = []
+    for candidate in candidates:
+        execution = execute_sample_tests(
+            extracted_code=extracted_code,
+            entry_point=candidate.name,
+            test_cases=test_cases,
+            timeout_seconds=timeout_seconds,
+            sample_id=sample_id,
+        )
+        outcomes.append((candidate, execution))
+
+    candidate, execution = max(
+        outcomes,
+        key=lambda item: (
+            -1.0 if item[1].test_pass_rate is None else item[1].test_pass_rate,
+            -item[0].source_order,
+            item[0].name,
+        ),
+    )
+    return _project_execution(
+        base,
+        selected_function_name=candidate.name,
+        candidate_functions=all_candidates,
+        expected_entry_point_present=expected_entry_point_present,
+        extracted_code=extracted_code,
+        execution=execution,
+    )
 
 
 def _assert_tested_invariants(execution: SampleExecutionResult) -> None:

@@ -19,7 +19,7 @@ def test_load_pool_parquet_fixture() -> None:
     records = load_pool_parquet(_FIXTURE_PARQUET)
     assert len(records) == 4
     assert all(record.provenance.source.value == "pool" for record in records)
-    assert records[0].entry_point == "has_close_elements"
+    assert records[0].task_id == "HumanEval/0"
 
 
 def test_infer_task_id_from_dedup_filename() -> None:

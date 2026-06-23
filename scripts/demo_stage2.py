@@ -77,7 +77,6 @@ def _load_failure_record() -> AttemptRecord:
                 sample_id=compute_sample_id(task_id, raw_output),
                 run_id=None,
                 task_id=task_id,
-                entry_point="has_close_elements",
                 decoder_input="fixture",
                 raw_output=raw_output,
                 provenance=AttemptProvenance(source=AttemptSource.POOL),
@@ -188,7 +187,6 @@ def main(
     typer.echo(f"  sample_id: {record.sample_id}")
     typer.echo(f"  run_id: {record.run_id}")
     typer.echo(f"  task_id: {record.task_id}")
-    typer.echo(f"  entry_point: {record.entry_point}")
     typer.echo(f"  source: {record.provenance.source.value}")
     typer.echo(f"  occurrence_count: {record.provenance.occurrence_count}")
     typer.echo("")

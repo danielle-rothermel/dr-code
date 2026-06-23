@@ -11,7 +11,7 @@ dependencies = [
     "code-eval==0.2.0",
     "datasets>=3.0,<4",
     "dr-providers==0.1.0",
-    "dr-queues",
+    "dr-queues>=0.1.4",
     "marimo[recommended]>=0.23.10",
     "pyarrow>=24.0.0",
     "pydantic>=2.13.4",
@@ -23,7 +23,6 @@ dependencies = [
 [tool.uv.sources]
 code-eval = { path = "../code-eval", editable = true }
 dr-providers = { path = "../dr-providers", editable = true }
-dr-queues = { path = "../dr-queues", editable = true }
 
 # code-eval pins ruff==0.8.4 for subprocess normalizers; dr-code parse workers
 # use EXTRACTION_CONFIG (no normalizers) and dev lint needs a current ruff.

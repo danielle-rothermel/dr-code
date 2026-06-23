@@ -30,7 +30,6 @@ def test_analyze_eval_run_cli_writes_artifacts(tmp_path: Path) -> None:
             sample_id="row-1",
             run_id=None,
             task_id="HumanEval/0",
-            entry_point="has_close_elements",
             decoder_input="def has_close_elements(): pass",
             raw_output="out",
             provenance=AttemptProvenance(

@@ -44,7 +44,6 @@ def _record(sample_id: str = "sample-1") -> AttemptRecord:
         sample_id=sample_id,
         run_id=None,
         task_id="HumanEval/0",
-        entry_point="fn",
         decoder_input="desc",
         raw_output="code",
         provenance=AttemptProvenance(source=AttemptSource.POOL),

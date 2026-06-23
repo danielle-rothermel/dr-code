@@ -44,7 +44,6 @@ def format_test_walkthrough(
         f"  sample_id: {record.sample_id}",
         f"  run_id: {outcome.run_id}",
         f"  task_id: {record.task_id}",
-        f"  entry_point: {record.entry_point}",
         "",
         "Parse summary:",
         f"  parse_success: {parse_outcome.parse_success}",
@@ -57,9 +56,21 @@ def format_test_walkthrough(
         "Test summary:",
         f"  outcome_kind: {outcome.outcome_kind}",
         f"  tests_ran: {outcome.tests_ran}",
+        f"  selected_function_name: {outcome.selected_function_name}",
+        "  expected_entry_point_present: "
+        f"{outcome.expected_entry_point_present}",
         f"  test_pass_rate: {outcome.test_pass_rate}",
         f"  all_tests_passed: {outcome.all_tests_passed}",
     ]
+    if outcome.candidate_functions:
+        lines.append("  candidate_functions:")
+        for candidate in outcome.candidate_functions:
+            suffix = " varargs" if candidate.has_varargs else ""
+            lines.append(
+                "    - "
+                f"{candidate.name}/{candidate.positional_arity}"
+                f" #{candidate.source_order}{suffix}"
+            )
     if outcome.latency_ms is not None:
         lines.append(f"  latency_ms: {outcome.latency_ms:.2f}")
 

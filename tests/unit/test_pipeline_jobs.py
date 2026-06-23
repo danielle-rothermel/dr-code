@@ -19,7 +19,6 @@ def _sample_record() -> AttemptRecord:
         sample_id="abc123",
         run_id=None,
         task_id="HumanEval/0",
-        entry_point="has_close_elements",
         decoder_input='def has_close_elements(numbers, threshold):\n    """doc"""\n',
         raw_output="def has_close_elements(numbers, threshold):\n    return False\n",
         provenance=AttemptProvenance(source=AttemptSource.POOL, occurrence_count=3),

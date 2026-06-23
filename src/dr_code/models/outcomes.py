@@ -26,6 +26,15 @@ class CodeEvalProvenance(FrozenModel):
     extraction_log_summary: tuple[str, ...] | None = None
 
 
+class CandidateFunction(FrozenModel):
+    """Top-level function discovered in generated code."""
+
+    name: str
+    positional_arity: int
+    source_order: int
+    has_varargs: bool = False
+
+
 class ParseOutcome(FrozenModel):
     """Parse-stage result projection (stage 2)."""
 
@@ -77,6 +86,9 @@ class TestOutcome(FrozenModel):
     skip_reason: str | None = None
     tests_ran: bool = False
     entry_point: str | None = None
+    selected_function_name: str | None = None
+    candidate_functions: tuple[CandidateFunction, ...] = ()
+    expected_entry_point_present: bool = False
     extracted_code: str | None = None
     test_pass_rate: float | None = None
     all_tests_passed: bool | None = None

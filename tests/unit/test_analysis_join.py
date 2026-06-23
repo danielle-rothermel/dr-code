@@ -18,7 +18,6 @@ def _attempt(
         sample_id=sample_id,
         run_id=None,
         task_id="HumanEval/0",
-        entry_point="has_close_elements",
         decoder_input=decoder_input,
         raw_output="out",
         provenance=AttemptProvenance(

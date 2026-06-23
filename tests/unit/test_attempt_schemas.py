@@ -26,7 +26,6 @@ def test_empty_decoder_input_rejected() -> None:
             sample_id="abc",
             run_id=None,
             task_id="HumanEval/0",
-            entry_point="has_close_elements",
             decoder_input="",
             raw_output="x",
             provenance=AttemptProvenance(source=AttemptSource.POOL),
@@ -43,10 +42,7 @@ def test_from_pool_row_maps_columns() -> None:
         "attempt_id": "attempt-1",
         "extra_col": "keep-me",
     }
-    record = AttemptRecord.from_pool_row(
-        row,
-        entry_point="has_close_elements",
-    )
+    record = AttemptRecord.from_pool_row(row)
     assert record.task_id == "HumanEval/0"
     assert record.decoder_input == "desc"
     assert record.raw_output == "code"
@@ -62,7 +58,6 @@ def test_from_dedup_row_sets_occurrence_count() -> None:
         out="code",
         count=9,
         task_id="HumanEval/0",
-        entry_point="has_close_elements",
         decoder_input="desc",
     )
     assert record.provenance.occurrence_count == 9
@@ -72,7 +67,7 @@ def test_stub_for_fresh() -> None:
     task = HumanEvalPlusTask(
         task_id="HumanEval/0",
         entry_point="has_close_elements",
-        prompt="def has_close_elements(...):",
+        prompt="def has_close_elements(numbers, threshold):\n",
         canonical_solution="    return False",
         test="assert True",
     )

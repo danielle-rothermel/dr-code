@@ -33,7 +33,6 @@ def _row(
         sample_id=sample_id,
         run_id=None,
         task_id=task_id,
-        entry_point="fn",
         decoder_input_len_raw=100,
         decoder_input_len_zstd22=50,
         compression_quartile=compression_quartile,

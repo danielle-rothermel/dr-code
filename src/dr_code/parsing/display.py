@@ -22,7 +22,6 @@ def format_parse_walkthrough(
         f"  sample_id: {record.sample_id}",
         f"  run_id: {record.run_id}",
         f"  task_id: {record.task_id}",
-        f"  entry_point: {record.entry_point}",
         f"  source: {record.provenance.source.value}",
     ]
     if record.provenance.source is AttemptSource.POOL:

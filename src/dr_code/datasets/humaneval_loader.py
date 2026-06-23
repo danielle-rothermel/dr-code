@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from typing import Final
 
-from dr_code.models.humaneval import HumanEvalPlusTask
+from dr_code.models.humaneval import (
+    HumanEvalPlusTask,
+    expected_arity_from_prompt,
+)
 
 HF_DATASET_ID: Final[str] = "evalplus/humanevalplus"
 HF_SPLIT: Final[str] = "test"
@@ -31,6 +34,7 @@ def _try_load_from_hf() -> list[HumanEvalPlusTask] | None:
                 prompt=row["prompt"],
                 canonical_solution=row["canonical_solution"],
                 test=row["test"],
+                expected_arity=expected_arity_from_prompt(row["prompt"]),
             )
         )
     return tasks

@@ -17,7 +17,6 @@ def _record() -> AttemptRecord:
         sample_id="abc123",
         run_id="run-1",
         task_id="HumanEval/0",
-        entry_point="has_close_elements",
         decoder_input="desc",
         raw_output="def has_close_elements():\n    pass\n",
         provenance=AttemptProvenance(source=AttemptSource.POOL),

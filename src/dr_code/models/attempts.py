@@ -69,7 +69,6 @@ class AttemptRecord(FrozenModel):
     sample_id: str
     run_id: str | None
     task_id: str
-    entry_point: str
     decoder_input: str
     raw_output: str
     provenance: AttemptProvenance
@@ -86,8 +85,6 @@ class AttemptRecord(FrozenModel):
     def from_pool_row(
         cls,
         row: dict[str, Any],
-        *,
-        entry_point: str,
     ) -> AttemptRecord:
         """Build an AttemptRecord from a pool Parquet row dict."""
         task_id = str(row["human_eval_task_id"])
@@ -98,7 +95,6 @@ class AttemptRecord(FrozenModel):
             sample_id=compute_sample_id(task_id, raw_output),
             run_id=None,
             task_id=task_id,
-            entry_point=entry_point,
             decoder_input=decoder_input,
             raw_output=raw_output,
             provenance=provenance,
@@ -111,7 +107,6 @@ class AttemptRecord(FrozenModel):
         out: str,
         count: int,
         task_id: str,
-        entry_point: str,
         decoder_input: str,
         provenance: AttemptProvenance | None = None,
     ) -> AttemptRecord:
@@ -121,7 +116,6 @@ class AttemptRecord(FrozenModel):
             sample_id=compute_sample_id(task_id, out),
             run_id=None,
             task_id=task_id,
-            entry_point=entry_point,
             decoder_input=decoder_input,
             raw_output=out,
             provenance=prov.model_copy(
@@ -148,7 +142,6 @@ class AttemptRecord(FrozenModel):
             sample_id=compute_sample_id(task.task_id, raw_output),
             run_id=run_id,
             task_id=task.task_id,
-            entry_point=task.entry_point,
             decoder_input=decoder_input,
             raw_output=raw_output,
             provenance=AttemptProvenance(
@@ -162,9 +155,8 @@ class AttemptRecord(FrozenModel):
     def from_bottleneck_output(
         cls,
         *,
-        run_id: str,
+        run_id: str | None,
         task_id: str,
-        entry_point: str,
         decoder_input: str,
         raw_output: str,
         decode_model: str | None = None,
@@ -178,7 +170,6 @@ class AttemptRecord(FrozenModel):
             sample_id=compute_sample_id(task_id, raw_output),
             run_id=run_id,
             task_id=task_id,
-            entry_point=entry_point,
             decoder_input=decoder_input,
             raw_output=raw_output,
             provenance=AttemptProvenance(

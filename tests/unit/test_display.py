@@ -16,7 +16,6 @@ def test_format_spot_check_includes_pool_and_fresh_blocks() -> None:
             out="def has_close_elements(numbers, threshold):\n    pass\n",
             count=3,
             task_id=task.task_id,
-            entry_point=task.entry_point,
             decoder_input="compressed description",
         )
     ]
@@ -49,7 +48,6 @@ def test_format_spot_check_missing_task_raises() -> None:
             out="def has_close_elements(numbers, threshold):\n    pass\n",
             count=1,
             task_id=task.task_id,
-            entry_point=task.entry_point,
             decoder_input="compressed description",
         )
     ]

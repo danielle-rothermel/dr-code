@@ -32,7 +32,6 @@ class EnrichedRow(FrozenModel):
     sample_id: str
     run_id: str | None
     task_id: str
-    entry_point: str
     decoder_input_len_raw: int
     decoder_input_len_zstd22: int
     compression_quartile: str | None = None
@@ -53,6 +52,8 @@ class EnrichedRow(FrozenModel):
     test_pass_rate: float | None = None
     skipped: bool | None = None
     skip_reason: str | None = None
+    selected_function_name: str | None = None
+    expected_entry_point_present: bool | None = None
 
 
 def load_parse_outcomes(path: Path) -> dict[str, ParseOutcome]:
@@ -103,7 +104,6 @@ def enrich_eval_run(
                 sample_id=record.sample_id,
                 run_id=record.run_id,
                 task_id=record.task_id,
-                entry_point=record.entry_point,
                 decoder_input_len_raw=raw_len,
                 decoder_input_len_zstd22=zstd_len,
                 provenance_source=provenance.source.value,
@@ -133,6 +133,16 @@ def enrich_eval_run(
                 ),
                 skipped=test_outcome.skipped if test_outcome else None,
                 skip_reason=test_outcome.skip_reason if test_outcome else None,
+                selected_function_name=(
+                    test_outcome.selected_function_name
+                    if test_outcome
+                    else None
+                ),
+                expected_entry_point_present=(
+                    test_outcome.expected_entry_point_present
+                    if test_outcome
+                    else None
+                ),
             )
         )
 

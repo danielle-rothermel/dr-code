@@ -36,10 +36,7 @@ def load_pool_parquet(
         if task_id not in index:
             msg = f"Unknown task_id in pool parquet: {task_id}"
             raise KeyError(msg)
-        entry_point = index[task_id].entry_point
-        records.append(
-            AttemptRecord.from_pool_row(row, entry_point=entry_point)
-        )
+        records.append(AttemptRecord.from_pool_row(row))
         if limit is not None and len(records) >= limit:
             break
     return records
@@ -85,7 +82,6 @@ def load_pool_dedup_jsonl(
                     out=out,
                     count=count,
                     task_id=resolved_task_id,
-                    entry_point=task.entry_point,
                     decoder_input=resolved_decoder_input,
                 )
             )
@@ -153,7 +149,6 @@ def load_pool_dedup_with_parquet(
                     out=out,
                     count=count,
                     task_id=resolved_task_id,
-                    entry_point=task.entry_point,
                     decoder_input=decoder_input,
                     provenance=provenance,
                 )

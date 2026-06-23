@@ -411,7 +411,7 @@ requires-dist = [
     { name = "code-eval", editable = "../code-eval" },
     { name = "datasets", specifier = ">=3.0,<4" },
     { name = "dr-providers", editable = "../dr-providers" },
-    { name = "dr-queues", editable = "../dr-queues" },
+    { name = "dr-queues", specifier = ">=0.1.4" },
     { name = "marimo", extras = ["recommended"], specifier = ">=0.23.10" },
     { name = "pyarrow", specifier = ">=24.0.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
@@ -457,36 +457,17 @@ dev = [
 
 [[package]]
 name = "dr-queues"
-version = "0.1.2"
-source = { editable = "../dr-queues" }
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pika" },
     { name = "pydantic" },
     { name = "pymongo" },
     { name = "typer" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", marker = "extra == 'viewer'", specifier = ">=0.115.0" },
-    { name = "httpx", marker = "extra == 'viewer'", specifier = ">=0.28.0" },
-    { name = "pika", specifier = ">=1.4.1" },
-    { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "pymongo", specifier = ">=4.16.0" },
-    { name = "typer", specifier = ">=0.26.7" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'viewer'", specifier = ">=0.34.0" },
-]
-provides-extras = ["viewer"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "marimo", extras = ["recommended"], specifier = ">=0.23.10" },
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "ruff", specifier = ">=0.15.18" },
-    { name = "ty", specifier = ">=0.0.51" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/ee/45/24bf77594854f243f4594a095201f8226c0b0ed130ce93410347ec25c1d0/dr_queues-0.1.4.tar.gz", hash = "sha256:da7efeef78af649880aff560e629825921a5bf52548c0cfa213d25b745f8f289", size = 194675 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/d3/185caaa12f498278e8c511e5a1de4952608ba429457ac025307c8b0dbc31/dr_queues-0.1.4-py3-none-any.whl", hash = "sha256:7701068609452dc14a3ca2a843fb0ce8401b8dc09a70e2ddfb46c3ecd56313af", size = 57547 },
 ]
 
 [[package]]
