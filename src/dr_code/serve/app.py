@@ -1,6 +1,7 @@
 """FastAPI facade over the explain API (requires the [serve] extra)."""
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, StrictStr
 
 from dr_code.humaneval.code_parsing import (
@@ -17,6 +18,9 @@ from dr_code.serve.explain import (
 
 SERVE_TITLE = "dr-code serve"
 SERVE_VERSION = "0.1.0"
+# The facade binds to localhost only; allow browser calls from
+# locally-served apps (any localhost port) and nothing else.
+LOCALHOST_ORIGIN_REGEX = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 
 PARSER_PROFILE_IDS = [
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
@@ -46,6 +50,12 @@ class ProfilesResponse(BaseModel):
 
 def create_app() -> FastAPI:
     app = FastAPI(title=SERVE_TITLE, version=SERVE_VERSION)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=LOCALHOST_ORIGIN_REGEX,
+        allow_methods=["GET", "POST"],
+        allow_headers=["content-type"],
+    )
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:

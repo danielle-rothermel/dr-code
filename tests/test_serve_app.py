@@ -59,3 +59,25 @@ def test_explain_unknown_profile_is_422(client: TestClient) -> None:
         json={"text": FENCED_TEXT, "profile_id": "nope"},
     )
     assert response.status_code == 422
+
+
+def test_cors_allows_localhost_origins(client: TestClient) -> None:
+    response = client.post(
+        "/explain",
+        json={"text": FENCED_TEXT},
+        headers={"origin": "http://localhost:3211"},
+    )
+    assert response.status_code == 200
+    assert (
+        response.headers["access-control-allow-origin"]
+        == "http://localhost:3211"
+    )
+
+
+def test_cors_rejects_non_localhost_origins(client: TestClient) -> None:
+    response = client.post(
+        "/explain",
+        json={"text": FENCED_TEXT},
+        headers={"origin": "https://evil.example"},
+    )
+    assert "access-control-allow-origin" not in response.headers
