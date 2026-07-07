@@ -321,19 +321,26 @@ def _apply_resource_limits(timeout_seconds: float) -> None:
         _set_limit(resource.RLIMIT_DATA, _DEFAULT_MEMORY_BYTES)
 
 
-def _set_limit(limit_name: int, value: int) -> None:
-    soft, hard = resource.getrlimit(limit_name)
+def _set_limit(limit_name: int, requested: int) -> None:
+    _, hard = resource.getrlimit(limit_name)
+    target = _clamp_to_hard_limit(requested, hard)
+    # Setting soft and hard together in one call keeps soft <= hard at
+    # every step; staged updates can transiently request soft > hard and
+    # raise ValueError (seen on Linux, where RLIM_INFINITY is -1 and an
+    # infinite soft limit compares below any finite target).
+    resource.setrlimit(limit_name, (target, target))
+
+
+def _clamp_to_hard_limit(requested: int, hard: int) -> int:
+    """Lower a requested limit so it never exceeds the hard limit.
+
+    An infinite hard limit admits any requested value; RLIM_INFINITY is
+    platform-specific (-1 on Linux) so it must be matched by equality,
+    never numeric comparison.
+    """
     if hard == resource.RLIM_INFINITY:
-        target = value
-    else:
-        target = min(value, hard)
-    if soft > target:
-        resource.setrlimit(limit_name, (target, hard))
-        soft = target
-    if hard != target:
-        resource.setrlimit(limit_name, (soft, target))
-    if soft != target:
-        resource.setrlimit(limit_name, (target, target))
+        return requested
+    return min(requested, hard)
 
 
 def _execute_test_cases(
