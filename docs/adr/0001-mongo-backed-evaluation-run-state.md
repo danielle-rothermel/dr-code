@@ -1,3 +1,5 @@
+> **RETIRES AT D3 MERGE** — this documents the pre-migration architecture that PR #9 replaces; historical once the composable migration merges. Tracked in Linear S17/DEV-21.
+
 # Mongo-backed Evaluation run lifecycle state
 
 Evaluation run lifecycle state is persisted in MongoDB through dr-queues: manifests, seed batches, job states, worker records, pipeline events, and terminal outcomes. Files under `exports/runs/{run_id}/` are derived artifacts for inspection, analysis, and sharing; they are not required to continue or resume an Evaluation run.
