@@ -1,3 +1,5 @@
+> **RETIRES AT D3 MERGE** — this documents the pre-migration architecture that PR #9 replaces; historical once the composable migration merges. Tracked in Linear S17/DEV-21.
+
 # Pipeline runbook
 
 dr-code eval pipeline: dr-queues parse → test on pool dump artifacts.

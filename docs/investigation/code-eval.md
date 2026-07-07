@@ -1,3 +1,5 @@
+> **RETIRES AT D3 MERGE** — this documents the pre-migration architecture that PR #9 replaces; historical once the composable migration merges. Tracked in Linear S17/DEV-21.
+
 # code-eval — Investigation Notes
 
 Sibling repo: `../code-eval`

@@ -1,3 +1,5 @@
+> **RETIRES AT D3 MERGE** — this documents the pre-migration architecture that PR #9 replaces; historical once the composable migration merges. Tracked in Linear S17/DEV-21.
+
 # Investigation Synthesis — Code Comp Pipeline Starting State
 
 Recorded from repo inspection (June 2026). These notes describe **what exists** and **how pieces relate** — not a plan or roadmap.
