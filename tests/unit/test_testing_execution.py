@@ -2,13 +2,74 @@
 
 from __future__ import annotations
 
+import resource
+from typing import Callable
+
+import pytest
+
 from dr_code.models.outcomes import InfraErrorProjection, TestCaseResultProjection
 from dr_code.testing.bridge import TestCase
 from dr_code.testing.execution import (
     SampleExecutionResult,
+    _set_limit,
     classify_execution_outcome,
     execute_sample_tests,
 )
+
+
+def _recording_setrlimit(
+    calls: list[tuple[int, int]], infinity: int
+) -> Callable[[int, tuple[int, int]], None]:
+    """Fake setrlimit enforcing the kernel's soft <= hard invariant."""
+
+    def fake_setrlimit(_limit_name: int, limits: tuple[int, int]) -> None:
+        soft, hard = limits
+        if hard != infinity and (soft == infinity or soft > hard):
+            raise ValueError("current limit exceeds maximum limit")
+        calls.append(limits)
+
+    return fake_setrlimit
+
+
+def test_requested_limit_above_hard_limit_clamps_to_hard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(resource, "getrlimit", lambda _limit_name: (64, 128))
+    monkeypatch.setattr(
+        resource,
+        "setrlimit",
+        _recording_setrlimit(calls, resource.RLIM_INFINITY),
+    )
+
+    _set_limit(resource.RLIMIT_NOFILE, 4096)
+
+    assert calls == [(128, 128)]
+
+
+def test_linux_negative_rlim_infinity_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # GitHub Actions Linux runners report RLIM_INFINITY as -1 with
+    # infinite soft and hard limits (e.g. RLIMIT_CPU); the requested
+    # finite limit must be applied without a ValueError.
+    linux_infinity = -1
+    calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(resource, "RLIM_INFINITY", linux_infinity)
+    monkeypatch.setattr(
+        resource,
+        "getrlimit",
+        lambda _limit_name: (linux_infinity, linux_infinity),
+    )
+    monkeypatch.setattr(
+        resource,
+        "setrlimit",
+        _recording_setrlimit(calls, linux_infinity),
+    )
+
+    _set_limit(resource.RLIMIT_CPU, 5)
+
+    assert calls == [(5, 5)]
 
 
 def test_heuristic_reclassification_promotes_shared_worker_error() -> None:
