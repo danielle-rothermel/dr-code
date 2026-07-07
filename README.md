@@ -1,132 +1,91 @@
 # dr-code
 
-Research harness for the compression–correctness evaluation pipeline: given a natural-language description of a HumanEval function, can a decoder reconstruct working Python, and how compressible is the description?
+Dependency-clean nucleus for the compression–correctness question: given a
+natural-language description of a HumanEval function, can a decoder
+reconstruct working Python, and how compressible is the description?
 
-Design docs: [docs/plans/README.md](docs/plans/README.md)
+The repo owns HumanEval+ parsing, scoring, and metrics as versioned profiles,
+plus offline batch CLIs and a localhost serve facade. All dependencies are
+public PyPI packages — a fresh clone builds with `uv sync` (the former
+editable path deps on `../code-eval`, `../dr-providers`, and `../dr-queues`
+were removed in the composable migration, PR #9).
 
-**Status:** Stages 1–4 complete. The Mongo-backed Evaluation run lifecycle is
-wired and manually smoke-tested for in-process, detached, split-command, export,
-and analysis flows — see [pipeline runbook](docs/plans/pipeline-runbook.md).
+## Layout
 
-## Pipeline demo
+The wheel ships **two top-level packages** (`[tool.hatch.build.targets.wheel]`
+in `pyproject.toml`) — don't install it alongside a standalone code-eval dist,
+the `code_eval` package names collide:
 
-In-process smoke on a few pool dedup samples (requires RabbitMQ and Mongo):
+- `src/dr_code/` — the nucleus:
+  - `humaneval/` — parsing/scoring/metrics ported byte-identically from
+    whetstone under existing profile IDs: scoring profile `humaneval@v1`
+    (2.0s subprocess timeout), parser profiles `humaneval-best-effort` and
+    `humaneval-field-marker` at `v1`, metrics profile `humaneval-metrics@v1`.
+    `resolve_humaneval_scoring_profile` hard-raises on anything else.
+  - `parsing/`, `testing/` — adapters over `code_eval` extraction/validation
+    and HumanEval+ test execution for `AttemptRecord` batches.
+  - `models/`, `datasets/`, `analysis/` — attempt/outcome schemas, pool and
+    HumanEval+ snapshot loaders, offline join/aggregate/export.
+  - `serve/` — FastAPI explain facade (requires the `serve` extra).
+- `src/code_eval/` — code-eval 0.2.0 absorbed as in-repo source (extraction
+  ladder, normalizers, repairs, validators, synthetic corpus tooling). Legacy
+  lineage: excluded from `ty` checking pending the profile-v2 retyping.
 
-```bash
-cd ../dr-queues && docker compose up -d
-uv run scripts/demo_pipeline.py --limit 3
-```
-
-## Pipeline proof / batch run
-
-Detached parallel eval on pool dump artifacts:
-
-```bash
-uv run scripts/eval_run.py run \
-  --mode detached \
-  --task-indices 0,1,2,3,4 \
-  --workers parse=8,test=8
-```
-
-Lifecycle state lives in MongoDB through `dr-queues`; files under
-`exports/runs/{run_id}/` are derived artifacts for inspection and analysis
-(`attempts.parquet`, parse/test JSONL, `manifest.json`, `proof_report.json`).
-Tune test workers mid-run with `scripts/tune_test_workers.py`. Full runbook:
-[docs/plans/pipeline-runbook.md](docs/plans/pipeline-runbook.md).
-
-For manual control, the same lifecycle is exposed as split commands:
+## Setup
 
 ```bash
-uv run scripts/eval_run.py init --run-id YOUR_RUN_ID --workers parse=8,test=8
-uv run scripts/eval_run.py seed --run-id YOUR_RUN_ID --dump-dir /path/to/dump
-uv run scripts/eval_run.py start --run-id YOUR_RUN_ID --workers parse=8,test=8
-uv run scripts/eval_run.py wait --run-id YOUR_RUN_ID --target terminal
-uv run scripts/eval_run.py export --run-id YOUR_RUN_ID
-uv run scripts/eval_run.py stop --run-id YOUR_RUN_ID
+uv sync                # library + CLIs
+uv sync --extra serve  # + FastAPI/uvicorn for the serve facade
 ```
 
-## Stage 4 demo
+## Serve facade
 
-Join attempt, parse, and test exports; write enriched Parquet, summary JSON, and aggregate tables. Explore in marimo.
+Localhost-only FastAPI app for the parser playground (default port 8321):
 
 ```bash
-uv run scripts/analyze_eval_run.py \
-  --attempts exports/demo/pool.parquet \
-  --parse exports/demo/parse.jsonl \
-  --test exports/demo/test.jsonl \
-  --output-dir exports/demo/analysis
-
-uv run marimo run nbs/analyze_eval_run.py
+uv run python -m dr_code.serve serve            # run on 127.0.0.1:8321
+uv run python -m dr_code.serve serve --port N   # other localhost port
+uv run python -m dr_code.serve openapi          # dump OpenAPI schema
 ```
 
-## Stage 3 demo
+Endpoints: `GET /health`, `GET /profiles` (parser profile IDs + version),
+`POST /explain` (stage-by-stage extraction explanation for one raw text).
+CORS allows localhost origins only; the bind host is not configurable.
 
-Batch-test a parse export with local fork workers:
+## Offline batch CLIs
 
 ```bash
-uv run scripts/test_attempts.py \
-  --attempts exports/demo/pool.parquet \
-  --parse exports/demo/parse.jsonl \
-  --output exports/demo/test.jsonl
-
-uv run scripts/demo_stage3.py --show-failure
+uv run scripts/import_pool_attempts.py --help   # pool artifacts -> AttemptRecord exports
+uv run scripts/parse_attempts.py --help         # AttemptRecord exports -> ParseOutcome JSONL
+uv run scripts/test_attempts.py --help          # run HumanEval+ tests over parsed attempts
+uv run scripts/analyze_eval_run.py --help       # join/aggregate exports for analysis
+uv run scripts/build_humaneval_snapshot.py      # rebuild offline HumanEval+ snapshot (network)
 ```
 
-## Stage 2 demo
-
-Walk one `AttemptRecord` through code-eval parsing: raw output, extracted code, provenance, and mongosh inspect commands for when the pipeline is wired.
-
-```bash
-uv run scripts/demo_stage2.py --show-failure
-```
-
-Batch-parse an export to JSONL:
-
-```bash
-uv run scripts/parse_attempts.py \
-  --input exports/demo/pool.parquet \
-  --output exports/demo/parse.jsonl
-```
-
-## Stage 1 demo
-
-Full verification: pool import, live fresh generation (or offline stub), export, stats, and side-by-side spot check.
-
-```bash
-# Offline smoke (no API key)
-uv run scripts/demo_stage1.py --skip-live
-
-# Live generation (requires OPENROUTER_API_KEY)
-uv run scripts/demo_stage1.py
-```
-
-Exports land in `exports/demo/pool.parquet` and `exports/demo/fresh.parquet`.
-
-## Stage 1 CLIs
-
-Import pool artifacts into unified `AttemptRecord` exports:
-
-```bash
-uv run scripts/import_pool_attempts.py --help
-```
-
-Generate fresh decoder attempts via dr-providers:
-
-```bash
-uv run scripts/generate_decoder_attempts.py --list-profiles
-uv run scripts/generate_decoder_attempts.py \
-  --profile openrouter/google/gemini-3.1-flash-lite/off/v1 \
-  --task-ids HumanEval/0 --stats
-```
-
-Rebuild the offline HumanEval+ snapshot (requires network):
-
-```bash
-uv run scripts/build_humaneval_snapshot.py
-```
+Explore analysis outputs in marimo: `uv run marimo run nbs/analyze_eval_run.py`.
 
 ## Tests
 
+Identity gates first — these pin the whetstone port to its golden fixtures
+(doctrine: fix the port, never the fixture) and the v1 parser to the
+4,100-sample corruption-corpus baseline:
+
 ```bash
-uv run pytest tests/unit -q
+uv run pytest -k "golden or corpus_baseline"
 ```
+
+Full suite (nucleus units + ported code-eval suite + humaneval primitives):
+
+```bash
+uv run pytest
+```
+
+CI (`.github/workflows/ci.yml`) runs `uv sync`, `ruff check`, and the full
+pytest suite on every PR. Scoring tests execute generated code in
+subprocesses, so slow machines can surface timeout flakes.
+
+## Historical docs
+
+`docs/plans/` and `docs/adr/0001` describe the pre-migration Mongo/dr-queues
+pipeline that PR #9 deleted; they are tagged **RETIRES AT D3 MERGE** and kept
+only as history. Investigation notes live in `docs/investigation/`.
