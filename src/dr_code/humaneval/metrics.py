@@ -77,6 +77,7 @@ def build_metrics_payload(
     profile_id: str = HUMANEVAL_METRICS_PROFILE_ID,
     profile_version: str = HUMANEVAL_METRICS_PROFILE_VERSION,
 ) -> MetricsPayload:
+    compression_payloads_by_text: dict[str, dict[str, Any]] = {}
     stages: list[MetricsStagePayload] = [
         build_metrics_stage(
             stage_id="terminal",
@@ -85,6 +86,7 @@ def build_metrics_payload(
             task=task,
             include_ast=False,
             include_compression=True,
+            compression_payloads_by_text=compression_payloads_by_text,
         )
     ]
     extracted_stage: MetricsStagePayload | None = None
@@ -96,6 +98,7 @@ def build_metrics_payload(
             task=task,
             include_ast=True,
             include_compression=True,
+            compression_payloads_by_text=compression_payloads_by_text,
         )
         stages.append(extracted_stage)
     stages.extend(
@@ -131,6 +134,7 @@ def build_metrics_stage(
     task: HumanEvalTask,
     include_ast: bool,
     include_compression: bool,
+    compression_payloads_by_text: dict[str, dict[str, Any]] | None = None,
 ) -> MetricsStagePayload:
     return MetricsStagePayload(
         stage_id=stage_id,
@@ -142,7 +146,8 @@ def build_metrics_stage(
         ),
         ast=ast_metrics(text) if include_ast else None,
         compression=(
-            compression_metrics_payload(
+            cached_compression_metrics_payload(
+                cache=compression_payloads_by_text,
                 ground_truth_code=task.ground_truth_code,
                 representation_text=text,
             )
@@ -426,3 +431,22 @@ def compression_metrics_payload(
             representation_text=representation_text,
         ).items()
     }
+
+
+def cached_compression_metrics_payload(
+    *,
+    cache: dict[str, dict[str, Any]] | None,
+    ground_truth_code: str,
+    representation_text: str,
+) -> dict[str, Any]:
+    if cache is None:
+        return compression_metrics_payload(
+            ground_truth_code=ground_truth_code,
+            representation_text=representation_text,
+        )
+    if representation_text not in cache:
+        cache[representation_text] = compression_metrics_payload(
+            ground_truth_code=ground_truth_code,
+            representation_text=representation_text,
+        )
+    return dict(cache[representation_text])

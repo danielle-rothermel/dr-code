@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import bz2
 import gzip
-import lzma
-import zlib
 from enum import StrEnum
 
 import zstandard
@@ -11,11 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class CompressionMethod(StrEnum):
-    RAW = "raw"
-    ZLIB = "zlib"
     GZIP = "gzip"
-    BZ2 = "bz2"
-    LZMA = "lzma"
     ZSTD = "zstd"
 
 
@@ -31,21 +24,15 @@ class CompressionMetric(BaseModel):
 
 
 CompressionMetrics = dict[CompressionMethod, CompressionMetric]
+COMPRESSED_METRIC_METHODS = (CompressionMethod.GZIP, CompressionMethod.ZSTD)
+ZSTD_COMPRESSOR = zstandard.ZstdCompressor()
 
 
 def compressed_bytes(value: bytes, method: CompressionMethod) -> bytes:
-    if method is CompressionMethod.RAW:
-        return value
-    if method is CompressionMethod.ZLIB:
-        return zlib.compress(value)
     if method is CompressionMethod.GZIP:
         return gzip.compress(value)
-    if method is CompressionMethod.BZ2:
-        return bz2.compress(value)
-    if method is CompressionMethod.LZMA:
-        return lzma.compress(value)
     if method is CompressionMethod.ZSTD:
-        return zstandard.ZstdCompressor().compress(value)
+        return ZSTD_COMPRESSOR.compress(value)
     raise ValueError(f"unsupported compression method: {method}")
 
 
@@ -58,8 +45,12 @@ def compression_metrics(
     representation = representation_text.encode("utf-8")
     representation_bytes = len(representation)
     metrics: CompressionMetrics = {}
-    for method in CompressionMethod:
-        size = len(compressed_bytes(representation, method))
+    compressed_representations = {
+        method: compressed_bytes(representation, method)
+        for method in COMPRESSED_METRIC_METHODS
+    }
+    for method, compressed in compressed_representations.items():
+        size = len(compressed)
         ratio = size / ground_truth_bytes if ground_truth_bytes else None
         metrics[method] = CompressionMetric(
             method=method,

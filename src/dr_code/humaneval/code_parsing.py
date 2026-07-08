@@ -9,12 +9,13 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     StrictBool,
     StrictInt,
     StrictStr,
 )
 
-from dr_code.code_analysis import validate_python_source
+from dr_code.code_analysis import validate_python_source_with_ast
 from dr_code.humaneval.code_extraction import (
     ExtractionTraceNode,
     TraceCheckVerdict,
@@ -76,6 +77,7 @@ class ExtractionTrace(BaseModel):
 
 class CodeExtractionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    _parsed_candidate: ast.Module | None = PrivateAttr(default=None)
 
     raw_submission: StrictStr | None
     extracted_code: StrictStr | None
@@ -91,6 +93,10 @@ class CodeExtractionResult(BaseModel):
     @property
     def succeeded(self) -> bool:
         return self.extracted_code is not None
+
+    @property
+    def parsed_candidate(self) -> ast.Module | None:
+        return self._parsed_candidate
 
 
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE = CodeParserProfile(
@@ -182,6 +188,7 @@ def extract_best_effort_code(
     first_compile_error: str | None = None
     selected_index: int | None = None
     selected_candidate: str | None = None
+    selected_parsed_candidate: ast.Module | None = None
     selected_extraction_method: ExtractionMethod | None = None
     candidate_traces: list[CandidateSelectionTrace] = []
     for index, candidate in enumerate(candidates):
@@ -195,7 +202,10 @@ def extract_best_effort_code(
             )
             continue
 
-        candidate_trace = trace_candidate_selection(candidate, index=index)
+        candidate_trace, parsed_candidate = candidate_selection(
+            candidate,
+            index=index,
+        )
         candidate_traces.append(candidate_trace)
         if candidate_trace.status is CandidateStatus.REJECTED:
             first_compile_error = (
@@ -205,6 +215,7 @@ def extract_best_effort_code(
 
         selected_index = index
         selected_candidate = candidate
+        selected_parsed_candidate = parsed_candidate
         selected_extraction_method = selected_method(
             raw_submission=raw_submission,
             candidate=candidate,
@@ -226,7 +237,7 @@ def extract_best_effort_code(
             extraction_method=method,
             rationale=rationale,
         )
-        return CodeExtractionResult(
+        result = CodeExtractionResult(
             raw_submission=raw_submission,
             extracted_code=selected_candidate,
             extraction_method=method,
@@ -240,6 +251,8 @@ def extract_best_effort_code(
                 "selected_candidate_index": selected_index,
             },
         )
+        result._parsed_candidate = selected_parsed_candidate
+        return result
 
     trace = build_extraction_trace(
         profile=profile,
@@ -309,7 +322,7 @@ def extract_strict_field_marker_code(
             error=error,
             trace=trace,
         )
-    candidate_trace = trace_candidate_selection(
+    candidate_trace, parsed_candidate = candidate_selection(
         candidate,
         index=0,
         include_code_repr_check=False,
@@ -357,7 +370,7 @@ def extract_strict_field_marker_code(
             extraction_method=ExtractionMethod.FIELD_MARKER,
         ),
     )
-    return CodeExtractionResult(
+    result = CodeExtractionResult(
         raw_submission=raw_submission,
         extracted_code=candidate,
         extraction_method=ExtractionMethod.FIELD_MARKER,
@@ -371,6 +384,8 @@ def extract_strict_field_marker_code(
             "field_name": FIELD_MARKER_NAME,
         },
     )
+    result._parsed_candidate = parsed_candidate
+    return result
 
 
 def build_extraction_trace(
@@ -400,56 +415,84 @@ def trace_candidate_selection(
     index: int,
     include_code_repr_check: bool = True,
 ) -> CandidateSelectionTrace:
+    trace, _ = candidate_selection(
+        candidate,
+        index=index,
+        include_code_repr_check=include_code_repr_check,
+    )
+    return trace
+
+
+def candidate_selection(
+    candidate: str,
+    *,
+    index: int,
+    include_code_repr_check: bool = True,
+) -> tuple[CandidateSelectionTrace, ast.Module | None]:
     checks: list[ExtractionTraceNode] = []
-    validation = validate_python_source(candidate)
+    validated = validate_python_source_with_ast(candidate)
+    validation = validated.validation
+    parsed_module = validated.tree
     if not validation.compile_ok:
         reason = validation.compile_error or "candidate does not compile"
         checks.append(check_node("compile_validation", False, reason=reason))
-        return CandidateSelectionTrace(
-            index=index,
-            source=candidate,
-            status=CandidateStatus.REJECTED,
-            compile_ok=False,
-            rejection_reason=reason,
-            checks=checks,
+        return (
+            CandidateSelectionTrace(
+                index=index,
+                source=candidate,
+                status=CandidateStatus.REJECTED,
+                compile_ok=False,
+                rejection_reason=reason,
+                checks=checks,
+            ),
+            parsed_module,
         )
     checks.append(check_node("compile_validation", True))
 
-    if is_plain_literal_module(candidate):
+    if is_plain_literal_module(candidate, parsed_module=parsed_module):
         reason = "plain literal modules are not valid HumanEval code"
         checks.append(check_node("plain_literal_module", False, reason=reason))
-        return CandidateSelectionTrace(
-            index=index,
-            source=candidate,
-            status=CandidateStatus.REJECTED,
-            compile_ok=True,
-            rejection_reason=reason,
-            checks=checks,
-        )
-    checks.append(check_node("plain_literal_module", True))
-
-    if include_code_repr_check:
-        if is_code_repr_assignment(candidate):
-            reason = "code repr assignments are not valid HumanEval code"
-            checks.append(
-                check_node("code_repr_assignment", False, reason=reason)
-            )
-            return CandidateSelectionTrace(
+        return (
+            CandidateSelectionTrace(
                 index=index,
                 source=candidate,
                 status=CandidateStatus.REJECTED,
                 compile_ok=True,
                 rejection_reason=reason,
                 checks=checks,
+            ),
+            parsed_module,
+        )
+    checks.append(check_node("plain_literal_module", True))
+
+    if include_code_repr_check:
+        if is_code_repr_assignment(candidate, parsed_module=parsed_module):
+            reason = "code repr assignments are not valid HumanEval code"
+            checks.append(
+                check_node("code_repr_assignment", False, reason=reason)
+            )
+            return (
+                CandidateSelectionTrace(
+                    index=index,
+                    source=candidate,
+                    status=CandidateStatus.REJECTED,
+                    compile_ok=True,
+                    rejection_reason=reason,
+                    checks=checks,
+                ),
+                parsed_module,
             )
         checks.append(check_node("code_repr_assignment", True))
 
-    return CandidateSelectionTrace(
-        index=index,
-        source=candidate,
-        status=CandidateStatus.SELECTED,
-        compile_ok=True,
-        checks=checks,
+    return (
+        CandidateSelectionTrace(
+            index=index,
+            source=candidate,
+            status=CandidateStatus.SELECTED,
+            compile_ok=True,
+            checks=checks,
+        ),
+        parsed_module,
     )
 
 
@@ -547,11 +590,17 @@ def selected_method(
     return ExtractionMethod.CLEANED_CANDIDATE
 
 
-def is_plain_literal_module(source: str) -> bool:
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return False
+def is_plain_literal_module(
+    source: str,
+    *,
+    parsed_module: ast.Module | None = None,
+) -> bool:
+    if parsed_module is None:
+        try:
+            parsed_module = ast.parse(source)
+        except (SyntaxError, ValueError):
+            return False
+    tree = parsed_module
     if len(tree.body) != 1:
         return False
     stmt = tree.body[0]
@@ -560,11 +609,17 @@ def is_plain_literal_module(source: str) -> bool:
     return isinstance(stmt.value, ast.Dict | ast.List | ast.Set | ast.Tuple)
 
 
-def is_code_repr_assignment(source: str) -> bool:
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return False
+def is_code_repr_assignment(
+    source: str,
+    *,
+    parsed_module: ast.Module | None = None,
+) -> bool:
+    if parsed_module is None:
+        try:
+            parsed_module = ast.parse(source)
+        except (SyntaxError, ValueError):
+            return False
+    tree = parsed_module
     if len(tree.body) != 1:
         return False
     statement = tree.body[0]

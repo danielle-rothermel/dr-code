@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import gzip as gzip_codec
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+import zstandard
 
 import dr_code.humaneval as humaneval
 from dr_code.code_analysis import validate_python_source
@@ -20,7 +23,11 @@ from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
     UnsupportedTestFormatError,
 )
-from dr_code.humaneval.sampling import sample_human_eval_tasks_from_rows
+from dr_code.humaneval.sampling import (
+    HumanEvalRawRowsSnapshot,
+    load_human_eval_rows,
+    sample_human_eval_tasks_from_rows,
+)
 from dr_code.humaneval.scoring import (
     CompletedScore,
     HarnessFailure,
@@ -114,6 +121,19 @@ def _row(task_id: str, offset: int) -> dict[str, str]:
     }
 
 
+def _check_payload_bytes(task: HumanEvalTask) -> list[bytes]:
+    parsed_tests = require_parsed_tests(task)
+    return [
+        case.as_check(
+            candidate_name="candidate",
+            assertion_name=parsed_tests.assertion_name,
+        )
+        .model_dump_json()
+        .encode("utf-8")
+        for case in parsed_tests.cases
+    ]
+
+
 def _input_result_test() -> str:
     return (
         "def check(candidate):\n"
@@ -164,6 +184,31 @@ def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
         "HumanEval/2",
         "HumanEval/1",
     ]
+
+
+def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
+    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
+    raw_snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
+        snapshot_path.read_text(encoding="utf-8")
+    )
+    fresh_tasks = parse_human_eval_dataset(
+        [row.model_dump(mode="json") for row in raw_snapshot.rows]
+    )
+    snapshot_tasks = parse_human_eval_dataset(
+        load_human_eval_rows(snapshot_path=snapshot_path)
+    )
+
+    assert [task.task_id for task in snapshot_tasks] == [
+        task.task_id for task in fresh_tasks
+    ]
+    for fresh_task, snapshot_task in zip(
+        fresh_tasks,
+        snapshot_tasks,
+        strict=True,
+    ):
+        assert _check_payload_bytes(snapshot_task) == _check_payload_bytes(
+            fresh_task
+        )
 
 
 def test_parse_input_result_tests_have_stable_case_ids() -> None:
@@ -533,18 +578,22 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
 
 
 def test_compression_metrics_are_stable_for_methods_and_ratios() -> None:
+    representation = b"return 1"
     metrics = compression_metrics(
         ground_truth_code="def f():\n    return 1\n",
-        representation_text="return 1",
+        representation_text=representation.decode(),
     )
 
-    assert set(metrics) == set(CompressionMethod)
-    raw = metrics[CompressionMethod.RAW]
-    assert raw.ground_truth_bytes == len(b"def f():\n    return 1\n")
-    assert raw.representation_bytes == len(b"return 1")
-    assert raw.compressed_bytes == raw.representation_bytes
-    assert raw.ratio_to_ground_truth == pytest.approx(
-        raw.representation_bytes / raw.ground_truth_bytes
+    assert set(metrics) == {CompressionMethod.GZIP, CompressionMethod.ZSTD}
+    gzip = metrics[CompressionMethod.GZIP]
+    assert gzip.ground_truth_bytes == len(b"def f():\n    return 1\n")
+    assert gzip.representation_bytes == len(representation)
+    assert gzip.compressed_bytes == len(gzip_codec.compress(representation))
+    assert gzip.ratio_to_ground_truth == pytest.approx(
+        gzip.compressed_bytes / gzip.ground_truth_bytes
+    )
+    assert metrics[CompressionMethod.ZSTD].compressed_bytes == len(
+        zstandard.ZstdCompressor().compress(representation)
     )
 
 
@@ -562,6 +611,33 @@ def test_compression_metrics_keep_empty_ground_truth_ratio_null() -> None:
         metric.percent_reduction_vs_ground_truth is None
         for metric in metrics.values()
     )
+
+
+def test_metrics_payload_compresses_each_distinct_text_once() -> None:
+    code = "def add_one(x):\n    return x + 1\n"
+    calls: list[str] = []
+
+    def fake_payload(
+        *,
+        ground_truth_code: str,
+        representation_text: str,
+    ) -> dict[str, Any]:
+        assert ground_truth_code
+        calls.append(representation_text)
+        return {"gzip": {"compressed_text": representation_text}}
+
+    with patch(
+        "dr_code.humaneval.metrics.compression_metrics_payload",
+        fake_payload,
+    ):
+        payload = humaneval.build_metrics_payload(
+            raw_submission=code,
+            extracted_code=code,
+            task=_task(),
+        )
+
+    assert calls == [code]
+    assert payload.stages[0].compression == payload.stages[1].compression
 
 
 def test_apply_cleaning_returns_empty_for_blank_input() -> None:

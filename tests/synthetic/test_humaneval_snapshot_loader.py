@@ -25,18 +25,16 @@ def test_hf_first_does_not_silently_use_snapshot(
 ) -> None:
     snapshot_tasks = [_task()]
 
-    def missing_hf() -> list[HumanEvalPlusTask] | None:
-        return None
+    def unavailable_hf() -> list[HumanEvalPlusTask]:
+        raise FileNotFoundError("hf unavailable")
 
-    def available_snapshot(_repo_root: Path) -> list[HumanEvalPlusTask] | None:
+    def available_snapshot(_repo_root: Path) -> list[HumanEvalPlusTask]:
         return snapshot_tasks
 
-    monkeypatch.setattr(humaneval_loader, "_try_load_from_hf", missing_hf)
-    monkeypatch.setattr(
-        humaneval_loader, "_try_load_from_snapshot", available_snapshot
-    )
+    monkeypatch.setattr(humaneval_loader, "_load_from_hf", unavailable_hf)
+    monkeypatch.setattr(humaneval_loader, "_load_from_snapshot", available_snapshot)
 
-    with pytest.raises(FileNotFoundError, match="Pass prefer_snapshot=True"):
+    with pytest.raises(FileNotFoundError, match="hf unavailable"):
         load_humaneval_plus(prefer_snapshot=False)
 
 
@@ -45,15 +43,13 @@ def test_snapshot_first_allows_explicit_offline_snapshot(
 ) -> None:
     snapshot_tasks = [_task()]
 
-    def missing_hf() -> list[HumanEvalPlusTask] | None:
-        return None
+    def unavailable_hf() -> list[HumanEvalPlusTask]:
+        raise FileNotFoundError("hf unavailable")
 
-    def available_snapshot(_repo_root: Path) -> list[HumanEvalPlusTask] | None:
+    def available_snapshot(_repo_root: Path) -> list[HumanEvalPlusTask]:
         return snapshot_tasks
 
-    monkeypatch.setattr(humaneval_loader, "_try_load_from_hf", missing_hf)
-    monkeypatch.setattr(
-        humaneval_loader, "_try_load_from_snapshot", available_snapshot
-    )
+    monkeypatch.setattr(humaneval_loader, "_load_from_hf", unavailable_hf)
+    monkeypatch.setattr(humaneval_loader, "_load_from_snapshot", available_snapshot)
 
     assert load_humaneval_plus(prefer_snapshot=True) == snapshot_tasks

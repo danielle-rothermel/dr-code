@@ -1,4 +1,4 @@
-"""Load HumanEvalPlus ground-truth solutions from Hugging Face.
+"""Load HumanEvalPlus ground-truth solutions.
 
 The "Plus" variant matters because it ships extended unit tests — useful
 for future opt-in execution-based equivalence checks. The plain
@@ -6,6 +6,7 @@ for future opt-in execution-based equivalence checks. The plain
 
 If network access is unavailable, callers must explicitly opt into the offline
 JSON snapshot under `tests/corpus/humanevalplus_snapshot.json`.
+The raw-row loading contract is owned by `dr_code.humaneval.sampling`.
 """
 
 from __future__ import annotations
@@ -13,13 +14,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-from pydantic import TypeAdapter
-
+from dr_code.humaneval.sampling import (
+    DEFAULT_HUMAN_EVAL_DATASET_NAME,
+    DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+    DEFAULT_HUMAN_EVAL_HF_REVISION,
+    HumanEvalRow,
+    load_human_eval_rows,
+    write_human_eval_snapshot_rows,
+)
 from dr_code.synthetic.models import FrozenModel
 
 #: Hugging Face dataset id and split.
-HF_DATASET_ID: Final[str] = "evalplus/humanevalplus"
-HF_SPLIT: Final[str] = "test"
+HF_DATASET_ID: Final[str] = DEFAULT_HUMAN_EVAL_DATASET_NAME
+HF_SPLIT: Final[str] = DEFAULT_HUMAN_EVAL_DATASET_SPLIT
+HF_REVISION: Final[str] = DEFAULT_HUMAN_EVAL_HF_REVISION
 
 #: Path to the offline snapshot, relative to repo root.
 SNAPSHOT_REL_PATH: Final[str] = "tests/corpus/humanevalplus_snapshot.json"
@@ -40,41 +48,34 @@ class HumanEvalPlusTask(FrozenModel):
         return self.prompt + self.canonical_solution
 
 
-TASK_LIST_ADAPTER: Final[TypeAdapter[list[HumanEvalPlusTask]]] = TypeAdapter(
-    list[HumanEvalPlusTask]
-)
+def _task_from_row(row: HumanEvalRow) -> HumanEvalPlusTask:
+    return HumanEvalPlusTask(
+        task_id=str(row["task_id"]),
+        prompt=str(row["prompt"]),
+        canonical_solution=str(row["canonical_solution"]),
+        entry_point=str(row["entry_point"]),
+        test=str(row["test"]),
+    )
 
 
-def _try_load_from_hf() -> list[HumanEvalPlusTask] | None:
-    """Attempt to load from Hugging Face. Returns None on any failure."""
-    try:
-        from datasets import load_dataset
-    except ImportError:
-        return None
-    try:
-        ds = load_dataset(HF_DATASET_ID, split=HF_SPLIT)
-    except Exception:
-        return None
-    tasks: list[HumanEvalPlusTask] = []
-    for row in ds:
-        tasks.append(
-            HumanEvalPlusTask(
-                task_id=row["task_id"],
-                prompt=row["prompt"],
-                canonical_solution=row["canonical_solution"],
-                entry_point=row["entry_point"],
-                test=row.get("test", ""),
-            )
-        )
-    return tasks
+def _load_from_hf() -> list[HumanEvalPlusTask]:
+    rows = load_human_eval_rows(
+        dataset_name=HF_DATASET_ID,
+        dataset_split=HF_SPLIT,
+        hf_revision=HF_REVISION,
+    )
+    return [_task_from_row(row) for row in rows]
 
 
-def _try_load_from_snapshot(repo_root: Path) -> list[HumanEvalPlusTask] | None:
-    """Attempt to load from the local snapshot file. Returns None if missing."""
+def _load_from_snapshot(repo_root: Path) -> list[HumanEvalPlusTask]:
     snap = repo_root / SNAPSHOT_REL_PATH
-    if not snap.exists():
-        return None
-    return TASK_LIST_ADAPTER.validate_json(snap.read_text(encoding="utf-8"))
+    rows = load_human_eval_rows(
+        dataset_name=HF_DATASET_ID,
+        dataset_split=HF_SPLIT,
+        hf_revision=HF_REVISION,
+        snapshot_path=snap,
+    )
+    return [_task_from_row(row) for row in rows]
 
 
 def _repo_root() -> Path:
@@ -92,12 +93,12 @@ def save_snapshot(
     """Write a snapshot to disk for offline reuse. Returns the path written."""
     root = repo_root or _repo_root()
     snap = root / SNAPSHOT_REL_PATH
-    snap.parent.mkdir(parents=True, exist_ok=True)
-    snap.write_text(
-        TASK_LIST_ADAPTER.dump_json(tasks, indent=2).decode(),
-        encoding="utf-8",
+    return write_human_eval_snapshot_rows(
+        [task.model_dump(mode="json") for task in tasks],
+        snapshot_path=snap,
+        dataset_name=HF_DATASET_ID,
+        hf_revision=HF_REVISION,
     )
-    return snap
 
 
 def load_humaneval_plus(
@@ -106,8 +107,8 @@ def load_humaneval_plus(
     """Load HumanEvalPlus tasks.
 
     Args:
-        prefer_snapshot: If True, try the local snapshot first. Default is
-            to require a Hugging Face load, so stale snapshots are never used
+        prefer_snapshot: If True, load the local snapshot. Default loads the
+            pinned Hugging Face revision, so stale snapshots are never used
             silently when the network path fails.
 
     Raises:
@@ -115,13 +116,5 @@ def load_humaneval_plus(
     """
     repo_root = _repo_root()
     if prefer_snapshot:
-        tasks = _try_load_from_snapshot(repo_root) or _try_load_from_hf()
-    else:
-        tasks = _try_load_from_hf()
-    if tasks is None:
-        raise FileNotFoundError(
-            "HumanEvalPlus unavailable from the selected source. "
-            "Pass prefer_snapshot=True to use the checked-in snapshot at "
-            f"{SNAPSHOT_REL_PATH}."
-        )
-    return tasks
+        return _load_from_snapshot(repo_root)
+    return _load_from_hf()

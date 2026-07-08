@@ -19,6 +19,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import cache
 from typing import Any, Self
 
 from pydantic import (
@@ -524,9 +525,15 @@ def evaluate_human_eval_code(
     task: HumanEvalTask,
     candidate_code: str,
     timeout_seconds: float,
+    candidate_ast: ast.Module | None = None,
 ) -> EvaluationTaskResult:
     parsed_tests = require_parsed_tests(task)
-    function_names = top_level_function_names(candidate_code)
+    function_names = top_level_function_names(
+        candidate_code,
+        parsed_module=candidate_ast,
+    )
+    checks = list(parsed_tests.iter_checks(candidate_name="candidate"))
+    runner_source = runner_script()
     results: list[EvaluationCaseResult] = []
     for function_name in function_names:
         try:
@@ -536,6 +543,8 @@ def evaluate_human_eval_code(
                     candidate_code=candidate_code,
                     function_name=function_name,
                     timeout_seconds=timeout_seconds,
+                    checks=checks,
+                    runner_source=runner_source,
                 )
             )
         except EvaluationHarnessError as exc:
@@ -580,8 +589,12 @@ def support_code_without_check(tree: ast.Module) -> str:
     return ast.unparse(module)
 
 
-def top_level_function_names(code_str: str) -> list[str]:
-    tree = ast.parse(code_str)
+def top_level_function_names(
+    code_str: str,
+    *,
+    parsed_module: ast.Module | None = None,
+) -> list[str]:
+    tree = parsed_module if parsed_module is not None else ast.parse(code_str)
     return [
         node.name
         for node in tree.body
@@ -595,20 +608,27 @@ def run_subprocess_batch(
     candidate_code: str,
     function_name: str,
     timeout_seconds: float,
+    checks: list[SingleCaseCheck] | None = None,
+    runner_source: str | None = None,
 ) -> list[EvaluationCaseResult]:
     parsed_tests = require_parsed_tests(task)
+    check_payloads = (
+        checks
+        if checks is not None
+        else list(parsed_tests.iter_checks(candidate_name="candidate"))
+    )
     payload = HumanEvalRunnerPayload(
         task_id=task.task_id,
         candidate_code=candidate_code,
         support_code=parsed_tests.support_code,
         function_name=function_name,
         test_type=parsed_tests.test_type,
-        checks=list(parsed_tests.iter_checks(candidate_name="candidate")),
+        checks=check_payloads,
     )
     started_at = time.perf_counter()
     try:
         completed = subprocess.run(
-            [sys.executable, "-c", runner_script()],
+            [sys.executable, "-c", runner_source or runner_script()],
             input=payload.model_dump_json(),
             capture_output=True,
             check=False,
@@ -812,6 +832,7 @@ def require_parsed_tests(task: HumanEvalTask) -> ParsedTests:
     return task.parsed_tests
 
 
+@cache
 def runner_script() -> str:
     return textwrap.dedent(
         """
