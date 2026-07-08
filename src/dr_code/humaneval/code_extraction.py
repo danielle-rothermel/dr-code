@@ -41,8 +41,8 @@ def apply_cleaning(
     return cleaned
 
 
-def extract_dspy_code(pred: Any, *, field_name: str = "code") -> str:
-    """Pull Python source out of a DSPy prediction field."""
+def extract_object_code_field(pred: Any, *, field_name: str = "code") -> str:
+    """Pull Python source out of an object field."""
     code_field = getattr(pred, field_name, None)
     if code_field is None:
         return ""

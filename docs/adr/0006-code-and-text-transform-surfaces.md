@@ -11,7 +11,7 @@ best-effort. The boundary is the caller's domain assumption, not the
 implementation technique — a regex-based docstring stripper would still be
 a code transform. Both modules hold transforms strictly;
 predicates, enumeration, and inspection live in the analysis siblings
-`dr_code.code_analysis` and `dr_code.text_analysis` (ADR 0008).
+`dr_code.code_analysis` and `dr_code.text_analysis` (ADR 0007).
 
 Placement tiebreaker: when a job on valid code already belongs to a
 formatter (trailing whitespace, line endings, indentation width), the

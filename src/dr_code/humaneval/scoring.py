@@ -1,10 +1,7 @@
 """Pure HumanEval scoring primitives.
 
-`GeneratedCodeOutcome` is part of the primitive score contract so later
-append-only score attempts can persist why a generation scored zero without
-parsing error text. The current v0 experiment writers still persist their
-legacy scoring columns only; wiring this outcome into durable score-attempt
-records belongs to the schema/scoring-profile stage.
+`GeneratedCodeOutcome` is part of the score contract so consumers can persist
+why a submission scored zero without parsing error text.
 """
 
 from __future__ import annotations
@@ -76,11 +73,11 @@ def score_humaneval_generation(
     timeout_seconds: float,
     recordable_text: Callable[[Any], str],
 ) -> HumanEvalGenerationScore:
-    """Score one raw generation under a parser profile.
+    """Score one raw submission under a parser profile.
 
     ``recordable_text`` is the injected canonical-text renderer for the
-    persisted ``raw_generation`` field (dr-code stays serialization- and
-    storage-free; whetstone injects its recording-boundary function).
+    persisted ``raw_generation`` field; dr-code stays serialization- and
+    storage-free.
     """
     canonical_terminal = recordable_text(raw_generation)
     extraction = extract_code_with_profile(

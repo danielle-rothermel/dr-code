@@ -28,5 +28,5 @@ read-only + @codemirror/merge) was rejected because it is client-only
 for *all* rendering with a second theme system, forfeiting zero-JS
 static panels entirely. Research with primary sources:
 `docs/research/react-code-visualization.md` (2026-07-08; two facts it
-missed — the plugin's shiki-v3 dependency and the real generateDiffFile
-arity — are corrected here after npm verification).
+omitted — the plugin's shiki-v3 dependency and the real generateDiffFile
+arity — are recorded here after npm verification).
