@@ -61,8 +61,8 @@ Overlaps code-eval failure modes but reflects **empirical** decoder output from 
 |-------|----------------|
 | **code-eval** | Each `raw_code_output` → `LLMCodeValidator.validate()`. Measures recovery/attribution on real generations vs synthetic 4,100-sample corpus. Dedup files prioritize high-`count` dominant modes. |
 | **nl-code** | Join on `human_eval_task_id` → `HumanEvalDataset` → functional tests on extracted code. Quantifies parse-only vs actually-works gap (e.g. wrong-name outputs that AST-parse but fail tests). |
-| **dr-bottleneck** | Same high-level enc/dec experiment family; pool data is historical decoder output from dr-llm pool configs, not dr-bottleneck's RabbitMQ workflow. Comparable problem shape, different provenance. |
-| **dr-providers** | Bypassed for replay — data already contains raw outputs. New generation runs could populate future pool-like tables via dr-providers. |
+| **dr-bottleneck** | Archived repo (as is the dr-queues/RabbitMQ workflow it used); same high-level enc/dec experiment family, kept here for historical comparison. Pool data is historical decoder output from dr-llm pool configs, not that workflow. Comparable problem shape, different provenance. |
+| **dr-providers** | Bypassed for replay — data already contains raw outputs. dr-code no longer depends on dr-providers (dropped with generation/ in PR #9); any fresh generation happens outside this repo. |
 | **nl-code (again)** | Extraction scripts already depend on nl-code's HumanEval cache for prompt backfill. |
 
 ## Starting-state summary

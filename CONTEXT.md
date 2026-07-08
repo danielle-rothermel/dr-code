@@ -1,6 +1,12 @@
 # dr-code
 
-Research context for evaluating whether compressed natural-language descriptions can be decoded into working HumanEval Python. The language here names the evaluation pipeline and its artifacts, independent of the Python modules that implement them.
+Research context for evaluating whether compressed natural-language
+descriptions can be decoded into working HumanEval Python. The language here
+names the evaluation concepts and their artifacts, independent of the Python
+modules that implement them. Since the composable migration (PR #9) the repo
+is a dependency-clean nucleus: versioned parsing/scoring profiles, offline
+batch CLIs, and a localhost explain facade — no queue- or Mongo-backed
+orchestration.
 
 ## Language
 
@@ -29,7 +35,7 @@ Evaluation of historical decoder attempts from the dr-llm HumanEval pool.
 _Avoid_: Backfill, import, historical run
 
 **Fresh generation**:
-Evaluation of newly requested decoder attempts produced for this harness.
+Evaluation of newly produced decoder attempts. Generation itself happens outside this repo (the nucleus has no provider dependency); dr-code consumes the resulting attempts.
 _Avoid_: Live run, new samples
 
 **HumanEval+ task**:
@@ -44,17 +50,29 @@ _Avoid_: Extraction result, validation result
 The result of running HumanEval+ tests against extracted code, including skipped and infrastructure-failure states.
 _Avoid_: Test result, verdict
 
+**Parser profile**:
+A versioned identity key for extraction behavior (`humaneval-best-effort@v1`, `humaneval-field-marker@v1`). Recorded outcomes reference these IDs, so behavior changes require a new version, never an edit to an existing one.
+_Avoid_: Parser config, extraction settings
+
+**Scoring profile**:
+The versioned bundle (`humaneval@v1`) of parser profile, subprocess timeout, and metrics profile that turns one decoder attempt into a scored result. Resolution is closed: unknown profile ids hard-fail.
+_Avoid_: Eval config, run settings
+
+**Golden fixture**:
+The whetstone Stage 0 parser/scoring fixture that pins the ported humaneval code to its pre-migration behavior. Doctrine: fix the port, never the fixture.
+_Avoid_: Snapshot test, expected output
+
+**Corpus baseline**:
+Pinned per-recipe aggregates of the v1 best-effort parser over the 4,100-sample synthetic corruption corpus; the breadth check on parser identity.
+_Avoid_: Regression suite, benchmark run
+
+**Extraction explanation**:
+A stage-by-stage replay of a parser profile's candidate walk — every candidate, why it was rejected, and the winner rationale — served by the explain facade for the parser playground.
+_Avoid_: Debug output, trace
+
 **Evaluation run**:
-A bounded execution of the pipeline over a selected set of decoder attempts, identified by a run id and producing exported artifacts.
+A bounded batch of decoder attempts taken through the offline CLIs (import, parse, test, analyze), identified by its exported artifacts (attempts Parquet, parse/test JSONL, analysis outputs).
 _Avoid_: Batch, job, experiment
-
-**Evaluation run lifecycle**:
-The progression of an Evaluation run from declaration, through seeded Decoder attempts and Pipeline stage execution, to exported artifacts for analysis.
-_Avoid_: Driver, orchestration flow
-
-**Pipeline stage**:
-A named phase in the evaluation flow: generation dataset, parsing, testing, or analysis.
-_Avoid_: Step, phase
 
 **Analysis slice**:
 A grouping used to compare outcomes across dimensions such as source, model, task, or compression range.
