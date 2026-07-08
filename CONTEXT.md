@@ -1,79 +1,81 @@
 # dr-code
 
-Research context for evaluating whether compressed natural-language
-descriptions can be decoded into working HumanEval Python. The language here
-names the evaluation concepts and their artifacts, independent of the Python
-modules that implement them. Since the composable migration (PR #9) the repo
-is a dependency-clean nucleus: versioned parsing/scoring profiles, offline
-batch CLIs, and a localhost explain facade — no queue- or Mongo-backed
-orchestration.
+Producer-blind evaluation context: given a piece of candidate Python text
+and a HumanEval+ task, extract, execute, and score it under versioned
+profiles — and explain how. The language here names evaluation concepts
+only. How submissions are produced (models, tools, computation graphs,
+experiment designs) is deliberately outside this context; that vocabulary
+belongs to the producing repos (dr-graph, whetstone-ai).
 
 ## Language
 
-**Compression-correctness question**:
-The research question asking how much a function description can be compressed while still allowing a decoder to reconstruct correct code.
-_Avoid_: Benchmark, coding challenge
-
-**Function description**:
-Natural-language input that describes the target HumanEval function to a decoder.
-_Avoid_: Prompt, spec, problem statement
-
-**Decoder**:
-The model or process that turns a function description into candidate Python code.
-_Avoid_: Generator, solver, assistant
-
-**Decoder attempt**:
-One decoder output for one HumanEval task, including the function description, raw output, task identity, and provenance.
-_Avoid_: Completion, sample, row
-
-**Attempt provenance**:
-Metadata describing where a decoder attempt came from, such as pool replay or fresh generation, plus model and experiment identifiers.
-_Avoid_: Metadata, source info
-
-**Pool replay**:
-Evaluation of historical decoder attempts from the dr-llm HumanEval pool.
-_Avoid_: Backfill, import, historical run
-
-**Fresh generation**:
-Evaluation of newly produced decoder attempts. Generation itself happens outside this repo (the nucleus has no provider dependency); dr-code consumes the resulting attempts.
-_Avoid_: Live run, new samples
+**Submission**:
+The terminal output text handed to the evaluator for one HumanEval+ task.
+dr-code never knows or records how it was produced.
+_Avoid_: Generation, decoder attempt, completion, sample
 
 **HumanEval+ task**:
-The canonical programming task being evaluated, identified by task id and entry point and paired with HumanEval+ tests.
+The canonical programming task being evaluated, identified by task id and
+entry point and paired with HumanEval+ tests.
 _Avoid_: Problem, exercise
 
-**Parse outcome**:
-The result of extracting candidate Python code from a decoder attempt's raw output.
-_Avoid_: Extraction result, validation result
+**Task family**:
+A benchmark's namespace of profiles and machinery. `humaneval` is the only
+family today; a new family arrives as new profile namespaces (e.g.
+`mbpp@v1`), never by generalizing existing ones.
+_Avoid_: Benchmark type, dataset kind
 
-**Test outcome**:
-The result of running HumanEval+ tests against extracted code, including skipped and infrastructure-failure states.
-_Avoid_: Test result, verdict
+**Candidate**:
+A code block the parser considers during extraction — walked, ranked,
+rejected, or selected. Parser-internal; never a synonym for submission.
+_Avoid_: Submission, snippet
 
 **Parser profile**:
-A versioned identity key for extraction behavior (`humaneval-best-effort@v1`, `humaneval-field-marker@v1`). Recorded outcomes reference these IDs, so behavior changes require a new version, never an edit to an existing one.
+A versioned identity key for extraction behavior (`humaneval-best-effort@v1`,
+`humaneval-field-marker@v1`). An ID freezes once experiment outcomes are
+recorded against it; until then, behavior under a working ID may change.
 _Avoid_: Parser config, extraction settings
 
 **Scoring profile**:
-The versioned bundle (`humaneval@v1`) of parser profile, subprocess timeout, and metrics profile that turns one decoder attempt into a scored result. Resolution is closed: unknown profile ids hard-fail.
+The versioned bundle (`humaneval@v1`) of parser profile, subprocess timeout,
+and metrics profile that turns one submission into a scored result.
+Resolution is closed: unknown profile ids hard-fail.
 _Avoid_: Eval config, run settings
 
-**Golden fixture**:
-The whetstone Stage 0 parser/scoring fixture that pins the ported humaneval code to its pre-migration behavior. Doctrine: fix the port, never the fixture.
-_Avoid_: Snapshot test, expected output
+**Submission outcome**:
+The overall classification of one scored submission (extraction failure,
+tested pass/fail, error, timeout). Only exists when the harness completed;
+it never describes harness trouble.
+_Avoid_: Verdict, result, parse/test outcome
 
-**Corpus baseline**:
-Pinned per-recipe aggregates of the v1 best-effort parser over the 4,100-sample synthetic corruption corpus; the breadth check on parser identity.
-_Avoid_: Regression suite, benchmark run
+**Harness failure**:
+A failure of the evaluation machinery itself (runner breakage, protocol
+errors) while scoring a submission. A separate channel from submission
+outcomes — the two are structurally impossible to confuse, because a
+harness mistake recorded as a model result silently poisons experiments.
+_Avoid_: Infra error outcome, internal error
 
-**Extraction explanation**:
-A stage-by-stage replay of a parser profile's candidate walk — every candidate, why it was rejected, and the winner rationale — served by the explain facade for the parser playground.
-_Avoid_: Debug output, trace
+**Evaluation case**:
+One HumanEval+ test case executed against a submission's extracted code,
+with its own status (pass, fail, error, timeout).
+_Avoid_: Test result, assertion
 
-**Evaluation run**:
-A bounded batch of decoder attempts taken through the offline CLIs (import, parse, test, analyze), identified by its exported artifacts (attempts Parquet, parse/test JSONL, analysis outputs).
-_Avoid_: Batch, job, experiment
+**Extraction trace**:
+The parser's own record of its candidate walk, emitted as data during
+extraction: a candidate lineage tree whose transform steps carry
+before/after text and whose checks carry verdicts and reasons, topped by
+the winner rationale. The explain facade renders this record; it never
+re-derives it.
+_Avoid_: Explanation, debug output, replay
 
-**Analysis slice**:
-A grouping used to compare outcomes across dimensions such as source, model, task, or compression range.
-_Avoid_: Segment, cohort, bucket
+**Corruption recipe**:
+A named, composable sequence of text corruptions (fences, prose wrappers,
+broken indentation, noise) applied to a known-good solution. Recipes are
+plain data; a recipe plus a seed deterministically reproduces a sample.
+_Avoid_: Mutation, augmentation
+
+**Corruption corpus**:
+A generated dataset of recipe-corrupted solutions used to exercise and
+hand-tune the parser. Any number can be generated, at any size, from
+recipes and seeds; no particular corpus is canonical.
+_Avoid_: Regression suite, benchmark run, golden data
