@@ -1,5 +1,7 @@
 exports/
 __pycache__/
+node_modules/
+viewer/packages/*/dist/
 *.py[cod]
 *.cache
 .DS_Store

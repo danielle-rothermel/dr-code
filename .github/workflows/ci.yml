@@ -16,3 +16,17 @@ jobs:
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run pytest
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: viewer/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: viewer/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: viewer
+      - run: pnpm typecheck
+        working-directory: viewer
+      - run: pnpm build
+        working-directory: viewer

@@ -42,9 +42,24 @@ run_report "ruff check" "${CACHE_DIR}/ruff-check.txt" \
 run_report "ty check" "${CACHE_DIR}/ty-check.txt" \
     uv run ty check || status=1
 
+if command -v pnpm >/dev/null 2>&1; then
+    run_report "viewer install" "${CACHE_DIR}/viewer-install.txt" \
+        pnpm -C viewer install --frozen-lockfile || status=1
+    run_report "viewer typecheck" "${CACHE_DIR}/viewer-typecheck.txt" \
+        pnpm -C viewer typecheck || status=1
+    run_report "viewer build" "${CACHE_DIR}/viewer-build.txt" \
+        pnpm -C viewer build || status=1
+else
+    printf '\n==> viewer checks skipped (pnpm not found; CI always runs them)\n'
+fi
+
 printf '\nCheck output files:\n'
 printf '  %s\n' "${CACHE_DIR}/ruff-check.txt"
 printf '  %s\n' "${CACHE_DIR}/ty-check.txt"
+if command -v pnpm >/dev/null 2>&1; then
+    printf '  %s\n' "${CACHE_DIR}/viewer-typecheck.txt"
+    printf '  %s\n' "${CACHE_DIR}/viewer-build.txt"
+fi
 
 if [[ "${status}" -ne 0 ]]; then
     printf '\nFix all reported issues, then rerun:\n'
