@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, StrictStr
 
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    DEFAULT_CODE_FIELD,
+    FIELD_MARKER_NAME,
     PARSER_PROFILE_VERSION,
     STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
 )
@@ -34,7 +34,7 @@ class ExplainRequest(BaseModel):
     text: StrictStr
     profile_id: StrictStr = BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID
     parser_version: StrictStr = PARSER_PROFILE_VERSION
-    code_field: StrictStr = DEFAULT_CODE_FIELD
+    code_field: StrictStr = FIELD_MARKER_NAME
     stages: list[ExplainStage] | None = None
 
 

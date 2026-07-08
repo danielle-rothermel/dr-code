@@ -14,8 +14,10 @@ import json
 import subprocess
 import sys
 import textwrap
+import time
 from collections import Counter
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Self
 
@@ -93,18 +95,19 @@ class HumanEvalTask(BaseModel):
         return self
 
 
-class EvaluationCaseResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+@dataclass(frozen=True, slots=True)
+class EvaluationCaseResult:
     task_id: str
     case_id: str
     function_name: str
     status: EvaluationCaseStatus
-    message: str = ""
     test_type: HumanEvalTestCaseKind
+    message: str = ""
     input_repr: str = ""
     expected_output_repr: str = ""
     actual_output_repr: str = ""
+    elapsed_seconds: float | None = None
+    timeout_seconds: float | None = None
 
     def to_summary(self) -> EvaluationCaseSummary:
         return EvaluationCaseSummary(
@@ -117,6 +120,8 @@ class EvaluationCaseResult(BaseModel):
             input_repr=self.input_repr,
             expected_output_repr=self.expected_output_repr,
             actual_output_repr=self.actual_output_repr,
+            elapsed_seconds=self.elapsed_seconds,
+            timeout_seconds=self.timeout_seconds,
         )
 
 
@@ -132,6 +137,8 @@ class EvaluationCaseSummary(BaseModel):
     input_repr: str = ""
     expected_output_repr: str = ""
     actual_output_repr: str = ""
+    elapsed_seconds: float | None = None
+    timeout_seconds: float | None = None
 
 
 def _results_for_function(
@@ -288,6 +295,23 @@ class HumanEvalRunnerCaseOutput(BaseModel):
     input_repr: str = ""
     expected_output_repr: str = ""
     actual_output_repr: str = ""
+    elapsed_seconds: float | None = None
+    timeout_seconds: float | None = None
+
+
+class EvaluationHarnessError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        case_results: Iterable[EvaluationCaseResult] = (),
+        evaluation: EvaluationTaskResult | None = None,
+        cause: BaseException | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.case_results = list(case_results)
+        self.evaluation = evaluation
+        self.cause = cause
 
 
 class HumanEvalOverride(BaseModel):
@@ -505,14 +529,29 @@ def evaluate_human_eval_code(
     function_names = top_level_function_names(candidate_code)
     results: list[EvaluationCaseResult] = []
     for function_name in function_names:
-        results.extend(
-            run_subprocess_batch(
-                task=task,
-                candidate_code=candidate_code,
-                function_name=function_name,
-                timeout_seconds=timeout_seconds,
+        try:
+            results.extend(
+                run_subprocess_batch(
+                    task=task,
+                    candidate_code=candidate_code,
+                    function_name=function_name,
+                    timeout_seconds=timeout_seconds,
+                )
             )
-        )
+        except EvaluationHarnessError as exc:
+            evaluation = EvaluationTaskResult(
+                task_id=task.task_id,
+                entry_point=task.entry_point,
+                function_names=function_names,
+                total_cases=len(parsed_tests.cases),
+                results=[*results, *exc.case_results],
+            )
+            raise EvaluationHarnessError(
+                str(exc),
+                case_results=exc.case_results,
+                evaluation=evaluation,
+                cause=exc.cause or exc,
+            ) from exc
     return EvaluationTaskResult(
         task_id=task.task_id,
         entry_point=task.entry_point,
@@ -566,6 +605,7 @@ def run_subprocess_batch(
         test_type=parsed_tests.test_type,
         checks=list(parsed_tests.iter_checks(candidate_name="candidate")),
     )
+    started_at = time.perf_counter()
     try:
         completed = subprocess.run(
             [sys.executable, "-c", runner_script()],
@@ -576,29 +616,64 @@ def run_subprocess_batch(
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
-        return timeout_results(task=task, function_name=function_name)
-
-    if completed.returncode != 0:
-        return error_results(
+        return timeout_results(
             task=task,
             function_name=function_name,
-            message=completed.stderr.strip() or completed.stdout.strip(),
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception as exc:
+        elapsed_seconds = time.perf_counter() - started_at
+        case_results = error_results(
+            task=task,
+            function_name=function_name,
+            message=f"{type(exc).__name__}: {exc}",
+            elapsed_seconds=elapsed_seconds,
+        )
+        raise EvaluationHarnessError(
+            "subprocess execution failed",
+            case_results=case_results,
+            cause=exc,
+        ) from exc
+    elapsed_seconds = time.perf_counter() - started_at
+
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip()
+        case_results = error_results(
+            task=task,
+            function_name=function_name,
+            message=message,
+            elapsed_seconds=elapsed_seconds,
+        )
+        raise EvaluationHarnessError(
+            "runner subprocess exited nonzero",
+            case_results=case_results,
         )
     try:
         raw_results = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
-        return error_results(
+        case_results = error_results(
             task=task,
             function_name=function_name,
             message=f"Could not decode runner output: {exc}",
+            elapsed_seconds=elapsed_seconds,
         )
+        raise EvaluationHarnessError(
+            "runner output was not valid JSON",
+            case_results=case_results,
+            cause=exc,
+        ) from exc
     if not isinstance(raw_results, list):
-        return error_results(
+        case_results = error_results(
             task=task,
             function_name=function_name,
             message=(
                 "Invalid runner output: expected a JSON list of case results"
             ),
+            elapsed_seconds=elapsed_seconds,
+        )
+        raise EvaluationHarnessError(
+            "runner output had invalid shape",
+            case_results=case_results,
         )
 
     adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
@@ -625,10 +700,23 @@ def run_subprocess_batch(
                     status=EvaluationCaseStatus.ERROR,
                     message=f"Invalid runner output: {exc}",
                     test_type=parsed_tests.test_type,
-                    **metadata,
+                    input_repr=metadata.get("input_repr", ""),
+                    expected_output_repr=metadata.get(
+                        "expected_output_repr",
+                        "",
+                    ),
+                    actual_output_repr=metadata.get(
+                        "actual_output_repr",
+                        "",
+                    ),
+                    elapsed_seconds=elapsed_seconds,
                 )
             )
-            continue
+            raise EvaluationHarnessError(
+                "runner output case failed validation",
+                case_results=results,
+                cause=exc,
+            ) from exc
         results.append(
             EvaluationCaseResult(
                 task_id=task.task_id,
@@ -640,6 +728,8 @@ def run_subprocess_batch(
                 input_repr=runner_result.input_repr,
                 expected_output_repr=runner_result.expected_output_repr,
                 actual_output_repr=runner_result.actual_output_repr,
+                elapsed_seconds=runner_result.elapsed_seconds,
+                timeout_seconds=runner_result.timeout_seconds,
             )
         )
     return results
@@ -649,20 +739,28 @@ def timeout_results(
     *,
     task: HumanEvalTask,
     function_name: str,
+    timeout_seconds: float,
 ) -> list[EvaluationCaseResult]:
     parsed_tests = require_parsed_tests(task)
-    return [
-        EvaluationCaseResult(
-            task_id=task.task_id,
-            case_id=case.case_id,
-            function_name=function_name,
-            status=EvaluationCaseStatus.TIMEOUT,
-            message="Batch timed out",
-            test_type=parsed_tests.test_type,
-            **case_metadata(parsed_tests, case),
+    results: list[EvaluationCaseResult] = []
+    for case in parsed_tests.cases:
+        metadata = case_metadata(parsed_tests, case)
+        results.append(
+            EvaluationCaseResult(
+                task_id=task.task_id,
+                case_id=case.case_id,
+                function_name=function_name,
+                status=EvaluationCaseStatus.TIMEOUT,
+                message=f"Batch timed out after {timeout_seconds} seconds",
+                test_type=parsed_tests.test_type,
+                input_repr=metadata["input_repr"],
+                expected_output_repr=metadata["expected_output_repr"],
+                actual_output_repr=metadata["actual_output_repr"],
+                elapsed_seconds=timeout_seconds,
+                timeout_seconds=timeout_seconds,
+            )
         )
-        for case in parsed_tests.cases
-    ]
+    return results
 
 
 def error_results(
@@ -670,20 +768,27 @@ def error_results(
     task: HumanEvalTask,
     function_name: str,
     message: str,
+    elapsed_seconds: float | None = None,
 ) -> list[EvaluationCaseResult]:
     parsed_tests = require_parsed_tests(task)
-    return [
-        EvaluationCaseResult(
-            task_id=task.task_id,
-            case_id=case.case_id,
-            function_name=function_name,
-            status=EvaluationCaseStatus.ERROR,
-            message=message,
-            test_type=parsed_tests.test_type,
-            **case_metadata(parsed_tests, case),
+    results: list[EvaluationCaseResult] = []
+    for case in parsed_tests.cases:
+        metadata = case_metadata(parsed_tests, case)
+        results.append(
+            EvaluationCaseResult(
+                task_id=task.task_id,
+                case_id=case.case_id,
+                function_name=function_name,
+                status=EvaluationCaseStatus.ERROR,
+                message=message,
+                test_type=parsed_tests.test_type,
+                input_repr=metadata["input_repr"],
+                expected_output_repr=metadata["expected_output_repr"],
+                actual_output_repr=metadata["actual_output_repr"],
+                elapsed_seconds=elapsed_seconds,
+            )
         )
-        for case in parsed_tests.cases
-    ]
+    return results
 
 
 def case_metadata(
@@ -711,6 +816,7 @@ def runner_script() -> str:
     return textwrap.dedent(
         """
         import json
+        import time
         import traceback
 
         payload = json.loads(input())
@@ -762,10 +868,31 @@ def runner_script() -> str:
 
             return metadata
 
-        namespace = build_namespace()
-        candidate = namespace[payload["function_name"]]
+        try:
+            namespace = build_namespace()
+            candidate = namespace[payload["function_name"]]
+        except Exception:
+            message = traceback.format_exc(limit=4)
+            results = []
+            for check in payload["checks"]:
+                results.append({
+                    "case_id": check["case_id"],
+                    "status": "error",
+                    "message": message,
+                    "input_repr": check.get("input_repr", ""),
+                    "expected_output_repr": check.get(
+                        "expected_output_repr",
+                        "",
+                    ),
+                    "actual_output_repr": message,
+                    "elapsed_seconds": 0.0,
+                })
+            print(json.dumps(results))
+            raise SystemExit(0)
+
         results = []
         for check in payload["checks"]:
+            started_at = time.perf_counter()
             try:
                 exec(
                     compile(
@@ -781,6 +908,7 @@ def runner_script() -> str:
                     "status": "failed",
                     "message": str(exc),
                     **failure_metadata(check),
+                    "elapsed_seconds": time.perf_counter() - started_at,
                 })
             except Exception:
                 results.append({
@@ -788,6 +916,7 @@ def runner_script() -> str:
                     "status": "error",
                     "message": traceback.format_exc(limit=4),
                     **failure_metadata(check),
+                    "elapsed_seconds": time.perf_counter() - started_at,
                 })
             else:
                 results.append({
@@ -800,6 +929,7 @@ def runner_script() -> str:
                         "",
                     ),
                     "actual_output_repr": "",
+                    "elapsed_seconds": time.perf_counter() - started_at,
                 })
         print(json.dumps(results))
         """

@@ -24,7 +24,7 @@ from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    DEFAULT_CODE_FIELD,
+    FIELD_MARKER_NAME,
     PARSER_PROFILE_VERSION,
     STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
     CodeExtractionResult,
@@ -34,7 +34,6 @@ from dr_code.humaneval.code_parsing import (
     is_code_repr_assignment,
     is_plain_literal_module,
     resolve_parser_profile,
-    unwrap_generation,
 )
 
 PLAIN_LITERAL_REJECTION = "plain literal modules are not valid HumanEval code"
@@ -94,13 +93,13 @@ class ExtractionExplanation(BaseModel):
     result: CodeExtractionResult | None = None
 
 
-def candidate_rejection_reason(source: str, *, code_field: str) -> str | None:
+def candidate_rejection_reason(source: str) -> str | None:
     validation = validate_python_source(source)
     if not validation.compile_ok:
         return validation.compile_error or "candidate does not compile"
     if is_plain_literal_module(source):
         return PLAIN_LITERAL_REJECTION
-    if is_code_repr_assignment(source, code_field=code_field):
+    if is_code_repr_assignment(source):
         return CODE_REPR_REJECTION
     return None
 
@@ -108,7 +107,6 @@ def candidate_rejection_reason(source: str, *, code_field: str) -> str | None:
 def annotate_candidates(
     sources: list[str],
     *,
-    code_field: str,
     selected_index: int | None,
 ) -> list[CandidateExplanation]:
     annotated: list[CandidateExplanation] = []
@@ -122,7 +120,7 @@ def annotate_candidates(
             reason = None
         else:
             status = CandidateStatus.REJECTED
-            reason = candidate_rejection_reason(source, code_field=code_field)
+            reason = candidate_rejection_reason(source)
         annotated.append(
             CandidateExplanation(
                 index=index,
@@ -161,27 +159,23 @@ def explain_unwrap(
     if profile.profile_id == STRICT_FIELD_MARKER_PARSER_PROFILE_ID:
         marker_value = field_marker_value(
             text,
-            field_name=profile.code_field,
+            field_name=FIELD_MARKER_NAME,
         )
         return (
             UnwrapExplanation(
                 unwrapped_text=marker_value,
                 method="field_marker" if marker_value is not None else None,
-                metadata={"field_name": profile.code_field},
+                metadata={"field_name": FIELD_MARKER_NAME},
             ),
             marker_value,
         )
-    unwrapped, method, metadata = unwrap_generation(
-        text,
-        code_field=profile.code_field,
-    )
     return (
         UnwrapExplanation(
-            unwrapped_text=unwrapped,
-            method=method.value if method is not None else None,
-            metadata=metadata,
+            unwrapped_text=text,
+            method=None,
+            metadata={},
         ),
-        unwrapped,
+        text,
     )
 
 
@@ -202,13 +196,13 @@ def explain_extraction(
     *,
     profile_id: str = BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
     parser_version: str = PARSER_PROFILE_VERSION,
-    code_field: str = DEFAULT_CODE_FIELD,
+    code_field: str = FIELD_MARKER_NAME,
     stages: frozenset[ExplainStage] | None = None,
 ) -> ExtractionExplanation:
+    _ = code_field
     profile = resolve_parser_profile(
         parser_profile_id=profile_id,
         parser_version=parser_version,
-        code_field=code_field,
     )
     requested = ALL_EXPLAIN_STAGES if stages is None else stages
     result = extract_code_with_profile(text, profile=profile)
@@ -217,7 +211,6 @@ def explain_extraction(
     sources = candidate_sources(unwrapped, profile=profile)
     candidates = annotate_candidates(
         sources,
-        code_field=profile.code_field,
         selected_index=result.selected_candidate_index,
     )
     selection = SelectionExplanation(

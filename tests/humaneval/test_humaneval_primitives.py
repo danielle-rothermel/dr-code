@@ -5,11 +5,9 @@ from unittest.mock import patch
 
 import pytest
 
+import dr_code.humaneval as humaneval
 from dr_code.code_analysis import validate_python_source
-from dr_code.humaneval.code_extraction import (
-    apply_cleaning,
-    extract_object_code_field,
-)
+from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
 )
@@ -24,12 +22,15 @@ from dr_code.humaneval.parsed_tests import (
 )
 from dr_code.humaneval.sampling import sample_human_eval_tasks_from_rows
 from dr_code.humaneval.scoring import (
-    GeneratedCodeOutcome,
+    CompletedScore,
+    HarnessFailure,
+    SubmissionOutcome,
     evaluation_outcome,
-    score_humaneval_generation,
+    score_humaneval_submission,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
+    EvaluationHarnessError,
     EvaluationCaseStatus,
     EvaluationTaskResult,
     HumanEvalOverride,
@@ -41,6 +42,50 @@ from dr_code.humaneval.task import (
     require_parsed_tests,
     run_subprocess_batch,
 )
+
+
+EXPECTED_HUMANEVAL_PUBLIC_API = {
+    "AstMetricsPayload",
+    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
+    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
+    "CodeExtractionResult",
+    "CodeParserProfile",
+    "CompletedScore",
+    "DEFAULT_HUMANEVAL_SCORING_PROFILE",
+    "DEFAULT_HUMANEVAL_TIMEOUT_SECONDS",
+    "EvaluationCaseStatus",
+    "EvaluationCaseSummary",
+    "EvaluationTaskSummary",
+    "HUMANEVAL_SCORING_PROFILE_ID",
+    "HUMANEVAL_SCORING_PROFILE_VERSION",
+    "HarnessFailure",
+    "HarnessFailureCause",
+    "HumanEvalScoringProfile",
+    "HumanEvalSubmissionScore",
+    "HumanEvalTask",
+    "HumanEvalTaskTestMetricsPayload",
+    "HumanEvalTestCaseKind",
+    "MetricsPayload",
+    "MetricsStagePayload",
+    "NodeOutputMetricsSource",
+    "PARSER_PROFILE_VERSION",
+    "PythonLeakageMetricsPayload",
+    "STRICT_FIELD_MARKER_PARSER_PROFILE",
+    "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
+    "SampledHumanEvalTask",
+    "SubmissionOutcome",
+    "TextMetricsPayload",
+    "build_metrics_payload",
+    "evaluation_aggregate_metrics",
+    "extract_code_with_profile",
+    "load_human_eval_rows",
+    "parse_human_eval_dataset",
+    "resolve_humaneval_scoring_profile",
+    "resolve_parser_profile",
+    "sample_human_eval_tasks",
+    "sample_human_eval_tasks_from_rows",
+    "score_humaneval_submission",
+}
 
 
 def _task(*, test: str | None = None) -> HumanEvalTask:
@@ -77,6 +122,10 @@ def _input_result_test() -> str:
         "    for inp, expected in zip(inputs, results):\n"
         "        assertion(candidate(*inp), expected)\n"
     )
+
+
+def test_humaneval_public_api_is_curated() -> None:
+    assert set(humaneval.__all__) == EXPECTED_HUMANEVAL_PUBLIC_API
 
 
 class _CompletedProcessStub:
@@ -213,7 +262,7 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
         ),
     ],
 )
-def test_apply_cleaning_extracts_known_generation_shapes(
+def test_apply_cleaning_extracts_known_submission_shapes(
     source: str,
     expected_fragment: str,
 ) -> None:
@@ -316,9 +365,11 @@ def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
     assert result.passed is False
     assert result.status_counts == {"timeout": 2}
     assert {case.case_id for case in result.results} == {"case_0", "case_1"}
+    assert {case.timeout_seconds for case in result.results} == {0.2}
+    assert evaluation_outcome(result) is SubmissionOutcome.TIMED_OUT
 
 
-def test_run_subprocess_batch_maps_malformed_runner_output_to_errors() -> None:
+def test_run_subprocess_batch_raises_for_malformed_runner_output() -> None:
     def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
         return _CompletedProcessStub(
             stdout=(
@@ -327,14 +378,18 @@ def test_run_subprocess_batch_maps_malformed_runner_output_to_errors() -> None:
             ),
         )
 
-    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        results = run_subprocess_batch(
+    with (
+        patch("dr_code.humaneval.task.subprocess.run", fake_run),
+        pytest.raises(EvaluationHarnessError) as exc_info,
+    ):
+        run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
         )
 
+    results = exc_info.value.case_results
     by_case_id = {result.case_id: result for result in results}
     assert set(by_case_id) == {"case_0", "case_1"}
     assert by_case_id["case_0"].status is EvaluationCaseStatus.PASSED
@@ -371,7 +426,7 @@ def test_evaluation_outcome_reports_incomplete_for_partial_coverage() -> None:
     assert evaluation.coverage_complete is False
     assert evaluation.failures == []
     assert evaluation_outcome(evaluation) is (
-        GeneratedCodeOutcome.EVALUATION_INCOMPLETE
+        SubmissionOutcome.EVALUATION_INCOMPLETE
     )
 
 
@@ -401,27 +456,63 @@ def test_evaluation_outcome_reports_tests_failed_when_case_fails() -> None:
         ],
     )
 
-    assert evaluation_outcome(evaluation) is GeneratedCodeOutcome.TESTS_FAILED
+    assert evaluation_outcome(evaluation) is SubmissionOutcome.TESTS_FAILED
 
 
-def test_score_humaneval_generation_reports_incomplete_runner_output() -> None:
+def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
         return _CompletedProcessStub(stdout=_PARTIAL_RUNNER_PASSED_CASE_0)
 
     with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        result = score_humaneval_generation(
-            raw_generation="def add_one(x):\n    return x + 1\n",
+        result = score_humaneval_submission(
+            raw_submission="def add_one(x):\n    return x + 1\n",
             task=_task(),
             parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
             timeout_seconds=2.0,
-            recordable_text=str,
         )
 
-    assert result.outcome is GeneratedCodeOutcome.EVALUATION_INCOMPLETE
+    assert isinstance(result, CompletedScore)
+    assert result.outcome is SubmissionOutcome.EVALUATION_INCOMPLETE
     assert result.score == 0.0
     assert result.evaluation is not None
     assert result.evaluation.failures == []
     assert result.evaluation.coverage_complete is False
+
+
+def test_score_humaneval_submission_returns_harness_failure() -> None:
+    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
+        return _CompletedProcessStub(stdout="not-json")
+
+    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
+        result = score_humaneval_submission(
+            raw_submission="def add_one(x):\n    return x + 1\n",
+            task=_task(),
+            parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+            timeout_seconds=2.0,
+        )
+
+    assert isinstance(result, HarnessFailure)
+    assert result.kind == "harness_failure"
+    assert result.failure_class == "unknown"
+    assert result.cause.exception_type == "JSONDecodeError"
+    assert result.evaluation is not None
+    assert result.evaluation.results[0].elapsed_seconds is not None
+
+
+def test_score_humaneval_submission_reports_empty_submission() -> None:
+    result = score_humaneval_submission(
+        raw_submission=" \n\t ",
+        task=_task(),
+        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+        timeout_seconds=2.0,
+    )
+
+    assert isinstance(result, CompletedScore)
+    assert result.kind == "completed"
+    assert result.raw_submission == " \n\t "
+    assert result.extraction.raw_submission == " \n\t "
+    assert result.outcome is SubmissionOutcome.EMPTY_SUBMISSION
+    assert result.evaluation is None
 
 
 def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
@@ -495,23 +586,14 @@ def test_validate_python_source_reports_syntax_errors() -> None:
     assert validation.compile_error is not None
 
 
-def test_extract_object_code_field_reads_nested_and_plain_fields() -> None:
-    class CodeField:
-        code = "def f():\n    return 1\n"
-
-    class Prediction:
-        code = CodeField()
-
-    assert extract_object_code_field(Prediction()) == "def f():\n    return 1\n"
-
-    class PlainPrediction:
-        code = "def g():\n    return 2\n"
-
-    assert (
-        extract_object_code_field(PlainPrediction())
-        == "def g():\n    return 2\n"
-    )
-    assert extract_object_code_field(object()) == ""
+def test_score_humaneval_submission_rejects_non_string_input() -> None:
+    with pytest.raises(TypeError, match="raw_submission must be str"):
+        score_humaneval_submission(
+            raw_submission={"code": "def add_one(x):\n    return x + 1\n"},  # type: ignore[arg-type]
+            task=_task(),
+            parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+            timeout_seconds=2.0,
+        )
 
 
 @pytest.mark.parametrize(
@@ -548,7 +630,7 @@ def test_parse_human_eval_tests_rejects_invalid_formats(
         parse_human_eval_tests(test_source)
 
 
-def test_run_subprocess_batch_maps_nonzero_returncode_to_errors() -> None:
+def test_run_subprocess_batch_raises_for_nonzero_returncode() -> None:
     def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
         return _CompletedProcessStub(
             stdout="",
@@ -556,67 +638,83 @@ def test_run_subprocess_batch_maps_nonzero_returncode_to_errors() -> None:
             returncode=1,
         )
 
-    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        results = run_subprocess_batch(
+    with (
+        patch("dr_code.humaneval.task.subprocess.run", fake_run),
+        pytest.raises(EvaluationHarnessError) as exc_info,
+    ):
+        run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
         )
 
+    results = exc_info.value.case_results
     assert all(
         result.status is EvaluationCaseStatus.ERROR for result in results
     )
     assert "runner crashed" in results[0].message
 
 
-def test_run_subprocess_batch_maps_invalid_json_to_errors() -> None:
+def test_run_subprocess_batch_raises_for_invalid_json() -> None:
     def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
         return _CompletedProcessStub(stdout="not-json")
 
-    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        results = run_subprocess_batch(
+    with (
+        patch("dr_code.humaneval.task.subprocess.run", fake_run),
+        pytest.raises(EvaluationHarnessError) as exc_info,
+    ):
+        run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
         )
 
+    results = exc_info.value.case_results
     assert all(
         result.status is EvaluationCaseStatus.ERROR for result in results
     )
     assert "Could not decode runner output" in results[0].message
 
 
-def test_run_subprocess_batch_maps_non_list_json_to_errors() -> None:
+def test_run_subprocess_batch_raises_for_non_list_json() -> None:
     def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
         return _CompletedProcessStub(stdout='{"not": "a list"}')
 
-    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        results = run_subprocess_batch(
+    with (
+        patch("dr_code.humaneval.task.subprocess.run", fake_run),
+        pytest.raises(EvaluationHarnessError) as exc_info,
+    ):
+        run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
         )
 
+    results = exc_info.value.case_results
     assert "expected a JSON list" in results[0].message
 
 
-def test_run_subprocess_batch_assigns_fallback_case_id() -> None:
+def test_run_subprocess_batch_fallback_case_id_is_harness_detail() -> None:
     def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
         return _CompletedProcessStub(
             stdout='[{"status": "passed", "message": ""}]',
         )
 
-    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        results = run_subprocess_batch(
+    with (
+        patch("dr_code.humaneval.task.subprocess.run", fake_run),
+        pytest.raises(EvaluationHarnessError) as exc_info,
+    ):
+        run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
         )
 
+    results = exc_info.value.case_results
     assert results[0].case_id == "case_0"
 
 
