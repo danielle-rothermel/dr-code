@@ -5,11 +5,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Final
 
-DEFAULT_TAB_WIDTH: Final[int] = 4
+
 SAMPLE_ID_SEP: Final[str] = "::"
 
 
-class InverseTransformName(StrEnum):
+class CorruptionName(StrEnum):
     """All synthetic corruption transforms."""
 
     ADD_CODE_FENCES = "add_code_fences"
@@ -37,7 +37,7 @@ class InverseTransformName(StrEnum):
 
 
 class TruncationMode(StrEnum):
-    """Modes for the truncate inverse transform."""
+    """Modes for the truncate corruption."""
 
     MID_FUNCTION = "mid_function"
     MID_LINE = "mid_line"
@@ -45,7 +45,7 @@ class TruncationMode(StrEnum):
 
 
 class MarkdownWrapperMode(StrEnum):
-    """Markdown wrappers emitted by the markdown inverse transform."""
+    """Markdown wrappers emitted by the markdown corruption."""
 
     BLOCKQUOTE = "blockquote"
     NUMBERED_LIST = "numbered_list"
@@ -53,7 +53,7 @@ class MarkdownWrapperMode(StrEnum):
 
 
 class FenceLangTag(StrEnum):
-    """Code-fence language tags emitted by the fence inverse transform."""
+    """Code-fence language tags emitted by the fence corruption."""
 
     PYTHON = "python"
     PY = "py"

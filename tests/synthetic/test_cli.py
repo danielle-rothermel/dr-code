@@ -12,7 +12,7 @@ def test_module_import_smoke() -> None:
     import dr_code.synthetic as synthetic
 
     assert synthetic.RECIPES
-    assert synthetic.RECIPES_BY_NAME["clean"].transforms == ()
+    assert synthetic.RECIPES_BY_NAME["clean"].corruptions == ()
 
 
 def test_cli_build_smoke(tmp_path: Path) -> None:

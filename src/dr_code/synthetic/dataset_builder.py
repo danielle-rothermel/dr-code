@@ -13,7 +13,7 @@ from dr_code.synthetic.corruption_recipes import (
     Recipe,
     apply_recipe,
 )
-from dr_code.synthetic.equivalence import canonicalize
+from dr_code.code_transforms import canonicalize
 from dr_code.synthetic.humaneval_loader import (
     HumanEvalPlusTask,
     load_humaneval_plus,

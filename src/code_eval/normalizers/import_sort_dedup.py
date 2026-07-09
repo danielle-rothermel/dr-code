@@ -9,6 +9,8 @@ from __future__ import annotations
 import time
 from typing import ClassVar, Final
 
+from dr_code.code_transforms import dedupe_imports
+
 from code_eval.models.normalized_form import NormalizedForm
 from code_eval.names import NormalizerName, ToolName
 from code_eval.normalizers._ruff_runner import _failure, make_form
@@ -16,23 +18,6 @@ from code_eval.normalizers.base import Normalizer
 from code_eval.subprocess_runner import SubprocessRunner
 
 _STDIN_FILENAME: Final[str] = "candidate.py"
-
-
-def _dedup_imports(source: str) -> str:
-    seen: set[str] = set()
-    out: list[str] = []
-    for line in source.splitlines():
-        stripped = line.lstrip()
-        is_import = stripped.startswith(("import ", "from "))
-        if is_import:
-            key = line.rstrip()
-            if key in seen:
-                continue
-            seen.add(key)
-        out.append(line)
-    if source.endswith("\n"):
-        return "\n".join(out) + "\n"
-    return "\n".join(out)
 
 
 class ImportSortDedup(Normalizer):
@@ -62,10 +47,26 @@ class ImportSortDedup(Normalizer):
                 source, "import_sort_failed", res.stderr or "ruff I-fix failed"
             )
             return make_form(
-                self.NAME, sourced, diags, (time.perf_counter() - start) * 1000.0, False
+                self.NAME,
+                sourced,
+                diags,
+                (time.perf_counter() - start) * 1000.0,
+                False,
             )
 
-        deduped = _dedup_imports(res.stdout)
+        try:
+            deduped = dedupe_imports(res.stdout)
+        except SyntaxError as e:
+            sourced, diags, _ = _failure(
+                res.stdout, "import_dedup_failed", str(e)
+            )
+            return make_form(
+                self.NAME,
+                sourced,
+                diags,
+                (time.perf_counter() - start) * 1000.0,
+                False,
+            )
         return make_form(
             self.NAME,
             deduped,

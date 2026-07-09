@@ -6,19 +6,19 @@ import random
 from typing import Final
 
 from dr_code.synthetic.models import CorruptedSample, FrozenModel
-from dr_code.synthetic.names import InverseTransformName
-from dr_code.synthetic.inverse_transforms import REGISTRY
+from dr_code.synthetic.names import CorruptionName
+from dr_code.synthetic.corruptions import REGISTRY
 
 
 class Recipe(FrozenModel):
-    """A named sequence of inverse transforms.
+    """A named sequence of corruptions.
 
     Recipes are pure data: they describe *what* to apply. The dataset
     builder is responsible for seeding RNG and calling each component.
     """
 
     name: str
-    transforms: tuple[InverseTransformName, ...]
+    corruptions: tuple[CorruptionName, ...]
     description: str = ""
 
 
@@ -32,7 +32,7 @@ def apply_recipe(
     """
     current = source
     notes_chunks: list[str] = []
-    for tname in recipe.transforms:
+    for tname in recipe.corruptions:
         transform_cls = REGISTRY[tname.value]
         transform = transform_cls()
         intermediate = transform.apply(current, rng)
@@ -49,150 +49,150 @@ def apply_recipe(
 # Frozen recipe set.
 #
 # Order keeps the original recipe set first, with extended recipes added
-# below to exercise every remaining inverse transform at least once.
+# below to exercise every remaining corruption at least once.
 # ---------------------------------------------------------------------------
 
 RECIPES: Final[tuple[Recipe, ...]] = (
     Recipe(
         name="clean",
-        transforms=(),
+        corruptions=(),
         description="No corruption — sanity baseline.",
     ),
     Recipe(
         name="fenced_tagged",
-        transforms=(InverseTransformName.ADD_CODE_FENCES,),
+        corruptions=(CorruptionName.ADD_CODE_FENCES,),
         description="Wrap source in a tagged ``` fence.",
     ),
     Recipe(
         name="fenced_untagged",
-        transforms=(InverseTransformName.ADD_CODE_FENCES,),
+        corruptions=(CorruptionName.ADD_CODE_FENCES,),
         description="Wrap source in an untagged ``` fence "
         "(transform may emit either tag — RNG-controlled).",
     ),
     Recipe(
         name="fenced_with_prose",
-        transforms=(
-            InverseTransformName.ADD_CODE_FENCES,
-            InverseTransformName.ADD_PROSE_WRAPPER,
+        corruptions=(
+            CorruptionName.ADD_CODE_FENCES,
+            CorruptionName.ADD_PROSE_WRAPPER,
         ),
         description="Fence the code, then wrap with explanatory prose.",
     ),
     Recipe(
         name="chat_indented",
-        transforms=(InverseTransformName.ADD_INDENTATION,),
+        corruptions=(CorruptionName.ADD_INDENTATION,),
         description="Uniformly indent the source as if from a chat quote.",
     ),
     Recipe(
         name="smart_quoted",
-        transforms=(InverseTransformName.ADD_SMART_QUOTES,),
+        corruptions=(CorruptionName.ADD_SMART_QUOTES,),
         description="Replace ASCII quotes with Unicode smart quotes.",
     ),
     Recipe(
         name="crlf_tabs",
-        transforms=(
-            InverseTransformName.ADD_CRLF,
-            InverseTransformName.ADD_TABS,
+        corruptions=(
+            CorruptionName.ADD_CRLF,
+            CorruptionName.ADD_TABS,
         ),
         description="CRLF line endings combined with tab indentation.",
     ),
     Recipe(
         name="truncated_midfn",
-        transforms=(InverseTransformName.TRUNCATE,),
+        corruptions=(CorruptionName.TRUNCATE,),
         description="Truncate mid-function (mode chosen by RNG).",
     ),
     Recipe(
         name="missing_np_import",
-        transforms=(InverseTransformName.REMOVE_IMPORTS,),
+        corruptions=(CorruptionName.REMOVE_IMPORTS,),
         description="Drop top-level imports (numpy in particular).",
     ),
     Recipe(
         name="mangled_import_paren",
-        transforms=(InverseTransformName.MANGLE_IMPORT_LINES,),
+        corruptions=(CorruptionName.MANGLE_IMPORT_LINES,),
         description="Syntactically mangle import lines.",
     ),
     Recipe(
         name="two_solutions",
-        transforms=(InverseTransformName.ADD_MULTIPLE_SOLUTIONS,),
+        corruptions=(CorruptionName.ADD_MULTIPLE_SOLUTIONS,),
         description="Concatenate an alternate solution after the canonical one.",
     ),
     Recipe(
         name="markdown_blockquote",
-        transforms=(InverseTransformName.ADD_MARKDOWN_WRAPPERS,),
+        corruptions=(CorruptionName.ADD_MARKDOWN_WRAPPERS,),
         description="Wrap each line with a Markdown wrapper (e.g. blockquote).",
     ),
     Recipe(
         name="unicode_fullwidth",
-        transforms=(InverseTransformName.ADD_UNICODE_NOISE,),
+        corruptions=(CorruptionName.ADD_UNICODE_NOISE,),
         description="Inject benign Unicode look-alike characters.",
     ),
     Recipe(
         name="kitchen_sink",
-        transforms=(
-            InverseTransformName.ADD_SMART_QUOTES,
-            InverseTransformName.ADD_INDENTATION,
-            InverseTransformName.ADD_CRLF,
-            InverseTransformName.ADD_CODE_FENCES,
-            InverseTransformName.ADD_PROSE_WRAPPER,
+        corruptions=(
+            CorruptionName.ADD_SMART_QUOTES,
+            CorruptionName.ADD_INDENTATION,
+            CorruptionName.ADD_CRLF,
+            CorruptionName.ADD_CODE_FENCES,
+            CorruptionName.ADD_PROSE_WRAPPER,
         ),
         description="Multi-corruption stress test.",
     ),
     Recipe(
         name="truncated_and_unfenced",
-        transforms=(
-            InverseTransformName.TRUNCATE,
-            InverseTransformName.ADD_CODE_FENCES,
+        corruptions=(
+            CorruptionName.TRUNCATE,
+            CorruptionName.ADD_CODE_FENCES,
         ),
         description="Truncate then wrap with a fence.",
     ),
     # --- Extended set: each remaining transform exercised in isolation ---
     Recipe(
         name="trailing_whitespace",
-        transforms=(InverseTransformName.ADD_TRAILING_WHITESPACE,),
+        corruptions=(CorruptionName.ADD_TRAILING_WHITESPACE,),
         description="Append trailing spaces / tabs to lines.",
     ),
     Recipe(
         name="blank_lines_noise",
-        transforms=(InverseTransformName.ADD_BLANK_LINES,),
+        corruptions=(CorruptionName.ADD_BLANK_LINES,),
         description="Inject random blank lines throughout.",
     ),
     Recipe(
         name="inline_backticks",
-        transforms=(InverseTransformName.ADD_INLINE_BACKTICKS,),
+        corruptions=(CorruptionName.ADD_INLINE_BACKTICKS,),
         description="Wrap individual identifiers in inline `code` ticks.",
     ),
     Recipe(
         name="duplicated_imports",
-        transforms=(InverseTransformName.DUPLICATE_IMPORTS,),
+        corruptions=(CorruptionName.DUPLICATE_IMPORTS,),
         description="Duplicate top-of-file imports.",
     ),
     Recipe(
         name="comments_noise",
-        transforms=(InverseTransformName.ADD_COMMENTS_NOISE,),
+        corruptions=(CorruptionName.ADD_COMMENTS_NOISE,),
         description="Inject incidental comments throughout.",
     ),
     Recipe(
         name="dead_code",
-        transforms=(InverseTransformName.ADD_DEAD_CODE,),
+        corruptions=(CorruptionName.ADD_DEAD_CODE,),
         description="Inject unreachable / unused statements.",
     ),
     Recipe(
         name="quote_style_swap",
-        transforms=(InverseTransformName.CHANGE_QUOTE_STYLE,),
+        corruptions=(CorruptionName.CHANGE_QUOTE_STYLE,),
         description="Flip single quotes to double (or vice versa).",
     ),
     Recipe(
         name="string_form_swap",
-        transforms=(InverseTransformName.CHANGE_STRING_FORM,),
+        corruptions=(CorruptionName.CHANGE_STRING_FORM,),
         description="Swap between f-string / concat / format equivalents.",
     ),
     Recipe(
         name="extra_type_annotations",
-        transforms=(InverseTransformName.ADD_TYPE_ANNOTATIONS,),
+        corruptions=(CorruptionName.ADD_TYPE_ANNOTATIONS,),
         description="Add (sometimes incorrect) type annotations.",
     ),
     Recipe(
         name="renamed_locals",
-        transforms=(InverseTransformName.RENAME_LOCALS,),
+        corruptions=(CorruptionName.RENAME_LOCALS,),
         description="Rename local variables to unrelated identifiers.",
     ),
 )

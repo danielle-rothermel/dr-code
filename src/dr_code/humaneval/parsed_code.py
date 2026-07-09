@@ -8,6 +8,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from dr_code.code_transforms import (
+    is_string_literal_stmt,
+    strip_docstrings_in_tree,
+)
+
 
 class Variable(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -191,36 +196,9 @@ def extract_function_signatures(
     ]
 
 
-def is_string_literal_stmt(stmt: ast.stmt) -> bool:
-    return (
-        isinstance(stmt, ast.Expr)
-        and isinstance(stmt.value, ast.Constant)
-        and isinstance(stmt.value.value, str)
-    )
-
-
-def strip_leading_docstring(
-    node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
-) -> None:
-    body = node.body
-    if body and is_string_literal_stmt(body[0]):
-        node.body = body[1:] or [ast.Pass()]
-
-
 def remove_comments(tree: ast.AST, *, remove_docstrings: bool = True) -> str:
     if remove_docstrings:
-        tree = copy.deepcopy(tree)
-        for node in ast.walk(tree):
-            if isinstance(
-                node,
-                (
-                    ast.Module
-                    | ast.FunctionDef
-                    | ast.AsyncFunctionDef
-                    | ast.ClassDef
-                ),
-            ):
-                strip_leading_docstring(node)
+        tree = strip_docstrings_in_tree(copy.deepcopy(tree))
     return ast.unparse(tree)
 
 
