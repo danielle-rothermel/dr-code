@@ -1,9 +1,10 @@
 # dr-code has exactly two consumer surfaces
 
 dr-code ships one library surface — the curated `dr_code.humaneval` public
-API together with the `dr_code.code_transforms` and
-`dr_code.text_transforms` modules (ADR 0007), consumed by whetstone-ai as a
-git-pinned dependency — and one HTTP surface, the localhost-only serve
+API together with the `dr_code.code_transforms`, `dr_code.text_transforms`,
+and `dr_code.code_analysis` modules (ADRs 0007, 0008), consumed by
+whetstone-ai as a git-pinned dependency and directly from notebooks and
+sibling repos — and one HTTP surface, the localhost-only serve
 facade (`/explain`, `/profiles`, `/health`) consumed by viewers through a
 generated OpenAPI client. The
 React component package (see ADR 0006) is a rendering companion to these
