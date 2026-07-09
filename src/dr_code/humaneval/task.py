@@ -29,7 +29,7 @@ from pydantic import (
     model_validator,
 )
 
-from dr_code.humaneval.parsed_code import FunctionSignature, ParsedCode
+from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
     InputExpressionTestCase,
@@ -84,7 +84,7 @@ class HumanEvalTask(BaseModel):
     @model_validator(mode="after")
     def parse_code(self) -> Self:
         if self.parsed is None:
-            self.parsed = ParsedCode(
+            self.parsed = parse_code(
                 display_title=self.task_id,
                 code_str=self.ground_truth_code,
             )
@@ -139,9 +139,7 @@ def _results_for_function(
     function_name: str,
 ) -> list[EvaluationCaseResult]:
     return [
-        result
-        for result in results
-        if result.function_name == function_name
+        result for result in results if result.function_name == function_name
     ]
 
 
@@ -546,7 +544,7 @@ def support_code_without_check(tree: ast.Module) -> str:
 def top_level_function_names(code_str: str) -> list[str]:
     tree = ast.parse(code_str)
     return [
-        FunctionSignature(tree=node).function_name
+        node.name
         for node in tree.body
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     ]

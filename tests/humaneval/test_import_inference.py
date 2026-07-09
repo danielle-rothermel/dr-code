@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.code_extraction import (
-    apply_cleaning,
-    validate_python_source,
-)
+from dr_code.code_analysis import validate_python_source
+from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.import_inference import infer_necessary_imports
 
 

@@ -10,22 +10,17 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Final
 
+from dr_code.text_transforms import DEFAULT_TAB_WIDTH as DEFAULT_TAB_WIDTH
+
 # ---------------------------------------------------------------------------
 # Version-related constants
 # ---------------------------------------------------------------------------
-
-#: Bumped whenever the synthetic corruption recipes change behavior. The
-#: dataset JSONL records its build version so regeneration can detect drift.
-DATASET_VERSION: Final[str] = "1"
 
 #: Default cache directory, relative to the repo root.
 DEFAULT_CACHE_DIR_NAME: Final[str] = ".cache"
 
 #: Default subprocess timeout for external tool invocations (seconds).
 DEFAULT_SUBPROCESS_TIMEOUT_S: Final[float] = 5.0
-
-#: Default tab width when normalizing whitespace.
-DEFAULT_TAB_WIDTH: Final[int] = 4
 
 
 # ---------------------------------------------------------------------------
@@ -102,42 +97,6 @@ class NormalizerName(StrEnum):
     NAME_NORMALIZE = "name_normalize"
     ANNOTATION_STRIP = "annotation_strip"
     STRING_FORM_NORMALIZE = "string_form_normalize"
-
-
-# ---------------------------------------------------------------------------
-# Inverse transforms (synthetic corruptions)
-# ---------------------------------------------------------------------------
-
-
-class InverseTransformName(StrEnum):
-    """All synthetic corruption transforms.
-
-    Names are paired 1:1 with the expected recovery step. See
-    `docs/TESTING.md` for the synthetic corpus contract.
-    """
-
-    ADD_CODE_FENCES = "add_code_fences"
-    ADD_PROSE_WRAPPER = "add_prose_wrapper"
-    ADD_SMART_QUOTES = "add_smart_quotes"
-    ADD_INDENTATION = "add_indentation"
-    ADD_TABS = "add_tabs"
-    ADD_TRAILING_WHITESPACE = "add_trailing_whitespace"
-    ADD_CRLF = "add_crlf"
-    ADD_UNICODE_NOISE = "add_unicode_noise"
-    ADD_BLANK_LINES = "add_blank_lines"
-    ADD_MARKDOWN_WRAPPERS = "add_markdown_wrappers"
-    ADD_INLINE_BACKTICKS = "add_inline_backticks"
-    TRUNCATE = "truncate"
-    REMOVE_IMPORTS = "remove_imports"
-    MANGLE_IMPORT_LINES = "mangle_import_lines"
-    DUPLICATE_IMPORTS = "duplicate_imports"
-    ADD_MULTIPLE_SOLUTIONS = "add_multiple_solutions"
-    ADD_COMMENTS_NOISE = "add_comments_noise"
-    ADD_DEAD_CODE = "add_dead_code"
-    CHANGE_QUOTE_STYLE = "change_quote_style"
-    CHANGE_STRING_FORM = "change_string_form"
-    ADD_TYPE_ANNOTATIONS = "add_type_annotations"
-    RENAME_LOCALS = "rename_locals"
 
 
 # ---------------------------------------------------------------------------

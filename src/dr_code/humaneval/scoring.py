@@ -22,7 +22,7 @@ from pydantic import (
     StrictStr,
 )
 
-from dr_code.humaneval.code_extraction import validate_python_source
+from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
     CodeParserProfile,

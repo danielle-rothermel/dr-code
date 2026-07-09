@@ -9,9 +9,17 @@ from __future__ import annotations
 import ast
 import re
 import textwrap
-import unicodedata
 from collections.abc import Callable
 from typing import Final
+
+from dr_code.text_analysis import (
+    is_code_anchor_line,
+    is_code_like_line,
+)
+from dr_code.text_transforms import (
+    normalize_text,
+    strip_markdown_wrappers,
+)
 
 from code_eval.config import ValidatorConfig
 from code_eval.models.extracted_candidate import ExtractedCandidate
@@ -21,7 +29,6 @@ from code_eval.models.extraction_result import ExtractionResult
 from code_eval.models.extraction_step import ExtractionStep
 from code_eval.names import DEFAULT_TAB_WIDTH, ExtractorName
 
-_BLANK_RUN: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
 _FENCE_RE: Final[re.Pattern[str]] = re.compile(
     r"(?P<open>```|~~~)(?P<tag>[A-Za-z0-9_+\-]*)\s*\n(?P<body>.*?)(?P<close>(?P=open))",
     flags=re.DOTALL,
@@ -30,9 +37,6 @@ _OPEN_FENCE_AT_END: Final[re.Pattern[str]] = re.compile(
     r"(?P<open>```|~~~)(?P<tag>[A-Za-z0-9_+\-]*)\s*\n(?P<body>(?:(?!```|~~~).)*)\Z",
     flags=re.DOTALL,
 )
-_ANCHOR_RE: Final[re.Pattern[str]] = re.compile(
-    r"^(?:def |async def |class |import |from |@|if __name__)"
-)
 _LEAD_IN: Final[re.Pattern[str]] = re.compile(
     r"(?i)^.*\b(?:here(?:'s| is)|here)\s+(?:is\s+)?(?:the|my|a|an)?\s*"
     r"(?:solution|code|answer|program|implementation)\b[:.]?\s*$"
@@ -40,28 +44,13 @@ _LEAD_IN: Final[re.Pattern[str]] = re.compile(
 _CODE_LIKE_PROSE: Final[re.Pattern[str]] = re.compile(
     r"^\s*(?:from |import |def |class |@|async def |if |for |while |with |try |return )"
 )
-_BLOCK_CODE_LIKE: Final[re.Pattern[str]] = re.compile(
-    r"^(?:\s+\S|"
-    r"def |async def |class |import |from |@|if |for |while |with |try |"
-    r"except|else|elif|return |raise |pass\b|continue\b|break\b|"
-    r"#|"
-    r"[a-zA-Z_]\w*\s*=)"
-)
-_MARKDOWN_WRAPPER: Final[re.Pattern[str]] = re.compile(
-    r"^[ \t]*(?:>+[ \t]?|\d+[.)][ \t]?|[*+\-][ \t])"
-)
 _INLINE_BACKTICK_RE: Final[re.Pattern[str]] = re.compile(r"`([^`\n]+)`")
 
 type ExtractorFunction = Callable[[str], tuple[ExtractionFragment, ...]]
 
 
 def text_normalize(raw: str, tab_width: int = DEFAULT_TAB_WIDTH) -> str:
-    text = raw.replace("\r\n", "\n").replace("\r", "\n")
-    text = unicodedata.normalize("NFKC", text)
-    text = text.expandtabs(tab_width)
-    text = "\n".join(line.rstrip() for line in text.split("\n"))
-    text = _BLANK_RUN.sub("\n\n", text)
-    return text.strip("\n")
+    return normalize_text(raw, tab_width)
 
 
 def _direct_parse(raw: str) -> tuple[ExtractionFragment, ...]:
@@ -105,10 +94,11 @@ def _fences(raw: str) -> tuple[ExtractionFragment, ...]:
 def _keyword_anchor(raw: str) -> tuple[ExtractionFragment, ...]:
     lines = raw.splitlines()
     for index, line in enumerate(lines):
-        if _ANCHOR_RE.match(line):
+        if is_code_anchor_line(line):
             return (
                 ExtractionFragment(
-                    source="\n".join(lines[index:]), notes=f"anchored at line {index}"
+                    source="\n".join(lines[index:]),
+                    notes=f"anchored at line {index}",
                 ),
             )
     return ()
@@ -154,9 +144,7 @@ def _prose_patterns(raw: str) -> tuple[ExtractionFragment, ...]:
 
 
 def _is_code_like(line: str) -> bool:
-    if not line.strip():
-        return True
-    return bool(_BLOCK_CODE_LIKE.match(line))
+    return is_code_like_line(line)
 
 
 def _indentation_block(raw: str) -> tuple[ExtractionFragment, ...]:
@@ -185,35 +173,46 @@ def _indentation_block(raw: str) -> tuple[ExtractionFragment, ...]:
         return ()
 
     return (
-        ExtractionFragment(source="\n".join(lines[start:end]), notes=f"lines [{start}, {end})"),
+        ExtractionFragment(
+            source="\n".join(lines[start:end]), notes=f"lines [{start}, {end})"
+        ),
     )
 
 
 def _markdown_strip(raw: str) -> tuple[ExtractionFragment, ...]:
-    changed = False
-    out_lines: list[str] = []
-    for line in raw.splitlines():
-        stripped = _MARKDOWN_WRAPPER.sub("", line)
-        changed = changed or stripped != line
-        out_lines.append(stripped)
-    if not changed:
+    stripped = strip_markdown_wrappers(raw)
+    if stripped == "\n".join(raw.splitlines()):
         return ()
-    return (ExtractionFragment(source="\n".join(out_lines)),)
+    return (ExtractionFragment(source=stripped),)
 
 
 def _inline_spans(raw: str) -> tuple[ExtractionFragment, ...]:
     stripped = raw.strip()
-    if stripped.startswith("`") and stripped.endswith("`") and not stripped.startswith("```"):
-        return (ExtractionFragment(source=stripped[1:-1], notes="full-source backtick wrap"),)
+    if (
+        stripped.startswith("`")
+        and stripped.endswith("`")
+        and not stripped.startswith("```")
+    ):
+        return (
+            ExtractionFragment(
+                source=stripped[1:-1], notes="full-source backtick wrap"
+            ),
+        )
     if "`" not in raw or "```" in raw:
         return ()
     stripped_inline = _INLINE_BACKTICK_RE.sub(r"\1", raw)
     if stripped_inline == raw:
         return ()
-    return (ExtractionFragment(source=stripped_inline, notes="inline backticks removed"),)
+    return (
+        ExtractionFragment(
+            source=stripped_inline, notes="inline backticks removed"
+        ),
+    )
 
 
-EXTRACTION_CATALOG: Final[tuple[tuple[ExtractorName, ExtractorFunction], ...]] = (
+EXTRACTION_CATALOG: Final[
+    tuple[tuple[ExtractorName, ExtractorFunction], ...]
+] = (
     (ExtractorName.DIRECT_PARSE, _direct_parse),
     (ExtractorName.FENCES, _fences),
     (ExtractorName.KEYWORD_ANCHOR, _keyword_anchor),
@@ -261,8 +260,12 @@ def run_extraction(raw: str, config: ValidatorConfig) -> ExtractionResult:
     passes: list[ExtractionPass] = []
 
     for extractor, extract in EXTRACTION_CATALOG:
-        raw_candidates = _attach(extractor, extract(raw), text_normalized=False)
-        normalized_candidates = _attach(extractor, extract(normalized), text_normalized=True)
+        raw_candidates = _attach(
+            extractor, extract(raw), text_normalized=False
+        )
+        normalized_candidates = _attach(
+            extractor, extract(normalized), text_normalized=True
+        )
         produced = (*raw_candidates, *normalized_candidates)
         candidates.extend(produced)
         passes.append(
