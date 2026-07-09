@@ -6,15 +6,11 @@ from pydantic import BaseModel, ConfigDict, StrictStr
 
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    FIELD_MARKER_NAME,
     PARSER_PROFILE_VERSION,
     STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
+    ExtractionTrace,
 )
-from dr_code.serve.explain import (
-    ExplainStage,
-    ExtractionExplanation,
-    explain_extraction,
-)
+from dr_code.serve.explain import explain_extraction
 
 SERVE_TITLE = "dr-code serve"
 SERVE_VERSION = "0.1.0"
@@ -34,8 +30,6 @@ class ExplainRequest(BaseModel):
     text: StrictStr
     profile_id: StrictStr = BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID
     parser_version: StrictStr = PARSER_PROFILE_VERSION
-    code_field: StrictStr = FIELD_MARKER_NAME
-    stages: list[ExplainStage] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -68,18 +62,13 @@ def create_app() -> FastAPI:
             parser_version=PARSER_PROFILE_VERSION,
         )
 
-    @app.post("/explain", response_model=ExtractionExplanation)
-    def explain(request: ExplainRequest) -> ExtractionExplanation:
-        stages = (
-            frozenset(request.stages) if request.stages is not None else None
-        )
+    @app.post("/explain", response_model=ExtractionTrace)
+    def explain(request: ExplainRequest) -> ExtractionTrace:
         try:
             return explain_extraction(
                 request.text,
                 profile_id=request.profile_id,
                 parser_version=request.parser_version,
-                code_field=request.code_field,
-                stages=stages,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
