@@ -2,7 +2,8 @@
 
 dr-code ships one library surface — the curated `dr_code.humaneval` public
 API together with the `dr_code.code_transforms`, `dr_code.text_transforms`,
-and `dr_code.code_analysis` modules (ADRs 0007, 0008), consumed by
+`dr_code.code_analysis`, and `dr_code.text_analysis` modules (ADRs 0007,
+0008), consumed by
 whetstone-ai as a git-pinned dependency and directly from notebooks and
 sibling repos — and one HTTP surface, the localhost-only serve
 facade (`/explain`, `/profiles`, `/health`) consumed by viewers through a

@@ -9,9 +9,9 @@ code (raw LLM submissions, markdown, prose-wrapped snippets): every
 function is total, never raises, and passes unrepairable input through
 best-effort. The boundary is the caller's domain assumption, not the
 implementation technique — a regex-based docstring stripper would still be
-a code transform. `code_transforms` holds transforms strictly
-(source-to-source or tree-to-tree); predicates and inspection over
-parseable Python live in `dr_code.code_analysis` (ADR 0008).
+a code transform. Both modules hold transforms strictly;
+predicates, enumeration, and inspection live in the analysis siblings
+`dr_code.code_analysis` and `dr_code.text_analysis` (ADR 0008).
 
 Placement tiebreaker: when a job on valid code already belongs to a
 formatter (trailing whitespace, line endings, indentation width), the
