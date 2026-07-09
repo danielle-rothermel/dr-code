@@ -124,6 +124,7 @@ def score_humaneval_submission(
             task=task,
             candidate_code=extraction.extracted_code,
             timeout_seconds=timeout_seconds,
+            candidate_ast=extraction.parsed_candidate,
         )
     except EvaluationHarnessError as exc:
         return HarnessFailure(

@@ -24,6 +24,7 @@ from dr_code.code_analysis import (
     top_level_import_linenos,
     validate_python,
     validate_python_source,
+    validate_python_source_with_ast,
 )
 
 UNPARSEABLE = "def broken(:\n"
@@ -41,6 +42,16 @@ def test_validate_python_source_is_total_and_reports_errors() -> None:
     assert validation.compile_ok is False
     assert validation.parse_error is not None
     assert validation.compile_error is not None
+
+
+def test_validate_python_source_with_ast_returns_reusable_tree() -> None:
+    validated = validate_python_source_with_ast("x = 1\n")
+    assert validated.validation.parse_ok is True
+    assert isinstance(validated.tree, ast.Module)
+
+    validated = validate_python_source_with_ast(UNPARSEABLE)
+    assert validated.validation.parse_ok is False
+    assert validated.tree is None
 
 
 def test_equivalent_ignores_formatting_and_docstrings() -> None:

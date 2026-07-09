@@ -69,8 +69,8 @@ def build_dataset(
 ) -> list[SyntheticSample]:
     """Build the full dataset list (in-memory).
 
-    If `tasks` is None, fall back to `load_humaneval_plus()` which prefers
-    the on-disk snapshot by default for offline reproducibility.
+    If `tasks` is None, load HumanEvalPlus through the explicit
+    `prefer_snapshot` source choice.
     """
     if tasks is None:
         tasks_iter: Iterable[HumanEvalPlusTask] = load_humaneval_plus(

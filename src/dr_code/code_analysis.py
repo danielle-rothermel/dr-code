@@ -86,19 +86,33 @@ def validate_python(source: str) -> None:
     ast.parse(source)
 
 
-def validate_python_source(source: str) -> PythonSourceValidation:
-    """Return parse and compile diagnostics without raising."""
+@dataclass(frozen=True)
+class SourceValidationWithTree:
+    validation: PythonSourceValidation
+    tree: ast.Module | None
+
+
+def validate_python_source_with_ast(
+    source: str,
+) -> SourceValidationWithTree:
+    """Return parse/compile diagnostics without raising, plus the parsed
+    module for reuse (None when parsing failed)."""
     try:
-        ast.parse(source)
+        parsed_module = ast.parse(source)
     except (SyntaxError, ValueError) as exc:
         parse_ok = False
         parse_error = f"{type(exc).__name__}: {exc}"
+        parsed_module = None
     else:
         parse_ok = True
         parse_error = None
 
     try:
-        compile(source, "<candidate>", "exec")
+        compile(
+            parsed_module if parsed_module is not None else source,
+            "<candidate>",
+            "exec",
+        )
     except (SyntaxError, ValueError) as exc:
         compile_ok = False
         compile_error = f"{type(exc).__name__}: {exc}"
@@ -106,12 +120,20 @@ def validate_python_source(source: str) -> PythonSourceValidation:
         compile_ok = True
         compile_error = None
 
-    return PythonSourceValidation(
-        parse_ok=parse_ok,
-        parse_error=parse_error,
-        compile_ok=compile_ok,
-        compile_error=compile_error,
+    return SourceValidationWithTree(
+        validation=PythonSourceValidation(
+            parse_ok=parse_ok,
+            parse_error=parse_error,
+            compile_ok=compile_ok,
+            compile_error=compile_error,
+        ),
+        tree=parsed_module,
     )
+
+
+def validate_python_source(source: str) -> PythonSourceValidation:
+    """Return parse and compile diagnostics without raising."""
+    return validate_python_source_with_ast(source).validation
 
 
 def is_string_literal_stmt(stmt: ast.stmt) -> bool:
@@ -431,6 +453,7 @@ __all__ = [
     "FunctionArgument",
     "FunctionSignatureSite",
     "PythonSourceValidation",
+    "SourceValidationWithTree",
     "SourceLocation",
     "SourceTextSite",
     "TextSiteKind",
@@ -450,4 +473,5 @@ __all__ = [
     "top_level_import_linenos",
     "validate_python",
     "validate_python_source",
+    "validate_python_source_with_ast",
 ]
