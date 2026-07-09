@@ -89,6 +89,7 @@ def candidate_blocks(text: str) -> list[str]:
 
 
 def is_code_like_block(text: str) -> bool:
+    """True if `text`'s first line looks like Python (empty text counts)."""
     first_line = text.split(LINE_SEP, 1)[0] if text else None
     if first_line is None:
         return True
@@ -96,6 +97,7 @@ def is_code_like_block(text: str) -> bool:
 
 
 def anchored_code_blocks(text: str) -> list[str]:
+    """Split `text` into code-like blocks anchored at def/class/import lines."""
     lines = text.split(LINE_SEP)
     if is_code_like_block(text):
         return [text]
@@ -119,6 +121,7 @@ def anchored_code_blocks(text: str) -> list[str]:
 
 
 def code_like_blocks(blocks: Iterable[str]) -> list[str]:
+    """Flatten `anchored_code_blocks` over every block."""
     code_blocks: list[str] = []
     for block in blocks:
         code_blocks.extend(anchored_code_blocks(block))

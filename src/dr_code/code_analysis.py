@@ -115,6 +115,7 @@ def validate_python_source(source: str) -> PythonSourceValidation:
 
 
 def is_string_literal_stmt(stmt: ast.stmt) -> bool:
+    """True if `stmt` is a bare string-literal expression (docstring shape)."""
     return (
         isinstance(stmt, ast.Expr)
         and isinstance(stmt.value, ast.Constant)
@@ -195,6 +196,7 @@ def _annotation_site(
 def function_params(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[ast.arg]:
+    """All parameters of `node` in declaration order, including vararg/kwarg."""
     args = [
         *node.args.posonlyargs,
         *node.args.args,
@@ -210,6 +212,7 @@ def function_params(
 def find_function_node(
     tree: ast.AST,
 ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """First function definition in `tree` (or `tree` itself); None if absent."""
     if isinstance(tree, ast.FunctionDef | ast.AsyncFunctionDef):
         return tree
     return next(
@@ -225,6 +228,7 @@ def find_function_node(
 def format_function_signature(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> str:
+    """Render the signature line, e.g. `def f(x: int) -> str:`."""
     prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
     args = ast.unparse(node.args)
     returns = f" -> {ast.unparse(node.returns)}" if node.returns else ""
@@ -234,6 +238,7 @@ def format_function_signature(
 def extract_function_args(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[FunctionArgument]:
+    """Named parameters with unparsed annotations; excludes vararg/kwarg."""
     variadic_arg_ids = {
         id(arg)
         for arg in (node.args.vararg, node.args.kwarg)
@@ -266,6 +271,7 @@ def _function_signature_site(
 
 
 def extract_function_signatures(tree: ast.AST) -> list[FunctionSignatureSite]:
+    """A `FunctionSignatureSite` for every function defined in `tree`."""
     return [
         _function_signature_site(node)
         for node in ast.walk(tree)
@@ -274,6 +280,7 @@ def extract_function_signatures(tree: ast.AST) -> list[FunctionSignatureSite]:
 
 
 def annotation_sites(tree: ast.AST) -> list[AnnotationSite]:
+    """Every annotation in `tree` as a site (parameter, return, variable)."""
     sites: list[AnnotationSite] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -322,6 +329,7 @@ def _target_names(targets: Iterable[ast.expr]) -> Iterable[str]:
 
 
 def function_locals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Names `node` binds, first-seen order: params, then assignment targets."""
     local_names: list[str] = []
     seen: set[str] = set()
 
@@ -346,6 +354,7 @@ def function_locals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
 
 
 def extract_hash_comments(code_str: str) -> list[SourceTextSite]:
+    """Every `#` comment in `code_str` as a `SourceTextSite` with location."""
     tokens = tokenize.generate_tokens(io.StringIO(code_str).readline)
     return [
         SourceTextSite(
@@ -375,6 +384,7 @@ def _docstring_owner_name(node: ast.AST) -> str | None:
 
 
 def extract_docstrings(tree: ast.AST) -> list[SourceTextSite]:
+    """Every docstring in `tree` as a `SourceTextSite` with owner and location."""
     docstrings: list[SourceTextSite] = []
     for node in ast.walk(tree):
         if not isinstance(
@@ -407,6 +417,7 @@ def extract_docstrings(tree: ast.AST) -> list[SourceTextSite]:
 
 
 def collect_comments(code_str: str, tree: ast.AST) -> str:
+    """Hash comments and docstrings joined in source-line order."""
     items = [*extract_hash_comments(code_str), *extract_docstrings(tree)]
     return "\n".join(
         site.text

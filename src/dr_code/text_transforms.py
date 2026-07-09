@@ -100,6 +100,7 @@ def normalize_smart_quotes(source: str) -> str:
 
 
 def drop_if_name(text: str) -> list[str]:
+    """Split `text` on `if __name__` guard lines, dropping the guards."""
     lines = text.split(LINE_SEP)
     split_lines = [line for line in lines if "if __name__" in line]
     if not split_lines:
@@ -116,6 +117,7 @@ def drop_if_name(text: str) -> list[str]:
 
 
 def drop_after_last_return(text: str) -> str:
+    """Truncate `text` after its last `return` line; unchanged when none."""
     lines = text.split(LINE_SEP)
     for index in range(len(lines) - 1, -1, -1):
         if RETURN_LINE_RE.match(lines[index]):
