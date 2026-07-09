@@ -10,30 +10,30 @@ contains code (raw LLM output, markdown, mixed prose), see
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable, Iterable
 from typing import Final
+
+from dr_code.code_analysis import (
+    AnnotationKind,
+    AnnotationSite,
+    annotation_sites,
+    function_locals,
+    function_params,
+    is_string_literal_stmt,
+    module_level_names,
+    top_level_import_linenos,
+    validate_python,
+)
 
 #: Prefix used for alpha-renamed local variables (`_v0`, `_v1`, ...).
 RENAMED_LOCAL_PREFIX: Final[str] = "_v"
 
-_SCOPE_NODE_TYPES = (
+SCOPE_NODE_TYPES = (
     ast.Module,
     ast.FunctionDef,
     ast.AsyncFunctionDef,
     ast.ClassDef,
 )
-
-
-def _validate_python(source: str) -> None:
-    """Raise `SyntaxError` if `source` is not parseable Python."""
-    ast.parse(source)
-
-
-def is_string_literal_stmt(stmt: ast.stmt) -> bool:
-    return (
-        isinstance(stmt, ast.Expr)
-        and isinstance(stmt.value, ast.Constant)
-        and isinstance(stmt.value.value, str)
-    )
 
 
 def strip_leading_docstring(
@@ -48,7 +48,7 @@ def strip_leading_docstring(
 def strip_docstrings_in_tree(tree: ast.AST) -> ast.AST:
     """Drop leading docstrings from every scope in `tree`, in place."""
     for node in ast.walk(tree):
-        if isinstance(node, _SCOPE_NODE_TYPES):
+        if isinstance(node, SCOPE_NODE_TYPES):
             strip_leading_docstring(node)
     return tree
 
@@ -60,163 +60,139 @@ def strip_docstrings(source: str) -> str:
     return ast.unparse(tree)
 
 
-def canonicalize(source: str) -> str:
-    """Return the canonical form `equivalent` compares: docstrings stripped,
-    `ast.unparse` round-trip."""
-    return strip_docstrings(source)
+def _should_strip(
+    site: AnnotationSite,
+    keep: Callable[[AnnotationSite], bool] | None,
+) -> bool:
+    return keep is None or not keep(site)
 
 
-def equivalent(a: str, b: str) -> bool:
-    """True if `a` and `b` are equivalent under canonicalization.
-
-    Total: unparseable input compares as not-equivalent instead of raising.
-    """
-    try:
-        return canonicalize(a) == canonicalize(b)
-    except SyntaxError:
-        return False
-
-
-class _AnnotationStripper(ast.NodeTransformer):
-    def _strip_args(self, args: ast.arguments) -> None:
-        for arg in (
-            *args.posonlyargs,
-            *args.args,
-            *args.kwonlyargs,
-        ):
+def _strip_function_annotations(
+    site: AnnotationSite,
+) -> None:
+    if not isinstance(site.owner, ast.FunctionDef | ast.AsyncFunctionDef):
+        return
+    if site.kind is AnnotationKind.RETURN:
+        site.owner.returns = None
+        return
+    for arg in function_params(site.owner):
+        if arg.annotation is site.annotation:
             arg.annotation = None
-        if args.vararg:
-            args.vararg.annotation = None
-        if args.kwarg:
-            args.kwarg.annotation = None
+            return
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
-        node.returns = None
-        self._strip_args(node.args)
-        return self.generic_visit(node)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
-        node.returns = None
-        self._strip_args(node.args)
-        return self.generic_visit(node)
+def _replacement_for_annassign(site: AnnotationSite) -> ast.stmt:
+    owner = site.owner
+    if not isinstance(owner, ast.AnnAssign):
+        raise TypeError("annotation site owner is not an AnnAssign")
+    if owner.value is None:
+        return ast.copy_location(ast.Pass(), owner)
+    return ast.copy_location(
+        ast.Assign(
+            targets=[owner.target], value=owner.value, type_comment=None
+        ),
+        owner,
+    )
 
-    def visit_AnnAssign(self, node: ast.AnnAssign) -> ast.AST:
-        # Drop pure annotations (no value); turn annotated assignments into
-        # plain assignments.
-        if node.value is None:
-            return ast.Pass()
-        return ast.Assign(
-            targets=[node.target],
-            value=node.value,
-            type_comment=None,
-        )
+
+def _body_lists(tree: ast.AST) -> Iterable[list[ast.stmt]]:
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if isinstance(body, list):
+            yield body
+        orelse = getattr(node, "orelse", None)
+        if isinstance(orelse, list):
+            yield orelse
+        finalbody = getattr(node, "finalbody", None)
+        if isinstance(finalbody, list):
+            yield finalbody
+
+
+def strip_type_annotations_in_tree(
+    tree: ast.AST,
+    *,
+    keep: Callable[[AnnotationSite], bool] | None = None,
+) -> ast.AST:
+    """Drop selected annotations from `tree` in place."""
+    sites = annotation_sites(tree)
+    annassign_replacements = {
+        id(site.owner): _replacement_for_annassign(site)
+        for site in sites
+        if site.kind is AnnotationKind.VARIABLE and _should_strip(site, keep)
+    }
+    for site in sites:
+        if not _should_strip(site, keep):
+            continue
+        _strip_function_annotations(site)
+    for body in _body_lists(tree):
+        for index, stmt in enumerate(body):
+            replacement = annassign_replacements.get(id(stmt))
+            if replacement is not None:
+                body[index] = replacement
+    return tree
 
 
 def strip_type_annotations(source: str) -> str:
     """Drop annotations: `def f(x: int) -> str:` -> `def f(x):`,
     `x: int = 1` -> `x = 1`."""
-    tree = ast.parse(source)
-    transformed = _AnnotationStripper().visit(tree)
-    ast.fix_missing_locations(transformed)
-    return ast.unparse(transformed)
+    tree = strip_type_annotations_in_tree(ast.parse(source))
+    ast.fix_missing_locations(tree)
+    return ast.unparse(tree)
 
 
-def _module_level_names(tree: ast.AST) -> set[str]:
-    """Top-level names that must not be renamed."""
-    names: set[str] = set()
-    if isinstance(tree, ast.Module):
-        for stmt in tree.body:
-            if isinstance(
-                stmt, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-            ):
-                names.add(stmt.name)
-            elif isinstance(stmt, ast.Import):
-                for alias in stmt.names:
-                    names.add(alias.asname or alias.name.split(".")[0])
-            elif isinstance(stmt, ast.ImportFrom):
-                for alias in stmt.names:
-                    names.add(alias.asname or alias.name)
-            elif isinstance(stmt, ast.Assign):
-                for target in stmt.targets:
-                    if isinstance(target, ast.Name):
-                        names.add(target.id)
-    return names
+def rename_locals_in_function(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    mapping: dict[str, str],
+) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    """Apply `mapping` to parameters and name references in one function."""
+    if not mapping:
+        return node
+    for arg in function_params(node):
+        if arg.arg in mapping:
+            arg.arg = mapping[arg.arg]
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Name) and sub.id in mapping:
+            sub.id = mapping[sub.id]
+    return node
 
 
-class _LocalRenamer(ast.NodeTransformer):
-    """Per-function rewriting of locals to `_vN`, deterministic per AST."""
+def _local_mapping(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    protected: set[str],
+    *,
+    rename_params: bool,
+) -> dict[str, str]:
+    param_names = {arg.arg for arg in function_params(node)}
+    skipped = set(protected)
+    if not rename_params:
+        skipped |= param_names
+    local_names = [
+        name for name in function_locals(node) if name not in skipped
+    ]
+    if not rename_params:
+        local_names = [name for name in local_names if name not in param_names]
+    return {
+        name: f"{RENAMED_LOCAL_PREFIX}{i}"
+        for i, name in enumerate(local_names)
+    }
 
-    def __init__(self, protected: set[str], *, rename_params: bool) -> None:
-        self._protected = protected
-        self._rename_params = rename_params
 
-    def _function_args(
-        self, node: ast.FunctionDef | ast.AsyncFunctionDef
-    ) -> list[ast.arg]:
-        args = [
-            *node.args.posonlyargs,
-            *node.args.args,
-            *node.args.kwonlyargs,
-        ]
-        if node.args.vararg:
-            args.append(node.args.vararg)
-        if node.args.kwarg:
-            args.append(node.args.kwarg)
-        return args
-
-    def _rename_function(
-        self, node: ast.FunctionDef | ast.AsyncFunctionDef
-    ) -> None:
-        local_names: list[str] = []
-        seen: set[str] = set()
-        param_names = {arg.arg for arg in self._function_args(node)}
-        skipped = set(self._protected)
-        if not self._rename_params:
-            skipped |= param_names
-
-        def add(name: str) -> None:
-            if name in seen or name in skipped:
-                return
-            seen.add(name)
-            local_names.append(name)
-
-        if self._rename_params:
-            for arg in self._function_args(node):
-                add(arg.arg)
-
-        for sub in ast.walk(node):
-            if isinstance(sub, ast.Assign):
-                for target in sub.targets:
-                    if isinstance(target, ast.Name):
-                        add(target.id)
-            elif isinstance(sub, ast.AnnAssign | ast.AugAssign):
-                target = sub.target
-                if isinstance(target, ast.Name):
-                    add(target.id)
-
-        mapping = {
-            name: f"{RENAMED_LOCAL_PREFIX}{i}"
-            for i, name in enumerate(local_names)
-        }
-        if not mapping:
-            return
-
-        if self._rename_params:
-            for arg in self._function_args(node):
-                if arg.arg in mapping:
-                    arg.arg = mapping[arg.arg]
-
-        for sub in ast.walk(node):
-            if isinstance(sub, ast.Name) and sub.id in mapping:
-                sub.id = mapping[sub.id]
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
-        self._rename_function(node)
-        return self.generic_visit(node)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
-        self._rename_function(node)
-        return self.generic_visit(node)
+def alpha_rename_locals_in_tree(
+    tree: ast.Module,
+    *,
+    rename_params: bool = True,
+) -> ast.Module:
+    """Alpha-rename function locals to `_v0`, `_v1`, ... in `tree`."""
+    protected = module_level_names(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            mapping = _local_mapping(
+                node,
+                protected,
+                rename_params=rename_params,
+            )
+            rename_locals_in_function(node, mapping)
+    return tree
 
 
 def alpha_rename_locals(source: str, *, rename_params: bool = True) -> str:
@@ -227,27 +203,14 @@ def alpha_rename_locals(source: str, *, rename_params: bool = True) -> str:
     (they are part of the signature contract) and only body locals rename.
     """
     tree = ast.parse(source)
-    protected = _module_level_names(tree)
-    _LocalRenamer(protected, rename_params=rename_params).visit(tree)
+    alpha_rename_locals_in_tree(tree, rename_params=rename_params)
     ast.fix_missing_locations(tree)
     return ast.unparse(tree)
 
 
-def _top_level_import_linenos(tree: ast.Module) -> set[int]:
-    linenos: set[int] = set()
-    for node in tree.body:
-        if isinstance(node, ast.Import | ast.ImportFrom):
-            # `end_lineno` is 1-based and inclusive.
-            for lineno in range(
-                node.lineno, (node.end_lineno or node.lineno) + 1
-            ):
-                linenos.add(lineno)
-    return linenos
-
-
 def remove_top_level_imports(source: str) -> str:
     """Delete top-level import lines, keeping the rest of the source intact."""
-    import_linenos = _top_level_import_linenos(ast.parse(source))
+    import_linenos = top_level_import_linenos(ast.parse(source))
     if not import_linenos:
         return source
     return "".join(
@@ -261,7 +224,7 @@ def remove_top_level_imports(source: str) -> str:
 
 def dedupe_imports(source: str) -> str:
     """Drop exact-duplicate import lines, keeping the first occurrence."""
-    _validate_python(source)
+    validate_python(source)
     seen: set[str] = set()
     out: list[str] = []
     for line in source.splitlines():
@@ -280,14 +243,15 @@ def dedupe_imports(source: str) -> str:
 
 __all__ = [
     "RENAMED_LOCAL_PREFIX",
+    "SCOPE_NODE_TYPES",
+    "alpha_rename_locals_in_tree",
     "alpha_rename_locals",
-    "canonicalize",
     "dedupe_imports",
-    "equivalent",
-    "is_string_literal_stmt",
     "remove_top_level_imports",
+    "rename_locals_in_function",
     "strip_docstrings",
     "strip_docstrings_in_tree",
     "strip_leading_docstring",
     "strip_type_annotations",
+    "strip_type_annotations_in_tree",
 ]

@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 import code_eval
-from dr_code.code_transforms import equivalent
+from dr_code.code_analysis import equivalent
 
 DATASET_PATH = Path(__file__).parent.parent / "corpus" / "synthetic_dataset.jsonl"
 

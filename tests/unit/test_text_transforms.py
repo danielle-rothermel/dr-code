@@ -6,9 +6,8 @@ import pytest
 
 from dr_code.text_transforms import (
     collapse_blank_runs,
-    fence_marker,
-    is_code_anchor_line,
-    is_code_like_line,
+    drop_after_last_return,
+    drop_if_name,
     normalize_line_endings,
     normalize_smart_quotes,
     normalize_text,
@@ -28,6 +27,7 @@ GARBAGE_INPUTS = (
 
 TOTAL_TRANSFORMS = (
     collapse_blank_runs,
+    drop_after_last_return,
     normalize_line_endings,
     normalize_smart_quotes,
     normalize_text,
@@ -75,12 +75,6 @@ def test_strip_code_fences_leaves_unfenced_text_alone() -> None:
     assert strip_code_fences("x = 1\ny = 2") == "x = 1\ny = 2"
 
 
-def test_fence_marker_detects_fence_lines_only() -> None:
-    assert fence_marker("```python") == "```"
-    assert fence_marker("~~~") == "~~~"
-    assert fence_marker("x = 1") is None
-
-
 def test_strip_markdown_wrappers_removes_one_marker_per_line() -> None:
     text = "> quoted\n1. numbered\n- bullet\nplain"
     assert strip_markdown_wrappers(text) == "quoted\nnumbered\nbullet\nplain"
@@ -90,13 +84,13 @@ def test_normalize_smart_quotes_restores_ascii() -> None:
     assert normalize_smart_quotes("s = ‘a’ + “b”") == "s = 'a' + \"b\""
 
 
-def test_is_code_anchor_line() -> None:
-    assert is_code_anchor_line("def f():")
-    assert is_code_anchor_line("from os import path")
-    assert not is_code_anchor_line("Here is the solution:")
+def test_drop_if_name_splits_before_main_guard() -> None:
+    assert drop_if_name("def f():\n    return 1\nif __name__ == '__main__':") == [
+        "def f():\n    return 1\n"
+    ]
 
 
-def test_is_code_like_line_treats_blank_as_code_like() -> None:
-    assert is_code_like_line("")
-    assert is_code_like_line("    return 1")
-    assert not is_code_like_line("This sentence is prose.")
+def test_drop_after_last_return_truncates_trailing_lines() -> None:
+    assert drop_after_last_return("def f():\n    return 1\nprint('x')") == (
+        "def f():\n    return 1"
+    )

@@ -8,10 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
-from dr_code.humaneval.code_extraction import (
-    apply_cleaning,
-    validate_python_source,
-)
+from dr_code.code_analysis import validate_python_source
+from dr_code.humaneval.code_extraction import apply_cleaning
 
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID = "humaneval-best-effort"
 STRICT_FIELD_MARKER_PARSER_PROFILE_ID = "humaneval-field-marker"
@@ -254,18 +252,30 @@ def unwrap_generation(
     if code_field_value is not None:
         inner_code = getattr(code_field_value, "code", None)
         if isinstance(inner_code, str):
-            return inner_code, ExtractionMethod.DSPY_CODE_FIELD, {
-                "code_field": code_field,
-            }
+            return (
+                inner_code,
+                ExtractionMethod.DSPY_CODE_FIELD,
+                {
+                    "code_field": code_field,
+                },
+            )
         if isinstance(code_field_value, str):
-            return code_field_value, ExtractionMethod.DSPY_CODE_FIELD, {
-                "code_field": code_field,
-            }
+            return (
+                code_field_value,
+                ExtractionMethod.DSPY_CODE_FIELD,
+                {
+                    "code_field": code_field,
+                },
+            )
     inner_code = getattr(raw_generation, "code", None)
     if isinstance(inner_code, str):
-        return inner_code, ExtractionMethod.DSPY_CODE_FIELD, {
-            "code_field": "code",
-        }
+        return (
+            inner_code,
+            ExtractionMethod.DSPY_CODE_FIELD,
+            {
+                "code_field": "code",
+            },
+        )
     if isinstance(raw_generation, dict):
         return unwrap_mapping(raw_generation, code_field=code_field)
     if isinstance(raw_generation, str):
@@ -280,14 +290,22 @@ def unwrap_mapping(
 ) -> tuple[str | None, ExtractionMethod | None, dict[str, Any]]:
     code_value = value.get(code_field)
     if isinstance(code_value, str):
-        return code_value, ExtractionMethod.JSON_CODE_FIELD, {
+        return (
+            code_value,
+            ExtractionMethod.JSON_CODE_FIELD,
+            {
+                "code_field": code_field,
+            },
+        )
+    return (
+        None,
+        None,
+        {
+            "raw_type": "dict",
             "code_field": code_field,
-        }
-    return None, None, {
-        "raw_type": "dict",
-        "code_field": code_field,
-        "available_fields": sorted(str(key) for key in value),
-    }
+            "available_fields": sorted(str(key) for key in value),
+        },
+    )
 
 
 def unwrap_string(
@@ -302,10 +320,14 @@ def unwrap_string(
     if isinstance(parsed, dict):
         code_value = parsed.get(code_field)
         if isinstance(code_value, str):
-            return code_value, ExtractionMethod.JSON_CODE_FIELD, {
-                "code_field": code_field,
-                "json_unwrapped": True,
-            }
+            return (
+                code_value,
+                ExtractionMethod.JSON_CODE_FIELD,
+                {
+                    "code_field": code_field,
+                    "json_unwrapped": True,
+                },
+            )
     if isinstance(parsed, str):
         return parsed, ExtractionMethod.JSON_STRING, {"json_unwrapped": True}
     return value, None, {"json_value_type": type(parsed).__name__}

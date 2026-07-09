@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import ast
+
 import pytest
 
 from dr_code.code_transforms import (
+    alpha_rename_locals_in_tree,
     alpha_rename_locals,
-    canonicalize,
     dedupe_imports,
-    equivalent,
     remove_top_level_imports,
+    rename_locals_in_function,
     strip_docstrings,
+    strip_type_annotations_in_tree,
     strip_type_annotations,
 )
 
@@ -18,7 +21,6 @@ UNPARSEABLE = "def broken(:\n"
 
 SOURCE_TO_SOURCE_TRANSFORMS = (
     alpha_rename_locals,
-    canonicalize,
     dedupe_imports,
     remove_top_level_imports,
     strip_docstrings,
@@ -57,17 +59,6 @@ def test_strip_docstrings_keeps_docstring_only_bodies_parseable() -> None:
     assert "pass" in out
 
 
-def test_equivalent_ignores_formatting_and_docstrings() -> None:
-    a = 'def f(x):\n    """Doc."""\n    return (x + 1)\n'
-    b = "def f(x):\n    return x + 1\n"
-    assert equivalent(a, b)
-
-
-def test_equivalent_is_false_for_different_code_and_unparseable_input() -> None:
-    assert not equivalent("def f():\n    return 1\n", "def f():\n    return 2\n")
-    assert not equivalent(UNPARSEABLE, "x = 1\n")
-
-
 def test_strip_type_annotations_drops_args_returns_and_annassign() -> None:
     source = "def f(x: int, *args: str) -> bool:\n    y: int = 2\n    z: int\n    return x\n"
     out = strip_type_annotations(source)
@@ -75,6 +66,20 @@ def test_strip_type_annotations_drops_args_returns_and_annassign() -> None:
     assert "def f(x, *args):" in out
     assert "y = 2" in out
     assert "z:" not in out
+
+
+def test_strip_type_annotations_in_tree_can_keep_selected_sites() -> None:
+    tree = ast.parse("def f(x: int) -> bool:\n    y: int = 2\n    return x\n")
+    strip_type_annotations_in_tree(
+        tree,
+        keep=lambda site: site.name == "x",
+    )
+
+    out = ast.unparse(tree)
+
+    assert "def f(x: int):" in out
+    assert "->" not in out
+    assert "y = 2" in out
 
 
 def test_alpha_rename_locals_renames_params_and_locals_by_default() -> None:
@@ -90,6 +95,27 @@ def test_alpha_rename_locals_can_preserve_params() -> None:
     )
     assert "def f(count):" in out
     assert "_v0 = count + 1" in out
+
+
+def test_rename_locals_in_function_applies_mapping_to_one_function() -> None:
+    tree = ast.parse("def f(count):\n    total = count + 1\n    return total\n")
+    function = tree.body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    rename_locals_in_function(function, {"count": "value", "total": "result"})
+
+    assert ast.unparse(tree) == (
+        "def f(value):\n    result = value + 1\n    return result"
+    )
+
+
+def test_alpha_rename_locals_in_tree_matches_source_transform() -> None:
+    source = "def f(count):\n    total = count + 1\n    return total\n"
+    tree = ast.parse(source)
+
+    alpha_rename_locals_in_tree(tree)
+
+    assert ast.unparse(tree) == alpha_rename_locals(source)
 
 
 def test_alpha_rename_locals_preserves_module_level_names() -> None:

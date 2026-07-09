@@ -13,26 +13,17 @@ import re
 import unicodedata
 from typing import Final
 
+from dr_code.text_analysis import fence_marker
+
 DEFAULT_TAB_WIDTH: Final[int] = 4
 FENCE: Final[str] = "```"
+LINE_SEP: Final[str] = "\n"
 
-FENCE_LINE_RE: Final[re.Pattern[str]] = re.compile(
-    r"^[ \t]*(?P<fence>```|~~~)(?P<tag>[A-Za-z0-9_+\-]*)[ \t]*$"
-)
 MARKDOWN_WRAPPER_RE: Final[re.Pattern[str]] = re.compile(
     r"^[ \t]*(?:>+[ \t]?|\d+[.)][ \t]?|[*+\-][ \t])"
 )
 BLANK_RUN_RE: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
-CODE_ANCHOR_LINE_RE: Final[re.Pattern[str]] = re.compile(
-    r"^(?:def |async def |class |import |from |@|if __name__)"
-)
-CODE_LIKE_LINE_RE: Final[re.Pattern[str]] = re.compile(
-    r"^(?:\s+\S|"
-    r"def |async def |class |import |from |@|if |for |while |with |try |"
-    r"except|else|elif|return |raise |pass\b|continue\b|break\b|"
-    r"#|"
-    r"[a-zA-Z_]\w*\s*=)"
-)
+RETURN_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*return(?:\b|$)")
 
 #: ASCII quote -> (left, right) Unicode "smart" counterparts.
 SMART_QUOTES: Final[dict[str, tuple[str, str]]] = {
@@ -76,14 +67,6 @@ def normalize_text(source: str, tab_width: int = DEFAULT_TAB_WIDTH) -> str:
     return text.strip("\n")
 
 
-def fence_marker(line: str) -> str | None:
-    """The fence token (``` or ~~~) if `line` is a fence line, else None."""
-    match = FENCE_LINE_RE.match(line)
-    if match is None:
-        return None
-    return match.group("fence")
-
-
 def strip_code_fences(source: str) -> str:
     """Drop a leading and/or trailing fence line wrapping the source."""
     lines = source.split("\n")
@@ -116,28 +99,36 @@ def normalize_smart_quotes(source: str) -> str:
     return source.translate(_SMART_QUOTE_TRANSLATION)
 
 
-def is_code_anchor_line(line: str) -> bool:
-    """True if `line` starts a Python top-level construct (def/class/import/...)."""
-    return bool(CODE_ANCHOR_LINE_RE.match(line))
+def drop_if_name(text: str) -> list[str]:
+    lines = text.split(LINE_SEP)
+    split_lines = [line for line in lines if "if __name__" in line]
+    if not split_lines:
+        return [text]
+
+    remaining = text
+    splits: list[str] = []
+    for split_line in split_lines:
+        before, *after = remaining.split(split_line)
+        splits.append(before)
+        if after:
+            remaining = LINE_SEP.join(after)
+    return splits
 
 
-def is_code_like_line(line: str) -> bool:
-    """True if `line` plausibly belongs to a Python code block.
-
-    Blank lines count as code-like so they don't break up a block.
-    """
-    if not line.strip():
-        return True
-    return bool(CODE_LIKE_LINE_RE.match(line))
+def drop_after_last_return(text: str) -> str:
+    lines = text.split(LINE_SEP)
+    for index in range(len(lines) - 1, -1, -1):
+        if RETURN_LINE_RE.match(lines[index]):
+            return LINE_SEP.join(lines[: index + 1])
+    return text
 
 
 __all__ = [
     "DEFAULT_TAB_WIDTH",
     "SMART_QUOTES",
     "collapse_blank_runs",
-    "fence_marker",
-    "is_code_anchor_line",
-    "is_code_like_line",
+    "drop_after_last_return",
+    "drop_if_name",
     "normalize_line_endings",
     "normalize_smart_quotes",
     "normalize_text",

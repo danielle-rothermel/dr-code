@@ -20,10 +20,8 @@ from pydantic import (
     StrictStr,
 )
 
-from dr_code.humaneval.code_extraction import (
-    apply_cleaning,
-    validate_python_source,
-)
+from dr_code.code_analysis import validate_python_source
+from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
     DEFAULT_CODE_FIELD,

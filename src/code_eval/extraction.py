@@ -12,9 +12,11 @@ import textwrap
 from collections.abc import Callable
 from typing import Final
 
-from dr_code.text_transforms import (
+from dr_code.text_analysis import (
     is_code_anchor_line,
     is_code_like_line,
+)
+from dr_code.text_transforms import (
     normalize_text,
     strip_markdown_wrappers,
 )

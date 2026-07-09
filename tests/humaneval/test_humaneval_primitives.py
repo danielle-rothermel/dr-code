@@ -5,10 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
+from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.code_extraction import (
     apply_cleaning,
     extract_dspy_code,
-    validate_python_source,
 )
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
@@ -17,7 +17,7 @@ from dr_code.humaneval.compression import (
     CompressionMethod,
     compression_metrics,
 )
-from dr_code.humaneval.parsed_code import ParsedCode, ParsedCodeSummary
+from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
     UnsupportedTestFormatError,
@@ -173,7 +173,7 @@ def test_parse_expression_tests_preserve_indexed_assertion() -> None:
 
 
 def test_parsed_code_summary_excludes_runtime_ast() -> None:
-    parsed = ParsedCode(
+    parsed = parse_code(
         display_title="fixture",
         code_str=(
             'def add_one(x: int) -> int:\n'
@@ -182,13 +182,11 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
         ),
     )
 
-    summary = parsed.to_summary()
-
-    assert isinstance(summary, ParsedCodeSummary)
-    assert summary.display_title == "fixture"
-    assert summary.signatures[0].function_name == "add_one"
-    assert summary.signatures[0].function_args[0].name == "x"
-    dumped = summary.model_dump(mode="json")
+    assert isinstance(parsed, ParsedCode)
+    assert parsed.display_title == "fixture"
+    assert parsed.signatures[0].function_name == "add_one"
+    assert parsed.signatures[0].function_args[0].name == "x"
+    dumped = parsed.model_dump(mode="json")
     assert "tree" not in dumped
     assert "doc" in dumped["comments"]
 

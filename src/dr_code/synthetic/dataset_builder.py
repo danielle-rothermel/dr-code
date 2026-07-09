@@ -13,7 +13,7 @@ from dr_code.synthetic.corruption_recipes import (
     Recipe,
     apply_recipe,
 )
-from dr_code.code_transforms import canonicalize
+from dr_code.code_transforms import strip_docstrings
 from dr_code.synthetic.humaneval_loader import (
     HumanEvalPlusTask,
     load_humaneval_plus,
@@ -37,7 +37,7 @@ def build_sample(
     seed: int,
 ) -> SyntheticSample:
     """Build a single synthetic sample for one (task, recipe) pair."""
-    ground_truth = canonicalize(task.full_source)
+    ground_truth = strip_docstrings(task.full_source)
     rng = random.Random(_seed_for(task.task_id, recipe.name, seed))
     corrupted = apply_recipe(recipe, ground_truth, rng)
     return SyntheticSample(

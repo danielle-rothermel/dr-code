@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from dr_code.code_transforms import canonicalize
+from dr_code.code_transforms import strip_docstrings
 from dr_code.synthetic.humaneval_loader import load_humaneval_plus
 from dr_code.synthetic.corruptions import REGISTRY
 from dr_code.synthetic.names import CorruptionName
@@ -51,7 +51,7 @@ TRANSFORM_CATEGORIES: dict[str, tuple[CorruptionName, ...]] = {
 def ground_truth() -> str:
     tasks = load_humaneval_plus(prefer_snapshot=True)
     by_id = {task.task_id: task for task in tasks}
-    return canonicalize(by_id[TARGET_TASK_ID].full_source)
+    return strip_docstrings(by_id[TARGET_TASK_ID].full_source)
 
 
 @pytest.mark.parametrize(
