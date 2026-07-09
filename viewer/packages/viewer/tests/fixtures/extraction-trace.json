@@ -1,0 +1,162 @@
+{
+  "profile": {
+    "profile_id": "humaneval-best-effort",
+    "version": "v1"
+  },
+  "roots": [
+    {
+      "kind": "transform",
+      "name": "normalize_text",
+      "before_text": "Here is my solution:\n\n```python\ndef add(a, b):\n    return a + b\n```\n\nSome closing commentary.\n",
+      "after_text": "Here is my solution:\n\n```python\ndef add(a, b):\n    return a + b\n```\n\nSome closing commentary.",
+      "check_name": null,
+      "verdict": null,
+      "reason": null,
+      "children": [
+        {
+          "kind": "fork",
+          "name": "fence_split",
+          "before_text": "Here is my solution:\n\n```python\ndef add(a, b):\n    return a + b\n```\n\nSome closing commentary.",
+          "after_text": null,
+          "check_name": null,
+          "verdict": null,
+          "reason": "1 fenced block(s), 2 unfenced block(s); using fenced",
+          "children": [
+            {
+              "kind": "fork",
+              "name": "initial_pass",
+              "before_text": null,
+              "after_text": null,
+              "check_name": null,
+              "verdict": null,
+              "reason": "1 block(s)",
+              "children": [
+                {
+                  "kind": "fork",
+                  "name": "block_0",
+                  "before_text": null,
+                  "after_text": "def add(a, b):\n    return a + b",
+                  "check_name": null,
+                  "verdict": null,
+                  "reason": null,
+                  "children": [
+                    {
+                      "kind": "fork",
+                      "name": "function_pattern_fanout",
+                      "before_text": "def add(a, b):\n    return a + b",
+                      "after_text": null,
+                      "check_name": null,
+                      "verdict": null,
+                      "reason": "1 candidate(s)",
+                      "children": [
+                        {
+                          "kind": "transform",
+                          "name": "strip_code_fences",
+                          "before_text": "def add(a, b):\n    return a + b",
+                          "after_text": "def add(a, b):\n    return a + b",
+                          "check_name": null,
+                          "verdict": null,
+                          "reason": null,
+                          "children": [
+                            {
+                              "kind": "transform",
+                              "name": "dedent",
+                              "before_text": "def add(a, b):\n    return a + b",
+                              "after_text": "def add(a, b):\n    return a + b",
+                              "check_name": null,
+                              "verdict": null,
+                              "reason": null,
+                              "children": [
+                                {
+                                  "kind": "fork",
+                                  "name": "drop_if_name",
+                                  "before_text": "def add(a, b):\n    return a + b",
+                                  "after_text": null,
+                                  "check_name": null,
+                                  "verdict": null,
+                                  "reason": "1 candidate(s)",
+                                  "children": [
+                                    {
+                                      "kind": "transform",
+                                      "name": "drop_after_last_return",
+                                      "before_text": "def add(a, b):\n    return a + b",
+                                      "after_text": "def add(a, b):\n    return a + b",
+                                      "check_name": null,
+                                      "verdict": null,
+                                      "reason": null,
+                                      "children": [
+                                        {
+                                          "kind": "transform",
+                                          "name": "infer_necessary_imports",
+                                          "before_text": "def add(a, b):\n    return a + b",
+                                          "after_text": "def add(a, b):\n    return a + b",
+                                          "check_name": null,
+                                          "verdict": null,
+                                          "reason": null,
+                                          "children": []
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "index": 0,
+      "source": "def add(a, b):\n    return a + b",
+      "status": "selected",
+      "compile_ok": true,
+      "rejection_reason": null,
+      "checks": [
+        {
+          "kind": "check",
+          "name": "compile_validation",
+          "before_text": null,
+          "after_text": null,
+          "check_name": "compile_validation",
+          "verdict": "pass",
+          "reason": null,
+          "children": []
+        },
+        {
+          "kind": "check",
+          "name": "plain_literal_module",
+          "before_text": null,
+          "after_text": null,
+          "check_name": "plain_literal_module",
+          "verdict": "pass",
+          "reason": null,
+          "children": []
+        },
+        {
+          "kind": "check",
+          "name": "code_repr_assignment",
+          "before_text": null,
+          "after_text": null,
+          "check_name": "code_repr_assignment",
+          "verdict": "pass",
+          "reason": null,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "selected_candidate_index": 0,
+  "extraction_method": "fenced_code",
+  "rationale": "candidate 0 selected via fenced_code: first candidate passing parser checks",
+  "extraction_error": null
+}

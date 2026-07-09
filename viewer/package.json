@@ -1,0 +1,11 @@
+{
+  "name": "dr-code-viewer-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "gen": "pnpm -r gen"
+  }
+}
