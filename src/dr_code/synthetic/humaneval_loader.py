@@ -4,9 +4,8 @@ The "Plus" variant matters because it ships extended unit tests — useful
 for future opt-in execution-based equivalence checks. The plain
 `canonical_solution` + `prompt` text is used for our syntactic ground truth.
 
-If the Hugging Face download is unavailable (no network, rate limiting), an
-offline JSON snapshot under `tests/corpus/humanevalplus_snapshot.json` can be
-used instead.
+If network access is unavailable, callers must explicitly opt into the offline
+JSON snapshot under `tests/corpus/humanevalplus_snapshot.json`.
 """
 
 from __future__ import annotations
@@ -108,20 +107,21 @@ def load_humaneval_plus(
 
     Args:
         prefer_snapshot: If True, try the local snapshot first. Default is
-            to try the Hugging Face download first and fall back to the
-            snapshot.
+            to require a Hugging Face load, so stale snapshots are never used
+            silently when the network path fails.
 
     Raises:
-        FileNotFoundError: If neither HF nor the snapshot is available.
+        FileNotFoundError: If the selected source is unavailable.
     """
     repo_root = _repo_root()
     if prefer_snapshot:
         tasks = _try_load_from_snapshot(repo_root) or _try_load_from_hf()
     else:
-        tasks = _try_load_from_hf() or _try_load_from_snapshot(repo_root)
+        tasks = _try_load_from_hf()
     if tasks is None:
         raise FileNotFoundError(
-            "HumanEvalPlus unavailable: no Hugging Face access and no snapshot at "
+            "HumanEvalPlus unavailable from the selected source. "
+            "Pass prefer_snapshot=True to use the checked-in snapshot at "
             f"{SNAPSHOT_REL_PATH}."
         )
     return tasks
