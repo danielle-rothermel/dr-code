@@ -70,7 +70,7 @@ class NodeOutputMetricsSource(BaseModel):
 
 def build_metrics_payload(
     *,
-    raw_generation: str,
+    raw_submission: str,
     extracted_code: str | None,
     task: HumanEvalTask,
     node_output_sources: tuple[NodeOutputMetricsSource, ...] = (),
@@ -80,8 +80,8 @@ def build_metrics_payload(
     stages: list[MetricsStagePayload] = [
         build_metrics_stage(
             stage_id="terminal",
-            source_kind="terminal_raw_generation",
-            text=raw_generation,
+            source_kind="terminal_raw_submission",
+            text=raw_submission,
             task=task,
             include_ast=False,
             include_compression=True,
@@ -402,9 +402,7 @@ def function_line_span(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
 
 def max_branch_depth(node: ast.AST, *, current_depth: int = 0) -> int:
     next_depth = (
-        current_depth + 1
-        if isinstance(node, BRANCH_NODES)
-        else current_depth
+        current_depth + 1 if isinstance(node, BRANCH_NODES) else current_depth
     )
     child_depth = max(
         (

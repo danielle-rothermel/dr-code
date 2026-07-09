@@ -1,18 +1,18 @@
 """Pure HumanEval scoring primitives.
 
-`GeneratedCodeOutcome` is part of the score contract so consumers can persist
+`SubmissionOutcome` is part of the score contract so consumers can persist
 why a submission scored zero without parsing error text.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     StrictBool,
     StrictInt,
     StrictStr,
@@ -24,30 +24,59 @@ from dr_code.humaneval.code_parsing import (
     extract_code_with_profile,
 )
 from dr_code.humaneval.task import (
+    EvaluationHarnessError,
     EvaluationCaseStatus,
     EvaluationTaskResult,
     HumanEvalTask,
     evaluate_human_eval_code,
 )
 
+UNKNOWN_FAILURE_CLASS = "unknown"
 
-class GeneratedCodeOutcome(StrEnum):
+
+class SubmissionOutcome(StrEnum):
     PASSED = "passed"
     TESTS_FAILED = "tests_failed"
     EVALUATION_INCOMPLETE = "evaluation_incomplete"
-    EMPTY_GENERATION = "empty_generation"
+    EMPTY_SUBMISSION = "empty_submission"
     EXTRACTION_FAILED = "extraction_failed"
     NO_TOP_LEVEL_FUNCTIONS = "no_top_level_functions"
+    TIMED_OUT = "timed_out"
 
 
-class HumanEvalGenerationScore(BaseModel):
+class CompletedScore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    raw_generation: str
+    kind: Literal["completed"] = "completed"
+    raw_submission: str
     extraction: CodeExtractionResult
-    outcome: GeneratedCodeOutcome
+    outcome: SubmissionOutcome
     score: float
     evaluation: EvaluationTaskResult | None = None
+
+
+class HarnessFailureCause(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    exception_type: StrictStr
+    message: StrictStr
+
+
+class HarnessFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["harness_failure"] = "harness_failure"
+    raw_submission: str
+    extraction: CodeExtractionResult | None = None
+    evaluation: EvaluationTaskResult | None = None
+    cause: HarnessFailureCause
+    failure_class: StrictStr
+
+
+HumanEvalSubmissionScore = Annotated[
+    CompletedScore | HarnessFailure,
+    Field(discriminator="kind"),
+]
 
 
 class EvaluationAggregateMetrics(BaseModel):
@@ -65,68 +94,103 @@ class EvaluationAggregateMetrics(BaseModel):
     status_counts: dict[StrictStr, StrictInt]
 
 
-def score_humaneval_generation(
+def score_humaneval_submission(
     *,
-    raw_generation: Any,
+    raw_submission: str,
     task: HumanEvalTask,
     parser_profile: CodeParserProfile,
     timeout_seconds: float,
-    recordable_text: Callable[[Any], str],
-) -> HumanEvalGenerationScore:
-    """Score one raw submission under a parser profile.
+) -> HumanEvalSubmissionScore:
+    """Score one submission under a parser profile."""
+    if not isinstance(raw_submission, str):
+        raise TypeError("raw_submission must be str")
 
-    ``recordable_text`` is the injected canonical-text renderer for the
-    persisted ``raw_generation`` field; dr-code stays serialization- and
-    storage-free.
-    """
-    canonical_terminal = recordable_text(raw_generation)
     extraction = extract_code_with_profile(
-        raw_generation,
+        raw_submission,
         profile=parser_profile,
     )
     if extraction.extracted_code is None:
         outcome = extraction_failure_outcome(extraction)
-        return HumanEvalGenerationScore(
-            raw_generation=canonical_terminal,
+        return CompletedScore(
+            raw_submission=raw_submission,
             extraction=extraction,
             outcome=outcome,
             score=0.0,
             evaluation=None,
         )
 
-    evaluation = evaluate_human_eval_code(
-        task=task,
-        candidate_code=extraction.extracted_code,
-        timeout_seconds=timeout_seconds,
-    )
+    try:
+        evaluation = evaluate_human_eval_code(
+            task=task,
+            candidate_code=extraction.extracted_code,
+            timeout_seconds=timeout_seconds,
+        )
+    except EvaluationHarnessError as exc:
+        return HarnessFailure(
+            raw_submission=raw_submission,
+            extraction=extraction,
+            evaluation=exc.evaluation,
+            cause=harness_failure_cause(exc),
+            failure_class=UNKNOWN_FAILURE_CLASS,
+        )
+    except Exception as exc:
+        return HarnessFailure(
+            raw_submission=raw_submission,
+            extraction=extraction,
+            evaluation=None,
+            cause=HarnessFailureCause(
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            ),
+            failure_class=UNKNOWN_FAILURE_CLASS,
+        )
+
     outcome = evaluation_outcome(evaluation)
-    return HumanEvalGenerationScore(
-        raw_generation=canonical_terminal,
+    return CompletedScore(
+        raw_submission=raw_submission,
         extraction=extraction,
         outcome=outcome,
-        score=1.0 if outcome is GeneratedCodeOutcome.PASSED else 0.0,
+        score=1.0 if outcome is SubmissionOutcome.PASSED else 0.0,
         evaluation=evaluation,
     )
 
 
 def extraction_failure_outcome(
     extraction: CodeExtractionResult,
-) -> GeneratedCodeOutcome:
-    if extraction.extraction_error == "empty raw generation":
-        return GeneratedCodeOutcome.EMPTY_GENERATION
-    return GeneratedCodeOutcome.EXTRACTION_FAILED
+) -> SubmissionOutcome:
+    if extraction.extraction_error == "empty raw submission":
+        return SubmissionOutcome.EMPTY_SUBMISSION
+    return SubmissionOutcome.EXTRACTION_FAILED
 
 
 def evaluation_outcome(
     evaluation: EvaluationTaskResult,
-) -> GeneratedCodeOutcome:
+) -> SubmissionOutcome:
     if not evaluation.function_names:
-        return GeneratedCodeOutcome.NO_TOP_LEVEL_FUNCTIONS
+        return SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
     if evaluation.passed:
-        return GeneratedCodeOutcome.PASSED
+        return SubmissionOutcome.PASSED
+    if any(
+        result.status is EvaluationCaseStatus.TIMEOUT
+        for result in evaluation.results
+    ):
+        return SubmissionOutcome.TIMED_OUT
     if not evaluation.coverage_complete and not evaluation.failures:
-        return GeneratedCodeOutcome.EVALUATION_INCOMPLETE
-    return GeneratedCodeOutcome.TESTS_FAILED
+        return SubmissionOutcome.EVALUATION_INCOMPLETE
+    return SubmissionOutcome.TESTS_FAILED
+
+
+def harness_failure_cause(exc: EvaluationHarnessError) -> HarnessFailureCause:
+    cause = exc.cause
+    if cause is None or cause is exc:
+        return HarnessFailureCause(
+            exception_type=type(exc).__name__,
+            message=str(exc),
+        )
+    return HarnessFailureCause(
+        exception_type=type(cause).__name__,
+        message=str(cause),
+    )
 
 
 def evaluation_aggregate_metrics(

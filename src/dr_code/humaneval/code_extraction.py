@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import textwrap
-from typing import Any
 
 from dr_code.text_analysis import candidate_blocks, code_like_blocks
 from dr_code.humaneval.import_inference import infer_necessary_imports
@@ -39,25 +38,3 @@ def apply_cleaning(
             for split_candidate in drop_if_name(candidate_text)
         )
     return cleaned
-
-
-def extract_object_code_field(pred: Any, *, field_name: str = "code") -> str:
-    """Pull Python source out of an object field."""
-    code_field = getattr(pred, field_name, None)
-    if code_field is None:
-        return ""
-    inner = getattr(code_field, "code", None)
-    if isinstance(inner, str):
-        return inner
-    if isinstance(code_field, str):
-        return code_field
-    try:
-        as_str = str(code_field)
-    except Exception:
-        return ""
-    if as_str.startswith("code="):
-        try:
-            return as_str.split("=", 1)[1].strip().strip("'\"")
-        except Exception:
-            return as_str
-    return as_str
