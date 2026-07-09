@@ -8,7 +8,7 @@ import pytest
 from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.code_extraction import (
     apply_cleaning,
-    extract_dspy_code,
+    extract_object_code_field,
 )
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
@@ -495,20 +495,23 @@ def test_validate_python_source_reports_syntax_errors() -> None:
     assert validation.compile_error is not None
 
 
-def test_extract_dspy_code_reads_nested_and_plain_fields() -> None:
+def test_extract_object_code_field_reads_nested_and_plain_fields() -> None:
     class CodeField:
         code = "def f():\n    return 1\n"
 
     class Prediction:
         code = CodeField()
 
-    assert extract_dspy_code(Prediction()) == "def f():\n    return 1\n"
+    assert extract_object_code_field(Prediction()) == "def f():\n    return 1\n"
 
     class PlainPrediction:
         code = "def g():\n    return 2\n"
 
-    assert extract_dspy_code(PlainPrediction()) == "def g():\n    return 2\n"
-    assert extract_dspy_code(object()) == ""
+    assert (
+        extract_object_code_field(PlainPrediction())
+        == "def g():\n    return 2\n"
+    )
+    assert extract_object_code_field(object()) == ""
 
 
 @pytest.mark.parametrize(

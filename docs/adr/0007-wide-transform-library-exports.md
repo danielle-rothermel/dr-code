@@ -18,7 +18,7 @@ selectively modify; each opinionated transform (`strip_type_annotations`,
 Site values carry what inspection needs without re-walking the tree: the
 node, its unparsed source string, and its source location.
 
-Transforms and analysis are separate modules on both sides of the ADR 0007
+Transforms and analysis are separate modules on both sides of the ADR 0006
 code/text boundary, giving a four-module grid: transform modules return
 modified code or text; analysis modules return facts about it (predicates,
 enumeration, inspection). `dr_code.code_analysis` covers parseable Python

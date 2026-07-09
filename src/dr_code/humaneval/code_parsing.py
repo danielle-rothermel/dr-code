@@ -21,7 +21,7 @@ FIELD_MARKER_RE = re.compile(
 
 
 class ExtractionMethod(StrEnum):
-    DSPY_CODE_FIELD = "dspy_code_field"
+    OBJECT_CODE_FIELD = "object_code_field"
     JSON_CODE_FIELD = "json_code_field"
     JSON_STRING = "json_string"
     FENCED_CODE = "fenced_code"
@@ -254,7 +254,7 @@ def unwrap_generation(
         if isinstance(inner_code, str):
             return (
                 inner_code,
-                ExtractionMethod.DSPY_CODE_FIELD,
+                ExtractionMethod.OBJECT_CODE_FIELD,
                 {
                     "code_field": code_field,
                 },
@@ -262,7 +262,7 @@ def unwrap_generation(
         if isinstance(code_field_value, str):
             return (
                 code_field_value,
-                ExtractionMethod.DSPY_CODE_FIELD,
+                ExtractionMethod.OBJECT_CODE_FIELD,
                 {
                     "code_field": code_field,
                 },
@@ -271,7 +271,7 @@ def unwrap_generation(
     if isinstance(inner_code, str):
         return (
             inner_code,
-            ExtractionMethod.DSPY_CODE_FIELD,
+            ExtractionMethod.OBJECT_CODE_FIELD,
             {
                 "code_field": "code",
             },

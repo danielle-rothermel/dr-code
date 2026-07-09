@@ -4,9 +4,9 @@ dr-code's domain is task + submission + profile → outcomes, metrics, and
 explanations. Nothing in its language or contracts may reference how a
 submission was produced: no producer frameworks, no experiment framing, no
 graph vocabulary. Those concepts belong to the producing repos (dr-graph
-owns graph shapes; whetstone-ai owns experiments and orchestration), which
-vary producers freely — so any producer assumption baked into the
-evaluator would be wrong tomorrow and would mislead agents reading it.
+owns graph shapes; consumer repos own experiments and orchestration), which
+vary producers freely — so any producer assumption baked into the evaluator
+would be wrong tomorrow and would mislead agents reading it.
 
 Concretely: the input to scoring is a **submission** — plain text
 (`str`), unwrapped by the producer before the call. Callers passing

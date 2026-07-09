@@ -1,91 +1,107 @@
 # dr-code
 
-Dependency-clean nucleus for the compression–correctness question: given a
-natural-language description of a HumanEval function, can a decoder
-reconstruct working Python, and how compressible is the description?
+Producer-blind HumanEval+ submission evaluator.
 
-The repo owns HumanEval+ parsing, scoring, and metrics as versioned profiles,
-plus offline batch CLIs and a localhost serve facade. All dependencies are
-public PyPI packages — a fresh clone builds with `uv sync` (the former
-editable path deps on `../code-eval`, `../dr-providers`, and `../dr-queues`
-were removed in the composable migration, PR #9).
+dr-code scores raw submission text against HumanEval+ tasks, parser profiles,
+and scoring profiles. It owns the evaluator library and a localhost serve
+facade for parser explanations; producers, orchestration, persistence, and
+analysis live outside this repo.
 
-## Layout
+## Ecosystem
 
-The wheel ships **two top-level packages** (`[tool.hatch.build.targets.wheel]`
-in `pyproject.toml`) — don't install it alongside a standalone code-eval dist,
-the `code_eval` package names collide:
+Role: producer-blind evaluator for HumanEval+ task, submission, profile, outcome, metric, and explanation contracts.
+Neighbors: dr-serialize, dr-providers, dr-graph, dr-platform, whetstone-ai, unitbench.
+Consumers: whetstone-ai imports the library; unitbench consumes the serve facade.
 
-- `src/dr_code/` — the nucleus:
-  - `humaneval/` — parsing/scoring/metrics ported byte-identically from
-    whetstone under existing profile IDs: scoring profile `humaneval@v1`
-    (2.0s subprocess timeout), parser profiles `humaneval-best-effort` and
-    `humaneval-field-marker` at `v1`, metrics profile `humaneval-metrics@v1`.
-    `resolve_humaneval_scoring_profile` hard-raises on anything else.
-  - `parsing/`, `testing/` — adapters over `code_eval` extraction/validation
-    and HumanEval+ test execution for `AttemptRecord` batches.
-  - `models/`, `datasets/`, `analysis/` — attempt/outcome schemas, pool and
-    HumanEval+ snapshot loaders, offline join/aggregate/export.
-  - `serve/` — FastAPI explain facade (requires the `serve` extra).
-- `src/code_eval/` — code-eval 0.2.0 absorbed as in-repo source (extraction
-  ladder, normalizers, repairs, validators, synthetic corpus tooling). Legacy
-  lineage: excluded from `ty` checking pending the profile-v2 retyping.
+## Surfaces
+
+### Library API
+
+The library surface is the curated `dr_code.humaneval` API plus four wide
+general-purpose modules (ADRs 0006, 0007) usable directly from notebooks
+and sibling repos:
+
+- `code_transforms` / `code_analysis` operate on parseable Python (raise
+  `SyntaxError` otherwise): transforms modify source or trees, analysis
+  returns facts (annotation/docstring/signature sites, locals, equivalence).
+- `text_transforms` / `text_analysis` are total, best-effort operations
+  over text that probably contains code (fence splitting, code-likeness
+  segmentation, cleanup).
+
+The `dr_code.humaneval` modules:
+
+- `code_parsing` extracts Python from submission text with versioned parser
+  profiles.
+- `task` models HumanEval+ tasks, parses test cases, and runs submissions in
+  subprocesses.
+- `scoring` combines extraction and task evaluation into score records.
+- `metrics` builds text, Python-leakage, AST, compression, and task-test
+  metrics.
+- `profiles` resolves supported HumanEval scoring profiles.
+
+The default scoring profile is `humaneval@v1`, using a 2.0 second subprocess
+timeout and the `humaneval-best-effort@v1` parser profile. Unknown profile IDs
+raise at the boundary.
+
+### Serve Facade
+
+The optional serve facade exposes the parser explanation API over localhost:
+
+```bash
+uv run python -m dr_code.serve serve
+uv run python -m dr_code.serve serve --port 8330
+uv run python -m dr_code.serve openapi
+```
+
+Endpoints:
+
+- `GET /health`
+- `GET /profiles`
+- `POST /explain`
+
+The facade binds to `127.0.0.1`, allows localhost browser origins, and is meant
+for local playgrounds and generated clients.
+
+## Synthetic CLI
+
+The synthetic CLI builds deterministic corruption datasets from the HumanEval+
+snapshot:
+
+```bash
+uv run python -m dr_code.synthetic build \
+  --recipes all \
+  --tasks 10 \
+  --seed 20260708 \
+  --output /tmp/dr-code-synthetic.jsonl
+```
+
+Use `uv run python -m dr_code.synthetic build --help` for recipe selection and
+output options.
 
 ## Setup
 
 ```bash
-uv sync                # library + CLIs
-uv sync --extra serve  # + FastAPI/uvicorn for the serve facade
+uv sync
+uv sync --extra serve
 ```
 
-## Serve facade
-
-Localhost-only FastAPI app for the parser playground (default port 8321):
-
-```bash
-uv run python -m dr_code.serve serve            # run on 127.0.0.1:8321
-uv run python -m dr_code.serve serve --port N   # other localhost port
-uv run python -m dr_code.serve openapi          # dump OpenAPI schema
-```
-
-Endpoints: `GET /health`, `GET /profiles` (parser profile IDs + version),
-`POST /explain` (stage-by-stage extraction explanation for one raw text).
-CORS allows localhost origins only; the bind host is not configurable.
-
-## Offline batch CLIs
-
-```bash
-uv run scripts/import_pool_attempts.py --help   # pool artifacts -> AttemptRecord exports
-uv run scripts/parse_attempts.py --help         # AttemptRecord exports -> ParseOutcome JSONL
-uv run scripts/test_attempts.py --help          # run HumanEval+ tests over parsed attempts
-uv run scripts/analyze_eval_run.py --help       # join/aggregate exports for analysis
-uv run scripts/build_humaneval_snapshot.py      # rebuild offline HumanEval+ snapshot (network)
-```
-
-Explore analysis outputs in marimo: `uv run marimo run nbs/analyze_eval_run.py`.
+The base install includes the evaluator library and synthetic CLI. The `serve`
+extra adds FastAPI and uvicorn for the localhost facade.
 
 ## Tests
 
-Identity gates first — these pin the whetstone port to its golden fixtures
-(doctrine: fix the port, never the fixture) and the v1 parser to the
-4,100-sample corruption-corpus baseline:
-
-```bash
-uv run pytest -k "golden or corpus_baseline"
-```
-
-Full suite (nucleus units + ported code-eval suite + humaneval primitives):
+Run the full suite:
 
 ```bash
 uv run pytest
 ```
 
-CI (`.github/workflows/ci.yml`) runs `uv sync`, `ruff check`, and the full
-pytest suite on every PR. Scoring tests execute generated code in
-subprocesses, so slow machines can surface timeout flakes.
+Useful focused checks:
 
-## Historical docs
+```bash
+uv run pytest tests/humaneval
+uv run pytest tests/synthetic
+uv run ruff check .
+```
 
-`docs/plans/` and `docs/adr/0001` describe the pre-migration Mongo/dr-queues
-pipeline that PR #9 deleted; they are tagged **RETIRES AT D3 MERGE** and kept
-only as history. Investigation notes live in `docs/investigation/`.
+CI runs `uv sync`, `ruff check`, and `pytest` for pushes and pull requests.

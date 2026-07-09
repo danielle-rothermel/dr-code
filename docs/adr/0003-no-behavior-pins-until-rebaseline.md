@@ -14,4 +14,4 @@ moment experiment outcomes start being recorded against a profile ID,
 that ID freezes, and behavior changes require a new version. Until then,
 recorded results never constrain behavior or schemas — they are archived
 (moved aside, retained, referenced by no code), not deleted and not
-migrated forward.
+carried forward.
