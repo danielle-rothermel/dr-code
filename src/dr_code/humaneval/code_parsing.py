@@ -5,10 +5,22 @@ import re
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+)
 
 from dr_code.code_analysis import validate_python_source
-from dr_code.humaneval.code_extraction import apply_cleaning
+from dr_code.humaneval.code_extraction import (
+    ExtractionTraceNode,
+    TraceCheckVerdict,
+    TraceNodeKind,
+    apply_cleaning_with_trace,
+)
 
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID = "humaneval-best-effort"
 STRICT_FIELD_MARKER_PARSER_PROFILE_ID = "humaneval-field-marker"
@@ -33,6 +45,35 @@ class CodeParserProfile(BaseModel):
     version: StrictStr
 
 
+class CandidateStatus(StrEnum):
+    SELECTED = "selected"
+    REJECTED = "rejected"
+    NOT_REACHED = "not_reached"
+
+
+class CandidateSelectionTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    index: StrictInt
+    source: StrictStr
+    status: CandidateStatus
+    compile_ok: StrictBool | None = None
+    rejection_reason: StrictStr | None = None
+    checks: list[ExtractionTraceNode] = Field(default_factory=list)
+
+
+class ExtractionTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: CodeParserProfile
+    roots: list[ExtractionTraceNode]
+    candidates: list[CandidateSelectionTrace]
+    selected_candidate_index: StrictInt | None = None
+    extraction_method: ExtractionMethod | None = None
+    rationale: StrictStr
+    extraction_error: StrictStr | None = None
+
+
 class CodeExtractionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -44,6 +85,7 @@ class CodeExtractionResult(BaseModel):
     compile_ok: bool
     compile_error: StrictStr | None = None
     extraction_error: StrictStr | None = None
+    trace: ExtractionTrace
     metadata: dict[StrictStr, Any] = Field(default_factory=dict)
 
     @property
@@ -103,65 +145,118 @@ def extract_best_effort_code(
     *,
     profile: CodeParserProfile = BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
 ) -> CodeExtractionResult:
-    _ = profile
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
+    cleaning = apply_cleaning_with_trace(raw_submission, apply_dedent=True)
     if not raw_submission.strip():
+        trace = build_extraction_trace(
+            profile=profile,
+            roots=cleaning.roots,
+            candidates=[],
+            rationale="empty raw submission",
+            extraction_error="empty raw submission",
+        )
         return extraction_failure(
             raw_submission=raw_submission,
             candidate_count=0,
             error="empty raw submission",
+            trace=trace,
         )
 
-    candidates = apply_cleaning(raw_submission, apply_dedent=True)
+    candidates = cleaning.candidates
     if not candidates:
+        trace = build_extraction_trace(
+            profile=profile,
+            roots=cleaning.roots,
+            candidates=[],
+            rationale="no code candidates extracted",
+            extraction_error="no code candidates extracted",
+        )
         return extraction_failure(
             raw_submission=raw_submission,
             candidate_count=0,
             error="no code candidates extracted",
+            trace=trace,
         )
 
     first_compile_error: str | None = None
+    selected_index: int | None = None
+    selected_candidate: str | None = None
+    selected_extraction_method: ExtractionMethod | None = None
+    candidate_traces: list[CandidateSelectionTrace] = []
     for index, candidate in enumerate(candidates):
-        validation = validate_python_source(candidate)
-        if not validation.compile_ok:
+        if selected_index is not None:
+            candidate_traces.append(
+                CandidateSelectionTrace(
+                    index=index,
+                    source=candidate,
+                    status=CandidateStatus.NOT_REACHED,
+                )
+            )
+            continue
+
+        candidate_trace = trace_candidate_selection(candidate, index=index)
+        candidate_traces.append(candidate_trace)
+        if candidate_trace.status is CandidateStatus.REJECTED:
             first_compile_error = (
-                first_compile_error or validation.compile_error
+                first_compile_error or candidate_trace.rejection_reason
             )
             continue
-        if is_plain_literal_module(candidate):
-            first_compile_error = first_compile_error or (
-                "plain literal modules are not valid HumanEval code"
-            )
-            continue
-        if is_code_repr_assignment(candidate):
-            first_compile_error = first_compile_error or (
-                "code repr assignments are not valid HumanEval code"
-            )
-            continue
-        method = selected_method(
+
+        selected_index = index
+        selected_candidate = candidate
+        selected_extraction_method = selected_method(
             raw_submission=raw_submission,
             candidate=candidate,
         )
+
+    if selected_index is not None and selected_candidate is not None:
+        method = (
+            selected_extraction_method or ExtractionMethod.CLEANED_CANDIDATE
+        )
+        rationale = selection_rationale(
+            selected_candidate_index=selected_index,
+            extraction_method=method,
+        )
+        trace = build_extraction_trace(
+            profile=profile,
+            roots=cleaning.roots,
+            candidates=candidate_traces,
+            selected_candidate_index=selected_index,
+            extraction_method=method,
+            rationale=rationale,
+        )
         return CodeExtractionResult(
             raw_submission=raw_submission,
-            extracted_code=candidate,
+            extracted_code=selected_candidate,
             extraction_method=method,
             candidate_count=len(candidates),
-            selected_candidate_index=index,
+            selected_candidate_index=selected_index,
             compile_ok=True,
             compile_error=None,
+            trace=trace,
             metadata={
                 "candidate_count": len(candidates),
-                "selected_candidate_index": index,
+                "selected_candidate_index": selected_index,
             },
         )
 
+    trace = build_extraction_trace(
+        profile=profile,
+        roots=cleaning.roots,
+        candidates=candidate_traces,
+        rationale=failure_rationale(
+            error="no compilable extracted candidate",
+            compile_error=first_compile_error,
+        ),
+        extraction_error="no compilable extracted candidate",
+    )
     return extraction_failure(
         raw_submission=raw_submission,
         candidate_count=len(candidates),
         error="no compilable extracted candidate",
         compile_error=first_compile_error,
+        trace=trace,
         metadata={
             "candidate_count": len(candidates),
         },
@@ -173,40 +268,95 @@ def extract_strict_field_marker_code(
     *,
     profile: CodeParserProfile = STRICT_FIELD_MARKER_PARSER_PROFILE,
 ) -> CodeExtractionResult:
-    _ = profile
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
     field_value = field_marker_value(
         raw_submission,
         field_name=FIELD_MARKER_NAME,
     )
+    roots = strict_field_marker_roots(
+        raw_submission=raw_submission,
+        field_value=field_value,
+    )
     if field_value is None:
+        error = f"missing field marker for {FIELD_MARKER_NAME!r}"
+        trace = build_extraction_trace(
+            profile=profile,
+            roots=roots,
+            candidates=[],
+            rationale=error,
+            extraction_error=error,
+        )
         return extraction_failure(
             raw_submission=raw_submission,
             candidate_count=0,
-            error=f"missing field marker for {FIELD_MARKER_NAME!r}",
+            error=error,
+            trace=trace,
         )
     candidate = field_value.strip()
     if not candidate:
+        error = "empty field-marker code"
+        trace = build_extraction_trace(
+            profile=profile,
+            roots=roots,
+            candidates=[],
+            rationale=error,
+            extraction_error=error,
+        )
         return extraction_failure(
             raw_submission=raw_submission,
             candidate_count=1,
-            error="empty field-marker code",
+            error=error,
+            trace=trace,
         )
-    validation = validate_python_source(candidate)
-    if not validation.compile_ok:
+    candidate_trace = trace_candidate_selection(
+        candidate,
+        index=0,
+        include_code_repr_check=False,
+    )
+    if candidate_trace.status is CandidateStatus.REJECTED:
+        error = (
+            "field-marker code is not compilable"
+            if candidate_trace.compile_ok is False
+            else candidate_trace.rejection_reason
+            or "field-marker code is rejected"
+        )
+        trace = build_extraction_trace(
+            profile=profile,
+            roots=roots,
+            candidates=[candidate_trace],
+            rationale=failure_rationale(
+                error=error,
+                compile_error=(
+                    candidate_trace.rejection_reason
+                    if candidate_trace.compile_ok is False
+                    else None
+                ),
+            ),
+            extraction_error=error,
+        )
         return extraction_failure(
             raw_submission=raw_submission,
             candidate_count=1,
-            error="field-marker code is not compilable",
-            compile_error=validation.compile_error,
+            error=error,
+            compile_error=(
+                candidate_trace.rejection_reason
+                if candidate_trace.compile_ok is False
+                else None
+            ),
+            trace=trace,
         )
-    if is_plain_literal_module(candidate):
-        return extraction_failure(
-            raw_submission=raw_submission,
-            candidate_count=1,
-            error="plain literal modules are not valid HumanEval code",
-        )
+    trace = build_extraction_trace(
+        profile=profile,
+        roots=roots,
+        candidates=[candidate_trace],
+        selected_candidate_index=0,
+        extraction_method=ExtractionMethod.FIELD_MARKER,
+        rationale=selection_rationale(
+            selected_candidate_index=0,
+            extraction_method=ExtractionMethod.FIELD_MARKER,
+        ),
+    )
     return CodeExtractionResult(
         raw_submission=raw_submission,
         extracted_code=candidate,
@@ -214,12 +364,164 @@ def extract_strict_field_marker_code(
         candidate_count=1,
         selected_candidate_index=0,
         compile_ok=True,
+        trace=trace,
         metadata={
             "candidate_count": 1,
             "selected_candidate_index": 0,
             "field_name": FIELD_MARKER_NAME,
         },
     )
+
+
+def build_extraction_trace(
+    *,
+    profile: CodeParserProfile,
+    roots: list[ExtractionTraceNode],
+    candidates: list[CandidateSelectionTrace],
+    rationale: str,
+    selected_candidate_index: int | None = None,
+    extraction_method: ExtractionMethod | None = None,
+    extraction_error: str | None = None,
+) -> ExtractionTrace:
+    return ExtractionTrace(
+        profile=profile,
+        roots=roots,
+        candidates=candidates,
+        selected_candidate_index=selected_candidate_index,
+        extraction_method=extraction_method,
+        rationale=rationale,
+        extraction_error=extraction_error,
+    )
+
+
+def trace_candidate_selection(
+    candidate: str,
+    *,
+    index: int,
+    include_code_repr_check: bool = True,
+) -> CandidateSelectionTrace:
+    checks: list[ExtractionTraceNode] = []
+    validation = validate_python_source(candidate)
+    if not validation.compile_ok:
+        reason = validation.compile_error or "candidate does not compile"
+        checks.append(check_node("compile_validation", False, reason=reason))
+        return CandidateSelectionTrace(
+            index=index,
+            source=candidate,
+            status=CandidateStatus.REJECTED,
+            compile_ok=False,
+            rejection_reason=reason,
+            checks=checks,
+        )
+    checks.append(check_node("compile_validation", True))
+
+    if is_plain_literal_module(candidate):
+        reason = "plain literal modules are not valid HumanEval code"
+        checks.append(check_node("plain_literal_module", False, reason=reason))
+        return CandidateSelectionTrace(
+            index=index,
+            source=candidate,
+            status=CandidateStatus.REJECTED,
+            compile_ok=True,
+            rejection_reason=reason,
+            checks=checks,
+        )
+    checks.append(check_node("plain_literal_module", True))
+
+    if include_code_repr_check:
+        if is_code_repr_assignment(candidate):
+            reason = "code repr assignments are not valid HumanEval code"
+            checks.append(
+                check_node("code_repr_assignment", False, reason=reason)
+            )
+            return CandidateSelectionTrace(
+                index=index,
+                source=candidate,
+                status=CandidateStatus.REJECTED,
+                compile_ok=True,
+                rejection_reason=reason,
+                checks=checks,
+            )
+        checks.append(check_node("code_repr_assignment", True))
+
+    return CandidateSelectionTrace(
+        index=index,
+        source=candidate,
+        status=CandidateStatus.SELECTED,
+        compile_ok=True,
+        checks=checks,
+    )
+
+
+def check_node(
+    check_name: str,
+    passed: bool,
+    *,
+    reason: str | None = None,
+) -> ExtractionTraceNode:
+    return ExtractionTraceNode(
+        kind=TraceNodeKind.CHECK,
+        name=check_name,
+        check_name=check_name,
+        verdict=TraceCheckVerdict.PASS if passed else TraceCheckVerdict.FAIL,
+        reason=reason,
+    )
+
+
+def selection_rationale(
+    *,
+    selected_candidate_index: int,
+    extraction_method: ExtractionMethod,
+) -> str:
+    return (
+        f"candidate {selected_candidate_index} selected via "
+        f"{extraction_method.value}: first candidate passing parser checks"
+    )
+
+
+def failure_rationale(
+    *,
+    error: str,
+    compile_error: str | None,
+) -> str:
+    if compile_error:
+        return f"{error} ({compile_error})"
+    return error
+
+
+def strict_field_marker_roots(
+    *,
+    raw_submission: str,
+    field_value: str | None,
+) -> list[ExtractionTraceNode]:
+    marker_present = field_value is not None
+    marker_node = check_node(
+        "field_marker_present",
+        marker_present,
+        reason=(
+            None
+            if marker_present
+            else f"missing field marker for {FIELD_MARKER_NAME!r}"
+        ),
+    )
+    if field_value is None:
+        return [marker_node]
+
+    extract_node = ExtractionTraceNode(
+        kind=TraceNodeKind.TRANSFORM,
+        name="field_marker_extract",
+        before_text=raw_submission,
+        after_text=field_value,
+    )
+    strip_node = ExtractionTraceNode(
+        kind=TraceNodeKind.TRANSFORM,
+        name="field_marker_strip",
+        before_text=field_value,
+        after_text=field_value.strip(),
+    )
+    extract_node.children = [strip_node]
+    marker_node.children = [extract_node]
+    return [marker_node]
 
 
 def field_marker_value(raw_submission: str, *, field_name: str) -> str | None:
@@ -284,6 +586,7 @@ def extraction_failure(
     raw_submission: str | None,
     candidate_count: int,
     error: str,
+    trace: ExtractionTrace,
     compile_error: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> CodeExtractionResult:
@@ -296,6 +599,7 @@ def extraction_failure(
         compile_ok=False,
         compile_error=compile_error,
         extraction_error=error,
+        trace=trace,
         metadata={
             **(metadata or {}),
             "candidate_count": candidate_count,

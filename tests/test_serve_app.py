@@ -31,26 +31,31 @@ def test_profiles_lists_both_v1_profiles(client: TestClient) -> None:
     }
 
 
-def test_explain_returns_candidates_and_result(client: TestClient) -> None:
+def test_explain_returns_trace(client: TestClient) -> None:
     response = client.post("/explain", json={"text": FENCED_TEXT})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["result"]["extracted_code"].startswith("def add")
+    assert payload["candidates"][0]["source"].startswith("def add")
     statuses = [candidate["status"] for candidate in payload["candidates"]]
     assert "selected" in statuses
-    assert payload["selection"]["rationale"]
+    assert payload["rationale"]
+    assert payload["roots"]
 
 
-def test_explain_stage_filter(client: TestClient) -> None:
+def test_explain_rejects_removed_stage_filter(client: TestClient) -> None:
     response = client.post(
         "/explain",
         json={"text": FENCED_TEXT, "stages": ["result"]},
     )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["result"] is not None
-    assert payload["candidates"] is None
-    assert payload["unwrap"] is None
+    assert response.status_code == 422
+
+
+def test_explain_rejects_removed_code_field(client: TestClient) -> None:
+    response = client.post(
+        "/explain",
+        json={"text": FENCED_TEXT, "code_field": "answer"},
+    )
+    assert response.status_code == 422
 
 
 def test_explain_unknown_profile_is_422(client: TestClient) -> None:
