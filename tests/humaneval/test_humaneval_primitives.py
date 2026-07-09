@@ -26,9 +26,7 @@ from dr_code.humaneval.sampling import sample_human_eval_tasks_from_rows
 from dr_code.humaneval.scoring import (
     GeneratedCodeOutcome,
     evaluation_outcome,
-    score_generated_code_for_humaneval,
     score_humaneval_generation,
-    score_humaneval_prediction,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
@@ -251,25 +249,6 @@ def test_evaluation_passes_when_best_function_passes() -> None:
     assert summary.failure_count == 0
 
 
-def test_score_generated_code_passes_when_best_function_passes() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation=(
-            "def broken_helper(x):\n"
-            "    return x\n"
-            "\n"
-            "def add_one(x):\n"
-            "    return x + 1\n"
-        ),
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.PASSED
-    assert result.score == 1.0
-    assert result.evaluation is not None
-    assert result.evaluation.best_function_name == "add_one"
-
-
 def test_evaluation_prefers_entry_point_when_pass_counts_tie() -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -321,138 +300,6 @@ def test_evaluation_uses_highest_pass_count() -> None:
     assert result.best_function_name == "helper"
     assert result.passed is True
     assert result.status_counts == {"passed": 2}
-
-
-def test_score_generated_code_passes_humaneval_task() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation="def add_one(x):\n    return x + 1\n",
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.PASSED
-    assert result.score == 1.0
-    assert result.error is None
-    assert result.evaluation is not None
-    assert result.evaluation.status_counts == {"passed": 2}
-    summary = result.evaluation.to_summary()
-    assert summary.passed is True
-    assert summary.failure_count == 0
-    assert summary.results[0].status is EvaluationCaseStatus.PASSED
-    assert "failures" not in summary.model_dump(mode="json")
-
-
-def test_score_generated_code_uses_shared_json_code_extraction() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation=(
-            '{"code": "```python\\ndef add_one(x):\\n    return x + 1\\n```"}'
-        ),
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.PASSED
-    assert result.raw_code == "def add_one(x):\n    return x + 1"
-
-
-def test_score_humaneval_prediction_flattens_score_and_compression() -> None:
-    result = score_humaneval_prediction(
-        prediction_id="prediction-1",
-        raw_generation="def add_one(x):\n    return x + 1\n",
-        task=_task(),
-        compression_input="short description",
-        ground_truth_code="def add_one(x):\n    return x + 1\n",
-        timeout=2.0,
-    )
-
-    assert result.prediction_id == "prediction-1"
-    assert result.generated_code_outcome is GeneratedCodeOutcome.PASSED
-    assert result.score == 1.0
-    assert result.error is None
-    assert result.raw_code == "def add_one(x):\n    return x + 1"
-    assert result.raw_compile_ok is True
-    assert result.extracted_compile_ok is True
-    assert result.evaluation_function_names == ["add_one"]
-    assert result.evaluation_total_cases == 2
-    assert result.evaluation_failure_count == 0
-    assert result.evaluation_status_counts == {"passed": 2}
-    assert result.evaluation_summary is not None
-    assert result.evaluation_summary.passed is True
-    assert len(result.evaluation_summary.results) == 2
-    assert set(result.compression_metrics) == set(CompressionMethod)
-    assert result.raw_compression_ratio is not None
-    assert result.best_compression_ratio is not None
-    assert result.best_compression_percent_reduction is not None
-
-
-def test_score_generated_code_reports_wrong_answer_as_domain_result() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation="def add_one(x):\n    return x\n",
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.TESTS_FAILED
-    assert result.score == 0.0
-    assert result.error == "HumanEval tests failed"
-    assert result.evaluation is not None
-    assert result.evaluation.failures[0].status is EvaluationCaseStatus.FAILED
-
-
-def test_score_generated_code_reports_runtime_error_as_domain_result() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation=(
-            "def add_one(x):\n"
-            "    raise RuntimeError('boom')\n"
-        ),
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.TESTS_FAILED
-    assert result.evaluation is not None
-    assert result.evaluation.failures[0].status is EvaluationCaseStatus.ERROR
-    assert "RuntimeError" in result.evaluation.failures[0].message
-
-
-def test_score_generated_code_reports_empty_generation() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation="   ",
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.EMPTY_GENERATION
-    assert result.score == 0.0
-    assert result.extraction_candidate_count == 0
-    assert result.extraction_error == "empty raw generation"
-
-
-def test_score_generated_code_reports_invalid_generated_code() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation="```python\ndef add_one(x)\n    return x + 1\n```",
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.EXTRACTION_FAILED
-    assert result.score == 0.0
-    assert result.extracted_compile_ok is False
-    assert result.extracted_compile_error is not None
-
-
-def test_score_generated_code_reports_no_top_level_functions() -> None:
-    result = score_generated_code_for_humaneval(
-        raw_generation="answer = 2\n",
-        task=_task(),
-        timeout=2.0,
-    )
-
-    assert result.outcome is GeneratedCodeOutcome.NO_TOP_LEVEL_FUNCTIONS
-    assert result.score == 0.0
-    assert result.error == "no top-level candidate functions"
-    assert result.evaluation is not None
-    assert result.evaluation.function_names == []
 
 
 def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
@@ -592,48 +439,6 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.coverage_complete is False
     assert result.failures == []
     assert result.status_counts == {"passed": 1}
-
-
-def test_score_generated_code_reports_incomplete_runner_output() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout=_PARTIAL_RUNNER_PASSED_CASE_0)
-
-    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        result = score_generated_code_for_humaneval(
-            raw_generation="def add_one(x):\n    return x + 1\n",
-            task=_task(),
-            timeout=2.0,
-        )
-
-    assert result.outcome is GeneratedCodeOutcome.EVALUATION_INCOMPLETE
-    assert result.score == 0.0
-    assert result.error == "HumanEval evaluation incomplete"
-    assert result.evaluation is not None
-    assert result.evaluation.failures == []
-    assert result.evaluation.coverage_complete is False
-
-
-def test_score_generated_code_reports_test_failure_when_case_fails() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(
-            stdout=(
-                '[{"case_id": "case_0", "status": "failed", '
-                '"message": "bad"}, '
-                '{"case_id": "case_1", "status": "passed", "message": ""}]'
-            ),
-        )
-
-    with patch("dr_code.humaneval.task.subprocess.run", fake_run):
-        result = score_generated_code_for_humaneval(
-            raw_generation="def add_one(x):\n    return x + 1\n",
-            task=_task(),
-            timeout=2.0,
-        )
-
-    assert result.outcome is GeneratedCodeOutcome.TESTS_FAILED
-    assert result.error == "HumanEval tests failed"
-    assert result.evaluation is not None
-    assert result.evaluation.failures[0].status is EvaluationCaseStatus.FAILED
 
 
 def test_compression_metrics_are_stable_for_methods_and_ratios() -> None:

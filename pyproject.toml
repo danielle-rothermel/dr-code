@@ -9,10 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "datasets>=3.0,<4",
-    "marimo[recommended]>=0.23.10",
-    "pyarrow>=24.0.0",
     "pydantic>=2.13.4",
-    "pyyaml>=6.0.3",
     "typer>=0.26.7",
     "zstandard>=0.25.0",
 ]
@@ -27,11 +24,8 @@ serve = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# code_eval is absorbed source (composable migration stage 3), not a dep;
-# its subprocess normalizers now run against the dev ruff (>=0.15.18), as
-# dr-code already did via its former override-dependencies pin.
 [tool.hatch.build.targets.wheel]
-packages = ["src/dr_code", "src/code_eval"]
+packages = ["src/dr_code"]
 
 [dependency-groups]
 dev = [
@@ -51,9 +45,7 @@ line-length = 79
 
 [tool.ty.src]
 include = ["scripts", "src"]
-# src/code_eval is absorbed legacy source (type-checked under its own
-# lineage config); it gets slimmed/retyped in the profile-v2 steps.
-exclude = ["nbs", "tests", "src/code_eval"]
+exclude = ["nbs", "tests"]
 
 [tool.pyright]
 venvPath = "."
