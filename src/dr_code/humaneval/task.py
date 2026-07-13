@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
-import sys
 import textwrap
 import time
 from collections import Counter
@@ -50,6 +48,10 @@ from dr_code.humaneval.parsed_tests import (
     find_oracle_name,
     for_loop_names,
     literal_assignment,
+)
+from dr_code.humaneval.sandbox import (
+    SandboxTimeoutError,
+    run_python_in_sandbox,
 )
 
 
@@ -627,15 +629,12 @@ def run_subprocess_batch(
     )
     started_at = time.perf_counter()
     try:
-        completed = subprocess.run(
-            [sys.executable, "-c", runner_source or runner_script()],
-            input=payload.model_dump_json(),
-            capture_output=True,
-            check=False,
-            encoding="utf-8",
-            timeout=timeout_seconds,
+        completed = run_python_in_sandbox(
+            source=runner_source or runner_script(),
+            input_json=payload.model_dump_json(),
+            timeout_seconds=timeout_seconds,
         )
-    except subprocess.TimeoutExpired:
+    except SandboxTimeoutError:
         return timeout_results(
             task=task,
             function_name=function_name,

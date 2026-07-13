@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-13
+
+- Moved HumanEval candidate execution into a fail-closed OCI sandbox with no
+  host mounts or network, an unprivileged read-only filesystem, bounded JSON
+  IPC and resources, and complete container cleanup on timeout.
+
 ## 2026-07-09
 
 - Completed the transform/analysis library grid: `dr_code.code_analysis` and

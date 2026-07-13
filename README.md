@@ -39,9 +39,37 @@ The `dr_code.humaneval` modules:
   metrics.
 - `profiles` resolves supported HumanEval scoring profiles.
 
-The default scoring profile is `humaneval@v1`, using a 2.0 second subprocess
+The default scoring profile is `humaneval@v1`, using a 2.0 second sandbox
 timeout and the `humaneval-best-effort@v1` parser profile. Unknown profile IDs
 raise at the boundary.
+
+### Generated-code sandbox
+
+HumanEval candidates execute only in an OCI sandbox. The scorer passes bounded
+JSON over stdin/stdout and exposes no host mounts or inherited application
+environment. Each run has no network, a read-only root filesystem, a private
+bounded `/tmp`, an unprivileged user, no Linux capabilities, no-new-privileges,
+one PID, one CPU, and fixed memory, file-size, and open-file limits. Timeout
+cleanup kills and removes the named container, which terminates its complete
+cgroup rather than only the Python process.
+
+Production requires Docker or Podman and the immutable image below to be
+preloaded. Runtime image pulls are disabled, and scoring fails closed if the
+runtime, daemon, exact digest, or required isolation flags are unavailable.
+
+```bash
+export DR_CODE_SANDBOX_RUNTIME=docker  # or podman
+export DR_CODE_SANDBOX_IMAGE='python:3.13.14-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280'
+docker pull "$DR_CODE_SANDBOX_IMAGE"
+```
+
+The Whetstone `stores run` scoring worker must run on a host/VM with that OCI
+runtime available (OrbStack/Docker on the current macOS operator path, or a
+Linux Docker/rootless-Podman worker) and must preload the digest before queue
+startup. Do not mount the runtime socket or any operator path into the sandbox.
+Run scoring in its dedicated queue worker without provider credentials when
+Whetstone queue selection is available; the sandbox still removes all
+application credentials even when the trusted worker has them.
 
 ### Serve Facade
 
@@ -102,6 +130,12 @@ Useful focused checks:
 uv run pytest tests/humaneval
 uv run pytest tests/synthetic
 uv run ruff check .
+```
+
+Real denial probes are enabled explicitly and are mandatory in CI:
+
+```bash
+DR_CODE_RUN_SANDBOX_TESTS=1 uv run pytest tests/humaneval/test_sandbox.py
 ```
 
 CI runs `uv sync`, `ruff check`, and `pytest` for pushes and pull requests.
