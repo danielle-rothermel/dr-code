@@ -4,15 +4,23 @@ The subprocess runner validates each returned case result, but it currently
 preserves partial runner output rather than requiring one returned row per
 parsed test case. Tightening that cardinality check would be a benchmark
 behavior change and is deferred until per-test score persistence semantics are
-defined.
+defined. Returned case ids must still be known and unique so partial output
+can never inflate coverage.
+
+Failure attribution: candidate-attributable terminations (memory/CPU-limit
+SIGKILL, interpreter crash, SystemExit, output floods) are scored as case
+errors or timeouts; ``EvaluationHarnessError``/``HarnessFailure`` is reserved
+for sandbox or runtime breakage so operators can alert on it. Candidate code
+runs in the same in-container interpreter as the trusted runner, so a
+deliberately adversarial candidate can still forge its own task's case
+results; the sandbox boundary guarantees host, credential, and network
+isolation, not single-task score integrity against adversarial submissions.
 """
 
 from __future__ import annotations
 
 import ast
 import json
-import subprocess
-import sys
 import textwrap
 import time
 from collections import Counter
@@ -50,6 +58,12 @@ from dr_code.humaneval.parsed_tests import (
     find_oracle_name,
     for_loop_names,
     literal_assignment,
+)
+from dr_code.humaneval.sandbox import (
+    CANDIDATE_KILL_RETURNCODES,
+    SandboxOutputLimitError,
+    SandboxTimeoutError,
+    run_python_in_sandbox,
 )
 
 
@@ -627,19 +641,23 @@ def run_subprocess_batch(
     )
     started_at = time.perf_counter()
     try:
-        completed = subprocess.run(
-            [sys.executable, "-c", runner_source or runner_script()],
-            input=payload.model_dump_json(),
-            capture_output=True,
-            check=False,
-            encoding="utf-8",
-            timeout=timeout_seconds,
+        completed = run_python_in_sandbox(
+            source=runner_source or runner_script(),
+            input_json=payload.model_dump_json(),
+            timeout_seconds=timeout_seconds,
         )
-    except subprocess.TimeoutExpired:
+    except SandboxTimeoutError:
         return timeout_results(
             task=task,
             function_name=function_name,
             timeout_seconds=timeout_seconds,
+        )
+    except SandboxOutputLimitError as exc:
+        return error_results(
+            task=task,
+            function_name=function_name,
+            message=f"{type(exc).__name__}: {exc}",
+            elapsed_seconds=time.perf_counter() - started_at,
         )
     except Exception as exc:
         elapsed_seconds = time.perf_counter() - started_at
@@ -656,6 +674,20 @@ def run_subprocess_batch(
         ) from exc
     elapsed_seconds = time.perf_counter() - started_at
 
+    if completed.returncode in CANDIDATE_KILL_RETURNCODES:
+        message = (
+            f"sandbox killed candidate execution (exit {completed.returncode}"
+            ": memory limit, CPU limit, or interpreter crash)"
+        )
+        detail = completed.stderr.strip()
+        if detail:
+            message = f"{message}: {detail}"
+        return error_results(
+            task=task,
+            function_name=function_name,
+            message=message,
+            elapsed_seconds=elapsed_seconds,
+        )
     if completed.returncode != 0:
         message = completed.stderr.strip() or completed.stdout.strip()
         case_results = error_results(
@@ -697,6 +729,8 @@ def run_subprocess_batch(
         )
 
     adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
+    expected_case_ids = {case.case_id for case in parsed_tests.cases}
+    seen_case_ids: set[str] = set()
     results: list[EvaluationCaseResult] = []
     for item in raw_results:
         try:
@@ -737,6 +771,29 @@ def run_subprocess_batch(
                 case_results=results,
                 cause=exc,
             ) from exc
+        if (
+            runner_result.case_id not in expected_case_ids
+            or runner_result.case_id in seen_case_ids
+        ):
+            results.append(
+                EvaluationCaseResult(
+                    task_id=task.task_id,
+                    case_id=runner_result.case_id,
+                    function_name=function_name,
+                    status=EvaluationCaseStatus.ERROR,
+                    message=(
+                        "Invalid runner output: duplicate or unknown case id "
+                        f"{runner_result.case_id!r}"
+                    ),
+                    test_type=parsed_tests.test_type,
+                    elapsed_seconds=elapsed_seconds,
+                )
+            )
+            raise EvaluationHarnessError(
+                "runner output contained duplicate or unknown case ids",
+                case_results=results,
+            )
+        seen_case_ids.add(runner_result.case_id)
         results.append(
             EvaluationCaseResult(
                 task_id=task.task_id,
@@ -842,6 +899,14 @@ def runner_script() -> str:
 
         payload = json.loads(input())
 
+        FIELD_LIMIT = 8000
+
+        def clip(text):
+            text = str(text)
+            if len(text) > FIELD_LIMIT:
+                return text[:FIELD_LIMIT] + "...[truncated]"
+            return text
+
         def assertion(actual, expected, atol=0):
             if atol:
                 assert abs(actual - expected) <= atol
@@ -863,28 +928,32 @@ def runner_script() -> str:
             try:
                 detail_namespace = build_namespace()
                 detail_candidate = detail_namespace[payload["function_name"]]
-            except Exception:
-                metadata["actual_output_repr"] = traceback.format_exc(limit=4)
+            except BaseException:
+                metadata["actual_output_repr"] = clip(
+                    traceback.format_exc(limit=4)
+                )
                 return metadata
 
             try:
                 if check.get("actual_output_expr"):
-                    metadata["actual_output_repr"] = repr(eval(
+                    metadata["actual_output_repr"] = clip(repr(eval(
                         check["actual_output_expr"],
                         detail_namespace | {"candidate": detail_candidate},
-                    ))
-            except Exception:
-                metadata["actual_output_repr"] = traceback.format_exc(limit=4)
+                    )))
+            except BaseException:
+                metadata["actual_output_repr"] = clip(
+                    traceback.format_exc(limit=4)
+                )
 
             try:
                 if check.get("expected_output_expr"):
-                    metadata["expected_output_repr"] = repr(eval(
+                    metadata["expected_output_repr"] = clip(repr(eval(
                         check["expected_output_expr"],
                         detail_namespace | {"candidate": detail_candidate},
-                    ))
-            except Exception:
-                metadata["expected_output_repr"] = traceback.format_exc(
-                    limit=4,
+                    )))
+            except BaseException:
+                metadata["expected_output_repr"] = clip(
+                    traceback.format_exc(limit=4)
                 )
 
             return metadata
@@ -892,8 +961,8 @@ def runner_script() -> str:
         try:
             namespace = build_namespace()
             candidate = namespace[payload["function_name"]]
-        except Exception:
-            message = traceback.format_exc(limit=4)
+        except BaseException:
+            message = clip(traceback.format_exc(limit=4))
             results = []
             for check in payload["checks"]:
                 results.append({
@@ -927,15 +996,15 @@ def runner_script() -> str:
                 results.append({
                     "case_id": check["case_id"],
                     "status": "failed",
-                    "message": str(exc),
+                    "message": clip(exc),
                     **failure_metadata(check),
                     "elapsed_seconds": time.perf_counter() - started_at,
                 })
-            except Exception:
+            except BaseException:
                 results.append({
                     "case_id": check["case_id"],
                     "status": "error",
-                    "message": traceback.format_exc(limit=4),
+                    "message": clip(traceback.format_exc(limit=4)),
                     **failure_metadata(check),
                     "elapsed_seconds": time.perf_counter() - started_at,
                 })
