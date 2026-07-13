@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>dr-code · Full Eval Flow: Boundary Design</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --surface:#fff; --ink:#1b2333; --muted:#5b6577; --line:#e3e8ef;
+    --accent:#1866b4; --accent-soft:#e9f2fb;
+    --green:#2b8a3e; --green-soft:#e8f5ec;
+    --amber:#9a6700; --amber-soft:#fff6e0;
+    --blue:#1866b4; --blue-soft:#e9f2fb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:2200px; margin:0 auto; padding:40px 56px 80px}
+  h1{font-size:28px; margin:0 0 4px}
+  h2{font-size:15px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin:0}
+  h3{font-size:16.5px; margin:0 0 6px}
+  p{margin:0 0 10px}
+  a{color:var(--accent)}
+  code{background:#eef1f6; border:1px solid var(--line); border-radius:5px; padding:0 5px;
+    font:.86em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .byline{margin:2px 0 26px; color:var(--muted); font-size:13px; font-weight:300; letter-spacing:.03em}
+  .layer-head{display:flex; align-items:baseline; gap:14px; border-bottom:2px solid var(--line);
+    padding-bottom:8px; margin:46px 0 20px}
+  .layer-head .n{font-size:26px; font-weight:800; color:var(--accent)}
+  .hero{background:var(--surface); border:1px solid var(--line); border-left:6px solid var(--accent);
+    border-radius:12px; padding:22px 28px; font-size:17.5px; line-height:1.6}
+  .hero b{color:var(--accent)}
+  .diagram{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:24px 28px; margin-top:18px}
+  .drow{display:flex; align-items:stretch; gap:10px}
+  .dnode{flex:1; border:1.5px solid #9aa7bd; border-radius:10px; padding:12px 16px; background:#fbfcfe; text-align:center}
+  .dnode b{display:block; font-size:14.5px}
+  .dnode small{color:var(--muted); font-size:12.5px; line-height:1.45; display:block; margin-top:3px}
+  .dnode.p1{border-color:var(--green); background:var(--green-soft)}
+  .dnode.p2{border-color:var(--blue); background:var(--blue-soft)}
+  .dnode.ctr{border-color:var(--accent); background:var(--accent-soft)}
+  .dnode.policy,.dnode.ext{border-style:dashed}
+  .darr{display:flex; align-items:center; color:#8b96a9; font-size:22px}
+  .dcaption{font-size:13px; color:var(--muted); margin-top:12px; text-align:center}
+  .l1{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:18px}
+  @media(max-width:1500px){.l1{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:900px){.l1{grid-template-columns:1fr} main{padding:24px} .drow{flex-direction:column}}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px 22px}
+  .card .id{font-size:11.5px; font-weight:800; letter-spacing:.06em; border-radius:6px; padding:2px 8px; display:inline-block; margin-bottom:8px}
+  .id.m{background:var(--amber-soft); color:var(--amber)}
+  .id.s{background:var(--accent-soft); color:var(--accent)}
+  .card .decision{font-size:16.5px; font-weight:700; line-height:1.4; margin-bottom:6px}
+  .card .why{font-size:14px; color:var(--muted)}
+  .card h3{color:var(--ink)}
+  .card .key{color:var(--accent)}
+  .card .why b,.card li b,.card td b{color:var(--ink); font-weight:700}
+  .l2{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px}
+  @media(max-width:1500px){.l2{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:900px){.l2{grid-template-columns:1fr}}
+  .card ul{margin:6px 0 0; padding-left:18px; font-size:14.5px; color:var(--muted)}
+  .card li{margin-bottom:6px}
+  .card li::marker{color:var(--accent); font-weight:800}
+  .l3{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px}
+  @media(max-width:1100px){.l3{grid-template-columns:1fr}}
+  table{border-collapse:collapse; width:100%; font-size:14px; margin-top:4px}
+  th,td{padding:7px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  th{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+</style>
+<link rel="stylesheet" href="dossier-theme.css">
+</head>
+<body>
+<main>
+
+<h1>Full Eval Flow: Boundary Design</h1>
+<div class="byline">dr-code · 2026-07-13</div>
+
+<div class="hero">
+  Eval flows comprise <b>two independent systems and a thin contract</b>. Preprocessing turns input into a
+  <b>trace</b>; metrics extraction turns a trace-shaped value into <b>records</b>. Running them together is convenient,
+  not architectural. This document covers only their shared contract and should remain the thinnest of the three.
+</div>
+
+<div class="diagram">
+  <div class="drow">
+    <div class="dnode p1"><b>Preprocessing</b><small>definition + input → trace<br>(own doc: motivations, structure, steps)</small></div>
+    <div class="darr">→</div>
+    <div class="dnode ctr"><b>The trace</b><small>named canonical artifacts + lineage + absences; always serializable,
+      with optional derived in-memory views</small></div>
+    <div class="darr">→</div>
+    <div class="dnode p2"><b>Metrics extraction</b><small>trace-shaped value + definition → records<br>(own doc: questions, engine, records)</small></div>
+    <div class="darr">→</div>
+    <div class="dnode policy"><b>Caller policy</b><small>scores, filtering, smart selection — outside both systems</small></div>
+  </div>
+  <div class="drow" style="margin-top:10px">
+    <div class="dnode ext" style="flex:1"><b>External producers</b><small>anything can construct a trace-shaped value — provenance marked "external"</small></div>
+    <div style="flex:.12"></div>
+    <div class="dnode ext" style="flex:1"><b>Serialize now, measure later</b><small>preprocess once → persist → measure repeatedly, anytime</small></div>
+    <div style="flex:.12"></div>
+    <div class="dnode ext" style="flex:1"><b>External consumers</b><small>records are self-describing; tools that never import dr-code can read them</small></div>
+  </div>
+  <div class="dcaption">information flows only left → right: metrics consume a value and return records, leaving no return channel</div>
+</div>
+
+<!-- ═══════════ LAYER 1 ═══════════ -->
+<div class="layer-head"><span class="n">L1</span><h2>Motivations &amp; structural decisions</h2></div>
+
+<div class="l1">
+  <div class="card">
+    <span class="id m">M1 · MOTIVATION</span>
+    <div class="decision">Definitions and outputs explain themselves.</div>
+    <div class="why">Definitions state what will happen; traces and records show what did. Each is self-describing, so
+    provenance survives across experiments, dashboards, and training loops.</div>
+  </div>
+  <div class="card">
+    <span class="id m">M2 · MOTIVATION</span>
+    <div class="decision">Definitions provide deterministic identity.</div>
+    <div class="why">For each system, the same definition and input produce the same output. Frozen, serializable
+    definitions identify sweeps, reproductions, and cross-run comparisons. Records carry the full provenance chain.</div>
+  </div>
+  <div class="card">
+    <span class="id m">M3 · MOTIVATION</span>
+    <div class="decision">APIs organize concepts by meaning.</div>
+    <div class="why">APIs follow meaning—a transform to apply or a question to ask—not implementation. Semantic
+    configuration keeps integrations understandable.</div>
+  </div>
+  <div class="card">
+    <span class="id s">S1 · STRUCTURE</span>
+    <div class="decision">Preprocessing and metrics remain independent.</div>
+    <div class="why">Preprocessing and metrics extraction are independently usable, definable, and versioned. Run
+    them together or preprocess once and measure later. Each knows only the trace.</div>
+  </div>
+  <div class="card">
+    <span class="id s">S2 · STRUCTURE</span>
+    <div class="decision">The trace is the shared interface.</div>
+    <div class="why">The trace is the sole shared interface. Preprocessing and external systems may produce it;
+    metrics and external systems may consume it. Its shape therefore evolves carefully.</div>
+  </div>
+  <div class="card">
+    <span class="id s">S3 · STRUCTURE</span>
+    <div class="decision">Canonical artifacts serialize; derived views recompute.</div>
+    <div class="why">Every canonical artifact is serializable. Non-serializable views, such as ASTs, must be
+    recomputable caches. Serialization may lose warm caches, never information; otherwise the design is invalid.</div>
+  </div>
+  <div class="card">
+    <span class="id s">S4 · STRUCTURE</span>
+    <div class="decision">Metrics consume traces without feedback.</div>
+    <div class="why">Metrics consume trace-shaped values and return records, with no channel back to preprocessing or
+    other metrics. Decoupling makes the system a pipeline rather than a workflow graph.</div>
+  </div>
+  <div class="card">
+    <span class="id s">S5 · STRUCTURE</span>
+    <div class="decision">Callers own scoring and selection policy.</div>
+    <div class="why">Transforms produce state; metrics produce information; scores apply caller policy to that
+    information. Scoring, filtering, and selection remain outside the library.</div>
+  </div>
+</div>
+
+<!-- ═══════════ LAYER 2 ═══════════ -->
+<div class="layer-head"><span class="n">L2</span><h2>The contract, one layer down</h2></div>
+
+<div class="l2">
+  <div class="card">
+    <h3>Traces expose a flat named artifact namespace.</h3>
+    <ul>
+      <li>A trace exposes a <span class="key">flat namespace of named values</span>. Producers publish
+        <span class="key">names</span> (step-instance names in preprocessing); metric operators
+        <span class="key">read keys and validate types</span>.</li>
+      <li>This is an <span class="key">intentional placeholder</span>. Design <span class="key">typed bindings after
+        real usage reveals the shape</span>, and introduce them explicitly.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Every trace reserves <code>input</code> and <code>output</code>.</h3>
+    <ul>
+      <li>Every trace carries its original <span class="key"><code>input</code></span> and final
+        <span class="key"><code>output</code></span>, regardless of producer or steps.</li>
+      <li>Metrics bound to these keys <span class="key">work with any producer</span>. Only
+        <span class="key">intermediate measurements need instance names</span>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Missing keys are wiring errors; <code>Absent</code> values are data.</h3>
+    <ul>
+      <li><span class="key">Missing key</span> means <span class="key">incompatible definitions</span>: throw at bind time.</li>
+      <li><span class="key">Present-but-Absent</span> means <span class="key">data failure</span>: an
+        <code>Absent</code> sentinel identifies the failed step and cause. Consumers emit
+        <span class="key">not-applicable records</span>.</li>
+      <li>This <span class="key">sharp runtime distinction</span> compensates for the
+        <span class="key">wiring checks lost with <code>dict[str, Any]</code></span>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Traces and records preserve full provenance.</h3>
+    <ul>
+      <li>A trace identifies its <span class="key">producing definition</span>, or <span class="key"><code>external</code></span>
+        if built outside dr-code.</li>
+      <li>A record adds its <span class="key">metric definition identity</span>, preserving
+        <span class="key">what computed it, on what, and how the input was produced</span>—even after serialization.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Persisted traces support repeatable later measurement.</h3>
+    <ul>
+      <li><span class="key">Persisting a trace</span> for <span class="key">later or repeated measurement</span> is a
+        primary use case.</li>
+      <li>Deserialized traces have <span class="key">cold caches</span>; derived views are
+        <span class="key">recomputed from canonical artifacts</span>. Results must <span class="key">match a fresh trace</span>.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════ LAYER 3 ═══════════ -->
+<div class="layer-head"><span class="n">L3</span><h2>Details</h2></div>
+
+<div class="l3">
+  <div class="card">
+    <h3>Serialized traces retain all canonical information.</h3>
+    <ul>
+      <li>A serialized trace contains <span class="key">canonical artifacts, names, lineage, causal absences, and
+        provenance</span>. It <span class="key">omits derived views</span>.</li>
+      <li><span class="key">Definitions, records, and serialized traces use <code>BaseModel</code></span> for persistence
+        and external schemas. <span class="key">In-flight values use frozen dataclasses</span>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Operators validate the temporary dictionary contract.</h3>
+    <ul>
+      <li>Operators <span class="key">read declared keys</span>, <span class="key">validate types</span>,
+        <span class="key">throw on wiring mismatches</span>, and <span class="key">emit not-applicable for
+        <code>Absent</code></span>.</li>
+      <li>There is <span class="key">no binding layer, typed views, or automatic resolution</span>. Any replacement must
+        <span class="key">reflect real usage</span> and be a <span class="key">versioned boundary change</span>.</li>
+    </ul>
+  </div>
+</div>
+
+</main>
+</body>
+</html>
