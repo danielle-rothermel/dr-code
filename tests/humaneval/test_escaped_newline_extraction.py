@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from dr_code.humaneval.code_extraction import ExtractionTraceNode
@@ -48,7 +50,7 @@ def test_v2_recovers_escaped_newline_shapes(source: str, v2_profile) -> None:
     assert result.succeeded
     assert result.extracted_code is not None
     assert "def f():" in result.extracted_code
-    assert "unescape_literal_newlines" in _node_names(result.trace.roots)
+    assert "recover_escaped_python" in _node_names(result.trace.roots)
 
 
 def test_normal_code_with_string_literal_escape_skips_fallback(v2_profile) -> None:
@@ -59,7 +61,59 @@ def test_normal_code_with_string_literal_escape_skips_fallback(v2_profile) -> No
 
     assert result.succeeded
     assert result.extracted_code == source
-    assert "unescape_literal_newlines" not in _node_names(result.trace.roots)
+    assert "recover_escaped_python" not in _node_names(result.trace.roots)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            r'Intro\n```python\ndef join_lines(lines):\n    return "\n".join(lines)\n```',
+            'def join_lines(lines):\n    return "\\n".join(lines)',
+        ),
+        (
+            r'Intro\ndef join_lines(lines):\n    return "\n".join(lines)',
+            'def join_lines(lines):\n    return "\\n".join(lines)',
+        ),
+        (
+            r'Intro\r```python\rdef join_tabs(parts):\r\treturn "\t".join(parts)\r```',
+            'def join_tabs(parts):\n\treturn "\\t".join(parts)',
+        ),
+        (
+            r'Intro\r\n```python\ndef join_cr(parts):\r\n\treturn "\r".join(parts)\n```',
+            'def join_cr(parts):\n\treturn "\\r".join(parts)',
+        ),
+    ],
+    ids=[
+        "literal-newline-fenced",
+        "literal-newline-unfenced",
+        "literal-tab",
+        "literal-cr-mixed-endings",
+    ],
+)
+def test_escaped_prose_preserves_python_string_literals(
+    source: str,
+    expected: str,
+    v2_profile: CodeParserProfile,
+) -> None:
+    result = extract_code_with_profile(source, profile=v2_profile)
+
+    assert result.succeeded
+    assert result.extracted_code == expected
+    assert "recover_escaped_python" in _node_names(result.trace.roots)
+
+
+def test_json_wrapped_code_preserves_python_string_escapes(v2_profile) -> None:
+    expected = (
+        'def separators(values):\n'
+        '    return "\\n".join(values), "\\t", "\\r"'
+    )
+    source = json.dumps(f"Intro\n```python\n{expected}\n```")
+
+    result = extract_code_with_profile(source, profile=v2_profile)
+
+    assert result.succeeded
+    assert result.extracted_code == expected
 
 
 def test_escaped_prose_still_has_no_candidates(v2_profile) -> None:
@@ -70,7 +124,7 @@ def test_escaped_prose_still_has_no_candidates(v2_profile) -> None:
 
     assert not result.succeeded
     assert result.extraction_error == "no code candidates extracted"
-    assert "unescape_literal_newlines" in _node_names(result.trace.roots)
+    assert "recover_escaped_python" not in _node_names(result.trace.roots)
 
 
 def test_v1_remains_resolvable_with_historical_behavior() -> None:
@@ -85,4 +139,4 @@ def test_v1_remains_resolvable_with_historical_behavior() -> None:
     )
 
     assert not result.succeeded
-    assert "unescape_literal_newlines" not in _node_names(result.trace.roots)
+    assert "recover_escaped_python" not in _node_names(result.trace.roots)

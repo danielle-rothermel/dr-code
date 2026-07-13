@@ -39,11 +39,12 @@ The `dr_code.humaneval` modules:
   metrics.
 - `profiles` resolves supported HumanEval scoring profiles.
 
-The default scoring profile is `humaneval@v1`, using a 2.0 second sandbox
+The default scoring profile is `humaneval@v2`, using a 2.0 second sandbox
 timeout and the `humaneval-best-effort@v2` parser profile. Version 2 adds a
-last-resort escaped-newline repair after ordinary extraction finds no code;
-`humaneval-best-effort@v1` remains resolvable for historical provenance.
-Unknown profile IDs raise at the boundary.
+last-resort, Python-aware escaped-structure recovery after ordinary extraction
+finds no code. Persisted `humaneval@v1` and `humaneval-best-effort@v1`
+profiles remain resolvable with their historical parser-v1 behavior. Unknown
+profile IDs raise at the boundary.
 
 ### Generated-code sandbox
 
@@ -142,6 +143,24 @@ uv run pytest tests/humaneval
 uv run pytest tests/synthetic
 uv run ruff check .
 ```
+
+To reproduce the bounded historical escaped-newline replay, provide a
+read-only Postgres URL and run:
+
+```bash
+DATABASE_URL=... uv run python scripts/replay_escaped_newline_extraction.py
+```
+
+The script deterministically selects at most 500 persisted nano rows ordered
+by prediction ID, forces `default_transaction_read_only=on`, and prints only
+row counts, compile classifications for parser v1/v2, and a selection-ID hash.
+Stored generations are never printed.
+
+The 2026-07-13 read-only replay selected 500 rows with selection hash
+`4964370fc9447dc7c73d8f93765193234c000296a368e9d81f8b5c4ce8b34b48`.
+Parser v1 produced 0 compilable, 0 noncompilable, and 500 no-candidate results;
+parser v2 produced 163 compilable, 83 noncompilable, and 254 no-candidate
+results.
 
 Real denial probes are opt-in locally and always run when `CI` is set, so
 they fail loudly in CI instead of silently skipping:

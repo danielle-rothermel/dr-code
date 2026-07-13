@@ -18,7 +18,7 @@ from dr_code.text_transforms import (
     normalize_text,
     strip_code_fences,
     strip_markdown_wrappers,
-    unescape_literal_newlines,
+    recover_escaped_python,
 )
 
 
@@ -102,11 +102,11 @@ def apply_cleaning_with_trace(
         normalize_node.children.append(fallback_node)
 
     if not candidates and unescape_fallback:
-        unescaped = unescape_literal_newlines(normalized)
+        unescaped = recover_escaped_python(normalized)
         if unescaped is not None:
             unescape_node = ExtractionTraceNode(
                 kind=TraceNodeKind.TRANSFORM,
-                name="unescape_literal_newlines",
+                name="recover_escaped_python",
                 before_text=normalized,
                 after_text=unescaped,
             )

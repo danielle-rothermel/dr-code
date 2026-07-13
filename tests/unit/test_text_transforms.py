@@ -11,10 +11,10 @@ from dr_code.text_transforms import (
     normalize_line_endings,
     normalize_smart_quotes,
     normalize_text,
+    recover_escaped_python,
     strip_code_fences,
     strip_markdown_wrappers,
     strip_trailing_whitespace,
-    unescape_literal_newlines,
     wrap_code_fence,
 )
 
@@ -88,22 +88,38 @@ def test_normalize_smart_quotes_restores_ascii() -> None:
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        (r"line one\nline two", "line one\nline two"),
-        (r"line one\rline two", "line one\rline two"),
-        (r"def f():\n\treturn 1", "def f():\n\treturn 1"),
+        (r"prose\ndef f():\n\treturn 1", "def f():\n\treturn 1"),
+        (r"prose\rdef f():\r\treturn 1", "def f():\n\treturn 1"),
+        (
+            r"prose\r\ndef f():\r\n\treturn 1",
+            "def f():\n\treturn 1",
+        ),
         (r'"def f():\n    return \"ok\""', 'def f():\n    return "ok"'),
     ],
 )
-def test_unescape_literal_newlines_decodes_supported_shapes(
+def test_recover_escaped_python_decodes_supported_shapes(
     source: str,
     expected: str,
 ) -> None:
-    assert unescape_literal_newlines(source) == expected
+    assert recover_escaped_python(source) == expected
 
 
-def test_unescape_literal_newlines_preserves_escaped_backslash() -> None:
-    assert unescape_literal_newlines(r"value\\n") is None
-    assert unescape_literal_newlines("no escapes") is None
+def test_recover_escaped_python_requires_python_anchor() -> None:
+    assert recover_escaped_python(r"line one\nline two") is None
+    assert recover_escaped_python(r"value\\n") is None
+    assert recover_escaped_python("no escapes") is None
+
+
+def test_recover_escaped_python_preserves_string_literal_escapes() -> None:
+    source = (
+        r"prose\ndef separators(values):\n"
+        r'\treturn "\n".join(values), "\t", "\r"'
+    )
+
+    assert recover_escaped_python(source) == (
+        "def separators(values):\n"
+        '\treturn "\\n".join(values), "\\t", "\\r"'
+    )
 
 
 def test_drop_if_name_splits_before_main_guard() -> None:
