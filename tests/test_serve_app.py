@@ -20,11 +20,11 @@ def test_health_reports_ok(client: TestClient) -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_profiles_lists_both_v1_profiles(client: TestClient) -> None:
+def test_profiles_lists_current_profiles(client: TestClient) -> None:
     response = client.get("/profiles")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["parser_version"] == "v1"
+    assert payload["parser_version"] == "v2"
     assert set(payload["profile_ids"]) == {
         "humaneval-best-effort",
         "humaneval-field-marker",

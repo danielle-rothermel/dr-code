@@ -11,6 +11,7 @@ from dr_code.text_transforms import (
     normalize_line_endings,
     normalize_smart_quotes,
     normalize_text,
+    recover_escaped_python,
     strip_code_fences,
     strip_markdown_wrappers,
     strip_trailing_whitespace,
@@ -82,6 +83,43 @@ def test_strip_markdown_wrappers_removes_one_marker_per_line() -> None:
 
 def test_normalize_smart_quotes_restores_ascii() -> None:
     assert normalize_smart_quotes("s = ‘a’ + “b”") == "s = 'a' + \"b\""
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (r"prose\ndef f():\n\treturn 1", "def f():\n\treturn 1"),
+        (r"prose\rdef f():\r\treturn 1", "def f():\n\treturn 1"),
+        (
+            r"prose\r\ndef f():\r\n\treturn 1",
+            "def f():\n\treturn 1",
+        ),
+        (r'"def f():\n    return \"ok\""', 'def f():\n    return "ok"'),
+    ],
+)
+def test_recover_escaped_python_decodes_supported_shapes(
+    source: str,
+    expected: str,
+) -> None:
+    assert recover_escaped_python(source) == expected
+
+
+def test_recover_escaped_python_requires_python_anchor() -> None:
+    assert recover_escaped_python(r"line one\nline two") is None
+    assert recover_escaped_python(r"value\\n") is None
+    assert recover_escaped_python("no escapes") is None
+
+
+def test_recover_escaped_python_preserves_string_literal_escapes() -> None:
+    source = (
+        r"prose\ndef separators(values):\n"
+        r'\treturn "\n".join(values), "\t", "\r"'
+    )
+
+    assert recover_escaped_python(source) == (
+        "def separators(values):\n"
+        '\treturn "\\n".join(values), "\\t", "\\r"'
+    )
 
 
 def test_drop_if_name_splits_before_main_guard() -> None:

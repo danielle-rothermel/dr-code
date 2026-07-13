@@ -3,6 +3,7 @@ import pytest
 from dr_code.humaneval.code_extraction import ExtractionTraceNode
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
+    PARSER_PROFILE_VERSION,
     STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
     CandidateStatus,
     extract_code_with_profile,
@@ -62,7 +63,7 @@ def first_node(
 def test_explain_returns_parser_emitted_trace() -> None:
     profile = resolve_parser_profile(
         parser_profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-        parser_version="v1",
+        parser_version=PARSER_PROFILE_VERSION,
     )
     canonical = extract_code_with_profile(FENCED_TEXT, profile=profile)
     explanation = explain_extraction(FENCED_TEXT)

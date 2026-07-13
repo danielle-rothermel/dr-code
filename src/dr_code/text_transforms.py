@@ -9,6 +9,7 @@ Python (and raise `SyntaxError` when it is not), see
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from typing import Final
@@ -24,6 +25,9 @@ MARKDOWN_WRAPPER_RE: Final[re.Pattern[str]] = re.compile(
 )
 BLANK_RUN_RE: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
 RETURN_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*return(?:\b|$)")
+PYTHON_ANCHOR_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:def |async def |class |import |from |@|if __name__)"
+)
 
 #: ASCII quote -> (left, right) Unicode "smart" counterparts.
 SMART_QUOTES: Final[dict[str, tuple[str, str]]] = {
@@ -99,6 +103,145 @@ def normalize_smart_quotes(source: str) -> str:
     return source.translate(_SMART_QUOTE_TRANSLATION)
 
 
+def recover_escaped_python(source: str) -> str | None:
+    """Recover structurally escaped Python without changing its strings.
+
+    Whole-response JSON strings use JSON's own escaping rules. Other input is
+    recovered only after a top-level Python anchor is found at a real or
+    escaped line boundary. From that anchor onward, structural ``\\n``,
+    ``\\r``, CRLF, and indentation ``\\t`` escapes are decoded only while the
+    scanner is outside Python string literals. Ambiguous escapes inside a
+    string are preserved, so unsupported shapes fail extraction instead of
+    silently changing candidate semantics.
+    """
+    stripped = source.strip()
+    if stripped.startswith('"') and stripped.endswith('"'):
+        try:
+            decoded = json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        else:
+            if isinstance(decoded, str) and decoded != source:
+                return decoded
+
+    anchor_start, opening_fence = _escaped_python_anchor(source)
+    if anchor_start is None:
+        return None
+
+    recovered, changed = _decode_python_structure(source[anchor_start:])
+    if not changed:
+        return None
+    if opening_fence is not None:
+        return f"{opening_fence}\n{recovered}"
+    return recovered
+
+
+def _escaped_python_anchor(source: str) -> tuple[int | None, str | None]:
+    line_start = 0
+    previous_line: str | None = None
+    index = 0
+    while True:
+        if PYTHON_ANCHOR_RE.match(source, line_start):
+            opening_fence = None
+            if previous_line is not None:
+                marker = fence_marker(previous_line)
+                if marker is not None:
+                    opening_fence = previous_line
+            return line_start, opening_fence
+
+        if index >= len(source):
+            return None, None
+        break_length = _line_break_length(source, index)
+        if break_length is None:
+            index += 1
+            continue
+        previous_line = source[line_start:index]
+        line_start = index + break_length
+        index = line_start
+
+
+def _decode_python_structure(source: str) -> tuple[str, bool]:
+    decoded_parts: list[str] = []
+    quote: str | None = None
+    triple_quoted = False
+    in_comment = False
+    changed = False
+    index = 0
+    while index < len(source):
+        character = source[index]
+
+        if quote is not None:
+            if source.startswith("\\", index):
+                decoded_parts.append(character)
+                index += 1
+                if index < len(source):
+                    decoded_parts.append(source[index])
+                    index += 1
+                continue
+            closing = quote * (3 if triple_quoted else 1)
+            if source.startswith(closing, index):
+                decoded_parts.append(closing)
+                index += len(closing)
+                quote = None
+                triple_quoted = False
+                continue
+            decoded_parts.append(character)
+            index += 1
+            continue
+
+        break_length = _line_break_length(source, index)
+        if break_length is not None:
+            decoded_parts.append("\n")
+            index += break_length
+            in_comment = False
+            changed = changed or break_length > 1
+            continue
+
+        if _is_unpaired_escape(source, index, "t"):
+            decoded_parts.append("\t")
+            index += 2
+            changed = True
+            continue
+
+        if not in_comment and character == "#":
+            in_comment = True
+        elif not in_comment and character in {'"', "'"}:
+            quote = character
+            triple_quoted = source.startswith(character * 3, index)
+            opening = character * (3 if triple_quoted else 1)
+            decoded_parts.append(opening)
+            index += len(opening)
+            continue
+
+        decoded_parts.append(character)
+        index += 1
+
+    return "".join(decoded_parts), changed
+
+
+def _line_break_length(source: str, index: int) -> int | None:
+    if source.startswith("\n", index):
+        return 1
+    if _is_unpaired_escape(source, index, "r"):
+        if _is_unpaired_escape(source, index + 2, "n"):
+            return 4
+        return 2
+    if _is_unpaired_escape(source, index, "n"):
+        return 2
+    return None
+
+
+def _is_unpaired_escape(source: str, index: int, escaped: str) -> bool:
+    if index < 0 or not source.startswith(f"\\{escaped}", index):
+        return False
+    preceding_slashes = 0
+    cursor = index - 1
+    while cursor >= 0 and source[cursor] == "\\":
+        preceding_slashes += 1
+        cursor -= 1
+    return preceding_slashes % 2 == 0
+
+
 def drop_if_name(text: str) -> list[str]:
     """Split `text` on `if __name__` guard lines, dropping the guards."""
     lines = text.split(LINE_SEP)
@@ -137,5 +280,6 @@ __all__ = [
     "strip_code_fences",
     "strip_markdown_wrappers",
     "strip_trailing_whitespace",
+    "recover_escaped_python",
     "wrap_code_fence",
 ]

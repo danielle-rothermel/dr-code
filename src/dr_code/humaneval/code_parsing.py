@@ -25,7 +25,12 @@ from dr_code.humaneval.code_extraction import (
 
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID = "humaneval-best-effort"
 STRICT_FIELD_MARKER_PARSER_PROFILE_ID = "humaneval-field-marker"
-PARSER_PROFILE_VERSION = "v1"
+LEGACY_PARSER_PROFILE_VERSION = "v1"
+PARSER_PROFILE_VERSION = "v2"
+SUPPORTED_PARSER_PROFILE_VERSIONS = {
+    LEGACY_PARSER_PROFILE_VERSION,
+    PARSER_PROFILE_VERSION,
+}
 FIELD_MARKER_NAME = "code"
 FIELD_MARKER_RE = re.compile(
     r"\[\[\s*##\s*(?P<field>[A-Za-z_][A-Za-z0-9_]*)\s*##\s*\]\]"
@@ -114,7 +119,7 @@ def resolve_parser_profile(
     parser_profile_id: str,
     parser_version: str,
 ) -> CodeParserProfile:
-    if parser_version != PARSER_PROFILE_VERSION:
+    if parser_version not in SUPPORTED_PARSER_PROFILE_VERSIONS:
         raise ValueError(
             f"unsupported parser profile version: {parser_version}"
         )
@@ -153,7 +158,11 @@ def extract_best_effort_code(
 ) -> CodeExtractionResult:
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
-    cleaning = apply_cleaning_with_trace(raw_submission, apply_dedent=True)
+    cleaning = apply_cleaning_with_trace(
+        raw_submission,
+        apply_dedent=True,
+        unescape_fallback=profile.version != LEGACY_PARSER_PROFILE_VERSION,
+    )
     if not raw_submission.strip():
         trace = build_extraction_trace(
             profile=profile,

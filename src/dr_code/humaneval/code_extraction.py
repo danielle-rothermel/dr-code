@@ -18,6 +18,7 @@ from dr_code.text_transforms import (
     normalize_text,
     strip_code_fences,
     strip_markdown_wrappers,
+    recover_escaped_python,
 )
 
 
@@ -55,16 +56,21 @@ class CleaningTrace(BaseModel):
 def apply_cleaning(
     gen_str: str,
     apply_dedent: bool = False,
+    *,
+    unescape_fallback: bool = True,
 ) -> list[str]:
     return apply_cleaning_with_trace(
         gen_str,
         apply_dedent=apply_dedent,
+        unescape_fallback=unescape_fallback,
     ).candidates
 
 
 def apply_cleaning_with_trace(
     gen_str: str,
     apply_dedent: bool = False,
+    *,
+    unescape_fallback: bool = True,
 ) -> CleaningTrace:
     normalized = normalize_text(gen_str)
     normalize_node = ExtractionTraceNode(
@@ -94,6 +100,40 @@ def apply_cleaning_with_trace(
         )
 
         normalize_node.children.append(fallback_node)
+
+    if not candidates and unescape_fallback:
+        unescaped = recover_escaped_python(normalized)
+        if unescaped is not None:
+            unescape_node = ExtractionTraceNode(
+                kind=TraceNodeKind.TRANSFORM,
+                name="recover_escaped_python",
+                before_text=normalized,
+                after_text=unescaped,
+            )
+            fallback_blocks, candidate_blocks_node = (
+                _candidate_blocks_with_trace(unescaped)
+            )
+            candidates, unescaped_initial_node = _trace_candidate_pass(
+                fallback_blocks,
+                apply_dedent=apply_dedent,
+                pass_name="unescaped_initial_pass",
+            )
+            candidate_blocks_node.children = [unescaped_initial_node]
+            unescape_node.children.append(candidate_blocks_node)
+
+            if not candidates:
+                stripped_blocks = [
+                    strip_markdown_wrappers(block) for block in fallback_blocks
+                ]
+                candidates, unescaped_wrapper_node = _trace_candidate_pass(
+                    stripped_blocks,
+                    apply_dedent=apply_dedent,
+                    pass_name="unescaped_markdown_wrapper_fallback",
+                    original_blocks=fallback_blocks,
+                )
+                unescape_node.children.append(unescaped_wrapper_node)
+
+            normalize_node.children.append(unescape_node)
 
     return CleaningTrace(candidates=candidates, roots=[normalize_node])
 
