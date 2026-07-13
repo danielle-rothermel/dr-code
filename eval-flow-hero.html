@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eval-flow hero</title>
+<style>
+  :root{
+    --ink:#1b2333; --muted:#5b6577;
+    --accent:#3b5bdb; --accent-soft:#eef1fd;
+    --green:#2b8a3e; --green-soft:#e8f5ec;
+    --blue:#1866b4; --blue-soft:#e9f2fb;
+    --faint:#aab3c2;
+  }
+  body{margin:0; background:#fff; color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  svg{display:block; width:100%; max-width:1600px; margin:0 auto}
+  svg text{font-family:inherit}
+</style>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<svg viewBox="0 0 1340 320" role="img" aria-label="input flows into preprocessing; a trace nested in a trace-shaped outline sits in a dashed contract band between the systems; records flow out of metrics; definitions attach from above">
+  <defs><marker id="ahC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0 0 L10 5 L0 10 Z" fill="#8b96a9"/></marker></defs>
+
+  <!-- the band: everything this doc owns -->
+  <rect x="535" y="62" width="250" height="230" rx="10" fill="var(--accent-soft)" opacity=".55" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 4"/>
+  <text x="660" y="88" text-anchor="middle" font-size="11" font-weight="800" letter-spacing="2" fill="var(--accent)">THE CONTRACT</text>
+
+  <rect x="280" y="20" width="120" height="34" rx="17" fill="#fff" stroke="var(--faint)" stroke-width="1.25"/>
+  <text x="340" y="42" text-anchor="middle" font-size="12.5" font-style="italic" fill="var(--muted)">definition<tspan dy="3" font-size="9">P</tspan></text>
+  <line x1="340" y1="58" x2="340" y2="93" stroke="var(--faint)" stroke-width="1.5"/>
+  <circle cx="340" cy="99" r="5" fill="#fff" stroke="var(--faint)" stroke-width="1.5"/>
+  <rect x="910" y="20" width="120" height="34" rx="17" fill="#fff" stroke="var(--faint)" stroke-width="1.25"/>
+  <text x="970" y="42" text-anchor="middle" font-size="12.5" font-style="italic" fill="var(--muted)">definition<tspan dy="3" font-size="9">M</tspan></text>
+  <line x1="970" y1="58" x2="970" y2="93" stroke="var(--faint)" stroke-width="1.5"/>
+  <circle cx="970" cy="99" r="5" fill="#fff" stroke="var(--faint)" stroke-width="1.5"/>
+
+  <rect x="30" y="163" width="110" height="34" rx="17" fill="#fff" stroke="#33405c" stroke-width="2"/>
+  <text x="85" y="185" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1b2333">input</text>
+  <line x1="146" y1="180" x2="174" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+
+  <path d="M180 105 H500 V162 a18 18 0 0 1 0 36 V255 H180 Z"
+        fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="340" y="186" text-anchor="middle" font-size="17" font-weight="700" fill="var(--green)">Preprocessing</text>
+
+  <path d="M810 105 H1130 V255 H810 V198 a18 18 0 0 0 0 -36 Z"
+        fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="978" y="186" text-anchor="middle" font-size="17" font-weight="700" fill="var(--blue)">Metrics extraction</text>
+
+  <line x1="526" y1="180" x2="552" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+  <text x="655" y="138" text-anchor="middle" font-size="12" font-weight="700" fill="var(--accent)">trace-shaped</text>
+  <path d="M560 148 H750 V163 a17 17 0 0 1 0 34 V212 H560 Z"
+        fill="#fff" stroke="var(--accent)" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round"/>
+  <path d="M590 160 H710 V169 a11 11 0 0 1 0 22 V200 H590 Z"
+        fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+  <text x="650" y="185" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--accent)">trace</text>
+  <line x1="775" y1="180" x2="802" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+
+  <line x1="1130" y1="180" x2="1164" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+  <rect x="1170" y="163" width="118" height="34" rx="17" fill="#fff" stroke="#33405c" stroke-width="2"/>
+  <text x="1229" y="185" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1b2333">records</text>
+</svg>
+</body>
+</html>

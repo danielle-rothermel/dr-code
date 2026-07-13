@@ -1,0 +1,39 @@
+@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap");
+
+:root {
+  --font-sans: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+.card .decision,
+.grade .g-name,
+.byline,
+.card .id,
+.layer-head h2,
+.section-head h2,
+th,
+.cb-head,
+nav.toc .brand,
+nav.toc .g {
+  font-family: var(--font-system);
+}
+
+code,
+pre,
+.chipcloud .adapter {
+  font-family: var(--font-mono);
+}
+
+code,
+.chipcloud .adapter {
+  font-size: 75%;
+}

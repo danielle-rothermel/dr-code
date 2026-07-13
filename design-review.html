@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>dr-code · Codebase Design Review</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --surface:#ffffff; --ink:#1b2333; --muted:#5b6577; --line:#e3e8ef;
+    --accent:#1866b4; --accent-soft:#e9f2fb;
+    --green:#2b8a3e; --green-soft:#e8f5ec; --green-line:#bfe3c8;
+    --amber:#9a6700; --amber-soft:#fff6e0; --amber-line:#f0dfa8;
+    --red:#c0392b;  --red-soft:#fdeceb;  --red-line:#f2c4bf;
+    --blue:#1866b4; --blue-soft:#e9f2fb; --blue-line:#c3dcf3;
+    --code-bg:#f8f9fc;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:grid; grid-template-columns:270px minmax(0,1fr);
+  }
+  /* ---------- TOC ---------- */
+  nav.toc{
+    position:sticky; top:0; height:100vh; overflow-y:auto;
+    background:var(--surface); border-right:1px solid var(--line);
+    padding:28px 20px; font-size:14px;
+  }
+  nav.toc .brand{font-weight:700; font-size:15px; letter-spacing:.02em; margin-bottom:2px}
+  nav.toc .sub{color:var(--muted); font-size:12px; margin-bottom:18px}
+  nav.toc a{display:block; color:var(--ink); text-decoration:none; padding:6px 10px; border-radius:7px; margin-bottom:2px}
+  nav.toc a:hover{background:var(--accent-soft); color:var(--accent)}
+  nav.toc .g{margin-top:14px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); padding:0 10px}
+  /* ---------- main ---------- */
+  main{max-width:2320px; padding:36px 56px 90px; width:100%}
+  h1{font-size:30px; line-height:1.25; margin:0 0 6px}
+  h2{font-size:23px; margin:0 0 4px; scroll-margin-top:20px}
+  h3{font-size:17px; margin:0 0 8px}
+  p{margin:0 0 12px}
+  section{margin-bottom:52px}
+  .section-head{display:flex; align-items:baseline; gap:14px; border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:22px}
+  .byline{margin:2px 0 26px; color:var(--muted); font-size:13px; font-weight:300; letter-spacing:.03em}
+  .key{color:var(--accent)}
+  /* ---------- verdict ---------- */
+  .verdict{
+    background:var(--surface); border:1px solid var(--line); border-left:6px solid var(--accent);
+    border-radius:12px; padding:22px 28px; margin-bottom:22px;
+  }
+  .verdict h2{border:none; margin-bottom:8px}
+  .grades{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:18px}
+  .grade{border:1px solid var(--line); border-radius:10px; padding:14px 18px; background:#fbfcfe}
+  .grade .g-letter{font-size:26px; font-weight:800}
+  .grade .g-name{font-weight:650; margin-top:2px}
+  .grade .g-note{font-size:13px; color:var(--muted); margin-top:4px}
+  .grade.a{border-top:4px solid var(--green)} .grade.a .g-letter{color:var(--green)}
+  .grade.b{border-top:4px solid var(--amber)} .grade.b .g-letter{color:var(--amber)}
+  /* ---------- cards & grids ---------- */
+  .cols2{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px}
+  .cols3{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px}
+  .cols4{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:18px}
+  @media (max-width:1500px){ .cols3,.cols4{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  @media (max-width:1100px){ body{grid-template-columns:1fr} nav.toc{display:none} .cols2,.cols3,.cols4,.grades{grid-template-columns:1fr} main{padding:24px}}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:20px 24px}
+  .card h3{display:flex; align-items:center; gap:10px; color:var(--ink)}
+  .full{grid-column:1 / -1}
+  /* ---------- code ---------- */
+  .codeblock{background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:14px 0}
+  .codeblock .cb-head{display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:7px 14px; background:#f1f4f9; border-bottom:1px solid var(--line);
+    font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--muted)}
+  .cb-head .path{font-weight:600; color:#31405c}
+  pre{margin:0; padding:14px 16px; overflow-x:auto; background:var(--code-bg)}
+  code{font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  code .k{color:#c2185b; font-weight:600} code .s{color:#0b6e2e} code .c{color:#7a828e; font-style:italic}
+  code .n{color:#005cc5} code .d{color:#b45309} code .f{color:#6f42c1; font-weight:600}
+  .inline, td code, li code, p code{background:#eef1f6; border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:.86em}
+  /* ---------- tables ---------- */
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:14.5px}
+  th,td{padding:9px 14px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  th{background:#f1f4f9; font-size:12.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+  td.num{text-align:right; font-variant-numeric:tabular-nums}
+  /* ---------- glossary ---------- */
+  .term{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:12px 16px}
+  .term b{color:var(--ink)}
+  .term .def{font-size:13.5px; color:var(--muted); margin-top:2px}
+  /* ---------- deep/shallow figure ---------- */
+  .ds-fig{display:flex; gap:40px; align-items:flex-end; margin:10px 0 6px}
+  .ds{flex:1; text-align:center}
+  .ds .iface{border:2px solid var(--ink); border-bottom:none; background:var(--accent-soft); font-size:12.5px; padding:6px; font-weight:600}
+  .ds .impl{border:2px solid var(--ink); background:#fff; font-size:12.5px; padding:6px; display:flex; align-items:center; justify-content:center; color:var(--muted)}
+  .ds.deep .iface{width:46%; margin:0 auto}
+  .ds.deep .impl{height:150px}
+  .ds.shallow .iface{width:100%; padding:14px 6px}
+  .ds.shallow .impl{height:34px}
+  .ds .cap{font-size:13px; margin-top:8px; color:var(--muted)}
+  /* ---------- flow diagrams (css) ---------- */
+  .flow{display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:12px 0}
+  .flow .node{background:var(--surface); border:1.5px solid #9aa7bd; border-radius:9px; padding:8px 14px; font-size:13.5px; text-align:center; line-height:1.35}
+  .flow .node small{display:block; color:var(--muted); font-size:11.5px}
+  .flow .node.hot{border-color:var(--green); background:var(--green-soft)}
+  .flow .node.warn{border-color:var(--amber); background:var(--amber-soft)}
+  .flow .node.bad{border-color:var(--red); background:var(--red-soft)}
+  .flow .node.ext{border-style:dashed}
+  .flow .arr{color:#8b96a9; font-size:19px; padding:0 2px}
+  .chipcloud{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0}
+  .chipcloud .adapter{font:12px ui-monospace,Menlo,monospace; background:#fff; border:1px solid #c6cfdd; border-radius:6px; padding:3px 8px}
+  .chipcloud .adapter.deleg{background:var(--blue-soft); border-color:var(--blue-line)}
+  /* ---------- task split figure ---------- */
+  .split-fig{display:grid; grid-template-columns:1fr 60px 1fr; gap:0; align-items:center}
+  .stackbox{border:2px solid var(--ink); border-radius:10px; overflow:hidden}
+  .stackbox .seg{padding:10px 16px; font-size:13.5px; border-bottom:1.5px dashed #b9c2d0}
+  .stackbox .seg:last-child{border-bottom:none}
+  .seg.ok{background:var(--green-soft)} .seg.mid{background:var(--amber-soft)} .seg.hotred{background:var(--red-soft)}
+  .split-arrow{text-align:center; font-size:30px; color:#8b96a9}
+  .minibox{border:1.5px solid #9aa7bd; border-radius:9px; padding:10px 14px; font-size:13.5px; background:var(--surface); margin-bottom:10px}
+  .minibox b{display:block}
+  .minibox small{color:var(--muted)}
+  /* ---------- findings ---------- */
+  .sev{font-weight:800; font-size:12px; letter-spacing:.05em}
+  .sev.high{color:var(--red)} .sev.med{color:var(--amber)} .sev.low{color:var(--blue)} .sev.inf{color:var(--muted)}
+  .ok-mark{color:var(--green); font-weight:700}
+  .x-mark{color:var(--red); font-weight:700}
+  .mix-mark{color:var(--amber); font-weight:700}
+  figure{margin:0 0 10px}
+  figcaption{font-size:13px; color:var(--muted); margin-top:8px}
+  .callout{border-left:4px solid var(--blue); background:var(--blue-soft); border-radius:0 8px 8px 0; padding:12px 18px; font-size:14.5px; margin:14px 0}
+  .callout.warn{border-color:var(--amber); background:var(--amber-soft)}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  svg .nodebox{fill:#fff; stroke:#9aa7bd; stroke-width:1.5; rx:9}
+  svg .lbl{font-size:14px; fill:#1b2333}
+  svg .sub{font-size:11.5px; fill:#5b6577}
+  svg .edge{stroke:#9aa7bd; stroke-width:1.6; fill:none; marker-end:url(#arr)}
+  svg .edge.faint{stroke:#c9d2df; stroke-dasharray:4 4}
+  svg .edge.dash{stroke-dasharray:6 5}
+</style>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+
+<nav class="toc">
+  <div class="brand">Codebase Design Review</div>
+  <a href="#verdict">Verdict</a>
+  <a href="#rubric">The measuring stick</a>
+  <a href="#map">System map</a>
+  <div class="g">Areas</div>
+  <a href="#core">Core library grid</a>
+  <a href="#synthetic">synthetic/</a>
+  <a href="#humaneval">humaneval/</a>
+  <a href="#serve">serve/ &amp; viewer/</a>
+  <div class="g">Cross-cutting</div>
+  <a href="#tests">Test-surface audit</a>
+  <a href="#ledger">Findings ledger</a>
+</nav>
+
+<main>
+
+<h1>Codebase Design Review</h1>
+<div class="byline">dr-code · 2026-07-13</div>
+
+<!-- ══════════════════════════ VERDICT ══════════════════════════ -->
+<section id="verdict">
+  <div class="verdict">
+    <h2>Verdict: strong adherence, with the violations concentrated in one module and its tests</h2>
+    <p>
+      The repo has <span class="key">deep pure-function modules</span>, a <span class="key">22-adapter corruption seam</span>,
+      a <span class="key">deep sandbox</span>, thin adapters, curated public surfaces, and an acyclic dependency graph.
+      Most problems center on <span class="key"><code>humaneval/task.py</code></span>: four responsibilities in 1,026 lines,
+      a <span class="key">monkeypatched sandbox dependency</span>, and tests coupled to implementation details.
+    </p>
+    <div class="grades">
+      <div class="grade a"><div class="g-letter">A</div><div class="g-name">Core library grid</div>
+        <div class="g-note">deep modules with tested error contracts</div></div>
+      <div class="grade a"><div class="g-letter">A−</div><div class="g-name">synthetic/</div>
+        <div class="g-note">22 adapters, injectable builder, thin CLI</div></div>
+      <div class="grade b"><div class="g-letter">B+</div><div class="g-name">serve/ &amp; viewer/</div>
+        <div class="g-note">thin HTTP adapter; schema-only viewer contract</div></div>
+      <div class="grade b"><div class="g-letter">B−</div><div class="g-name">humaneval/</div>
+        <div class="g-note">deep sandbox; overloaded task.py; hardcoded seam</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ RUBRIC ══════════════════════════ -->
+<section id="rubric">
+  <div class="section-head"><h2>The measuring stick</h2></div>
+  <div class="cols2">
+    <div>
+      <div class="cols2" style="gap:12px">
+        <div class="term"><b>Module</b><div class="def">anything with an interface and an implementation — function, class, package, or slice</div></div>
+        <div class="term"><b>Interface</b><div class="def">everything a caller must know: signature <em>plus</em> invariants, ordering, error modes, config</div></div>
+        <div class="term"><b>Depth</b><div class="def">behaviour a caller can exercise per unit of interface learned</div></div>
+        <div class="term"><b>Seam</b><div class="def">where behaviour can be altered without editing in place — where the interface lives</div></div>
+        <div class="term"><b>Port</b><div class="def">dependency-facing interface at a seam; adapters are injected to satisfy it</div></div>
+        <div class="term"><b>Adapter</b><div class="def">a concrete thing filling a slot at a seam — role, not substance</div></div>
+        <div class="term"><b>Leverage</b><div class="def">callers: one implementation pays back across N call sites and M tests</div></div>
+        <div class="term"><b>Locality</b><div class="def">maintainers: change, bugs, and verification concentrate in one place</div></div>
+      </div>
+      <div class="callout" style="margin-top:16px">
+        <span class="key">Depth belongs to the interface.</span> A module earns its place when deleting it moves
+        complexity to callers. <span class="key">Tests should use the public seam.</span>
+        <span class="key">Two adapters prove a seam is real.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Deep modules hide complexity behind small interfaces.</h3>
+      <div class="ds-fig">
+        <div class="ds deep">
+          <div class="iface">small interface</div>
+          <div class="impl">lots of hidden behaviour</div>
+          <div class="cap"><b>Deep</b> — e.g. <code>run_python_in_sandbox</code>: 3 kwargs fronting ~300 LOC of container hardening</div>
+        </div>
+        <div class="ds shallow">
+          <div class="iface">large interface — many methods, complex params</div>
+          <div class="impl">thin body</div>
+          <div class="cap"><b>Shallow</b> — e.g. <code>for_loop_names</code>: a tuple-of-strings contract as complex as its body</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ SYSTEM MAP ══════════════════════════ -->
+<section id="map">
+  <div class="section-head"><h2>System map</h2></div>
+  <div class="card full">
+    <figure>
+      <svg viewBox="0 0 1560 665" width="100%" role="img" aria-label="dr-code architecture layers">
+        <defs><marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0,0 L8,4.5 L0,9 z" fill="#8b96a9"/></marker></defs>
+
+        <!-- core band -->
+        <rect x="66" y="500" width="1428" height="145" rx="12" fill="#f1f4f9" stroke="#e3e8ef"/>
+        <text x="84" y="527" class="lbl" font-weight="700">dr_code core grid — shared substrate of pure functions (no upward imports)</text>
+        <rect x="90"  y="545" width="310" height="80" class="nodebox" rx="9"/>
+        <text x="106" y="575" class="lbl" font-weight="600">text_analysis</text><text x="106" y="595" class="sub">140 LOC · total: never raises</text>
+        <rect x="430" y="545" width="310" height="80" class="nodebox" rx="9"/>
+        <text x="446" y="575" class="lbl" font-weight="600">text_transforms</text><text x="446" y="595" class="sub">285 LOC · total: pass through unrepairable input</text>
+        <rect x="770" y="545" width="310" height="80" class="nodebox" rx="9"/>
+        <text x="786" y="575" class="lbl" font-weight="600">code_analysis</text><text x="786" y="595" class="sub">477 LOC · raises SyntaxError on bad input</text>
+        <rect x="1110" y="545" width="310" height="80" class="nodebox" rx="9"/>
+        <text x="1126" y="575" class="lbl" font-weight="600">code_transforms</text><text x="1126" y="595" class="sub">257 LOC · raises SyntaxError on bad input</text>
+
+        <!-- middle layer -->
+        <rect x="90" y="305" width="660" height="135" class="nodebox" rx="12" stroke="#1866b4" stroke-width="2"/>
+        <text x="110" y="335" class="lbl" font-weight="700">humaneval — evaluator (3,847 LOC)</text>
+        <text x="110" y="360" class="sub">sandbox · task · code_parsing · code_extraction · scoring · metrics · sampling</text>
+        <text x="110" y="380" class="sub">parsed_tests · parsed_code · import_inference · compression · profiles</text>
+        <text x="110" y="415" class="sub" fill="#2b8a3e">✓ curated __all__ (40 names), enforced by a test</text>
+
+        <rect x="830" y="305" width="600" height="135" class="nodebox" rx="12" stroke="#1866b4" stroke-width="2"/>
+        <text x="850" y="335" class="lbl" font-weight="700">synthetic — corruption dataset generator (1,570 LOC)</text>
+        <text x="850" y="360" class="sub">corruptions/ (22 adapters behind one port) · corruption_recipes</text>
+        <text x="850" y="380" class="sub">dataset_builder · humaneval_loader · models · names · cli</text>
+        <text x="850" y="415" class="sub" fill="#2b8a3e">✓ registry↔enum sync guarded by a test</text>
+
+        <!-- top layer -->
+        <rect x="90" y="105" width="370" height="105" class="nodebox" rx="12"/>
+        <text x="110" y="135" class="lbl" font-weight="700">serve — FastAPI thin adapter</text>
+        <text x="110" y="158" class="sub">POST /explain · /profiles · /health</text>
+        <text x="110" y="178" class="sub">[serve] extra keeps FastAPI out of base install</text>
+
+        <rect x="500" y="105" width="330" height="105" class="nodebox" rx="12"/>
+        <text x="520" y="135" class="lbl" font-weight="700">schemas.py — CLI</text>
+        <text x="520" y="158" class="sub">dumps JSON Schema for viewer codegen</text>
+        <text x="520" y="178" class="sub">python -m dr_code.schemas humaneval</text>
+
+        <rect x="950" y="95" width="480" height="115" class="nodebox" rx="12" stroke-dasharray="7 5"/>
+        <text x="970" y="125" class="lbl" font-weight="700">viewer/ — TypeScript workspace</text>
+        <text x="970" y="148" class="sub">not shipped in the wheel; consumes generated types only</text>
+        <text x="970" y="168" class="sub">gen:serve → openapi-typescript → serve.ts</text>
+        <text x="970" y="188" class="sub">gen:humaneval → humaneval.ts</text>
+
+        <!-- edges -->
+        <path class="edge" d="M275,210 L275,305"/>
+        <path class="edge" d="M665,210 L560,305"/>
+        <text x="590" y="255" class="sub">humaneval.task models</text>
+        <path class="edge dash" d="M950,140 L460,148"/>
+        <path class="edge dash" d="M950,175 L830,168"/>
+        <text x="620" y="95" class="sub">codegen only — no shared logic, JSON schemas are the whole contract</text>
+
+        <path class="edge" d="M300,440 L245,545"/>
+        <path class="edge" d="M420,440 L565,545"/>
+        <path class="edge" d="M540,440 L900,545"/>
+        <path class="edge" d="M660,440 L1245,545"/>
+        <path class="edge" d="M1000,440 L620,545"/>
+        <path class="edge" d="M1150,440 L1280,545"/>
+        <path class="edge" d="M830,372 L750,372"/>
+        <text x="758" y="360" class="sub">sampling contract (explicitly owned)</text>
+      </svg>
+      <figcaption>
+        The dependency graph is <span class="key">acyclic with no dead code</span>. Every core module has production
+        consumers. The sole sibling edge explicitly assigns its contract to <code>humaneval.sampling</code>.
+      </figcaption>
+    </figure>
+  </div>
+
+  <table style="margin-top:20px">
+    <tr><th>Area</th><th>Files</th><th style="text-align:right">LOC</th><th>Public surface style</th><th>Entry points</th></tr>
+    <tr><td><code>dr_code/*.py</code> (core grid + schemas CLI)</td><td>6</td><td class="num">1,228</td>
+        <td>per-module <code>__all__</code> (8–27 names); <b>top-level <code>__init__.py</code> is empty</b></td>
+        <td><code>python -m dr_code.schemas</code></td></tr>
+    <tr><td><code>dr_code/humaneval/</code></td><td>14</td><td class="num">3,847</td>
+        <td>curated façade: <code>__all__</code> of 40 names, test-enforced</td><td>library only</td></tr>
+    <tr><td><code>dr_code/synthetic/</code> (incl. 22 corruptions)</td><td>31</td><td class="num">1,570</td>
+        <td>façade re-exporting 14 names</td><td><code>python -m dr_code.synthetic build</code></td></tr>
+    <tr><td><code>dr_code/serve/</code></td><td>5</td><td class="num">~230</td>
+        <td>façade exporting exactly 2 names</td><td><code>python -m dr_code.serve</code> (serve, openapi)</td></tr>
+    <tr><td><code>viewer/</code></td><td>TS workspace</td><td class="num">—</td>
+        <td>consumes generated <code>serve.ts</code> / <code>humaneval.ts</code> only</td><td>pnpm</td></tr>
+  </table>
+  <p style="font-size:14px; color:var(--muted); margin-top:10px">
+    CLIs use <span class="key"><code>python -m</code></span>. The <code>[serve]</code> extra keeps HTTP dependencies optional.
+  </p>
+</section>
+
+<!-- ══════════════════════════ CORE GRID ══════════════════════════ -->
+<section id="core">
+  <div class="section-head"><h2>Core library grid</h2></div>
+
+  <div class="cols2">
+    <div>
+      <p>
+        The four core modules form a deliberate 2×2 grid. The <span class="key"><code>text_*</code> layer is total</span>:
+        it never raises on bad input. The <span class="key"><code>code_*</code> layer requires valid Python</span> and raises
+        <code>SyntaxError</code>. Docstrings state this contract; property tests enforce it.
+      </p>
+      <p>
+        <span class="key"><code>recover_escaped_python</code></span> exposes <code>str → str | None</code> over ~130 private
+        lines. <span class="key"><code>code_analysis</code> is a shared AST vocabulary</span>, not a grab-bag.
+        <span class="key"><code>code_transforms</code> provides string and tree APIs</span> for distinct callers.
+      </p>
+      <p>
+        Coupling is <span class="key">thin and one-directional</span>. The one runtime cross-edge is a documented deferred
+        import. The text and code halves <span class="key">do not duplicate logic</span>.
+      </p>
+      <div class="callout warn">
+        <span class="key"><code>src/dr_code/__init__.py</code> is empty</span>, leaving submodule namespacing implicit.
+        Add a docstring or a minimal curated surface.
+      </div>
+    </div>
+    <div>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">src/dr_code/text_transforms.py</span><span>lines 106–136 · deep module head</span></div>
+        <pre><code class="py">def recover_escaped_python(source: str) -&gt; str | None:
+    """Recover structurally escaped Python without changing its strings.
+
+    Whole-response JSON strings use JSON's own escaping rules. Other input is
+    recovered only after a top-level Python anchor is found at a real or
+    escaped line boundary. ... Ambiguous escapes inside a
+    string are preserved, so unsupported shapes fail extraction instead of
+    silently changing candidate semantics.
+    """
+    stripped = source.strip()
+    if stripped.startswith('"') and stripped.endswith('"'):
+        try:
+            decoded = json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        else:
+            if isinstance(decoded, str) and decoded != source:
+                return decoded
+
+    anchor_start, opening_fence = _escaped_python_anchor(source)
+    if anchor_start is None:
+        return None
+
+    recovered, changed = _decode_python_structure(source[anchor_start:])
+    ...</code></pre>
+      </div>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">tests/unit/test_text_transforms.py</span><span>lines 21–45 · the contract, tested as a property</span></div>
+        <pre><code class="py">GARBAGE_INPUTS = (
+    "",
+    "def broken(:\n",
+    "```\nunterminated fence",
+    "plain prose, no code at all",
+    "smart quotes and doubles\r\nCRLF\ttabs  \n\n\n\n",
+)
+
+@pytest.mark.parametrize("transform", TOTAL_TRANSFORMS, ids=lambda fn: fn.__name__)
+@pytest.mark.parametrize("source", GARBAGE_INPUTS)
+def test_text_transforms_are_total(transform, source: str) -&gt; None:
+    assert isinstance(transform(source), str)</code></pre>
+      </div>
+      <p style="font-size:14px; color:var(--muted)">
+        Unit tests import only <span class="key"><code>__all__</code> names</span> and test documented error behavior,
+        not private helpers.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ SYNTHETIC ══════════════════════════ -->
+<section id="synthetic">
+  <div class="section-head"><h2>synthetic/</h2></div>
+
+  <div class="card full">
+    <h3>Twenty-two corruption adapters share one deterministic interface.</h3>
+    <div class="flow">
+      <div class="node"><b>Recipe</b><small>pure data: name + tuple of CorruptionName</small></div>
+      <div class="arr">→</div>
+      <div class="node hot"><b>apply_recipe(recipe, source, rng)</b><small>the one fold — threads rng, merges notes</small></div>
+      <div class="arr">→</div>
+      <div class="node"><b>REGISTRY</b><small>dict[str, type[Corruption]] · enum-sync test-guarded</small></div>
+      <div class="arr">→</div>
+      <div class="node hot"><b>port: Corruption.apply(source, rng) → CorruptedSample</b><small>determinism invariant documented in the base class</small></div>
+    </div>
+    <div class="chipcloud">
+      <span class="adapter deleg">add_code_fences*</span><span class="adapter">add_prose_wrapper</span>
+      <span class="adapter">add_markdown_wrappers</span><span class="adapter">add_inline_backticks</span>
+      <span class="adapter deleg">add_smart_quotes*</span><span class="adapter deleg">add_crlf*</span>
+      <span class="adapter deleg">add_tabs*</span><span class="adapter">add_trailing_whitespace</span>
+      <span class="adapter">add_blank_lines</span><span class="adapter">add_indentation</span>
+      <span class="adapter">add_unicode_noise</span><span class="adapter">add_comments_noise</span>
+      <span class="adapter">add_dead_code</span><span class="adapter">add_type_annotations</span>
+      <span class="adapter deleg">add_multiple_solutions*</span><span class="adapter">truncate</span>
+      <span class="adapter">change_quote_style</span><span class="adapter">change_string_form</span>
+      <span class="adapter deleg">remove_imports*</span><span class="adapter">duplicate_imports</span>
+      <span class="adapter">mangle_import_lines</span><span class="adapter deleg">rename_locals*</span>
+    </div>
+    <p style="font-size:13.5px; color:var(--muted)">
+      <span class="key">22 adapters, one per file.</span> Seven delegate to core transforms instead of duplicating them.
+      <code>apply_recipe</code> uses <span class="key">one registry interface with no per-corruption branching</span>.
+    </p>
+  </div>
+
+  <div class="cols3" style="margin-top:22px">
+    <div>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">synthetic/corruptions/base.py</span><span>lines 12–29 · the port</span></div>
+        <pre><code class="py">class Corruption:
+    """Base class for synthetic corruptions.
+
+    Subclasses must declare:
+        NAME: the CorruptionName they implement.
+
+    The `apply()` method takes the original ground-truth source and a
+    `random.Random` instance (seeded by the dataset builder) and returns a
+    `CorruptedSample`.
+
+    Implementations must be deterministic given the rng: same source + same
+    rng state -&gt; same output.
+    """
+
+    NAME: ClassVar[CorruptionName]
+
+    def apply(self, source: str, rng: random.Random) -&gt; CorruptedSample:
+        raise NotImplementedError</code></pre>
+      </div>
+      <p style="font-size:14px">
+        <span class="key">Determinism is part of the interface.</span> One gap: the plain base class delays a missing
+        <code>apply</code> failure until call time; <code>abc.ABC</code> would fail at instantiation.
+      </p>
+    </div>
+    <div>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">synthetic/corruptions/add_code_fences.py</span><span>lines 22–32 · one adapter</span></div>
+        <pre><code class="py">class AddCodeFences(Corruption):
+    """Wrap the source in ``` with a randomly chosen tag (or none)."""
+
+    NAME: ClassVar[CorruptionName] = CorruptionName.ADD_CODE_FENCES
+
+    def apply(self, source: str, rng: random.Random) -&gt; CorruptedSample:
+        tag = rng.choice(_TAG_CHOICES)
+        return CorruptedSample(
+            corrupted_source=wrap_code_fence(source, tag.value),
+            notes=f"tag={tag.value!r}",
+        )</code></pre>
+      </div>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">tests/synthetic/test_corruptions.py</span><span>lines 67–79 · testing the seam, not the adapters' guts</span></div>
+        <pre><code class="py">for transform_name in transform_names:
+    transform_cls = REGISTRY[transform_name.value]
+    transform = transform_cls()
+    first = transform.apply(ground_truth, random.Random(42))
+    second = transform.apply(ground_truth, random.Random(42))
+
+    assert first == second
+
+def test_registry_covers_all_named_transforms() -&gt; None:
+    assert set(REGISTRY) == {t.value for t in CorruptionName}</code></pre>
+      </div>
+    </div>
+    <div>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">synthetic/dataset_builder.py</span><span>lines 64–81 · accepts dependencies, doesn't create them</span></div>
+        <pre><code class="py">def build_dataset(
+    tasks: Iterable[HumanEvalPlusTask] | None = None,
+    recipes: Iterable[Recipe] = RECIPES,
+    seed: int = 0,
+    prefer_snapshot: bool = True,
+) -&gt; list[SyntheticSample]:
+    """Build the full dataset list (in-memory).
+
+    If `tasks` is None, load HumanEvalPlus through the explicit
+    `prefer_snapshot` source choice.
+    """
+    if tasks is None:
+        tasks_iter = load_humaneval_plus(
+            prefer_snapshot=prefer_snapshot
+        )
+    else:
+        tasks_iter = tasks
+    return list(iter_dataset(tasks_iter, recipes, seed))</code></pre>
+      </div>
+      <p style="font-size:14px">
+        The small surface hides <span class="key">seed derivation, docstring stripping, RNG threading, dataset expansion,
+        and JSONL serialization</span>. Tests inject <code>tasks=</code> without network access. The CLI stays thin.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:20px">
+    Small adapters are an acceptable <span class="key">uniformity cost</span>. Manual enum/registry/recipe registration is
+    test-guarded. <span class="key"><code>load_humaneval_plus</code> hardcodes I/O</span>, forcing tests to monkeypatch private
+    loaders, but correctly refuses silent fallback to stale snapshots.
+  </div>
+</section>
+
+<!-- ══════════════════════════ HUMANEVAL ══════════════════════════ -->
+<section id="humaneval">
+  <div class="section-head"><h2>humaneval/</h2></div>
+
+  <div class="card full">
+    <h3><code>humaneval</code> is acyclic, with <code>task.py</code> as its oversized hub.</h3>
+    <figure>
+      <svg viewBox="0 0 1500 545" width="100%" role="img" aria-label="humaneval module DAG">
+        <defs><marker id="arr2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0,0 L8,4.5 L0,9 z" fill="#8b96a9"/></marker></defs>
+        <style>.e{stroke:#9aa7bd;stroke-width:1.5;fill:none;marker-end:url(#arr2)} .ef{stroke:#d3dae4;stroke-width:1.3;stroke-dasharray:4 4;fill:none;marker-end:url(#arr2)}</style>
+
+        <rect x="600" y="14" width="300" height="50" rx="9" fill="#e9f2fb" stroke="#1866b4" stroke-width="1.5"/>
+        <text x="750" y="35" text-anchor="middle" class="lbl" font-weight="700">__init__ façade</text>
+        <text x="750" y="53" text-anchor="middle" class="sub">__all__ = 40 names · test-enforced</text>
+
+        <rect x="360" y="108" width="170" height="46" class="nodebox"/>
+        <text x="445" y="128" text-anchor="middle" class="lbl" font-weight="600">scoring</text><text x="445" y="146" text-anchor="middle" class="sub">212 · deep, pure</text>
+        <rect x="950" y="108" width="170" height="46" class="nodebox"/>
+        <text x="1035" y="128" text-anchor="middle" class="lbl" font-weight="600">profiles</text><text x="1035" y="146" text-anchor="middle" class="sub">72 · config</text>
+
+        <rect x="180" y="198" width="170" height="46" class="nodebox"/>
+        <text x="265" y="218" text-anchor="middle" class="lbl" font-weight="600">code_parsing</text><text x="265" y="236" text-anchor="middle" class="sub">671 · deep, trace edge</text>
+        <rect x="600" y="198" width="170" height="46" class="nodebox"/>
+        <text x="685" y="218" text-anchor="middle" class="lbl" font-weight="600">sampling</text><text x="685" y="236" text-anchor="middle" class="sub">207 · HF/snapshot</text>
+        <rect x="930" y="198" width="170" height="46" class="nodebox"/>
+        <text x="1015" y="218" text-anchor="middle" class="lbl" font-weight="600">metrics</text><text x="1015" y="236" text-anchor="middle" class="sub">452 · deep</text>
+
+        <rect x="100" y="292" width="180" height="46" class="nodebox"/>
+        <text x="190" y="312" text-anchor="middle" class="lbl" font-weight="600">code_extraction</text><text x="190" y="330" text-anchor="middle" class="sub">300 · trace tree</text>
+        <rect x="560" y="288" width="260" height="54" rx="9" fill="#fff6e0" stroke="#9a6700" stroke-width="2"/>
+        <text x="690" y="310" text-anchor="middle" class="lbl" font-weight="700">task.py — 1,026 LOC</text>
+        <text x="690" y="330" text-anchor="middle" class="sub">4 responsibilities · 4 in-package dependents</text>
+        <rect x="1010" y="292" width="180" height="46" class="nodebox"/>
+        <text x="1100" y="312" text-anchor="middle" class="lbl" font-weight="600">metric_models</text><text x="1100" y="330" text-anchor="middle" class="sub">126 · payloads</text>
+
+        <rect x="60" y="400" width="180" height="46" class="nodebox"/>
+        <text x="150" y="420" text-anchor="middle" class="lbl" font-weight="600">import_inference</text><text x="150" y="438" text-anchor="middle" class="sub">155 · 1 public fn</text>
+        <rect x="330" y="400" width="170" height="46" class="nodebox"/>
+        <text x="415" y="420" text-anchor="middle" class="lbl" font-weight="600">parsed_code</text><text x="415" y="438" text-anchor="middle" class="sub">100 · → core grid</text>
+        <rect x="600" y="400" width="180" height="46" class="nodebox"/>
+        <text x="690" y="420" text-anchor="middle" class="lbl" font-weight="600">parsed_tests</text><text x="690" y="438" text-anchor="middle" class="sub">334 · leaks 8 helpers</text>
+        <rect x="870" y="400" width="170" height="46" rx="9" fill="#e8f5ec" stroke="#2b8a3e" stroke-width="2"/>
+        <text x="955" y="420" text-anchor="middle" class="lbl" font-weight="700">sandbox</text><text x="955" y="438" text-anchor="middle" class="sub">360 · deepest module</text>
+        <rect x="1130" y="400" width="170" height="46" class="nodebox"/>
+        <text x="1215" y="420" text-anchor="middle" class="lbl" font-weight="600">compression</text><text x="1215" y="438" text-anchor="middle" class="sub">65 · gzip/zstd</text>
+
+        <path class="ef" d="M660,64 L470,108"/><path class="ef" d="M840,64 L1015,108"/><path class="ef" d="M750,64 L700,198"/>
+        <path class="e" d="M420,154 L295,198"/><path class="e" d="M480,154 L640,288"/>
+        <path class="e" d="M990,154 L340,215"/><path class="e" d="M1030,154 L1020,198"/>
+        <path class="e" d="M685,244 L688,288"/>
+        <path class="e" d="M985,244 L825,300"/><path class="e" d="M1055,244 L1095,292"/><path class="e" d="M1085,244 L1215,400"/><path class="e" d="M960,235 L782,412"/>
+        <path class="e" d="M240,244 L200,292"/>
+        <path class="e" d="M180,338 L155,400"/>
+        <path class="e" d="M610,342 L470,404"/><path class="e" d="M690,342 L690,400"/><path class="e" d="M790,342 L920,400"/>
+        <path class="e" d="M1095,338 L780,418"/>
+      </svg>
+      <figcaption>
+        Solid arrows are imports; dashed arrows are façade re-exports. <span class="key">Four modules depend on
+        <code>task.py</code></span>, spreading its oversized surface. Only three modules reach the core grid.
+      </figcaption>
+    </figure>
+  </div>
+
+  <div class="cols2" style="margin-top:22px">
+    <div class="card">
+      <h3>The sandbox hides security mechanics behind three inputs.</h3>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">humaneval/sandbox.py</span><span>lines 62–84 · 3 kwargs fronting ~300 LOC</span></div>
+        <pre><code class="py">def run_python_in_sandbox(
+    *,
+    source: str,
+    input_json: str,
+    timeout_seconds: float,
+) -&gt; SandboxCompletedProcess:
+    """Run Python in a locked-down OCI container using bounded JSON IPC.
+
+    The runtime and image are trusted deployment dependencies. The image must
+    already exist locally: scored code can never trigger a registry pull.
+    """
+    payload = input_json.encode("utf-8")
+    if len(payload) &gt; MAX_SANDBOX_INPUT_BYTES:
+        raise SandboxError(
+            f"sandbox input exceeded {MAX_SANDBOX_INPUT_BYTES} bytes"
+        )
+    if timeout_seconds &lt;= 0 or not math.isfinite(timeout_seconds):
+        raise SandboxError("sandbox timeout must be finite and positive")
+
+    runtime = _resolve_runtime()
+    image = os.environ.get("DR_CODE_SANDBOX_IMAGE", SANDBOX_IMAGE)
+    _validate_image_reference(image)
+    _require_local_image(runtime, image)
+    ...</code></pre>
+      </div>
+      <p style="font-size:14.5px">
+        Three parameters hide <span class="key">runtime and image validation, locked-down execution, bounded IPC,
+        deadlines, forced teardown, and credential scrubbing</span>. Private helpers and typed errors keep mechanics
+        local while exposing failure modes.
+      </p>
+      <p style="font-size:14.5px">
+        <span class="key"><code>scoring.py</code> is equally deep</span>: four arguments return
+        <code>CompletedScore | HarnessFailure</code>, mapping every failure to a pure typed result.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>The sandbox runner is hardcoded instead of injected.</h3>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">humaneval/task.py + tests</span><span>the seam only exists via monkeypatch</span></div>
+        <pre><code class="py"># task.py:62-67 — dependency bound at import time
+from dr_code.humaneval.sandbox import (
+    CANDIDATE_KILL_RETURNCODES,
+    SandboxOutputLimitError,
+    SandboxTimeoutError,
+    run_python_in_sandbox,
+)
+
+# task.py:642-648 — the single call site, deep inside run_subprocess_batch
+completed = run_python_in_sandbox(
+    source=runner_source or runner_script(),
+    input_json=payload.model_dump_json(),
+    timeout_seconds=timeout_seconds,
+)
+
+# tests/humaneval/test_humaneval_primitives.py:193 — crossing the
+# seam by patching a module global
+monkeypatch.setattr(task_module, "run_python_in_sandbox", run_local_python)</code></pre>
+      </div>
+      <p style="font-size:14.5px">
+        <code>SandboxCompletedProcess</code> supports substitution, but <span class="key">the runner is imported rather
+        than injected</span>. Tests monkeypatch a module global and would break if the import style changed. Add one
+        defaulted parameter:
+      </p>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">recommended move</span><span>make the hypothetical seam real</span></div>
+        <pre><code class="py">def run_subprocess_batch(
+    ...,
+    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+) -&gt; ...:</code></pre>
+      </div>
+      <p style="font-size:14px; color:var(--muted)">
+        <span class="key">Docker and local-test adapters already exist</span>; the real seam simply is not injectable.
+      </p>
+    </div>
+  </div>
+
+  <div class="cols2" style="margin-top:22px">
+    <div class="card">
+      <h3><code>task.py</code> combines four unrelated interfaces.</h3>
+      <p style="font-size:14.5px">
+        <span class="key"><code>task.py</code> presents four interfaces</span>: deep models, test parsing, batch
+        orchestration, and a <span class="key">130-line runner embedded as a string</span>. The embedded program cannot be
+        linted or covered and is syntax-checked only at runtime.
+      </p>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">humaneval/task.py</span><span>lines 892–897 … 1024–1026</span></div>
+        <pre><code class="py">@cache
+def runner_script() -&gt; str:
+    return textwrap.dedent(
+        """
+        import json
+        import time
+        import traceback
+        ...            # ~120 more lines of embedded program
+        print(json.dumps(results))
+        """
+    )</code></pre>
+      </div>
+      <div class="split-fig">
+        <div>
+          <div style="font-size:13px; color:var(--muted); margin-bottom:6px">today: one module, four interfaces</div>
+          <div class="stackbox">
+            <div class="seg ok"><b>domain models</b> — HumanEvalTask, EvaluationTaskResult (deep ✓)</div>
+            <div class="seg mid"><b>test parsing</b> — parse_human_eval_tests, ~90 lines</div>
+            <div class="seg mid"><b>batch orchestration</b> — run_subprocess_batch, ~195 lines, sandbox call site</div>
+            <div class="seg hotred"><b>embedded runner script</b> — 130-line string literal</div>
+          </div>
+        </div>
+        <div class="split-arrow">→</div>
+        <div>
+          <div style="font-size:13px; color:var(--muted); margin-bottom:6px">suggested split: three small interfaces</div>
+          <div class="minibox"><b>models</b><small>task/result types — already deep, keep as the public face</small></div>
+          <div class="minibox"><b>parsed_tests (absorb)</b><small>parse_human_eval_tests moves next to the AST helpers it drives, and the helpers go private behind it</small></div>
+          <div class="minibox"><b>batch runner</b><small>orchestration + runner script as a real .py resource; sandbox injected here (finding #2)</small></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><code>parsed_tests</code> leaks helpers, while the trace is a product contract.</h3>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">humaneval/parsed_tests.py</span><span>lines 311–326 · interface as complex as the body</span></div>
+        <pre><code class="py">def for_loop_names(loop_node: ast.For) -&gt; tuple[str | None, str, str]:
+    target = loop_node.target
+    if (
+        isinstance(target, ast.Tuple)
+        and len(target.elts) == PAIR_TARGET_SIZE
+        and isinstance(target.elts[0], ast.Name)
+        and isinstance(target.elts[1], ast.Tuple)
+        and len(target.elts[1].elts) == PAIR_TARGET_SIZE
+        and isinstance(target.elts[1].elts[0], ast.Name)
+        and isinstance(target.elts[1].elts[1], ast.Name)
+    ):
+        return (
+            target.elts[0].id,
+            target.elts[1].elts[0].id,
+            target.elts[1].elts[1].id,
+        )</code></pre>
+      </div>
+      <p style="font-size:14.5px">
+        The models are deep, but <span class="key">about eight public AST helpers have one caller each</span>, loose tuple
+        contracts, and no <code>__all__</code>. Their interfaces cost as much to learn as their bodies.
+      </p>
+      <p style="font-size:14.5px">
+        <code>CodeExtractionResult.trace</code> mirrors the pipeline, but is also persisted, returned by
+        <code>POST /explain</code>, and rendered by the viewer. <span class="key">Its shape is a product contract</span>, so
+        pipeline refactors are interface changes. Internal tests should not casually pin node names.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ SERVE ══════════════════════════ -->
+<section id="serve">
+  <div class="section-head"><h2>serve/ &amp; viewer/</h2></div>
+
+  <div class="cols3">
+    <div class="card">
+      <h3>HTTP handlers delegate all domain logic.</h3>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">serve/app.py</span><span>lines 65–74 · unpack → one call → error map</span></div>
+        <pre><code class="py">@app.post("/explain", response_model=ExtractionTrace)
+def explain(request: ExplainRequest) -&gt; ExtractionTrace:
+    try:
+        return explain_extraction(
+            request.text,
+            profile_id=request.profile_id,
+            parser_version=request.parser_version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc</code></pre>
+      </div>
+      <p style="font-size:14.5px">
+        Handlers contain <span class="key">no parsing or business logic</span>. <code>create_app()</code> enables isolated
+        tests; CORS is localhost-only; requests reject extra fields. The API returns the library's
+        <code>ExtractionTrace</code>, and <code>serve/__init__.py</code> exports only two names.
+      </p>
+    </div>
+    <div class="card">
+      <h3><code>serve/explain.py</code> adds almost no behavior.</h3>
+      <div class="codeblock">
+        <div class="cb-head"><span class="path">serve/explain.py</span><span>lines 12–22 · pass-through</span></div>
+        <pre><code class="py">def explain_extraction(
+    text: str,
+    *,
+    profile_id: str = BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
+    parser_version: str = PARSER_PROFILE_VERSION,
+) -&gt; ExtractionTrace:
+    profile = resolve_parser_profile(
+        parser_profile_id=profile_id,
+        parser_version=parser_version,
+    )
+    return extract_code_with_profile(text, profile=profile).trace</code></pre>
+      </div>
+      <p style="font-size:14.5px">
+        This function adds <span class="key">no validation, error handling, or state</span>; deletion leaves two inline
+        statements. It does centralize defaults and trace projection. Keep it only if that role grows or another real
+        consumer appears; otherwise fold it into <code>app.py</code>.
+      </p>
+    </div>
+    <div class="card">
+      <h3>The viewer shares schemas with Python, not logic.</h3>
+      <div class="flow" style="flex-direction:column; align-items:stretch">
+        <div class="node ext"><b>viewer/ (TypeScript, pnpm)</b><small>renders traces · never ships in the wheel</small></div>
+        <div class="arr" style="text-align:center">↑ generated types only</div>
+        <div class="node"><b>serve.ts ← openapi-typescript ← <code>python -m dr_code.serve openapi</code></b></div>
+        <div class="node"><b>humaneval.ts ← <code>python -m dr_code.schemas humaneval</code></b></div>
+        <div class="arr" style="text-align:center">↑ source of truth</div>
+        <div class="node hot"><b>Python pydantic models</b><small>humaneval.task · code_parsing.ExtractionTrace</small></div>
+      </div>
+      <p style="font-size:14.5px">
+        <code>viewer/</code> and <code>serve/</code> share <span class="key">generated schemas, not logic</span>.
+        <code>schemas.py</code> hides runtime-only AST fields behind one schema hook, though its name implies ownership of
+        types it only exports.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ TESTS ══════════════════════════ -->
+<section id="tests">
+  <div class="section-head"><h2>Test-surface audit</h2></div>
+
+  <table>
+    <tr><th style="width:26%">Test file</th><th style="width:9%">Crosses the interface?</th><th>How it exercises the module</th></tr>
+    <tr><td><code>tests/unit/test_{text,code}_{analysis,transforms}.py</code></td><td><span class="ok-mark">✓ yes</span></td>
+      <td>Imports only <code>__all__</code> names; property-tests the documented totality / <code>SyntaxError</code> contracts over garbage inputs.</td></tr>
+    <tr><td><code>tests/test_serve_app.py</code></td><td><span class="ok-mark">✓ yes</span></td>
+      <td>Black-box HTTP via <code>TestClient(create_app())</code> — health, profiles, explain, 422 on extra fields, CORS asserted through response headers.</td></tr>
+    <tr><td><code>tests/test_serve_explain.py</code></td><td><span class="ok-mark">✓ yes</span></td>
+      <td>Drives the library port directly; proves <code>explain_extraction</code> equals the canonical pipeline's trace. Clean split from HTTP concerns.</td></tr>
+    <tr><td><code>tests/test_schemas.py</code> · <code>tests/synthetic/test_cli.py</code></td><td><span class="ok-mark">✓ yes</span></td>
+      <td>Run the CLIs as subprocesses — the blackest of black boxes; assert on delivered artifacts.</td></tr>
+    <tr><td><code>tests/synthetic/test_corruptions.py</code> · <code>test_dataset_builder.py</code></td><td><span class="ok-mark">✓ yes</span></td>
+      <td>Via <code>REGISTRY</code> + <code>.apply()</code> only; asserts the determinism invariant and the registry↔enum sync; builder driven through the package façade end-to-end.</td></tr>
+    <tr><td><code>tests/humaneval/test_profiles.py</code> · <code>test_import_inference.py</code></td><td><span class="ok-mark">✓ yes</span></td>
+      <td>Public resolvers and the single public function only.</td></tr>
+    <tr><td><code>tests/synthetic/test_humaneval_snapshot_loader.py</code></td><td><span class="mix-mark">◑ mixed</span></td>
+      <td>Monkeypatches private <code>_load_from_hf</code>/<code>_load_from_snapshot</code> — but to pin an interface-level error mode (no silent stale-snapshot fallback) around hardcoded I/O. Justified; injection would remove the need.</td></tr>
+    <tr><td><code>tests/humaneval/test_humaneval_primitives.py</code></td><td><span class="mix-mark">◑ mixed</span></td>
+      <td>Enforces <code>set(humaneval.__all__) == EXPECTED_HUMANEVAL_PUBLIC_API</code> — then imports ~7 non-<code>__all__</code> internals and monkeypatches the sandbox module global. The curated API is validated, then bypassed for coverage.</td></tr>
+    <tr><td><code>tests/humaneval/test_sandbox_unit.py</code></td><td><span class="x-mark">✗ past it</span></td>
+      <td>Calls four <code>sandbox._*</code> helpers directly (credential scrubbing, digest validation, runtime resolution). Defensible — security invariants that need no live runtime — but rename-fragile; a conscious internal-seam exception at best.</td></tr>
+    <tr><td><code>tests/humaneval/test_escaped_newline_extraction.py</code></td><td><span class="x-mark">✗ past it</span></td>
+      <td>Five assertions pin internal trace node <em>names</em> (e.g. <code>"recover_escaped_python" in _node_names(result.trace.roots)</code>) — these break on an output-preserving pipeline refactor, the skill's exact definition of testing past the interface.</td></tr>
+  </table>
+
+  <div class="cols2" style="margin-top:18px">
+    <div class="codeblock">
+      <div class="cb-head"><span class="path">tests/humaneval/test_escaped_newline_extraction.py</span><span>lines 47–53 · lines 50–52 test the interface; line 53 tests past it</span></div>
+      <pre><code class="py">def test_v2_recovers_escaped_newline_shapes(source: str, v2_profile) -&gt; None:
+    result = extract_code_with_profile(source, profile=v2_profile)
+
+    assert result.succeeded
+    assert result.extracted_code is not None
+    assert "def f():" in result.extracted_code
+    assert "recover_escaped_python" in _node_names(result.trace.roots)</code></pre>
+    </div>
+    <div>
+      <p style="font-size:15px">
+        <span class="key">Injected dependencies produce interface-level tests.</span> Hardcoded sandbox and loader I/O
+        force monkeypatching. Injecting both would convert every mixed row to interface-only testing without weakening
+        assertions.
+      </p>
+      <p style="font-size:15px">
+        After dropping trace-name assertions, <span class="key">no redundant test layers remain</span>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ LEDGER ══════════════════════════ -->
+<section id="ledger">
+  <div class="section-head"><h2>Findings ledger</h2></div>
+  <table>
+    <tr><th style="width:4%">#</th><th style="width:7%">Severity</th><th style="width:22%">Location</th><th style="width:19%">Principle tripped</th><th style="width:26%">Finding</th><th>Recommended move</th></tr>
+    <tr><td>1</td><td><span class="sev high">HIGH</span></td><td><code>humaneval/task.py</code> (1,026 LOC)</td>
+      <td>one module, one interface; depth is of the interface</td>
+      <td>Grab-bag of four responsibilities: deep models + test parsing + batch orchestration + a 130-line runner program as a string literal. Four in-package dependents pay for the oversized surface.</td>
+      <td>Split: models / parsing (absorb into <code>parsed_tests</code>) / batch runner. Move the runner script to a real <code>.py</code> resource so it is lintable and coverable.</td></tr>
+    <tr><td>2</td><td><span class="sev high">HIGH</span></td><td><code>task.py:644</code> + <code>test_humaneval_primitives.py:193</code></td>
+      <td>accept dependencies, don't create them</td>
+      <td>Sandbox runner bound at import time and called as a module global; tests cross the seam by monkeypatch. Two adapters already exist (Docker, local test runner) so the seam is real — just not injectable.</td>
+      <td>Add <code>run_in_sandbox: SandboxRunner = run_python_in_sandbox</code> to <code>run_subprocess_batch</code>; tests pass their adapter instead of patching.</td></tr>
+    <tr><td>3</td><td><span class="sev med">MED</span></td><td><code>test_escaped_newline_extraction.py</code> :53, :64, :103, :127, :142</td>
+      <td>the interface is the test surface</td>
+      <td>Five assertions pin internal trace node names; an output-preserving extraction refactor breaks them.</td>
+      <td>Assert on <code>extracted_code</code>/<code>extraction_method</code> only; if the recovery path itself must be pinned, expose it as a stable field, not a tree-walk over node names.</td></tr>
+    <tr><td>4</td><td><span class="sev med">MED</span></td><td><code>humaneval/parsed_tests.py</code> (e.g. :311–334)</td>
+      <td>deep vs shallow</td>
+      <td>~8 single-caller AST helpers (<code>for_loop_names</code>, <code>find_assert_statement</code>, …) are public; tuple-of-strings contracts as complex as their bodies.</td>
+      <td>Make them private behind <code>parse_human_eval_tests</code> once it moves here (finding #1); add an <code>__all__</code>.</td></tr>
+    <tr><td>5</td><td><span class="sev med">MED</span></td><td><code>CodeExtractionResult.trace</code></td>
+      <td>interface = everything a caller must know</td>
+      <td>The trace mirrors the pipeline's internal decision tree <em>and</em> is the product surface of <code>/explain</code> + the viewer. Its shape is a de-facto stable contract, raising the cost of every pipeline refactor.</td>
+      <td>Commit to it consciously: document which trace fields are contract vs diagnostic, and keep repo-internal tests off the node names (finding #3).</td></tr>
+    <tr><td>6</td><td><span class="sev med">MED</span></td><td><code>test_sandbox_unit.py</code> :17–55</td>
+      <td>don't expose internal seams to tests</td>
+      <td>Four <code>sandbox._*</code> helpers tested directly. Defensible (security invariants, no live runtime needed) but rename-fragile.</td>
+      <td>Keep as a documented conscious exception, or promote the env-scrub/image-validation contracts to small public shapes.</td></tr>
+    <tr><td>7</td><td><span class="sev low">LOW</span></td><td><code>test_humaneval_primitives.py</code> :41–54, :154</td>
+      <td>the façade is the seam</td>
+      <td>Validates <code>__all__</code> equality, then imports ~7 non-<code>__all__</code> internals for actual coverage.</td>
+      <td>After the task.py split, either promote the survivors into <code>__all__</code> or route the tests through the façade.</td></tr>
+    <tr><td>8</td><td><span class="sev low">LOW</span></td><td><code>serve/explain.py</code> :12–22</td>
+      <td>deletion test</td>
+      <td>Two-statement pass-through over <code>code_parsing</code>; complexity vanishes if deleted.</td>
+      <td>Inline into <code>app.py</code>, or keep only while it remains the single place pinning default profile/version.</td></tr>
+    <tr><td>9</td><td><span class="sev low">LOW</span></td><td><code>src/dr_code/__init__.py</code></td>
+      <td>interface as a statement</td>
+      <td>Empty — the top level declares no contract; submodule-namespacing is implicit.</td>
+      <td>Add a docstring declaring the convention (or a minimal curated surface), mirroring <code>serve/__init__.py</code>.</td></tr>
+    <tr><td>10</td><td><span class="sev inf">INFO</span></td><td><code>synthetic/corruptions/</code></td>
+      <td>seam tax (acceptable)</td>
+      <td><code>Corruption</code> is not an ABC (late failure on missing <code>apply</code>); registration is a manual three-file edit (test-guarded); trivial adapters carry unused <code>rng</code>; <code>change_string_form.py</code> duplicates a docstring-skip loop across four <code>visit_*</code> methods.</td>
+      <td>Optional polish: <code>abc.ABC</code> for fail-fast; <code>__init_subclass__</code> auto-registration if the three-file edit starts to chafe.</td></tr>
+  </table>
+
+  <div class="callout" style="margin-top:20px">
+    <span class="key">Fix #1 and #2 together.</span> Splitting <code>task.py</code> creates the batch-runner module where
+    the sandbox port belongs; injection then replaces monkeypatching with interface-level tests.
+  </div>
+</section>
+
+</main>
+
+<script>
+(function(){
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  var re = new RegExp(
+    "('''[\\s\\S]*?'''|\"\"\"[\\s\\S]*?\"\"\")"                    // 1 triple string
+    + "|([bruf]{0,2}'(?:\\\\.|[^'\\\\\\n])*'|[bruf]{0,2}\"(?:\\\\.|[^\"\\\\\\n])*\")" // 2 string
+    + "|(#[^\\n]*)"                                                // 3 comment
+    + "|(@[\\w.]+)"                                                // 4 decorator
+    + "|\\b(def|class)(\\s+)([A-Za-z_]\\w*)"                       // 5,6,7 def/class + name
+    + "|\\b(if|elif|else|for|while|try|except|finally|raise|import|from|as|with|lambda|pass|break|continue|and|or|not|in|is|None|True|False|return|yield|assert|global|nonlocal|del|async|await|self|ClassVar)\\b" // 8 kw
+    + "|\\b(\\d[\\d_]*(?:\\.\\d+)?)\\b"                            // 9 number
+  ,"g");
+  document.querySelectorAll("pre code").forEach(function(el){
+    var src = esc(el.textContent);
+    el.innerHTML = src.replace(re, function(m,tri,str,com,dec,dk,sp,name,kw,num){
+      if(tri) return '<span class="s">'+tri+'</span>';
+      if(str) return '<span class="s">'+str+'</span>';
+      if(com) return '<span class="c">'+com+'</span>';
+      if(dec) return '<span class="d">'+dec+'</span>';
+      if(dk)  return '<span class="k">'+dk+'</span>'+sp+'<span class="f">'+name+'</span>';
+      if(kw)  return '<span class="k">'+kw+'</span>';
+      if(num) return '<span class="n">'+num+'</span>';
+      return m;
+    });
+  });
+})();
+</script>
+</body>
+</html>
