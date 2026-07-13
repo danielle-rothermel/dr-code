@@ -144,24 +144,6 @@ uv run pytest tests/synthetic
 uv run ruff check .
 ```
 
-To reproduce the bounded historical escaped-newline replay, provide a
-read-only Postgres URL and run:
-
-```bash
-DATABASE_URL=... uv run python scripts/replay_escaped_newline_extraction.py
-```
-
-The script deterministically selects at most 500 persisted nano rows ordered
-by prediction ID, forces `default_transaction_read_only=on`, and prints only
-row counts, compile classifications for parser v1/v2, and a selection-ID hash.
-Stored generations are never printed.
-
-The 2026-07-13 read-only replay selected 500 rows with selection hash
-`4964370fc9447dc7c73d8f93765193234c000296a368e9d81f8b5c4ce8b34b48`.
-Parser v1 produced 0 compilable, 0 noncompilable, and 500 no-candidate results;
-parser v2 produced 163 compilable, 83 noncompilable, and 254 no-candidate
-results.
-
 Real denial probes are opt-in locally and always run when `CI` is set, so
 they fail loudly in CI instead of silently skipping:
 
