@@ -1,3 +1,5 @@
+import type { JSX } from "react";
+
 import type { EvaluationCaseSummary } from "./types.js";
 
 export interface EvaluationCaseTableProps {
@@ -12,7 +14,7 @@ export interface EvaluationCaseTableProps {
 export function EvaluationCaseTable({
   cases,
   className,
-}: EvaluationCaseTableProps) {
+}: EvaluationCaseTableProps): JSX.Element {
   const classes = className ? `drv-case-table ${className}` : "drv-case-table";
   return (
     <table className={classes}>

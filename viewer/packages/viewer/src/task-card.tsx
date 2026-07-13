@@ -1,3 +1,5 @@
+import type { JSX } from "react";
+
 import { CodeBlock } from "./code-block.js";
 import type { HumanEvalTask } from "./types.js";
 
@@ -15,7 +17,7 @@ export interface TaskCardProps {
  * client react-dom too, which keeps the component testable without an
  * RSC runtime.
  */
-export async function TaskCard({ task, className }: TaskCardProps) {
+export async function TaskCard({ task, className }: TaskCardProps): Promise<JSX.Element> {
   const classes = className ? `drv-task-card ${className}` : "drv-task-card";
   const [prompt, solution, test] = await Promise.all([
     CodeBlock({ code: task.prompt }),
