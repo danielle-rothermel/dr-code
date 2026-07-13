@@ -11,7 +11,7 @@
     --accent:#1866b4; --accent-soft:#e9f2fb;
     --green:#2b8a3e; --green-soft:#e8f5ec;
     --amber:#9a6700; --amber-soft:#fff6e0;
-    --blue:#1866b4; --blue-soft:#e9f2fb;
+    --blue:#1866b4; --blue-soft:#e9f2fb; --faint:#aab3c2;
   }
   *{box-sizing:border-box}
   body{margin:0; background:var(--bg); color:var(--ink);
@@ -42,6 +42,9 @@
   .dnode.policy,.dnode.ext{border-style:dashed}
   .darr{display:flex; align-items:center; color:#8b96a9; font-size:22px}
   .dcaption{font-size:13px; color:var(--muted); margin-top:12px; text-align:center}
+  .hero-diagram{margin:10px 0 0}
+  .hero-diagram svg{display:block; width:100%; max-width:1600px; margin:0 auto}
+  .hero-diagram svg text{font-family:inherit}
   .l1{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:18px}
   @media(max-width:1500px){.l1{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:900px){.l1{grid-template-columns:1fr} main{padding:24px} .drow{flex-direction:column}}
@@ -75,31 +78,44 @@
 <h1>Full Eval Flow: Boundary Design</h1>
 <div class="byline">dr-code · 2026-07-13</div>
 
-<div class="hero">
-  Eval flows comprise <b>two independent systems and a thin contract</b>. Preprocessing turns input into a
-  <b>trace</b>; metrics extraction turns a trace-shaped value into <b>records</b>. Running them together is convenient,
-  not architectural. This document covers only their shared contract and should remain the thinnest of the three.
-</div>
+<div class="hero-diagram">
+  <svg viewBox="0 0 1340 320" role="img" aria-label="input flows into preprocessing; a trace nested in a trace-shaped outline sits in a dashed contract band between the systems; records flow out of metrics; definitions attach from above">
+    <defs><marker id="ahC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#8b96a9"/></marker></defs>
 
-<div class="diagram">
-  <div class="drow">
-    <div class="dnode p1"><b>Preprocessing</b><small>definition + input → trace<br>(own doc: motivations, structure, steps)</small></div>
-    <div class="darr">→</div>
-    <div class="dnode ctr"><b>The trace</b><small>named canonical artifacts + lineage + absences; always serializable,
-      with optional derived in-memory views</small></div>
-    <div class="darr">→</div>
-    <div class="dnode p2"><b>Metrics extraction</b><small>trace-shaped value + definition → records<br>(own doc: questions, engine, records)</small></div>
-    <div class="darr">→</div>
-    <div class="dnode policy"><b>Caller policy</b><small>scores, filtering, smart selection — outside both systems</small></div>
-  </div>
-  <div class="drow" style="margin-top:10px">
-    <div class="dnode ext" style="flex:1"><b>External producers</b><small>anything can construct a trace-shaped value — provenance marked "external"</small></div>
-    <div style="flex:.12"></div>
-    <div class="dnode ext" style="flex:1"><b>Serialize now, measure later</b><small>preprocess once → persist → measure repeatedly, anytime</small></div>
-    <div style="flex:.12"></div>
-    <div class="dnode ext" style="flex:1"><b>External consumers</b><small>records are self-describing; tools that never import dr-code can read them</small></div>
-  </div>
-  <div class="dcaption">information flows only left → right: metrics consume a value and return records, leaving no return channel</div>
+    <rect x="535" y="62" width="250" height="230" rx="10" fill="var(--accent-soft)" opacity=".55" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 4"/>
+    <text x="660" y="88" text-anchor="middle" font-size="11" font-weight="800" letter-spacing="2" fill="var(--accent)">THE CONTRACT</text>
+
+    <rect x="280" y="20" width="120" height="34" rx="17" fill="#fff" stroke="var(--faint)" stroke-width="1.25"/>
+    <text x="340" y="42" text-anchor="middle" font-size="12.5" font-style="italic" fill="var(--muted)">def<tspan dy="3" font-size="9">process</tspan></text>
+    <line x1="340" y1="58" x2="340" y2="93" stroke="var(--faint)" stroke-width="1.5"/>
+    <circle cx="340" cy="99" r="5" fill="#fff" stroke="var(--faint)" stroke-width="1.5"/>
+    <rect x="910" y="20" width="120" height="34" rx="17" fill="#fff" stroke="var(--faint)" stroke-width="1.25"/>
+    <text x="970" y="42" text-anchor="middle" font-size="12.5" font-style="italic" fill="var(--muted)">def<tspan dy="3" font-size="9">metrics</tspan></text>
+    <line x1="970" y1="58" x2="970" y2="93" stroke="var(--faint)" stroke-width="1.5"/>
+    <circle cx="970" cy="99" r="5" fill="#fff" stroke="var(--faint)" stroke-width="1.5"/>
+
+    <rect x="30" y="163" width="110" height="34" rx="17" fill="#fff" stroke="#33405c" stroke-width="2"/>
+    <text x="85" y="185" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1b2333">input</text>
+    <line x1="146" y1="180" x2="174" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+
+    <path d="M180 105 H500 V162 a18 18 0 0 1 0 36 V255 H180 Z" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.5" stroke-linejoin="round"/>
+    <text x="340" y="186" text-anchor="middle" font-size="17" font-weight="700" fill="var(--green)">Preprocessing</text>
+
+    <path d="M810 105 H1130 V255 H810 V198 a18 18 0 0 0 0 -36 Z" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="1.5" stroke-linejoin="round"/>
+    <text x="978" y="186" text-anchor="middle" font-size="17" font-weight="700" fill="var(--blue)">Metrics Extraction</text>
+
+    <line x1="526" y1="180" x2="552" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+    <text x="655" y="138" text-anchor="middle" font-size="12" font-weight="700" fill="var(--accent)">trace-shaped</text>
+    <path d="M560 148 H750 V163 a17 17 0 0 1 0 34 V212 H560 Z" fill="#fff" stroke="var(--accent)" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round"/>
+    <path d="M590 160 H710 V169 a11 11 0 0 1 0 22 V200 H590 Z" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+    <text x="650" y="185" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--accent)">trace</text>
+    <line x1="775" y1="180" x2="802" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+
+    <line x1="1130" y1="180" x2="1164" y2="180" stroke="#8b96a9" stroke-width="1.5" marker-end="url(#ahC)"/>
+    <rect x="1170" y="163" width="118" height="34" rx="17" fill="#fff" stroke="#33405c" stroke-width="2"/>
+    <text x="1229" y="185" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1b2333">records</text>
+  </svg>
 </div>
 
 <!-- ═══════════ LAYER 1 ═══════════ -->
