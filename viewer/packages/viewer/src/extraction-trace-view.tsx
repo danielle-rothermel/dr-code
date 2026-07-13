@@ -1,5 +1,7 @@
 "use client";
 
+import type { JSX } from "react";
+
 import { CodeBlockClient } from "./code-block-client.js";
 import { DEFAULT_LANGUAGE } from "./themes.js";
 import { TransformDiff } from "./transform-diff.js";
@@ -22,7 +24,7 @@ export interface ExtractionTraceViewProps {
 export function ExtractionTraceView({
   trace,
   lang = DEFAULT_LANGUAGE,
-}: ExtractionTraceViewProps) {
+}: ExtractionTraceViewProps): JSX.Element {
   return (
     <section className="drv-extraction-trace">
       <header className="drv-trace-header">

@@ -1,4 +1,5 @@
 import { codeToHtml } from "shiki";
+import type { JSX } from "react";
 
 import { DEFAULT_LANGUAGE, SHIKI_THEMES } from "./themes.js";
 
@@ -17,7 +18,7 @@ export async function CodeBlock({
   code,
   lang = DEFAULT_LANGUAGE,
   className,
-}: CodeBlockProps) {
+}: CodeBlockProps): Promise<JSX.Element> {
   const html = await codeToHtml(code, {
     lang,
     themes: SHIKI_THEMES,
