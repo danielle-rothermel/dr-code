@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
 from dr_code.humaneval import sandbox
@@ -31,6 +33,18 @@ def test_runtime_environment_excludes_operator_credentials(
 def test_mutable_or_malformed_image_reference_is_rejected(image: str) -> None:
     with pytest.raises(sandbox.SandboxError, match="immutable sha256"):
         sandbox._validate_image_reference(image)
+
+
+def test_hung_image_inspection_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def hang(*args: object, **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd="docker", timeout=10)
+
+    monkeypatch.setattr(sandbox.subprocess, "run", hang)
+
+    with pytest.raises(sandbox.SandboxError, match="image inspection failed"):
+        sandbox._require_local_image("docker", sandbox.SANDBOX_IMAGE)
 
 
 def test_missing_runtime_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:

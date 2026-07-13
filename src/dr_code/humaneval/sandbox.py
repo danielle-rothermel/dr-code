@@ -24,6 +24,12 @@ MAX_SANDBOX_OUTPUT_BYTES: Final[int] = 1_048_576
 SANDBOX_MEMORY_BYTES: Final[int] = 256 * 1024 * 1024
 SANDBOX_TMPFS_BYTES: Final[int] = 16 * 1024 * 1024
 SANDBOX_OPEN_FILES: Final[int] = 64
+# Container exit codes attributable to the candidate hitting a sandbox
+# resource boundary rather than to a broken sandbox: 137 is SIGKILL from the
+# memory limit or the CPU hard limit (python runs as container PID 1, which
+# ignores SIGXCPU, so the kernel escalates to SIGKILL), and 139 is SIGSEGV
+# from an interpreter crash.
+CANDIDATE_KILL_RETURNCODES: Final[frozenset[int]] = frozenset({137, 139})
 _RUNTIME_ENV: Final[tuple[str, ...]] = (
     "DOCKER_CONFIG",
     "DOCKER_CONTEXT",
@@ -67,8 +73,7 @@ def run_python_in_sandbox(
     payload = input_json.encode("utf-8")
     if len(payload) > MAX_SANDBOX_INPUT_BYTES:
         raise SandboxError(
-            "sandbox input exceeded "
-            f"{MAX_SANDBOX_INPUT_BYTES} bytes"
+            f"sandbox input exceeded {MAX_SANDBOX_INPUT_BYTES} bytes"
         )
     if timeout_seconds <= 0 or not math.isfinite(timeout_seconds):
         raise SandboxError("sandbox timeout must be finite and positive")
@@ -182,8 +187,7 @@ def run_python_in_sandbox(
         )
     if overflow.is_set():
         raise SandboxOutputLimitError(
-            "sandbox output exceeded "
-            f"{MAX_SANDBOX_OUTPUT_BYTES} bytes"
+            f"sandbox output exceeded {MAX_SANDBOX_OUTPUT_BYTES} bytes"
         )
     if io_errors:
         raise SandboxError("sandbox IPC failed") from io_errors[0]
@@ -224,19 +228,26 @@ def _validate_image_reference(image: str) -> None:
 
 
 def _runtime_environment() -> dict[str, str]:
-    return {name: os.environ[name] for name in _RUNTIME_ENV if name in os.environ}
+    return {
+        name: os.environ[name] for name in _RUNTIME_ENV if name in os.environ
+    }
 
 
 def _require_local_image(runtime: str, image: str) -> None:
-    completed = subprocess.run(
-        [runtime, "image", "inspect", image],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        check=False,
-        timeout=10,
-        env=_runtime_environment(),
-    )
+    try:
+        completed = subprocess.run(
+            [runtime, "image", "inspect", image],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+            env=_runtime_environment(),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SandboxError(
+            f"sandbox image inspection failed: {image}"
+        ) from exc
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
         raise SandboxError(
@@ -310,7 +321,9 @@ def _terminate_container(
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired as exc:
-        raise SandboxError("sandbox process group could not be terminated") from exc
+        raise SandboxError(
+            "sandbox process group could not be terminated"
+        ) from exc
 
     inspected = _cleanup_command(
         [runtime, "container", "inspect", name],

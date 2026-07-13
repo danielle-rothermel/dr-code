@@ -5,6 +5,11 @@
 - Moved HumanEval candidate execution into a fail-closed OCI sandbox with no
   host mounts or network, an unprivileged read-only filesystem, bounded JSON
   IPC and resources, and complete container cleanup on timeout.
+- Hardened sandbox scoring attribution: resource-limit kills, `SystemExit`,
+  and output floods now score as candidate errors instead of harness
+  failures, runner case ids must be known and unique (duplicate rows can no
+  longer inflate coverage), runner output fields are clipped to fit the IPC
+  bound, and the real sandbox probes always run when `CI` is set.
 
 ## 2026-07-09
 

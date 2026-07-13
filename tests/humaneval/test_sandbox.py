@@ -23,8 +23,11 @@ from dr_code.humaneval.task import (
 )
 
 
+# The probes are opt-in locally but always run in CI: they must fail loudly
+# there (missing runtime/image) rather than skip if workflow env wiring drifts.
 pytestmark = pytest.mark.skipif(
-    os.environ.get("DR_CODE_RUN_SANDBOX_TESTS") != "1",
+    os.environ.get("DR_CODE_RUN_SANDBOX_TESTS") != "1"
+    and os.environ.get("CI") is None,
     reason="real OCI sandbox probes require DR_CODE_RUN_SANDBOX_TESTS=1",
 )
 
@@ -206,6 +209,53 @@ def test_timeout_kills_the_complete_container() -> None:
         text=True,
     )
     assert completed.stdout.strip() == ""
+
+
+def test_candidate_sys_exit_is_scored_not_harness_failure() -> None:
+    result = evaluate_human_eval_code(
+        task=_task(),
+        candidate_code=(
+            "import sys\n"
+            "sys.exit(0)\n"
+            "def add_one(x):\n"
+            "    return x + 1\n"
+        ),
+        timeout_seconds=2.0,
+    )
+
+    assert result.passed is False
+    assert result.status_counts == {"error": 2}
+
+
+def test_memory_exhaustion_is_scored_not_harness_failure() -> None:
+    result = evaluate_human_eval_code(
+        task=_task(),
+        candidate_code=(
+            "def add_one(x):\n"
+            "    data = bytearray(512 * 1024 * 1024)\n"
+            "    return x + 1 + data[0]\n"
+        ),
+        timeout_seconds=5.0,
+    )
+
+    assert result.passed is False
+    assert set(result.status_counts) <= {"error", "timeout"}
+
+
+def test_output_flood_is_scored_not_harness_failure() -> None:
+    result = evaluate_human_eval_code(
+        task=_task(),
+        candidate_code=(
+            "import sys\n"
+            "def add_one(x):\n"
+            f"    sys.stdout.write('x' * {MAX_SANDBOX_OUTPUT_BYTES + 1})\n"
+            "    return x + 1\n"
+        ),
+        timeout_seconds=5.0,
+    )
+
+    assert result.passed is False
+    assert result.status_counts == {"error": 2}
 
 
 def test_stdout_json_ipc_is_bounded() -> None:

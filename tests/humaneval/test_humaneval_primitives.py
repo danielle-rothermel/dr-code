@@ -52,7 +52,10 @@ from dr_code.humaneval.task import (
     require_parsed_tests,
     run_subprocess_batch,
 )
-from dr_code.humaneval.sandbox import SandboxTimeoutError
+from dr_code.humaneval.sandbox import (
+    SandboxOutputLimitError,
+    SandboxTimeoutError,
+)
 
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
@@ -733,6 +736,90 @@ def test_parse_human_eval_tests_rejects_invalid_formats(
 ) -> None:
     with pytest.raises(UnsupportedTestFormatError, match=match):
         parse_human_eval_tests(test_source)
+
+
+def test_run_subprocess_batch_scores_candidate_kill_returncode() -> None:
+    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
+        return _CompletedProcessStub(stdout="", stderr="", returncode=137)
+
+    with patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run):
+        results = run_subprocess_batch(
+            task=_task(),
+            candidate_code="def add_one(x):\n    return x + 1\n",
+            function_name="add_one",
+            timeout_seconds=2.0,
+        )
+
+    assert len(results) == 2
+    assert all(
+        result.status is EvaluationCaseStatus.ERROR for result in results
+    )
+    assert "sandbox killed candidate execution" in results[0].message
+
+
+def test_run_subprocess_batch_scores_output_limit_as_candidate_error() -> None:
+    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
+        raise SandboxOutputLimitError("sandbox output exceeded limit")
+
+    with patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run):
+        results = run_subprocess_batch(
+            task=_task(),
+            candidate_code="def add_one(x):\n    return x + 1\n",
+            function_name="add_one",
+            timeout_seconds=2.0,
+        )
+
+    assert len(results) == 2
+    assert all(
+        result.status is EvaluationCaseStatus.ERROR for result in results
+    )
+    assert "SandboxOutputLimitError" in results[0].message
+
+
+@pytest.mark.parametrize(
+    "runner_stdout",
+    [
+        '[{"case_id": "case_0", "status": "passed", "message": ""},'
+        ' {"case_id": "case_0", "status": "passed", "message": ""}]',
+        '[{"case_id": "case_99", "status": "passed", "message": ""}]',
+    ],
+    ids=("duplicate", "unknown"),
+)
+def test_run_subprocess_batch_rejects_invalid_case_ids(
+    runner_stdout: str,
+) -> None:
+    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
+        return _CompletedProcessStub(stdout=runner_stdout)
+
+    with (
+        patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run),
+        pytest.raises(
+            EvaluationHarnessError,
+            match="duplicate or unknown case ids",
+        ),
+    ):
+        run_subprocess_batch(
+            task=_task(),
+            candidate_code="def add_one(x):\n    return x + 1\n",
+            function_name="add_one",
+            timeout_seconds=2.0,
+        )
+
+
+def test_candidate_module_level_sys_exit_is_scored() -> None:
+    result = evaluate_human_eval_code(
+        task=_task(),
+        candidate_code=(
+            "import sys\n"
+            "sys.exit(5)\n"
+            "def add_one(x):\n"
+            "    return x + 1\n"
+        ),
+        timeout_seconds=2.0,
+    )
+
+    assert result.passed is False
+    assert result.status_counts == {"error": 2}
 
 
 def test_run_subprocess_batch_raises_for_nonzero_returncode() -> None:

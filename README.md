@@ -53,6 +53,15 @@ one PID, one CPU, and fixed memory, file-size, and open-file limits. Timeout
 cleanup kills and removes the named container, which terminates its complete
 cgroup rather than only the Python process.
 
+Candidate-attributable terminations (memory/CPU-limit kills, interpreter
+crashes, `SystemExit`, output floods) score as failed/error cases;
+`HarnessFailure` is reserved for sandbox or runtime breakage so operators can
+alert on it. The wall timeout includes container startup (roughly 0.1–0.5 s),
+so keep configured timeouts comfortably above expected candidate runtime.
+Candidate code shares the in-container interpreter with the trusted runner,
+so the boundary guarantees host, credential, and network isolation — not
+single-task score integrity against a deliberately adversarial submission.
+
 Production requires Docker or Podman and the immutable image below to be
 preloaded. Runtime image pulls are disabled, and scoring fails closed if the
 runtime, daemon, exact digest, or required isolation flags are unavailable.
@@ -132,7 +141,8 @@ uv run pytest tests/synthetic
 uv run ruff check .
 ```
 
-Real denial probes are enabled explicitly and are mandatory in CI:
+Real denial probes are opt-in locally and always run when `CI` is set, so
+they fail loudly in CI instead of silently skipping:
 
 ```bash
 DR_CODE_RUN_SANDBOX_TESTS=1 uv run pytest tests/humaneval/test_sandbox.py
