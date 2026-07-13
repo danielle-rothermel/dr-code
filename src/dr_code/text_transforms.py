@@ -9,6 +9,7 @@ Python (and raise `SyntaxError` when it is not), see
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from typing import Final
@@ -99,6 +100,51 @@ def normalize_smart_quotes(source: str) -> str:
     return source.translate(_SMART_QUOTE_TRANSLATION)
 
 
+def unescape_literal_newlines(source: str) -> str | None:
+    """Decode JSON-style line and indentation escapes when present.
+
+    A whole JSON string is decoded with ``json.loads`` so escaped quotes and
+    backslashes retain their JSON meaning. Otherwise, only unpaired ``\\n``,
+    ``\\r``, and ``\\t`` sequences are decoded. ``None`` means the transform
+    was not applicable.
+    """
+    stripped = source.strip()
+    if stripped.startswith('"') and stripped.endswith('"'):
+        try:
+            decoded = json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        else:
+            if isinstance(decoded, str) and decoded != source:
+                return decoded
+
+    decoded_parts: list[str] = []
+    changed = False
+    index = 0
+    while index < len(source):
+        if source[index] != "\\":
+            decoded_parts.append(source[index])
+            index += 1
+            continue
+
+        run_end = index
+        while run_end < len(source) and source[run_end] == "\\":
+            run_end += 1
+        slash_count = run_end - index
+        escaped = source[run_end] if run_end < len(source) else None
+        if slash_count % 2 == 1 and escaped in {"n", "r", "t"}:
+            decoded_parts.append("\\" * (slash_count // 2))
+            decoded_parts.append({"n": "\n", "r": "\r", "t": "\t"}[escaped])
+            index = run_end + 1
+            changed = True
+            continue
+
+        decoded_parts.append("\\" * slash_count)
+        index = run_end
+
+    return "".join(decoded_parts) if changed else None
+
+
 def drop_if_name(text: str) -> list[str]:
     """Split `text` on `if __name__` guard lines, dropping the guards."""
     lines = text.split(LINE_SEP)
@@ -137,5 +183,6 @@ __all__ = [
     "strip_code_fences",
     "strip_markdown_wrappers",
     "strip_trailing_whitespace",
+    "unescape_literal_newlines",
     "wrap_code_fence",
 ]

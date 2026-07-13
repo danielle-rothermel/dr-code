@@ -40,8 +40,10 @@ The `dr_code.humaneval` modules:
 - `profiles` resolves supported HumanEval scoring profiles.
 
 The default scoring profile is `humaneval@v1`, using a 2.0 second sandbox
-timeout and the `humaneval-best-effort@v1` parser profile. Unknown profile IDs
-raise at the boundary.
+timeout and the `humaneval-best-effort@v2` parser profile. Version 2 adds a
+last-resort escaped-newline repair after ordinary extraction finds no code;
+`humaneval-best-effort@v1` remains resolvable for historical provenance.
+Unknown profile IDs raise at the boundary.
 
 ### Generated-code sandbox
 

@@ -14,6 +14,7 @@ from dr_code.text_transforms import (
     strip_code_fences,
     strip_markdown_wrappers,
     strip_trailing_whitespace,
+    unescape_literal_newlines,
     wrap_code_fence,
 )
 
@@ -82,6 +83,27 @@ def test_strip_markdown_wrappers_removes_one_marker_per_line() -> None:
 
 def test_normalize_smart_quotes_restores_ascii() -> None:
     assert normalize_smart_quotes("s = ‘a’ + “b”") == "s = 'a' + \"b\""
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (r"line one\nline two", "line one\nline two"),
+        (r"line one\rline two", "line one\rline two"),
+        (r"def f():\n\treturn 1", "def f():\n\treturn 1"),
+        (r'"def f():\n    return \"ok\""', 'def f():\n    return "ok"'),
+    ],
+)
+def test_unescape_literal_newlines_decodes_supported_shapes(
+    source: str,
+    expected: str,
+) -> None:
+    assert unescape_literal_newlines(source) == expected
+
+
+def test_unescape_literal_newlines_preserves_escaped_backslash() -> None:
+    assert unescape_literal_newlines(r"value\\n") is None
+    assert unescape_literal_newlines("no escapes") is None
 
 
 def test_drop_if_name_splits_before_main_guard() -> None:
