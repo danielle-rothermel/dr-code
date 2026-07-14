@@ -13,8 +13,7 @@
   },
   "files": [
     "dist",
-    "src",
-    "schemas"
+    "src"
   ],
   "sideEffects": [
     "**/*.css"
@@ -23,10 +22,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "prepare": "tsc -p tsconfig.build.json",
-    "gen": "pnpm gen:serve && pnpm gen:humaneval",
-    "gen:serve": "uv run --directory ../../.. python -m dr_code.serve openapi > schemas/serve-openapi.json && openapi-typescript schemas/serve-openapi.json -o src/gen/serve.ts",
-    "gen:humaneval": "uv run --directory ../../.. python -m dr_code.schemas humaneval > schemas/humaneval.schema.json && json2ts --input schemas/humaneval.schema.json --output src/gen/humaneval.ts --additionalProperties false"
+    "prepare": "tsc -p tsconfig.build.json"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -45,9 +41,7 @@
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "json-schema-to-typescript": "^15.0.4",
     "jsdom": "^26.1.0",
-    "openapi-typescript": "^7.8.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "typescript": "^5.8.0",

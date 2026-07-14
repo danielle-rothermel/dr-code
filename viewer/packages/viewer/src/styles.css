@@ -5,10 +5,7 @@
 /* Fira Code with ligatures on every code surface. */
 .drv-code-block pre,
 .drv-code-block code,
-.drv-transform-diff,
-.drv-case-table code,
-.drv-task-card code,
-.drv-extraction-trace code {
+.drv-transform-diff {
   font-family: "Fira Code", ui-monospace, "SF Mono", Menlo, Consolas,
     monospace;
   font-variant-ligatures: contextual;
@@ -30,51 +27,15 @@
   font-variant-ligatures: none;
 }
 
-/* Check verdicts and case statuses. */
-.drv-trace-verdict-pass,
-.drv-case-status-passed {
+/* StatusBadge colors, keyed off a generic status enum. */
+.drv-status-badge-positive {
   color: #1a7f37;
 }
 
-.drv-trace-verdict-fail,
-.drv-case-status-failed,
-.drv-case-status-error,
-.drv-trace-error {
+.drv-status-badge-negative {
   color: #cf222e;
 }
 
-.drv-case-status-timeout {
+.drv-status-badge-warning {
   color: #9a6700;
-}
-
-.drv-trace-kind {
-  font-size: 0.75em;
-  text-transform: uppercase;
-  opacity: 0.6;
-  margin-right: 0.5em;
-}
-
-.drv-trace-node summary {
-  cursor: pointer;
-}
-
-.drv-trace-children,
-.drv-trace-node > :not(summary) {
-  margin-left: 1.25rem;
-}
-
-.drv-trace-candidate-selected {
-  border-left: 3px solid #1a7f37;
-  padding-left: 0.5rem;
-}
-
-.drv-case-table {
-  border-collapse: collapse;
-}
-
-.drv-case-table th,
-.drv-case-table td {
-  padding: 0.25rem 0.6rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
-  text-align: left;
 }

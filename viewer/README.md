@@ -39,18 +39,6 @@ Code panels use Fira Code with ligatures; ligatures are disabled inside
 intraline-change spans of diffs, where they can mask single-character
 changes. Load the Fira Code font in the consuming app.
 
-## Types
-
-Generated, committed under `packages/viewer/src/gen/`:
-
-- `gen/serve.ts` — from the serve OpenAPI schema
-  (`pnpm gen:serve`, runs `uv run python -m dr_code.serve openapi`).
-- `gen/humaneval.ts` — from the library pydantic JSON-schema dump
-  (`pnpm gen:humaneval`, runs `uv run python -m dr_code.schemas humaneval`).
-
-Regenerate with `pnpm gen` from `packages/viewer` (needs `uv` and the
-repo's Python env; maintainer-only).
-
 ## Checks
 
 ```bash
