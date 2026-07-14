@@ -1,21 +1,51 @@
-# viewer/ — dr-code React component workspace
+# viewer/ — small React primitives for code visualization
 
-The canonical React components for code visualization across the
-dr-code ecosystem (ADR 0006). One pnpm workspace, one package:
-`@dr-code/viewer` at `packages/viewer`. It never ships in the Python
-wheel — the wheel stays toolchain-pure.
+A lightweight library of domain-agnostic React components for
+displaying code and diffs. One pnpm workspace, one package: `@dr-code/viewer`
+at `packages/viewer`. It never ships in the Python wheel — the wheel stays
+toolchain-pure.
+
+## Primitives
+
+**`CodeBlock`** — Highlighted code panel with fallback. Renders syntax-highlighted
+code in a `<pre>` tag; while the highlighter loads, renders plain text. Language is
+matched against `SUPPORTED_LANGUAGES` in `src/highlighter.ts`; unknown languages
+render as plaintext. Key props: `code` (string), `lang` (string, optional, matched
+against the supported list).
+
+**`CodeDiff`** — Before/after diff of two plain strings, computed in-browser.
+Supports split and unified modes; light and dark themes. Key props: `oldContent`
+(string), `newContent` (string), plus optional `oldName`, `newName`, `lang`,
+`mode` ('split' | 'unified', default 'unified'), and `theme` ('light' | 'dark',
+default 'light').
+
+**`StatusBadge`** — Small status indicator badge. The label is passed as `children`
+(ReactNode, required); `status` ('positive' | 'negative' | 'warning' | 'neutral')
+is optional and defaults to 'neutral'.
+
+## Design principles
+
+- **Boring props.** Components take strings, numbers, small enums, and children only.
+  No domain types, no complex objects.
+- **No domain knowledge.** The package exports no whetstone/dr-code types; it has
+  zero knowledge of schemas or domain logic. Composition of domain views (trace
+  viewers, task cards, etc.) is the caller's job.
+- **Client-safe by default.** All components are plain synchronous functions;
+  hooks only where something genuinely loads (the highlighter) or changes (the diff).
+  Works in plain react-dom/Vite and inside RSC apps as client components. Consumers
+  wanting server-side highlighting implement it themselves.
 
 ## Stack (pinned)
 
-- **shiki 3.x** — `@git-diff-view/shiki` hard-depends on shiki `^3`;
-  one engine and one grammar/theme system across panels and diffs.
-- **@git-diff-view/react + /file + /shiki** — 0.x solo-maintainer,
-  pinned exact and fully wrapped so they are swappable in one place.
+- **shiki 3.x** — via `@git-diff-view/shiki`, one engine and one grammar/theme
+  system across panels and diffs.
+- **@git-diff-view/react + /file + /shiki** — 0.x solo-maintainer, pinned exact
+  and fully wrapped so they are swappable in one place.
 - **react-shiki/core** — client-tier highlighting, same shiki engine.
-- React 19 peer deps; consumers are Next.js App Router.
+- React 19 peer deps; consumers are Next.js App Router or standalone.
 
-Consumers import only these components, never shiki or @git-diff-view
-directly.
+Consumers import only the primitives; shiki and @git-diff-view are wrapped
+implementation details.
 
 ## Consuming
 
