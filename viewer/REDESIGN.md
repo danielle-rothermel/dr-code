@@ -68,8 +68,9 @@ Each step lands as its own commit (or small series) with checks green.
    types; extract `StatusBadge` (and any other atom worth keeping)
    from the deleted components; replace or drop `EvaluationCaseTable`;
    remove `src/gen/`, `schemas/`, and the `gen:*` scripts; purge domain
-   types from `types.ts` and `index.ts`. After this step the package
-   has zero knowledge of the Python package.
+   types from `types.ts` and `index.ts`; remove the deleted components'
+   `.drv-trace-*`, `.drv-case-*`, and `.drv-task-*` styles. After this
+   step the package has zero knowledge of the Python package.
 3. **Component viewer page.** Add a private workspace app (e.g.
    `packages/gallery`, Vite + React, `"private": true`, never
    published) that renders every exported primitive in a grid with
@@ -89,8 +90,7 @@ caller.
 ## Verification
 
 - **Every step:** `pnpm install --frozen-lockfile && pnpm typecheck &&
-  pnpm build && pnpm test` from `viewer/` stays green
-  (`scripts/pre-check.sh` gate).
+  pnpm build && pnpm test` from `viewer/` stays green.
 - **Unit tests** (vitest + testing-library + jsdom) updated alongside
   each component: renamed components keep their behavioral tests
   (fallback-then-highlight for `CodeBlock`, string-props-only for
@@ -106,3 +106,5 @@ caller.
 - **API surface check:** after step 2, `index.ts` (and the built
   `.d.ts`) must contain no domain-named exports — grep for
   `Extraction|HumanEval|Evaluation|Candidate|Trace` as a cheap gate.
+  Also grep `styles.css` for `drv-trace|drv-case|drv-task` so deleted
+  components do not leave orphaned CSS behind.

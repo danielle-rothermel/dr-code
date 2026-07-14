@@ -67,6 +67,3 @@ pnpm typecheck
 pnpm build
 pnpm test
 ```
-
-`scripts/pre-check.sh` runs the install/typecheck/build gate when pnpm
-is available; CI always runs it.
