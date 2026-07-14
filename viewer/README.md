@@ -39,6 +39,20 @@ Code panels use Fira Code with ligatures; ligatures are disabled inside
 intraline-change spans of diffs, where they can mask single-character
 changes. Load the Fira Code font in the consuming app.
 
+## Gallery
+
+`packages/gallery` (`@dr-code/gallery`, private, never published) is a
+Vite + React app that renders every exported primitive against
+hand-written fixture data — several languages, long/short code, a
+changed diff, an identical-content diff, both `CodeDiff` modes, and
+every `StatusBadge` status — with a light/dark toggle. It's the visual
+verification surface for changes to the primitives; run it and eyeball
+the grid after touching a component:
+
+```bash
+pnpm --filter @dr-code/gallery dev
+```
+
 ## Checks
 
 ```bash

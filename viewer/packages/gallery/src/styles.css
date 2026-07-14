@@ -1,0 +1,102 @@
+/* Gallery chrome. Deliberately plain: no CSS framework, no theme
+   tokens beyond what's needed to flip light/dark for verification. */
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  background: light-dark(#ffffff, #0d1117);
+  color: light-dark(#1f2328, #e6edf3);
+}
+
+.gallery {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 4rem;
+}
+
+.gallery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid light-dark(#d0d7de, #30363d);
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.gallery-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.gallery-theme-toggle {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid light-dark(#d0d7de, #30363d);
+  background: light-dark(#f6f8fa, #21262d);
+  color: inherit;
+  cursor: pointer;
+}
+
+.gallery section {
+  margin-bottom: 2.5rem;
+}
+
+.gallery section h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: light-dark(#57606a, #8b949e);
+  margin-bottom: 0.75rem;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1rem;
+}
+
+.gallery-cell {
+  margin: 0;
+  border: 1px solid light-dark(#d0d7de, #30363d);
+  border-radius: 8px;
+  overflow: hidden;
+  background: light-dark(#ffffff, #161b22);
+}
+
+.gallery-cell-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid light-dark(#d0d7de, #30363d);
+  background: light-dark(#f6f8fa, #0d1117);
+}
+
+.gallery-cell-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.gallery-cell-description {
+  font-size: 0.75rem;
+  color: light-dark(#57606a, #8b949e);
+}
+
+.gallery-cell-body {
+  padding: 0.5rem;
+  overflow-x: auto;
+}
