@@ -9,20 +9,20 @@ import { DEFAULT_LANGUAGE } from "./themes.js";
 
 import "@git-diff-view/react/styles/diff-view-pure.css";
 
-export type TransformDiffMode = "split" | "unified";
-export type TransformDiffTheme = "light" | "dark";
+export type CodeDiffMode = "split" | "unified";
+export type CodeDiffTheme = "light" | "dark";
 
-export interface TransformDiffProps {
+export interface CodeDiffProps {
   oldContent: string;
   newContent: string;
   oldName?: string;
   newName?: string;
   lang?: string;
-  mode?: TransformDiffMode;
-  theme?: TransformDiffTheme;
+  mode?: CodeDiffMode;
+  theme?: CodeDiffTheme;
 }
 
-const DIFF_MODES: Record<TransformDiffMode, DiffModeEnum> = {
+const DIFF_MODES: Record<CodeDiffMode, DiffModeEnum> = {
   split: DiffModeEnum.Split,
   unified: DiffModeEnum.Unified,
 };
@@ -30,11 +30,11 @@ const DIFF_MODES: Record<TransformDiffMode, DiffModeEnum> = {
 type DiffFileInstance = ReturnType<typeof generateDiffFile>;
 
 /**
- * Client-tier diff of two plain strings, computed in-browser.
- * DiffFile instances cannot cross the RSC boundary, so this component
- * only ever accepts strings (ADR 0006).
+ * Diff of two plain strings, computed in-browser. Takes strings only —
+ * never a `DiffFile` instance — so it composes with any data source,
+ * not just this package's other components.
  */
-export function TransformDiff({
+export function CodeDiff({
   oldContent,
   newContent,
   oldName = "before",
@@ -42,7 +42,7 @@ export function TransformDiff({
   lang = DEFAULT_LANGUAGE,
   mode = "unified",
   theme = "light",
-}: TransformDiffProps) {
+}: CodeDiffProps) {
   const [diffFile, setDiffFile] = useState<DiffFileInstance | null>(null);
 
   useEffect(() => {

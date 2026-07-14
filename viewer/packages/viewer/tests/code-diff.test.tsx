@@ -1,17 +1,17 @@
 import { render, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { TransformDiff } from "../src/transform-diff.js";
+import { CodeDiff } from "../src/code-diff.js";
 
 const OLD_CONTENT = "def f():\n    return 1\n";
 const NEW_CONTENT = "def f():\n    return 2\n";
 
-describe("TransformDiff", () => {
+describe("CodeDiff", () => {
   it(
     "computes and renders a diff from two plain strings",
     async () => {
       render(
-        <TransformDiff oldContent={OLD_CONTENT} newContent={NEW_CONTENT} />,
+        <CodeDiff oldContent={OLD_CONTENT} newContent={NEW_CONTENT} />,
       );
       await waitFor(
         () => {

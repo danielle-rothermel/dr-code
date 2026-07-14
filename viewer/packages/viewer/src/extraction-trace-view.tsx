@@ -2,9 +2,9 @@
 
 import type { JSX } from "react";
 
-import { CodeBlockClient } from "./code-block-client.js";
+import { CodeBlock } from "./code-block.js";
+import { CodeDiff } from "./code-diff.js";
 import { DEFAULT_LANGUAGE } from "./themes.js";
-import { TransformDiff } from "./transform-diff.js";
 import type {
   CandidateSelectionTrace,
   ExtractionTrace,
@@ -100,7 +100,7 @@ function NodeBody({ node, lang }: { node: ExtractionTraceNode; lang: string }) {
       return <p className="drv-trace-unchanged">unchanged</p>;
     }
     return (
-      <TransformDiff
+      <CodeDiff
         oldContent={node.before_text}
         newContent={node.after_text}
         oldName={`${node.name}.before`}
@@ -111,7 +111,7 @@ function NodeBody({ node, lang }: { node: ExtractionTraceNode; lang: string }) {
   }
   const text = node.after_text ?? node.before_text;
   if (text == null || text === "") return null;
-  return <CodeBlockClient code={text} lang={lang} />;
+  return <CodeBlock code={text} lang={lang} />;
 }
 
 function CandidateEntry({
@@ -148,7 +148,7 @@ function CandidateEntry({
           ))}
         </div>
       )}
-      <CodeBlockClient code={candidate.source} lang={lang} />
+      <CodeBlock code={candidate.source} lang={lang} />
     </div>
   );
 }

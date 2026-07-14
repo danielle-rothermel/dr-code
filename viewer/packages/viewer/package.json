@@ -1,7 +1,7 @@
 {
   "name": "@dr-code/viewer",
   "version": "0.1.0",
-  "description": "dr-code's canonical React components for code visualization (shiki v3 two-tier rendering standard, ADR 0006)",
+  "description": "dr-code's canonical React components for code visualization (shiki v3 rendering standard)",
   "license": "MIT",
   "type": "module",
   "exports": {

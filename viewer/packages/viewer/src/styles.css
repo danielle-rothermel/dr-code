@@ -1,4 +1,4 @@
-/* @dr-code/viewer base styles (ADR 0006).
+/* @dr-code/viewer base styles.
    Consumers import once, e.g. in the root layout:
    import "@dr-code/viewer/styles.css" */
 
@@ -22,8 +22,8 @@
 }
 
 /* Ligatures can visually mask single-character changes, so disable
-   them inside intraline-change spans (ADR 0006). @git-diff-view 0.1.6
-   (pinned) marks intraline ranges with data-diff-highlight and wraps
+   them inside intraline-change spans. @git-diff-view 0.1.6 (pinned)
+   marks intraline ranges with data-diff-highlight and wraps
    syntax-highlighted range segments with data-range-start. */
 .drv-transform-diff [data-diff-highlight],
 .drv-transform-diff [data-range-start] {

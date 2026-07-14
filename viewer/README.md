@@ -14,14 +14,6 @@ wheel — the wheel stays toolchain-pure.
 - **react-shiki/core** — client-tier highlighting, same shiki engine.
 - React 19 peer deps; consumers are Next.js App Router.
 
-## Two-tier architecture
-
-| Tier | Components | Notes |
-| --- | --- | --- |
-| Server (RSC, zero client JS) | `<CodeBlock>`, `<TaskCard>` | shiki `codeToHtml` in async server components |
-| Client | `<CodeBlockClient>`, `<TransformDiff>`, `<ExtractionTraceView>` | `<TransformDiff>` takes two plain string props and computes the diff in-browser; DiffFile instances never cross the RSC boundary |
-| Shared | `<EvaluationCaseTable>` | no client JS of its own |
-
 Consumers import only these components, never shiki or @git-diff-view
 directly.
 

@@ -1,6 +1,9 @@
-import { codeToHtml } from "shiki";
-import type { JSX } from "react";
+"use client";
 
+import { useEffect, useState } from "react";
+import ShikiHighlighter from "react-shiki/core";
+
+import { getClientHighlighter, type ClientHighlighter } from "./highlighter.js";
 import { DEFAULT_LANGUAGE, SHIKI_THEMES } from "./themes.js";
 
 export interface CodeBlockProps {
@@ -10,22 +13,50 @@ export interface CodeBlockProps {
 }
 
 /**
- * Server-tier code panel (RSC, zero client JS). Use for static code:
- * task cards, persisted results. For live-fetched text use
- * `CodeBlockClient`.
+ * Highlighted code panel. Renders the plain code in a `<pre>`
+ * immediately, then swaps in shiki-highlighted markup once the
+ * highlighter has loaded in the browser.
  */
-export async function CodeBlock({
+export function CodeBlock({
   code,
   lang = DEFAULT_LANGUAGE,
   className,
-}: CodeBlockProps): Promise<JSX.Element> {
-  const html = await codeToHtml(code, {
-    lang,
-    themes: SHIKI_THEMES,
-    defaultColor: "light-dark()",
-  });
+}: CodeBlockProps) {
+  const [highlighter, setHighlighter] = useState<ClientHighlighter | null>(
+    null,
+  );
+  useEffect(() => {
+    let active = true;
+    void getClientHighlighter().then((loaded) => {
+      if (active) setHighlighter(loaded);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const classes = className ? `drv-code-block ${className}` : "drv-code-block";
+  if (highlighter === null) {
+    return (
+      <div className={classes}>
+        <pre>
+          <code>{code}</code>
+        </pre>
+      </div>
+    );
+  }
   return (
-    <div className={classes} dangerouslySetInnerHTML={{ __html: html }} />
+    <div className={classes}>
+      <ShikiHighlighter
+        highlighter={highlighter}
+        language={lang}
+        theme={SHIKI_THEMES}
+        defaultColor="light-dark()"
+        showLanguage={false}
+        addDefaultStyles={false}
+      >
+        {code}
+      </ShikiHighlighter>
+    </div>
   );
 }
