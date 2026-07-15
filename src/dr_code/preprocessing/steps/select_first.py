@@ -1,0 +1,37 @@
+"""Select the first surviving candidate as Code."""
+
+from __future__ import annotations
+
+from typing import ClassVar
+
+from dr_code.preprocessing.names import StepName
+from dr_code.preprocessing.steps.base import Step, StepFailedError, StepOutput
+from dr_code.trace import (
+    ArtifactKind,
+    CodeArtifact,
+    CodeCandidateSetArtifact,
+)
+
+
+class SelectFirst(Step):
+    """Deliberately dumb cardinality knob.
+
+    First surviving candidate wins, preserving the ladder's
+    conservative-first ordering. An empty set raises
+    ``StepFailedError`` — the absence surfaces here, where cardinality is
+    fixed.
+    """
+
+    NAME: ClassVar[StepName] = StepName.SELECT_FIRST
+    VERSION: ClassVar[str] = "1"
+    INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
+    OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE
+
+    def apply(self, value: CodeCandidateSetArtifact) -> StepOutput:
+        candidates = value.candidates
+        if not candidates:
+            raise StepFailedError("no candidate survived filtering")
+        return StepOutput(value=CodeArtifact(source=candidates[0]))
+
+
+__all__ = ["SelectFirst"]
