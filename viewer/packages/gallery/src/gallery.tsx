@@ -107,6 +107,10 @@ function ThemeBoard({ theme }: ThemeBoardProps) {
             </div>
           ))}
         </div>
+        <p className="gallery-note">
+          Empty diff panels are expected: identical before and after strings
+          produce no changed rows.
+        </p>
       </section>
     </article>
   );

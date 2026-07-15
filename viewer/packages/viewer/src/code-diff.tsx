@@ -27,6 +27,11 @@ const DIFF_MODES: Record<CodeDiffMode, DiffModeEnum> = {
   unified: DiffModeEnum.Unified,
 };
 
+const DIFF_FONT_SIZES: Record<CodeDiffMode, number> = {
+  split: 10.5,
+  unified: 11,
+};
+
 type DiffFileInstance = ReturnType<typeof generateDiffFile>;
 
 interface RenderedDiff {
@@ -107,6 +112,7 @@ export function CodeDiff({
         diffFile={rendered.diffFile}
         diffViewMode={DIFF_MODES[mode]}
         diffViewTheme={theme}
+        diffViewFontSize={DIFF_FONT_SIZES[mode]}
         diffViewHighlight
         diffViewWrap
       />

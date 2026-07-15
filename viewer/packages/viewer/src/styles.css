@@ -1,10 +1,12 @@
+@import "@fontsource-variable/fira-code/wght.css";
+
 /* @dr-code/viewer base styles. Consumers import this file once. */
 
 .drv-code-block pre,
 .drv-code-block code,
 .drv-code-diff {
-  font-family: "Fira Code", ui-monospace, "SF Mono", Menlo, Consolas,
-    monospace;
+  font-family: "Fira Code Variable", ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace;
   font-variant-ligatures: contextual;
 }
 
@@ -13,6 +15,12 @@
   padding: 0.75rem 1rem;
   overflow-x: auto;
   border-radius: 6px;
+}
+
+/* @git-diff-view sets an inline Menlo-first stack on its scroll containers. */
+.drv-code-diff .diff-table-scroll-container {
+  font-family: "Fira Code Variable", ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace !important;
 }
 
 /* Ligatures can visually mask single-character changes. The pinned

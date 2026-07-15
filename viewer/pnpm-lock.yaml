@@ -35,6 +35,9 @@ importers:
 
   packages/viewer:
     dependencies:
+      '@fontsource-variable/fira-code':
+        specifier: ^5.2.7
+        version: 5.2.7
       '@git-diff-view/file':
         specifier: 0.1.6
         version: 0.1.6
@@ -279,6 +282,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fontsource-variable/fira-code@5.2.7':
+    resolution: {integrity: sha512-J2bxN7fz5rd8WpQYyau4o19WqTzxoTqaNj9jhsv4p21GSu1Rf34tbqsxqjyDCR+wDMHM3SajyFqtq+5uvRUQ7w==}
 
   '@git-diff-view/core@0.1.6':
     resolution: {integrity: sha512-q2Ch8jURF6pL7VeNpOgHBRVY9gsGLXCOYpKXHG3BqpXe0kv6GNSUux8SmAYsDrakBzfgDClODxDtsM2rfiWpnA==}
@@ -1170,6 +1176,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@fontsource-variable/fira-code@5.2.7': {}
 
   '@git-diff-view/core@0.1.6':
     dependencies:

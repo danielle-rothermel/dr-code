@@ -112,17 +112,18 @@ Import the base styles once at the application root:
 import "@dr-code/viewer/styles.css";
 ```
 
-The styles are required for the component layout, diff presentation, and badge
-colors. Code surfaces prefer Fira Code but fall back to the system monospace
-stack; load Fira Code in the consuming application when that typeface is
-desired.
+The styles are required for the component layout, diff presentation, badge
+colors, and bundled variable Fira Code font. Code surfaces fall back to the
+system monospace stack while the font loads.
 
 ## Gallery
 
 `@dr-code/gallery` is a private Vite app for visually checking every primitive
 with static fixtures. It shows light and dark presentations, all badge states,
 short and long examples in every bundled language, and changed and unchanged
-diffs in both unified and split modes.
+diffs in both unified and split modes. Its Vite configuration resolves the
+viewer package to `src/`, so component and style edits appear immediately
+during development without a separate viewer build.
 
 From `viewer/`, install dependencies and start the development server:
 

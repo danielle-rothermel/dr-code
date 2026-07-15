@@ -227,7 +227,6 @@ main {
   border: 1px solid var(--gallery-border);
   border-radius: 7px;
   background: var(--gallery-surface);
-  font-size: 0.67rem;
 }
 
 @media (max-width: 1100px) {

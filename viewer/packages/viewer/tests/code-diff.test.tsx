@@ -20,6 +20,36 @@ describe("CodeDiff", () => {
       const container = document.querySelector(".drv-code-diff");
       expect(container?.textContent).toContain("return 1");
       expect(container?.textContent).toContain("return 2");
+      expect(
+        container
+          ?.querySelector<HTMLElement>(".diff-style-root")
+          ?.style.getPropertyValue("--diff-font-size--"),
+      ).toBe("11px");
+    },
+    15_000,
+  );
+
+  it(
+    "uses the smaller font size in split mode",
+    async () => {
+      const { container } = render(
+        <CodeDiff
+          oldContent={OLD_CONTENT}
+          newContent={NEW_CONTENT}
+          mode="split"
+        />,
+      );
+      await waitFor(
+        () => {
+          expect(container.querySelector(".drv-code-diff-pending")).toBeNull();
+        },
+        { timeout: 10_000 },
+      );
+      expect(
+        container
+          .querySelector<HTMLElement>(".diff-style-root")
+          ?.style.getPropertyValue("--diff-font-size--"),
+      ).toBe("10.5px");
     },
     15_000,
   );
