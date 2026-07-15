@@ -22,7 +22,7 @@ from dr_code.humaneval.sampling import (
     load_human_eval_rows,
     write_human_eval_snapshot_rows,
 )
-from dr_code.synthetic.models import FrozenModel
+from dr_code.models import FrozenModel
 
 #: Hugging Face dataset id and split.
 HF_DATASET_ID: Final[str] = DEFAULT_HUMAN_EVAL_DATASET_NAME

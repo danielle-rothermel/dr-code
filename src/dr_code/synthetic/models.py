@@ -2,20 +2,8 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
-
+from dr_code.models import FrozenModel
 from dr_code.synthetic.names import SAMPLE_ID_SEP
-
-
-class FrozenModel(BaseModel):
-    """Immutable base model for synthetic-corpus data."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        validate_assignment=True,
-        arbitrary_types_allowed=False,
-    )
 
 
 class CorruptedSample(FrozenModel):
