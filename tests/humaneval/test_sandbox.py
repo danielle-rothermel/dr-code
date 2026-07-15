@@ -30,6 +30,22 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _warm_sandbox_container() -> None:
+    # The first probe to run on a fresh CI runner pays container cold-start,
+    # which can push it past a tight per-probe deadline (e.g. the 2.0s
+    # `test_known_good_submission_scores_inside_real_sandbox`) and flake as a
+    # spurious timeout. Warm the runtime once here with a generous timeout so
+    # the timed probes measure steady-state execution, not image/container
+    # startup. Probe timeouts stay unchanged so their timing assertions remain
+    # meaningful.
+    run_python_in_sandbox(
+        source="input()\nprint('[]')\n",
+        input_json="{}",
+        timeout_seconds=30.0,
+    )
+
+
 def _task() -> HumanEvalTask:
     return HumanEvalTask(
         task_id="HumanEval/sandbox-fixture",
