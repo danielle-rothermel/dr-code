@@ -67,10 +67,9 @@
   A new package, <b><code>dr_code/metrics</code></b>, implements
   <a href="metric-design.html">metric-design</a>: <b>declared questions over trace-shaped input</b>,
   <b>one flat self-describing record per question — always</b>, and a <b>single engine</b> that shares derived
-  views, batches sandboxed execution behind the already-injectable <code>SandboxRunner</code>, and caches by
-  content hash. The enabling milestone is <b>splitting <code>humaneval/task.py</code></b> (design-review finding #1;
-  finding #2's runner injection has already landed). Depends on the
-  <a href="boundary-plan.html">boundary contract package</a>; independent of the
+  views, batches sandboxed execution behind the injectable <code>SandboxRunner</code>, and caches by
+  content hash. The HumanEval responsibility split and runner injection have <b>already landed</b>. Builds on the
+  implemented <a href="boundary-plan.html"><code>dr_code.trace</code> boundary contract</a>; independent of the
   <a href="preprocessing-plan.html">preprocessing plan</a>.
 </div>
 
@@ -78,7 +77,7 @@
 <div class="layer-head"><span class="n">1</span><h2>Module boundaries</h2></div>
 
 <div class="codeblock">
-  <div class="cb-head"><span>package layout</span><span>new files, plus the milestone-0 split of humaneval/task.py</span></div>
+  <div class="cb-head"><span>package layout</span><span>new metrics files over current HumanEval boundaries</span></div>
   <pre><code class="language-bash">src/dr_code/metrics/
   __init__.py              # curated façade
   names.py                 # MetricName StrEnum (registry↔enum sync-tested)
@@ -99,12 +98,12 @@
     execution.py           # ExecutionRequest/Outcome, ExecutionCache, run_requests
     engine.py              # extract_metrics / extract_metrics_batch
 
-# milestone 0 — humaneval/task.py (1,030 LOC) splits into:
+# current HumanEval execution boundaries (already landed):
 src/dr_code/humaneval/
-  models.py                # HumanEvalTask, EvaluationCase*/EvaluationTask* models
-  parsed_tests.py          # absorbs parse_human_eval_tests; AST helpers go private (findings #1+#4)
+  task.py                  # task/evaluation models, best-function selection, dataset parsing
+  parsed_tests.py          # test models and parse_human_eval_tests; AST helpers private
   batch_runner.py          # evaluate_human_eval_code, run_subprocess_batch, harness errors
-  runner/humaneval_runner.py  # the embedded runner-script string as a real, lintable .py resource
+  sandbox_runner_script.py # dependency-free runner program loaded as a package resource
 
 tests/metrics/
   test_records.py  test_definition.py  test_engine.py  test_operator_parity.py
@@ -113,16 +112,16 @@ tests/metrics/
 
 <div class="grid">
   <div class="card">
-    <h3>Milestone 0: split <code>task.py</code>; injection already landed.</h3>
+    <h3>The HumanEval prerequisite is complete.</h3>
     <ul>
-      <li>Finding #1: <code>task.py</code> mixes <span class="key">domain models, dataset parsing, batch
-        orchestration, and a 130-line runner program in a string literal</span>. The split above unbundles it.</li>
-      <li>Finding #2 is <span class="key">already satisfied</span> — <code>run_subprocess_batch</code> and
-        <code>evaluate_human_eval_code</code> take <code>run_in_sandbox: SandboxRunner</code>; verify remaining tests
-        pass runners instead of monkeypatching.</li>
-      <li>The runner script becomes a <span class="key">real .py resource</span> loaded via
-        <code>importlib.resources</code> — lintable, coverable, syntax-checked at build.</li>
-      <li>Independent of the boundary package — <span class="key">can start immediately</span>.</li>
+      <li><code>task.py</code> owns <span class="key">task/evaluation models, best-function selection, and dataset
+        parsing</span>; it no longer owns test parsing or sandbox orchestration.</li>
+      <li><code>parsed_tests.py</code> owns test parsing, while <code>batch_runner.py</code> owns execution payloads,
+        sandbox calls, and outcome attribution.</li>
+      <li><code>run_subprocess_batch</code> and <code>evaluate_human_eval_code</code> accept
+        <code>run_in_sandbox: SandboxRunner</code>, so the metrics engine can reuse the existing seam.</li>
+      <li>The dependency-free runner is a <span class="key">real .py resource</span> in
+        <code>sandbox_runner_script.py</code>, loaded via <code>importlib.resources</code>.</li>
     </ul>
   </div>
   <div class="card">
@@ -505,11 +504,6 @@ def extract_metrics_batch(
 <div class="ordertable">
 <table>
   <tr><th>#</th><th>Deliverable</th><th>Contents</th><th>Proof it works</th></tr>
-  <tr><td>0</td><td><b>task.py split</b> <i>(parallel-safe)</i></td>
-    <td><code>models.py</code> / <code>batch_runner.py</code> / runner resource; <code>parse_human_eval_tests</code>
-      into <code>parsed_tests</code> with helpers private; façade <code>__all__</code> + its test updated together.</td>
-    <td>Full existing suite green, especially <code>run_subprocess_batch</code> attribution tests and sandbox
-      integration tests; runner resource covered by lint/type checks.</td></tr>
   <tr><td>1</td><td><b>Skeleton + first pure operator</b></td>
     <td><code>names</code>, <code>records</code>, <code>definition</code>, <code>registry</code>,
       <code>operators/base</code>, engine bind path (no execution), <code>text_stats</code>.</td>
@@ -543,8 +537,9 @@ def extract_metrics_batch(
     <ul>
       <li><code>humaneval/metrics.py</code> keeps working untouched through steps 1–4; operators
         <span class="key">port the pure functions</span>, they don't wrap the old module.</li>
-      <li>Once parity tests hold, <span class="key">one coordinated change</span> moves callers
-        (<code>profiles.py</code>, façade, dashboards) and deletes the old path — no aliases or shims.</li>
+      <li>Once parity tests hold, <span class="key">one coordinated change</span> moves
+        <code>profiles.py</code>, the public façade, tests, and direct payload callers, then deletes the old path —
+        no aliases or shims.</li>
       <li><code>metric_models.py</code> payload shapes inform record value keys but are
         <span class="key">not preserved as API</span>.</li>
     </ul>
@@ -596,9 +591,9 @@ def extract_metrics_batch(
   <div class="card">
     <h3>Known risks.</h3>
     <ul>
-      <li><span class="key">Milestone-0 blast radius</span>: four in-package dependents import from
-        <code>task.py</code>; the façade's test-enforced <code>__all__</code> forces the split to update everything
-        together — treat it as one PR with the full suite as the gate.</li>
+      <li><span class="key">Current-contract preservation</span>: the engine must reuse
+        <code>batch_runner.py</code>'s sandbox attribution and preserve <code>scoring.py</code>'s outcome semantics;
+        focused parity tests and the full suite gate the migration.</li>
       <li><span class="key">JsonArtifact task payloads</span>: <code>HumanEvalTask</code> revalidation re-runs its
         parse-on-validate model validator; verify round-trip <code>model_dump</code>/<code>validate</code> is
         lossless before relying on it (add a test in step 3).</li>

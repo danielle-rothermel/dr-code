@@ -70,9 +70,10 @@
   architecture. Where first-success semantics forbid splitting (the extraction ladder), the constituents become an
   <b>ordered strategy tuple in settings</b> instead. The core grid
   (<code>text_transforms</code>, <code>text_analysis</code>, <code>code_analysis</code>, <code>import_inference</code>)
-  is <b>reused as-is</b> as step bodies; <code>code_extraction</code>/<code>code_parsing</code> keep serving
-  <code>/explain</code> until a <b>parity harness</b> proves the new pipeline equivalent, then become the migration
-  target. Depends on the <a href="boundary-plan.html">boundary contract package</a>.
+  is <b>reused as-is</b> as step bodies. <code>code_extraction</code>/<code>code_parsing</code> remain the current
+  implementation for HumanEval extraction and scoring, parser profiles, the public <code>humaneval</code> façade,
+  and tests until a <b>parity harness</b> proves the new pipeline equivalent. Builds on the implemented
+  <a href="boundary-plan.html"><code>dr_code.trace</code> boundary contract</a>.
 </div>
 
 <!-- ═══════════ SECTION 1 ═══════════ -->
@@ -169,12 +170,12 @@ tests/preprocessing/
   <div class="card">
     <h3>Old provenance tree is replaced, not ported.</h3>
     <ul>
-      <li><code>ExtractionTraceNode</code>'s decision tree is the shape design-review findings
-        <span class="key">#3 and #5</span> flagged as fragile de-facto contract.</li>
+      <li><code>ExtractionTraceNode</code>'s decision tree is an <span class="key">implementation detail</span>,
+        not a stable boundary contract.</li>
       <li>The new trace is flatter: <span class="key">values per instance name</span> +
         <span class="key">step facts</span> (chosen alternative, rejection reasons, candidate counts).</li>
-      <li><code>/explain</code> and the viewer keep consuming the old shape until migration
-        (out of scope here); the parity harness compares <span class="key">outputs, not traces</span>.</li>
+      <li>The parity harness compares <span class="key">behavior-level outputs, not tree or node names</span>;
+        consumer migration remains out of scope for this package change.</li>
     </ul>
   </div>
   <div class="card">
@@ -527,8 +528,8 @@ def resolve_preprocessing_definition(
   <tr><td>4</td><td><b>Ladder steps</b></td>
     <td><code>extract_candidates</code> with <code>ExtractionStrategy</code> enum + <code>STRATEGY_REGISTRY</code>
       (+ sync test), <code>field_marker</code>.</td>
-    <td>Strategy-choice facts asserted; tuple-subset settings (v1) verified; escaped-newline cases from
-      <code>test_escaped_newline_extraction.py</code> re-expressed against outputs, not node names (fixes finding #3).</td></tr>
+    <td>Strategy-choice facts asserted; tuple-subset settings (v1) verified; the established escaped-newline
+      behavior cases re-expressed against pipeline outputs and compilation, never node names.</td></tr>
   <tr><td>5</td><td><b>Named definitions + parity harness</b></td>
     <td><code>definitions.py</code>; harness comparing <code>run_preprocessing</code> vs
       <code>extract_code_with_profile</code>.</td>
@@ -546,8 +547,7 @@ def resolve_preprocessing_definition(
     <h3>Parity is behavioral, not trace-shaped.</h3>
     <ul>
       <li>The harness compares <span class="key">outputs and absence causes</span>, never the old
-        <code>ExtractionTraceNode</code> tree — asserting internal decision-tree shapes is what P-L3 forbids
-        and finding #3 flagged.</li>
+        <code>ExtractionTraceNode</code> tree; internal decision-tree shapes are not stable behavior contracts.</li>
       <li>Facts that matter downstream (<span class="key">chosen alternative, candidate counts</span>) get their own
         assertions as the new stable surface.</li>
     </ul>
@@ -555,8 +555,8 @@ def resolve_preprocessing_definition(
   <div class="card">
     <h3>Old pipeline retires in a later, separate change.</h3>
     <ul>
-      <li><code>code_extraction</code>/<code>code_parsing</code> keep serving <code>/explain</code>, the viewer, and
-        <code>scoring.py</code> until parity holds and metrics consume traces.</li>
+      <li><code>code_extraction</code>/<code>code_parsing</code> remain behind HumanEval extraction and scoring,
+        parser profiles, the public façade, and their tests until parity holds and those consumers migrate.</li>
       <li>Then one <span class="key">clean breaking change</span> swaps consumers and deletes the old modules —
         no long-lived dual paths.</li>
       <li>The exported <code>humaneval.__all__</code> is test-enforced; update façade and test together.</li>
@@ -605,8 +605,9 @@ def resolve_preprocessing_definition(
       <li><span class="key">Intermediate volume</span>: ~17 atomic steps each retain a full text value (P-S4);
         if serialized traces bloat, dedupe identical consecutive values by reference at serialization time —
         lossless, so still within S3.</li>
-      <li><span class="key">Coverage gap inherited</span>: <code>code_parsing</code> has no dedicated test file today;
-        the parity harness + step tests become its effective regression suite before deletion.</li>
+      <li><span class="key">Coverage is distributed</span>: there is no dedicated <code>test_code_parsing.py</code>;
+        behavior currently lives in HumanEval primitive, profile, escaped-newline, sandbox, and synthetic
+        round-trip tests. The parity harness + step tests consolidate that contract before deletion.</li>
     </ul>
   </div>
 </div>

@@ -1,7 +1,7 @@
 [project]
 name = "dr-code"
 version = "0.1.0"
-description = "Compression–correctness evaluation harness for HumanEval+ decoder attempts"
+description = "Producer-blind Python code evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
 readme = "README.md"
 authors = [
     { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
