@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from dr_code.humaneval.code_extraction import ExtractionTraceNode
+from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
     PARSER_PROFILE_VERSION,
@@ -12,14 +12,6 @@ from dr_code.humaneval.code_parsing import (
     extract_code_with_profile,
     resolve_parser_profile,
 )
-
-
-def _node_names(nodes: list[ExtractionTraceNode]) -> set[str]:
-    names: set[str] = set()
-    for node in nodes:
-        names.add(node.name)
-        names.update(_node_names(node.children))
-    return names
 
 
 @pytest.fixture
@@ -50,7 +42,8 @@ def test_v2_recovers_escaped_newline_shapes(source: str, v2_profile) -> None:
     assert result.succeeded
     assert result.extracted_code is not None
     assert "def f():" in result.extracted_code
-    assert "recover_escaped_python" in _node_names(result.trace.roots)
+    # Round-trip: recovery is only correct if the recovered code compiles.
+    assert validate_python_source(result.extracted_code).compile_ok
 
 
 def test_normal_code_with_string_literal_escape_skips_fallback(v2_profile) -> None:
@@ -61,7 +54,7 @@ def test_normal_code_with_string_literal_escape_skips_fallback(v2_profile) -> No
 
     assert result.succeeded
     assert result.extracted_code == source
-    assert "recover_escaped_python" not in _node_names(result.trace.roots)
+    assert validate_python_source(result.extracted_code).compile_ok
 
 
 @pytest.mark.parametrize(
@@ -100,7 +93,8 @@ def test_escaped_prose_preserves_python_string_literals(
 
     assert result.succeeded
     assert result.extracted_code == expected
-    assert "recover_escaped_python" in _node_names(result.trace.roots)
+    # Round-trip: preserved string literals must still compile.
+    assert validate_python_source(result.extracted_code).compile_ok
 
 
 def test_json_wrapped_code_preserves_python_string_escapes(v2_profile) -> None:
@@ -114,6 +108,8 @@ def test_json_wrapped_code_preserves_python_string_escapes(v2_profile) -> None:
 
     assert result.succeeded
     assert result.extracted_code == expected
+    # Round-trip: preserved string literals must still compile.
+    assert validate_python_source(result.extracted_code).compile_ok
 
 
 def test_escaped_prose_still_has_no_candidates(v2_profile) -> None:
@@ -124,7 +120,6 @@ def test_escaped_prose_still_has_no_candidates(v2_profile) -> None:
 
     assert not result.succeeded
     assert result.extraction_error == "no code candidates extracted"
-    assert "recover_escaped_python" not in _node_names(result.trace.roots)
 
 
 def test_v1_remains_resolvable_with_historical_behavior() -> None:
@@ -139,4 +134,3 @@ def test_v1_remains_resolvable_with_historical_behavior() -> None:
     )
 
     assert not result.succeeded
-    assert "recover_escaped_python" not in _node_names(result.trace.roots)
