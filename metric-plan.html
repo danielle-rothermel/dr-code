@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/vs.min.css">
+<title>dr-code · Metrics Extraction Module: Implementation Plan</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --surface:#fff; --ink:#1b2333; --muted:#5b6577; --line:#e3e8ef;
+    --accent:#1866b4; --accent-soft:#e9f2fb;
+    --green:#2b8a3e; --green-soft:#e8f5ec;
+    --amber:#9a6700; --amber-soft:#fff6e0;
+    --code-bg:#fbfcfe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:1500px; margin:0 auto; padding:40px 56px 80px}
+  h1{font-size:28px; margin:0 0 4px}
+  h2{font-size:15px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin:0}
+  h3{font-size:16.5px; margin:22px 0 6px}
+  p{margin:0 0 10px}
+  a{color:var(--accent)}
+  code{background:#eef1f6; border:1px solid var(--line); border-radius:5px; padding:0 5px;
+    font:.86em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .byline{margin:2px 0 26px; color:var(--muted); font-size:13px; font-weight:300; letter-spacing:.03em}
+  .layer-head{display:flex; align-items:baseline; gap:14px; border-bottom:2px solid var(--line);
+    padding-bottom:8px; margin:46px 0 20px}
+  .layer-head .n{font-size:26px; font-weight:800; color:var(--accent)}
+  .hero{background:var(--surface); border:1px solid var(--line); border-left:6px solid var(--accent);
+    border-radius:12px; padding:22px 28px; font-size:17.5px; line-height:1.6}
+  .hero b{color:var(--accent)}
+  .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px}
+  @media(max-width:1300px){.grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:900px){.grid{grid-template-columns:1fr} main{padding:24px}}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px 22px}
+  .card h3{margin:0 0 6px; color:var(--ink)}
+  .card .key{color:var(--accent)}
+  .card ul{margin:6px 0 0; padding-left:18px; font-size:14.5px; color:var(--muted)}
+  .card li{margin-bottom:6px}
+  .card li::marker{color:var(--accent); font-weight:800}
+  .card li b,.card td b{color:var(--ink); font-weight:700}
+  .codeblock{margin:14px 0; overflow:hidden; border:1px solid var(--line); border-radius:10px; background:var(--surface)}
+  .codeblock .cb-head{display:flex; justify-content:space-between; gap:10px; padding:7px 14px;
+    border-bottom:1px solid var(--line); background:#f1f4f9; color:var(--muted); font-size:12px; line-height:1.4}
+  .codeblock pre{margin:0; padding:14px 16px; overflow-x:auto; background:var(--code-bg);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .codeblock pre code{padding:0; border:0; background:transparent; font-size:75%; line-height:1.55}
+  table{border-collapse:collapse; width:100%; font-size:14px; margin-top:4px; background:var(--surface)}
+  th,td{padding:8px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  th{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+  .ordertable,.maptable{border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:14px}
+  .stubnote{font-size:14px; color:var(--muted); margin:0 0 4px}
+</style>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<main>
+
+<h1>Metrics Extraction Module: Implementation Plan</h1>
+<div class="byline">dr-code · 2026-07-14</div>
+
+<div class="hero">
+  A new package, <b><code>dr_code/metrics</code></b>, implements
+  <a href="metric-design.html">metric-design</a>: <b>declared questions over trace-shaped input</b>,
+  <b>one flat self-describing record per question — always</b>, and a <b>single engine</b> that shares derived
+  views, batches sandboxed execution behind the already-injectable <code>SandboxRunner</code>, and caches by
+  content hash. The enabling milestone is <b>splitting <code>humaneval/task.py</code></b> (design-review finding #1;
+  finding #2's runner injection has already landed). Depends on the
+  <a href="boundary-plan.html">boundary contract package</a>; independent of the
+  <a href="preprocessing-plan.html">preprocessing plan</a>.
+</div>
+
+<!-- ═══════════ SECTION 1 ═══════════ -->
+<div class="layer-head"><span class="n">1</span><h2>Module boundaries</h2></div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>package layout</span><span>new files, plus the milestone-0 split of humaneval/task.py</span></div>
+  <pre><code class="language-bash">src/dr_code/metrics/
+  __init__.py              # curated façade
+  names.py                 # MetricName StrEnum (registry↔enum sync-tested)
+  registry.py              # REGISTRY: dict[str, type[MetricOperator]]
+  records.py               # MetricRecord, RecordStatus, record_rows
+  definition.py            # MetricQuestion, MetricsDefinition (frozen, hashable)
+  compression.py           # moved from humaneval/compression.py (clean leaf)
+  operators/
+    base.py                # MetricOperator, OperatorSettings
+    text_stats.py          # char/byte/line/word counts       (on: any Text/Code key)
+    code_leakage.py        # Python-leakage signals           (on: any Text/Code key)
+    parse_outcome.py       # does it parse as Python?         (on: any Text/Code key)
+    ast_stats.py           # AST structure counts             (on: Code key)
+    compressed_length.py   # one codec+level size (+ ratio)   (on: Text/Code key)
+    code_test.py           # sandboxed test execution         (on: Code key + task aux key)
+  engine/
+    views.py               # ViewCache (shared derived views)
+    execution.py           # ExecutionRequest/Outcome, ExecutionCache, run_requests
+    engine.py              # extract_metrics / extract_metrics_batch
+
+# milestone 0 — humaneval/task.py (1,030 LOC) splits into:
+src/dr_code/humaneval/
+  models.py                # HumanEvalTask, EvaluationCase*/EvaluationTask* models
+  parsed_tests.py          # absorbs parse_human_eval_tests; AST helpers go private (findings #1+#4)
+  batch_runner.py          # evaluate_human_eval_code, run_subprocess_batch, harness errors
+  runner/humaneval_runner.py  # the embedded runner-script string as a real, lintable .py resource
+
+tests/metrics/
+  test_records.py  test_definition.py  test_engine.py  test_operator_parity.py
+  test_execution_cache.py  test_restored_trace_equality.py</code></pre>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Milestone 0: split <code>task.py</code>; injection already landed.</h3>
+    <ul>
+      <li>Finding #1: <code>task.py</code> mixes <span class="key">domain models, dataset parsing, batch
+        orchestration, and a 130-line runner program in a string literal</span>. The split above unbundles it.</li>
+      <li>Finding #2 is <span class="key">already satisfied</span> — <code>run_subprocess_batch</code> and
+        <code>evaluate_human_eval_code</code> take <code>run_in_sandbox: SandboxRunner</code>; verify remaining tests
+        pass runners instead of monkeypatching.</li>
+      <li>The runner script becomes a <span class="key">real .py resource</span> loaded via
+        <code>importlib.resources</code> — lintable, coverable, syntax-checked at build.</li>
+      <li>Independent of the boundary package — <span class="key">can start immediately</span>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Two operator kinds, one interface.</h3>
+    <ul>
+      <li><span class="key">Pure operators</span> (all but code_test) compute directly,
+        drawing shared derived views from the <code>ViewCache</code>.</li>
+      <li><span class="key">Execution-backed operators</span> (code_test) declare
+        <code>ExecutionRequest</code>s in phase one; the engine runs them <span class="key">deduped and batched</span>,
+        then hands results back for phase-two computation.</li>
+      <li>Callers see neither difference — <span class="key">questions in, records out</span> (X-M4).</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Clusters split by question, not by payload.</h3>
+    <ul>
+      <li>The old payload families bundled for amortization; the engine's <span class="key">ViewCache +
+        content-hash caching</span> does that now (X-S4), so clustering buys no efficiency — it only costs
+        granularity.</li>
+      <li>The test: a cluster is one metric only if you would <span class="key">never want part of its answer
+        without the rest</span>. So <code>gen_stats</code> splits into
+        <span class="key"><code>text_stats</code> + <code>code_leakage</code></span> (distinct questions, distinct
+        settings), <span class="key"><code>parse_outcome</code></span> leaves <code>ast_stats</code> (meaningful on
+        unparsed text), and compression runs <span class="key">one codec + level per question</span>.</li>
+      <li>Kept clusters: <span class="key"><code>ast_stats</code></span> (one walk) and
+        <span class="key"><code>code_test</code></span> (one execution) — you can't take half.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>The engine is two-phase: collect, then compute.</h3>
+    <ul>
+      <li><b>Bind:</b> resolve operators, validate settings and trace keys/kinds —
+        <span class="key">WiringError before any work</span> (metric-design L2).</li>
+      <li><b>Phase 1:</b> collect execution requests across <span class="key">all questions and all traces</span>,
+        dedupe by <span class="key">content-hash cache key</span> (at-most-once).</li>
+      <li><b>Phase 2:</b> compute each question; <span class="key">Absent input ⇒ not-applicable record</span>,
+        operator exception ⇒ <span class="key">operator-failure record</span> (totality, L3).</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Records are flat rows with a three-way status.</h3>
+    <ul>
+      <li>Every record carries <span class="key">metric identity + version + settings</span>,
+        <span class="key">lineage</span> (on-key, producer id/version/hash), and one of:
+        <span class="key">measured values</span>, <span class="key">not-applicable with cause</span>, or
+        <span class="key">operator failure</span>.</li>
+      <li><code>record_rows</code> flattens to dataframe rows with
+        <span class="key">metric-prefixed value columns</span> — analysis tools need no system code (X-S3).</li>
+      <li>Not-applicable ≠ measured zero; the distinction is a <span class="key">status column</span>, not a magic
+        value.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Any producer's trace works; task context rides in the trace.</h3>
+    <ul>
+      <li>Input is a boundary <code>Trace</code> — fresh from preprocessing, deserialized, or built with
+        <code>external_trace</code>; all three <span class="key">must produce equal records</span> (X-S2).</li>
+      <li><code>code_test</code> and ratio-bearing compression need task context: callers put the task in the
+        namespace as a <span class="key"><code>JsonArtifact</code></span>; operators
+        <span class="key">revalidate to <code>HumanEvalTask</code> at bind time</span>.</li>
+      <li>Questions on <code>input</code>/<code>output</code> work with any producer; only intermediate
+        measurements name step instances.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Caller policy stays outside; failure attribution splits three ways.</h3>
+    <ul>
+      <li><code>scoring.score_humaneval_submission</code> becomes the <span class="key">example policy consumer</span>:
+        its outcome taxonomy derives from code_test records (S5). No thresholds, verdicts, or "best" in records
+        (X-M3).</li>
+      <li>Attribution: <span class="key">candidate-attributable outcomes</span> (kill returncodes, output floods,
+        timeouts) are <b>data in values</b>; <span class="key">operator bugs</span> are
+        <b>operator-failure records</b>; <span class="key">infrastructure breakage</span>
+        (<code>SandboxError</code>, harness errors) <b>raises</b> — operators can still alert on it, matching
+        today's <code>EvaluationHarnessError</code> policy.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Existing code → new home</h3>
+<div class="maptable">
+<table>
+  <tr><th>Existing</th><th>Becomes</th><th>Notes</th></tr>
+  <tr><td><code>metrics.text_metrics</code> + <code>python_leakage_metrics</code></td><td><code>text_stats</code> + <code>code_leakage</code> operators</td>
+    <td>Distinct question families split (L2: shared machinery does not merge distinct questions);
+      <code>task_names</code> becomes a <code>code_leakage</code> setting (part of metric identity).</td></tr>
+  <tr><td><code>metrics.ast_metrics</code> (parse outcome + 30 counts)</td><td><code>parse_outcome</code> + <code>ast_stats</code> operators</td>
+    <td><code>parse_ok</code>/<code>parse_error</code> becomes its own question, askable of raw text;
+      <code>ast_stats</code> keeps the structure counts — one cohesive walk via shared <code>ViewCache</code>
+      (a <code>statistics</code> selection parameter is the sanctioned later extension, L2).</td></tr>
+  <tr><td><code>humaneval/compression.py</code></td><td><code>metrics/compression.py</code> + <code>compressed_length</code> operator</td>
+    <td>Clean-leaf module moves; one codec + level per question. Today's implicit library defaults
+      (gzip level 9, zstd level 3) become explicit pins in migrated definitions; ratio computed only when a
+      <code>reference_key</code> is declared.</td></tr>
+  <tr><td><code>run_subprocess_batch</code> + <code>sandbox.py</code></td><td>engine execution path behind <code>code_test</code></td>
+    <td><code>sandbox.py</code> unchanged; <code>batch_runner.py</code> (from the split) builds payloads and attributes outcomes.</td></tr>
+  <tr><td><code>build_metrics_payload</code> stages / <code>NodeOutputMetricsSource</code></td><td>questions on trace keys</td>
+    <td>"terminal" ≙ <code>on: input</code>; "extracted_code" ≙ <code>on: selected</code>; node stages ≙ questions on named keys.</td></tr>
+  <tr><td><code>compression_payloads_by_text</code> dedup cache</td><td>engine content-hash caching</td>
+    <td>Generalized: cache key = artifact hash + computation id + settings, within- and cross-run.</td></tr>
+  <tr><td><code>scoring.score_humaneval_submission</code> / <code>evaluation_aggregate_metrics</code></td><td>caller policy over records</td>
+    <td>Aggregate count fields survive as <code>code_test</code> values; score/outcome mapping stays outside the library.</td></tr>
+</table>
+</div>
+
+<!-- ═══════════ SECTION 2 ═══════════ -->
+<div class="layer-head"><span class="n">2</span><h2>Files &amp; proposed stubs</h2></div>
+
+<p class="stubnote">Representative stubs; the four stats operators are straightforward ports of the existing pure functions and are shown only by their settings.</p>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/metrics/names.py · records.py</span><span>vocabulary and the one-per-question answer</span></div>
+  <pre><code class="language-python">class MetricName(StrEnum):
+    """One name per question family. Granularity test: a cluster is one metric
+    only if you would never want part of its answer without the rest.
+    """
+    TEXT_STATS = "text_stats"                # char/byte/line/word counts
+    CODE_LEAKAGE = "code_leakage"            # keyword/fence/code-like counts; settings: task_names
+    PARSE_OUTCOME = "parse_outcome"          # parse_ok/parse_error — its own question, any text
+    AST_STATS = "ast_stats"                  # structure counts from one AST walk (cohesive cluster)
+    COMPRESSED_LENGTH = "compressed_length"  # one codec + level per question
+    CODE_TEST = "code_test"                  # one sandbox execution; outcome counts
+    # future clusters (task_test_stats, ...) are additive enum + operator + registry entries
+
+
+class RecordStatus(StrEnum):
+    MEASURED = "measured"
+    NOT_APPLICABLE = "not_applicable"      # upstream Absent; causal lineage preserved
+    OPERATOR_FAILURE = "operator_failure"  # operator bug on present input — visible, attributed (L3)
+
+
+MetricScalar = float | int | str | bool | None
+
+
+class MetricRecord(FrozenModel):
+    """One comparable, self-describing answer (X-M1). Identifies what computed
+    it, at which version, on what, and how the input was produced (L2).
+    """
+    # metric identity — semantics changes require a version bump (X-M2)
+    metric: MetricName
+    metric_version: str
+    settings: dict[str, JsonValue] = {}
+    # lineage
+    on_key: str
+    producer_id: str
+    producer_version: str | None
+    producer_definition_hash: str | None
+    metrics_definition_id: str
+    metrics_definition_version: str
+    # answer — exactly one shape per status (X-S1)
+    status: RecordStatus
+    values: dict[str, MetricScalar] = {}
+    absence_failed_step: str | None = None   # from Absent.failed_step
+    absence_cause: str | None = None
+    failure_type: str | None = None
+    failure_message: str | None = None
+
+
+def record_rows(records: Sequence[MetricRecord]) -&gt; list[dict[str, MetricScalar]]:
+    """Flat dataframe rows: identity/lineage columns + one column per value,
+    prefixed "{metric}.{key}" to avoid collisions (X-S3).
+    """</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/metrics/definition.py</span><span>declared questions, frozen identity</span></div>
+  <pre><code class="language-python">class MetricQuestion(FrozenModel):
+    metric: MetricName
+    on: str                               # trace key; "input"/"output" work with any producer
+    settings: dict[str, JsonValue] = {}   # validated against operator Settings at bind time
+
+
+class MetricsDefinition(FrozenModel):
+    """Declarations fully determine rows (X-S1): len(questions) records per
+    trace, in declaration order.
+    """
+    definition_id: str
+    version: str
+    questions: tuple[MetricQuestion, ...]
+    # validator: (metric, on, settings) triples unique
+
+
+def metrics_definition_hash(definition: MetricsDefinition) -&gt; str:
+    """trace.identity.stable_hash — deterministic identity for sweeps (M2)."""</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/metrics/operators/base.py</span><span>declare the question; the engine owns the mechanics</span></div>
+  <pre><code class="language-python">class OperatorSettings(FrozenModel):
+    """Parameters are part of metric identity (metric-design L2)."""
+
+
+class MetricOperator:
+    NAME: ClassVar[MetricName]
+    VERSION: ClassVar[str]        # semantics version: changing computation bumps it (X-M2)
+    INPUT: ClassVar[ArtifactKind] # required kind for the `on` key; mismatch =&gt; WiringError
+    Settings: ClassVar[type[OperatorSettings]] = OperatorSettings
+
+    def __init__(self, settings: OperatorSettings) -&gt; None: ...
+
+    def auxiliary_keys(self) -&gt; tuple[str, ...]:
+        """Extra trace keys this operator reads (e.g. code_test's task key).
+        Validated at bind time like `on`; Absent aux values also yield
+        not-applicable records.
+        """
+        return ()
+
+    def execution_requests(
+        self, value: Artifact, aux: Mapping[str, Artifact]
+    ) -&gt; tuple[ExecutionRequest, ...]:
+        """Phase 1: declare sandboxed work. Pure operators return () (default)."""
+        return ()
+
+    def compute(
+        self, value: Artifact, aux: Mapping[str, Artifact], ctx: EngineContext
+    ) -&gt; dict[str, MetricScalar]:
+        """Phase 2: pure computation from canonical artifacts, shared views
+        (ctx.views), and resolved execution outcomes (ctx.outcome_for).
+        Facts only — counts, ratios, outcomes; no verdicts (X-M3). Results may
+        not depend on caches, scheduling, or trace freshness (L2).
+        """
+        raise NotImplementedError
+
+
+# text_stats.py    — Settings: (none in v1); ports metrics.text_metrics
+# code_leakage.py  — Settings: task_names: tuple[str, ...] = ();
+#                    ports metrics.python_leakage_metrics
+# parse_outcome.py — Settings: (none); parse_ok/parse_error via ctx.views.parsed_module;
+#                    INPUT accepts TEXT or CODE
+# ast_stats.py     — Settings: (none in v1; a `statistics` selection is the sanctioned
+#                    extension, metric-design L2); ports ast_metrics' structure counts
+#                    via ctx.views.parsed_module; INPUT = CODE</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/metrics/operators/compressed_length.py · code_test.py</span><span>the two parameterized clusters</span></div>
+  <pre><code class="language-python">class CompressedLengthSettings(OperatorSettings):
+    # One codec + level per question: independent parameterizations are
+    # independent questions. Both fields required — the current code relies on
+    # implicit library defaults (ZstdCompressor() ⇒ level 3, gzip.compress ⇒
+    # level 9), which could drift semantics without a version bump (X-M2);
+    # migrated definitions pin those values explicitly.
+    method: CompressionMethod
+    level: int                          # gzip: 0–9; zstd: 1–22 (negative fast levels valid)
+    reference_key: str | None = None    # trace key holding reference Code for ratio values
+
+
+class CompressedLength(MetricOperator):
+    """Ports humaneval/compression.py, one codec per question. Values:
+    compressed_bytes, representation_bytes; plus ratio_to_reference /
+    percent_reduction when reference_key is declared (today's ground-truth
+    denominator, made explicit). Empty reference keeps ratio None — existing
+    behavior. The compressor is constructed from settings, replacing the
+    module-level ZSTD_COMPRESSOR singleton.
+    """
+    NAME = MetricName.COMPRESSED_LENGTH
+    VERSION = "1"                       # bump alongside codec-library upgrades: sizes at
+                                        # a fixed level may drift across zstd/zlib versions
+    INPUT = ArtifactKind.TEXT           # accepts TEXT or CODE (both carry text)
+
+
+class CodeTestSettings(OperatorSettings):
+    task_key: str = "task"              # JsonArtifact revalidated as HumanEvalTask at bind time
+    timeout_seconds: float = DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
+
+
+class CodeTest(MetricOperator):
+    NAME = MetricName.CODE_TEST
+    VERSION = "1"
+    INPUT = ArtifactKind.CODE
+    Settings = CodeTestSettings
+
+    def auxiliary_keys(self) -&gt; tuple[str, ...]:
+        return (self.settings.task_key,)
+
+    def execution_requests(self, value, aux):
+        """One request per top-level function name, built by batch_runner's
+        payload machinery (HumanEvalRunnerPayload as input_json, the runner
+        resource as source).
+        """
+
+    def compute(self, value, aux, ctx):
+        """Folds runner case outputs (batch_runner attribution: kill
+        returncodes, output floods, timeouts are candidate data) into facts:
+        total_cases, passed_count, failed_count, error_count, timeout_count,
+        coverage_complete, function_count, best_function_name.
+        best_function_name is mechanical max-passes selection (an observation);
+        score / outcome / pass@k remain caller policy over records (X-M3).
+        """</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/metrics/engine/views.py · execution.py</span><span>shared views; at-most-once execution</span></div>
+  <pre><code class="language-python">class ViewCache:
+    """Derived views shared across questions (metric-design L2). Recomputable
+    from canonical artifacts; a deserialized trace just starts cold (S3).
+    """
+    def parsed_module(self, source: str) -&gt; ast.Module | None:
+        """ast.parse cached by content; None on syntax error (the operator
+        reports parse_ok=False as a measured fact, like ast_metrics today).
+        """
+
+
+class ExecutionRequest(FrozenModel):
+    source: str                 # trusted runner program (the .py resource)
+    input_json: str             # payload, e.g. HumanEvalRunnerPayload JSON
+    timeout_seconds: float
+    computation_id: str         # e.g. "humaneval-runner@v1" — part of the cache key
+
+    @cached_property
+    def cache_key(self) -&gt; str:
+        """blake2b over (source, input_json, timeout_seconds, computation_id):
+        canonical-artifact hash + computation identity + settings (L3).
+        """
+
+
+class ExecutionOutcome(FrozenModel):
+    """SandboxCompletedProcess fields, or the candidate-attributable failure
+    (timeout / output-limit), preserved as data. Infrastructure SandboxError
+    is never stored — it raises (fail-closed, alertable).
+    """
+
+
+class ExecutionCache(Protocol):
+    def get(self, key: str) -&gt; ExecutionOutcome | None: ...
+    def put(self, key: str, outcome: ExecutionOutcome) -&gt; None: ...
+
+
+class InMemoryExecutionCache:
+    """v1 default. A persistent implementation later enables cross-run sweeps
+    (at-most-once per engine-cache lifetime, L3) without interface change.
+    """
+
+
+def run_requests(
+    requests: Sequence[ExecutionRequest],
+    *, run_in_sandbox: SandboxRunner, cache: ExecutionCache,
+) -&gt; dict[str, ExecutionOutcome]:
+    """Dedupes by cache_key, executes misses via the injected runner —
+    production OCI sandbox or a local test runner (L3).
+    """</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/metrics/engine/engine.py</span><span>one record per declared question, always</span></div>
+  <pre><code class="language-python">def extract_metrics(
+    definition: MetricsDefinition,
+    trace: Trace,
+    *,
+    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    execution_cache: ExecutionCache | None = None,
+) -&gt; tuple[MetricRecord, ...]:
+    """Bind:   resolve each question in REGISTRY; validate settings; check `on`
+               and auxiliary keys exist with the right artifact kind
+               =&gt; WiringError (incompatible definitions, before any work).
+    Plan:    questions whose inputs are Absent short-circuit to NOT_APPLICABLE
+             records carrying failed_step + cause; the rest contribute
+             execution requests, deduped via run_requests.
+    Compute: one record per question, in declaration order. Operator exception
+             =&gt; OPERATOR_FAILURE record attributed to the metric (L3); never a
+             boundary-crossing exception. SandboxError still raises (infra).
+    """
+
+
+def extract_metrics_batch(
+    definition: MetricsDefinition,
+    traces: Sequence[Trace],
+    *,
+    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    execution_cache: ExecutionCache | None = None,
+) -&gt; tuple[tuple[MetricRecord, ...], ...]:
+    """Collects execution requests across all traces before running any (X-S4)
+    — identical submissions across a sweep execute once via cache_key.
+    """</code></pre>
+</div>
+
+<!-- ═══════════ SECTION 3 ═══════════ -->
+<div class="layer-head"><span class="n">3</span><h2>Implementation order &amp; considerations</h2></div>
+
+<div class="ordertable">
+<table>
+  <tr><th>#</th><th>Deliverable</th><th>Contents</th><th>Proof it works</th></tr>
+  <tr><td>0</td><td><b>task.py split</b> <i>(parallel-safe)</i></td>
+    <td><code>models.py</code> / <code>batch_runner.py</code> / runner resource; <code>parse_human_eval_tests</code>
+      into <code>parsed_tests</code> with helpers private; façade <code>__all__</code> + its test updated together.</td>
+    <td>Full existing suite green, especially <code>run_subprocess_batch</code> attribution tests and sandbox
+      integration tests; runner resource covered by lint/type checks.</td></tr>
+  <tr><td>1</td><td><b>Skeleton + first pure operator</b></td>
+    <td><code>names</code>, <code>records</code>, <code>definition</code>, <code>registry</code>,
+      <code>operators/base</code>, engine bind path (no execution), <code>text_stats</code>.</td>
+    <td>Totality test (N questions ⇒ N records incl. Absent + operator-failure paths); WiringError tests;
+      parity vs <code>text_metrics</code> outputs.</td></tr>
+  <tr><td>2</td><td><b>Remaining pure operators</b></td>
+    <td><code>code_leakage</code>, <code>parse_outcome</code>, <code>ast_stats</code>,
+      <code>compressed_length</code>; move <code>compression.py</code>; ViewCache.</td>
+    <td>Field-for-field parity vs <code>build_metrics_payload</code> stages on the HumanEval+ snapshot,
+      values re-keyed across the six-operator layout; pinned-level questions reproduce today's implicit-default
+      compressed sizes exactly.</td></tr>
+  <tr><td>3</td><td><b>Execution path + code_test</b></td>
+    <td><code>engine/execution.py</code>, <code>code_test</code> on <code>batch_runner</code>.</td>
+    <td>With a local test runner: case counts match <code>evaluate_human_eval_code</code> on snapshot tasks;
+      candidate-kill/output-flood/timeout attribution preserved; SandboxError still raises.</td></tr>
+  <tr><td>4</td><td><b>Batching + engine promises</b></td>
+    <td><code>extract_metrics_batch</code>, <code>InMemoryExecutionCache</code>.</td>
+    <td>At-most-once via counting fake runner; determinism: fresh trace ≡ deserialized trace ≡ external trace
+      record equality; dataframe round-trip of <code>record_rows</code>.</td></tr>
+  <tr><td>5</td><td><b>Caller-policy example + migration</b></td>
+    <td>Derive <code>SubmissionOutcome</code>-equivalent scoring from records; migrate callers;
+      retire <code>humaneval/metrics.py</code>.</td>
+    <td>Outcome parity vs <code>score_humaneval_submission</code> across the snapshot; then one coordinated
+      breaking change removes the old payload path.</td></tr>
+</table>
+</div>
+
+<div class="grid" style="margin-top:18px">
+  <div class="card">
+    <h3>Migration is a clean break, staged by parity.</h3>
+    <ul>
+      <li><code>humaneval/metrics.py</code> keeps working untouched through steps 1–4; operators
+        <span class="key">port the pure functions</span>, they don't wrap the old module.</li>
+      <li>Once parity tests hold, <span class="key">one coordinated change</span> moves callers
+        (<code>profiles.py</code>, façade, dashboards) and deletes the old path — no aliases or shims.</li>
+      <li><code>metric_models.py</code> payload shapes inform record value keys but are
+        <span class="key">not preserved as API</span>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Batching depth is deliberately staged.</h3>
+    <ul>
+      <li>v1 "batching" = <span class="key">request-level dedupe + sequential execution</span>; that alone
+        delivers at-most-once and cross-trace reuse.</li>
+      <li>One-runner-session-per-batch (design L3, "where possible") needs sandbox work — today each invocation
+        is one container. Defer behind <code>run_requests</code>, whose <span class="key">interface already
+        permits it</span>.</li>
+      <li>Persistent cross-run cache is likewise deferred behind the <code>ExecutionCache</code> protocol.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Settings-as-dicts: same trade as preprocessing.</h3>
+    <ul>
+      <li><code>MetricQuestion.settings</code> stays a JSON dict for serializable, hashable definitions;
+        <span class="key">bind-time validation</span> against operator <code>Settings</code> raises WiringError.</li>
+      <li>Settings participate in <span class="key">record identity and cache keys</span> — two questions differing
+        only in settings are distinct questions.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Record width and naming need one early decision.</h3>
+    <ul>
+      <li><code>ast_stats</code> emits ~30 values; with the <code>"{metric}.{key}"</code> prefix convention,
+        columns stay <span class="key">collision-free and self-describing</span>.</li>
+      <li>Multi-question dataframes are <span class="key">sparse by design</span> (one record per question,
+        different value sets); consumers pivot on <code>metric</code> + <code>on_key</code>.</li>
+      <li>Lock the convention in <code>record_rows</code> tests during step 1 — renaming columns later breaks
+        comparability (X-M1).</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Determinism has two soft spots: timing and codec drift.</h3>
+    <ul>
+      <li>Runner case outputs include <code>elapsed_seconds</code>; identical inputs won't reproduce it exactly.
+        Decision: keep timing out of <span class="key">v1 record values</span> (or mark it explicitly
+        non-comparable) so the determinism promise — same inputs + identity ⇒ same record — holds testably.</li>
+      <li>Cache hits returning stored outcomes make this visible: a cached record must equal a fresh one.</li>
+      <li><span class="key">Codec drift</span>: compressed sizes at a fixed level are not guaranteed stable across
+        compressor library versions. Levels are pinned in settings, dependencies are locked in
+        <code>uv.lock</code>, and a <code>zstandard</code>/zlib upgrade pairs with a
+        <code>compressed_length</code> <span class="key">VERSION bump</span> (X-M2).</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Known risks.</h3>
+    <ul>
+      <li><span class="key">Milestone-0 blast radius</span>: four in-package dependents import from
+        <code>task.py</code>; the façade's test-enforced <code>__all__</code> forces the split to update everything
+        together — treat it as one PR with the full suite as the gate.</li>
+      <li><span class="key">JsonArtifact task payloads</span>: <code>HumanEvalTask</code> revalidation re-runs its
+        parse-on-validate model validator; verify round-trip <code>model_dump</code>/<code>validate</code> is
+        lossless before relying on it (add a test in step 3).</li>
+      <li><span class="key">Best-function loop moves</span>: today <code>evaluate_human_eval_code</code> loops
+        function names <em>then</em> picks best; code_test must preserve per-function request fan-out or counts
+        drift — the step-3 parity test is the guard.</li>
+    </ul>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</main>
+</body>
+</html>

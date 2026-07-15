@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/vs.min.css">
+<title>dr-code · Preprocessing Module: Implementation Plan</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --surface:#fff; --ink:#1b2333; --muted:#5b6577; --line:#e3e8ef;
+    --accent:#1866b4; --accent-soft:#e9f2fb;
+    --green:#2b8a3e; --green-soft:#e8f5ec;
+    --amber:#9a6700; --amber-soft:#fff6e0;
+    --code-bg:#fbfcfe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:1500px; margin:0 auto; padding:40px 56px 80px}
+  h1{font-size:28px; margin:0 0 4px}
+  h2{font-size:15px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin:0}
+  h3{font-size:16.5px; margin:22px 0 6px}
+  p{margin:0 0 10px}
+  a{color:var(--accent)}
+  code{background:#eef1f6; border:1px solid var(--line); border-radius:5px; padding:0 5px;
+    font:.86em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .byline{margin:2px 0 26px; color:var(--muted); font-size:13px; font-weight:300; letter-spacing:.03em}
+  .layer-head{display:flex; align-items:baseline; gap:14px; border-bottom:2px solid var(--line);
+    padding-bottom:8px; margin:46px 0 20px}
+  .layer-head .n{font-size:26px; font-weight:800; color:var(--accent)}
+  .hero{background:var(--surface); border:1px solid var(--line); border-left:6px solid var(--green);
+    border-radius:12px; padding:22px 28px; font-size:17.5px; line-height:1.6}
+  .hero b{color:var(--green)}
+  .grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px}
+  @media(max-width:1300px){.grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:900px){.grid{grid-template-columns:1fr} main{padding:24px}}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px 22px}
+  .card h3{margin:0 0 6px; color:var(--ink)}
+  .card .key{color:var(--accent)}
+  .card ul{margin:6px 0 0; padding-left:18px; font-size:14.5px; color:var(--muted)}
+  .card li{margin-bottom:6px}
+  .card li::marker{color:var(--accent); font-weight:800}
+  .card li b,.card td b{color:var(--ink); font-weight:700}
+  .codeblock{margin:14px 0; overflow:hidden; border:1px solid var(--line); border-radius:10px; background:var(--surface)}
+  .codeblock .cb-head{display:flex; justify-content:space-between; gap:10px; padding:7px 14px;
+    border-bottom:1px solid var(--line); background:#f1f4f9; color:var(--muted); font-size:12px; line-height:1.4}
+  .codeblock pre{margin:0; padding:14px 16px; overflow-x:auto; background:var(--code-bg);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .codeblock pre code{padding:0; border:0; background:transparent; font-size:75%; line-height:1.55}
+  table{border-collapse:collapse; width:100%; font-size:14px; margin-top:4px; background:var(--surface)}
+  th,td{padding:8px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  th{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+  .ordertable,.maptable{border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:14px}
+  .stubnote{font-size:14px; color:var(--muted); margin:0 0 4px}
+</style>
+<link rel="stylesheet" href="doc.css">
+</head>
+<body>
+<main>
+
+<h1>Preprocessing Module: Implementation Plan</h1>
+<div class="byline">dr-code · 2026-07-14</div>
+
+<div class="hero">
+  A new package, <b><code>dr_code/preprocessing</code></b>, rebuilds the extraction pipeline from
+  <a href="preprocessing-design.html">preprocessing-design</a> as <b>atomic, declared steps over typed artifacts</b> —
+  one operation per step, so definitions choose exactly which operations run — mirroring the synthetic corruption
+  architecture. Where first-success semantics forbid splitting (the extraction ladder), the constituents become an
+  <b>ordered strategy tuple in settings</b> instead. The core grid
+  (<code>text_transforms</code>, <code>text_analysis</code>, <code>code_analysis</code>, <code>import_inference</code>)
+  is <b>reused as-is</b> as step bodies; <code>code_extraction</code>/<code>code_parsing</code> keep serving
+  <code>/explain</code> until a <b>parity harness</b> proves the new pipeline equivalent, then become the migration
+  target. Depends on the <a href="boundary-plan.html">boundary contract package</a>.
+</div>
+
+<!-- ═══════════ SECTION 1 ═══════════ -->
+<div class="layer-head"><span class="n">1</span><h2>Module boundaries</h2></div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>package layout</span><span>new files only; existing core-grid modules unchanged</span></div>
+  <pre><code class="language-bash">src/dr_code/preprocessing/
+  __init__.py              # curated façade
+  names.py                 # StepName StrEnum (registry↔enum sync-tested)
+  registry.py              # REGISTRY: dict[str, type[Step]]
+  definition.py            # StepSpec, PreprocessingDefinition (frozen, hashable)
+  runner.py                # bind_definition + run_preprocessing -&gt; Trace
+  definitions.py           # named frozen definitions (replaces parser profiles)
+  steps/
+    base.py                # Step, StepOutput, StepFailedError, CandidateMapStep, AlternativesStep
+    # atomic text steps (Text -&gt; Text) — one operation each, flat like synthetic/corruptions
+    normalize_line_endings.py  normalize_unicode.py  normalize_smart_quotes.py
+    expand_tabs.py  strip_trailing_whitespace.py  collapse_blank_runs.py  trim_outer_blanks.py
+    extract_candidates.py  # Text -&gt; CandidateSet: first-success ladder over an ordered strategy tuple
+    field_marker.py        # Text -&gt; CandidateSet   (strict [[ ## code ## ]] profile)
+    # elementwise candidate steps (CandidateSet -&gt; CandidateSet)
+    strip_fences.py  dedent.py  split_on_name_guard.py  drop_after_last_return.py
+    repair_import_lines.py  infer_missing_imports.py  dedupe_imports.py
+    filter_compilable.py  filter_plain_literal.py  filter_code_repr.py
+    select_first.py  return_all.py                      # cardinality knobs
+tests/preprocessing/
+  test_registry.py  test_steps.py  test_definition.py  test_runner.py
+  test_definitions_parity.py  test_round_trip.py  test_serialized_trace.py</code></pre>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Steps are thin adapters; the core grid stays put.</h3>
+    <ul>
+      <li><code>text_transforms</code>, <code>text_analysis</code>, <code>code_analysis</code>,
+        <code>import_inference</code> already are <span class="key">total, deterministic functions</span> — exactly
+        what step bodies need.</li>
+      <li>Steps <span class="key">wrap, never reimplement</span>: parse the artifact, call the function, wrap the
+        result. New logic in a step is a smell.</li>
+      <li>Existing unit tests for those modules keep their value untouched.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Every constituent operation is its own step.</h3>
+    <ul>
+      <li>Today's bundles unbundle: <code>normalize_text</code> becomes <span class="key">six atomic text
+        steps</span>, <code>infer_necessary_imports</code> becomes <span class="key">three import steps</span> —
+        definitions include, exclude, and reorder each operation individually.</li>
+      <li><span class="key">No inclusion flags</span>: a boolean per sub-operation hides 2<sup>n</sup> pipeline
+        variants inside settings; an explicit step list keeps the definition
+        <span class="key">self-describing at a glance</span> (P-S3) and lets facts attribute which operation
+        changed the text.</li>
+      <li><span class="key">Grouping happens in definitions, not steps</span>; a unit test pins
+        composed-atomics ≡ <code>normalize_text</code>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>The ladder's granularity is an ordered strategy tuple.</h3>
+    <ul>
+      <li><code>extract_candidates</code> <span class="key">cannot split into pipeline steps</span> — its
+        constituents are first-success alternatives, not a sequence, and fallbacks must stay inside one step
+        (P-L2).</li>
+      <li>So the choice becomes data: settings hold an <span class="key">ordered
+        <code>tuple[ExtractionStrategy, ...]</code></span> — include, exclude, and reorder per definition.</li>
+      <li>New strategies are <span class="key">additive</span>: enum member + registered callable, guarded by the
+        same sync-test pattern as the step registry.</li>
+      <li><span class="key">v1 compat</span> = the tuple without <code>escaped_python</code>, replacing the
+        earlier boolean setting.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Failures become <code>Absent</code>; the runner always completes.</h3>
+    <ul>
+      <li>A step that cannot proceed without guessing raises <span class="key"><code>StepFailedError(cause)</code></span>;
+        the runner converts it to <span class="key"><code>Absent</code> with cause</span> (P-M2).</li>
+      <li>Downstream steps <span class="key">skip and record propagation</span>; the pipeline finishes with a
+        full trace every time (P-S4).</li>
+      <li>An <span class="key">empty candidate set is data</span>, not a failure — the absence surfaces where
+        cardinality is fixed, at <code>select_first</code>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>The corruption architecture is copied deliberately.</h3>
+    <ul>
+      <li>Same shape as <code>synthetic/corruptions</code>: <span class="key">uniform base class</span>,
+        <span class="key">one file per step</span>, <span class="key">name-keyed REGISTRY</span>,
+        <span class="key">frozen definitions</span>, <span class="key">single fold runner</span>.</li>
+      <li>Reuse the <span class="key">registry↔enum sync test</span> verbatim so the step vocabulary cannot
+        drift (P-L3).</li>
+      <li>One difference: steps take <span class="key">no rng</span> — determinism is settings + input only.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Old provenance tree is replaced, not ported.</h3>
+    <ul>
+      <li><code>ExtractionTraceNode</code>'s decision tree is the shape design-review findings
+        <span class="key">#3 and #5</span> flagged as fragile de-facto contract.</li>
+      <li>The new trace is flatter: <span class="key">values per instance name</span> +
+        <span class="key">step facts</span> (chosen alternative, rejection reasons, candidate counts).</li>
+      <li><code>/explain</code> and the viewer keep consuming the old shape until migration
+        (out of scope here); the parity harness compares <span class="key">outputs, not traces</span>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Out of bounds for this module.</h3>
+    <ul>
+      <li><span class="key">Quality-based selection</span> — cross-candidate preference belongs to caller policy
+        over metric records (S5).</li>
+      <li><span class="key">Scoring and outcomes</span> — <code>scoring.py</code> is untouched by this plan.</li>
+      <li><span class="key">Adaptive behavior</span> — no settings change based on input shape; alternatives
+        ladders are the only fallback mechanism.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Existing code → new home</h3>
+<div class="maptable">
+<table>
+  <tr><th>Existing</th><th>Becomes</th><th>Notes</th></tr>
+  <tr><td><code>text_transforms.normalize_text</code></td><td>six atomic text steps</td>
+    <td><code>normalize_line_endings</code>, <code>normalize_unicode</code> (NFKC), <code>expand_tabs</code>
+      (settings: <code>tab_width</code>), <code>strip_trailing_whitespace</code>, <code>collapse_blank_runs</code>,
+      <code>trim_outer_blanks</code> — each wraps its existing function; composed ≡ <code>normalize_text</code>
+      (unit-tested). <code>normalize_smart_quotes</code> joins the vocabulary as its own step.</td></tr>
+  <tr><td><code>candidate_blocks</code> + <code>strip_markdown_wrappers</code> + <code>recover_escaped_python</code></td>
+    <td><code>extract_candidates</code> strategy tuple</td>
+    <td>The outer ladder of <code>apply_cleaning_with_trace</code>; each alternative is a named
+      <code>ExtractionStrategy</code>, and definitions choose members and order (conservative → aggressive).</td></tr>
+  <tr><td><code>strip_code_fences</code>, <code>drop_if_name</code>, <code>drop_after_last_return</code></td>
+    <td>elementwise CandidateSet steps</td>
+    <td>Currently the per-candidate chain inside <code>apply_cleaning</code>; each becomes its own named step.</td></tr>
+  <tr><td><code>infer_necessary_imports</code> internals</td>
+    <td>three elementwise steps</td>
+    <td><code>repair_import_lines</code>, <code>infer_missing_imports</code>, <code>dedupe_imports</code> — the
+      private helpers promoted to steps, so definitions can e.g. dedupe without inferring.</td></tr>
+  <tr><td><code>candidate_selection</code> checks (compile / plain-literal / code-repr)</td>
+    <td><code>filter_*</code> steps</td>
+    <td>Wrap <code>validate_python_source_with_ast</code>, <code>is_plain_literal_module</code>, <code>is_code_repr_assignment</code>; rejections recorded as facts.</td></tr>
+  <tr><td>first-success candidate loop in <code>extract_best_effort_code</code></td>
+    <td><code>select_first</code> step</td>
+    <td>CandidateSet → Code; empty set ⇒ <code>StepFailedError</code>.</td></tr>
+  <tr><td><code>field_marker_value</code> + strict profile</td><td><code>field_marker</code> step</td>
+    <td>Settings: <code>field_name="code"</code>; repr-check filter omitted from its definition, matching current behavior.</td></tr>
+  <tr><td><code>CodeParserProfile</code> v1 / v2</td><td>named <code>PreprocessingDefinition</code>s</td>
+    <td>v1 = same ladder with <code>include_escaped_recovery=False</code>; <code>resolve_*</code> keeps persisted runs reproducible.</td></tr>
+  <tr><td><code>CodeExtractionResult</code> + <code>ExtractionTrace</code></td><td><code>Trace</code> (values + facts)</td>
+    <td><code>extracted_code</code> ≙ <code>trace["output"]</code>; <code>extraction_method</code> ≙ extract-step fact; <code>extraction_error</code> ≙ <code>Absent.cause</code>.</td></tr>
+  <tr><td><code>parsed_code.parse_code</code> views</td><td>derived views over <code>CodeArtifact</code></td>
+    <td>Stay recomputable functions; consumed by metrics, not stored in traces (S3).</td></tr>
+</table>
+</div>
+
+<!-- ═══════════ SECTION 2 ═══════════ -->
+<div class="layer-head"><span class="n">2</span><h2>Files &amp; proposed stubs</h2></div>
+
+<p class="stubnote">Representative stubs; trivially analogous steps (listed in the layout above) follow the same shapes.</p>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/preprocessing/names.py</span><span>the step vocabulary</span></div>
+  <pre><code class="language-python">class StepName(StrEnum):
+    # atomic text steps — the constituents of today's normalize_text, plus smart quotes
+    NORMALIZE_LINE_ENDINGS = "normalize_line_endings"
+    NORMALIZE_UNICODE = "normalize_unicode"              # NFKC
+    NORMALIZE_SMART_QUOTES = "normalize_smart_quotes"
+    EXPAND_TABS = "expand_tabs"                          # settings: tab_width
+    STRIP_TRAILING_WHITESPACE = "strip_trailing_whitespace"
+    COLLAPSE_BLANK_RUNS = "collapse_blank_runs"
+    TRIM_OUTER_BLANKS = "trim_outer_blanks"
+    # candidate generation
+    EXTRACT_CANDIDATES = "extract_candidates"            # settings: ordered strategy tuple
+    FIELD_MARKER_EXTRACT = "field_marker_extract"
+    # elementwise candidate transforms
+    STRIP_FENCES = "strip_fences"
+    DEDENT_CANDIDATES = "dedent_candidates"              # exists for parity; not in default definitions
+    SPLIT_ON_NAME_GUARD = "split_on_name_guard"          # text_transforms.drop_if_name
+    DROP_AFTER_LAST_RETURN = "drop_after_last_return"
+    # import handling — infer_necessary_imports unbundled
+    REPAIR_IMPORT_LINES = "repair_import_lines"
+    INFER_MISSING_IMPORTS = "infer_missing_imports"
+    DEDUPE_IMPORTS = "dedupe_imports"
+    # filters and cardinality knobs
+    FILTER_COMPILABLE = "filter_compilable"
+    FILTER_PLAIN_LITERAL = "filter_plain_literal"
+    FILTER_CODE_REPR = "filter_code_repr"
+    SELECT_FIRST = "select_first"
+    RETURN_ALL = "return_all"</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/preprocessing/steps/base.py</span><span>the step contract</span></div>
+  <pre><code class="language-python">class StepSettings(FrozenModel):
+    """Base for per-step settings; each Step subclass declares its own subclass."""
+
+
+class StepFailedError(Exception):
+    """Data failure: the step cannot produce output without guessing (P-M2).
+    Converted to Absent-with-cause by the runner; never escapes run_preprocessing.
+    """
+    def __init__(self, cause: str) -&gt; None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class StepOutput:
+    value: Artifact
+    facts: Mapping[str, str] = field(default_factory=dict)
+    # facts describe the output (chosen alternative, rejection reasons); a step
+    # may describe, never prefer (P-L2)
+
+
+class Step:
+    NAME: ClassVar[StepName]
+    VERSION: ClassVar[str]
+    INPUT: ClassVar[ArtifactKind]     # composition determines pipeline shape (P-S1)
+    OUTPUT: ClassVar[ArtifactKind]
+    Settings: ClassVar[type[StepSettings]] = StepSettings
+
+    def __init__(self, settings: StepSettings) -&gt; None: ...
+
+    def apply(self, value: Artifact) -&gt; StepOutput:
+        """Deterministic: same settings + input =&gt; same output.
+        No RNG, ambient state, or clocks (P-L3).
+        """
+        raise NotImplementedError
+
+
+class CandidateMapStep(Step):
+    """Elementwise CandidateSet -&gt; CandidateSet; fan-out stays data (P-S2).
+    apply() maps over candidates in order, flattening list results in place so
+    splits (e.g. name-guard) preserve relative candidate order.
+    """
+    INPUT = OUTPUT = ArtifactKind.CODE_CANDIDATE_SET
+
+    def apply_to_candidate(self, source: str) -&gt; str | list[str]:
+        raise NotImplementedError
+
+
+class AlternativesStep(Step):
+    """Ordered first-success ladder inside one step — never pipeline branches (P-L2).
+    apply() tries alternatives conservative-first; the winner's name is recorded
+    as facts["alternative"]; all-fail raises StepFailedError.
+    """
+    def alternatives(self) -&gt; tuple[tuple[str, Callable[[Artifact], Artifact | None]], ...]:
+        raise NotImplementedError</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/preprocessing/steps/extract_candidates.py</span><span>the alternatives ladder, ported</span></div>
+  <pre><code class="language-python">class ExtractionStrategy(StrEnum):
+    """The ladder's constituents, individually selectable per definition."""
+    FENCED_BLOCKS = "fenced_blocks"        # text_analysis.candidate_blocks
+    MARKDOWN_WRAPPER = "markdown_wrapper"  # strip_markdown_wrappers per block, re-split
+    ESCAPED_PYTHON = "escaped_python"      # recover_escaped_python, then re-extract
+    # future strategies are additive: enum member + STRATEGY_REGISTRY entry
+
+
+# one callable per strategy: (text: str) -&gt; CodeCandidateSetArtifact | None
+STRATEGY_REGISTRY: dict[str, ExtractionStrategyFn] = { ... }
+# sync test: set(STRATEGY_REGISTRY) == {s.value for s in ExtractionStrategy}
+
+
+DEFAULT_STRATEGIES: Final = (
+    ExtractionStrategy.FENCED_BLOCKS,
+    ExtractionStrategy.MARKDOWN_WRAPPER,
+    ExtractionStrategy.ESCAPED_PYTHON,
+)
+
+
+class ExtractCandidatesSettings(StepSettings):
+    # ordered, first-success, conservative-first by the definition author's choice;
+    # the tuple is part of definition identity (M2) — reordering is a new definition
+    alternatives: tuple[ExtractionStrategy, ...] = DEFAULT_STRATEGIES
+
+
+class ExtractCandidates(AlternativesStep):
+    NAME = StepName.EXTRACT_CANDIDATES
+    VERSION = "1"
+    INPUT = ArtifactKind.TEXT
+    OUTPUT = ArtifactKind.CODE_CANDIDATE_SET
+    Settings = ExtractCandidatesSettings
+
+    def alternatives(self):
+        """Resolves settings.alternatives through STRATEGY_REGISTRY, in order.
+        First strategy returning a non-empty candidate set wins; its name is
+        recorded as facts["alternative"]. All-fail raises StepFailedError.
+        The ladder stays inside this one step (P-L2); which rungs exist is data.
+        """</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/preprocessing/steps/filter_compilable.py · select_first.py</span><span>filters describe; the knob decides cardinality</span></div>
+  <pre><code class="language-python">class FilterCompilable(Step):
+    NAME = StepName.FILTER_COMPILABLE
+    VERSION = "1"
+    INPUT = OUTPUT = ArtifactKind.CODE_CANDIDATE_SET
+
+    def apply(self, value: Artifact) -&gt; StepOutput:
+        """Keeps candidates where code_analysis.validate_python_source_with_ast
+        compiles. Rejections become facts ({"rejected_0": "SyntaxError: ..."})
+        — recorded facts, not quality judgments (P-L2). An empty survivor set
+        is data; the absence surfaces at select_first.
+        """
+
+
+class SelectFirst(Step):
+    NAME = StepName.SELECT_FIRST
+    VERSION = "1"
+    INPUT = ArtifactKind.CODE_CANDIDATE_SET
+    OUTPUT = ArtifactKind.CODE
+
+    def apply(self, value: Artifact) -&gt; StepOutput:
+        """Deliberately dumb cardinality knob: first surviving candidate wins,
+        preserving the ladder's conservative-first ordering. Empty set raises
+        StepFailedError("no candidate survived filtering").
+        """</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/preprocessing/definition.py · registry.py</span><span>frozen, hashable, sync-tested</span></div>
+  <pre><code class="language-python"># registry.py — mirrors synthetic/corruptions/__init__.py
+REGISTRY: dict[str, type[Step]] = {
+    NormalizeText.NAME: NormalizeText,
+    ExtractCandidates.NAME: ExtractCandidates,
+    # ... one entry per StepName; sync test: set(REGISTRY) == {s.value for s in StepName}
+}
+
+
+# definition.py
+class StepSpec(FrozenModel):
+    instance_name: str        # becomes the trace key; renaming creates a new definition (P-L2)
+    step: StepName
+    settings: dict[str, JsonValue] = {}   # validated against Step.Settings at bind time
+
+
+class PreprocessingDefinition(FrozenModel):
+    """Ordered, named step instances and settings — frozen, serializable,
+    hashable (P-L3). Fully describes the pipeline; no hidden defaults (P-S3).
+    """
+    definition_id: str
+    version: str
+    steps: tuple[StepSpec, ...]
+    # validators: instance names unique; RESERVED_KEYS ("input"/"output") not usable
+
+
+def preprocessing_definition_hash(definition: PreprocessingDefinition) -&gt; str:
+    """trace.identity.stable_hash — the deterministic identity for sweeps (M2)."""</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/preprocessing/runner.py</span><span>bind-time wiring, run-time data</span></div>
+  <pre><code class="language-python">@dataclass(frozen=True, slots=True)
+class BoundStep:
+    instance_name: str
+    step: Step
+
+
+def bind_definition(definition: PreprocessingDefinition) -&gt; tuple[BoundStep, ...]:
+    """Resolve each StepSpec in REGISTRY, validate settings via Step.Settings,
+    and chain INPUT/OUTPUT kinds across the sequence. Any mismatch raises
+    WiringError before any input is processed — incompatible definitions are
+    wiring bugs, not data (eval-flow L2).
+    """
+
+
+def run_preprocessing(
+    definition: PreprocessingDefinition, input_value: Artifact
+) -&gt; Trace:
+    """Single mechanical fold, like synthetic's apply_recipe:
+
+      value = input_value
+      for bound in bind_definition(definition):
+          value or Absent -&gt; run step / skip-and-propagate
+          record value under bound.instance_name; merge facts into step_facts
+
+    StepFailedError -&gt; Absent(failed_step=instance_name, cause); downstream
+    steps record the same Absent with propagated_through extended. Always
+    completes: trace has input, one value per instance name, and output —
+    every intermediate is retained for later measurement (P-S4).
+    Producer stamp: TraceProducer(definition_id, version, definition_hash).
+    """</code></pre>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>src/dr_code/preprocessing/definitions.py</span><span>named frozen definitions replace parser profiles</span></div>
+  <pre><code class="language-python">BEST_EFFORT_DEFINITION: Final = PreprocessingDefinition(
+    definition_id="humaneval-best-effort", version="v2",
+    steps=(
+        # normalize_text, unbundled — same order as the existing function;
+        # drop or reorder any line to change the pipeline (the definition IS
+        # the configuration, P-S3)
+        StepSpec(instance_name="line_endings", step=StepName.NORMALIZE_LINE_ENDINGS),
+        StepSpec(instance_name="unicode", step=StepName.NORMALIZE_UNICODE),
+        StepSpec(instance_name="tabs", step=StepName.EXPAND_TABS),
+        StepSpec(instance_name="trailing_ws", step=StepName.STRIP_TRAILING_WHITESPACE),
+        StepSpec(instance_name="blank_runs", step=StepName.COLLAPSE_BLANK_RUNS),
+        StepSpec(instance_name="trim", step=StepName.TRIM_OUTER_BLANKS),
+        # candidate generation: full strategy ladder (settings default)
+        StepSpec(instance_name="extract", step=StepName.EXTRACT_CANDIDATES),
+        # per-candidate chain, unbundled
+        StepSpec(instance_name="strip_fences", step=StepName.STRIP_FENCES),
+        StepSpec(instance_name="split_guard", step=StepName.SPLIT_ON_NAME_GUARD),
+        StepSpec(instance_name="truncate_return", step=StepName.DROP_AFTER_LAST_RETURN),
+        # import handling, unbundled — omit any of these to measure without repair
+        StepSpec(instance_name="repair_imports", step=StepName.REPAIR_IMPORT_LINES),
+        StepSpec(instance_name="infer_imports", step=StepName.INFER_MISSING_IMPORTS),
+        StepSpec(instance_name="dedupe_imports", step=StepName.DEDUPE_IMPORTS),
+        StepSpec(instance_name="compilable", step=StepName.FILTER_COMPILABLE),
+        StepSpec(instance_name="not_literal", step=StepName.FILTER_PLAIN_LITERAL),
+        StepSpec(instance_name="not_repr", step=StepName.FILTER_CODE_REPR),
+        # "selected" is the instance name metric questions bind to (metric-design diagram)
+        StepSpec(instance_name="selected", step=StepName.SELECT_FIRST),
+    ),
+)
+
+BEST_EFFORT_V1_DEFINITION: Final = ...  # same steps; extract settings
+                                        # {"alternatives": ["fenced_blocks", "markdown_wrapper"]}
+                                        # — no escaped_python rung, keeping persisted
+                                        # v1 runs reproducible (mirrors profiles.py)
+
+FIELD_MARKER_DEFINITION: Final = ...    # field_marker_extract -&gt; compilable
+                                        # -&gt; not_literal -&gt; selected (no repr check,
+                                        # matching the strict profile today)
+
+
+def resolve_preprocessing_definition(
+    *, definition_id: str, version: str
+) -&gt; PreprocessingDefinition:
+    """Id@version -&gt; frozen instance; ValueError on unknown, like
+    resolve_parser_profile / resolve_humaneval_scoring_profile today.
+    """</code></pre>
+</div>
+
+<!-- ═══════════ SECTION 3 ═══════════ -->
+<div class="layer-head"><span class="n">3</span><h2>Implementation order &amp; considerations</h2></div>
+
+<div class="ordertable">
+<table>
+  <tr><th>#</th><th>Deliverable</th><th>Contents</th><th>Proof it works</th></tr>
+  <tr><td>1</td><td><b>Skeleton</b></td>
+    <td><code>names</code>, <code>steps/base</code>, <code>registry</code> + two steps
+      (<code>normalize_line_endings</code>, <code>select_first</code>).</td>
+    <td>Registry↔enum sync test; determinism battery (apply twice, equal — corruption-test pattern, no rng).</td></tr>
+  <tr><td>2</td><td><b>Definition + runner</b></td>
+    <td><code>definition.py</code>, <code>runner.py</code> with bind-time wiring and Absent propagation.</td>
+    <td>WiringError on bad settings / type chain; failed step yields Absent + full trace; reserved-key rejection.</td></tr>
+  <tr><td>3</td><td><b>Atomic text + elementwise + filter steps</b></td>
+    <td>Remaining six text steps; <code>strip_fences</code>, <code>dedent</code>, <code>split_on_name_guard</code>,
+      <code>drop_after_last_return</code>; three import steps; three filters; <code>return_all</code>.</td>
+    <td>Per-step interface tests reusing the existing modules' fixtures; composition tests pinning
+      atomic-sequence ≡ <code>normalize_text</code> and ≡ <code>infer_necessary_imports</code> on the
+      garbage-input battery.</td></tr>
+  <tr><td>4</td><td><b>Ladder steps</b></td>
+    <td><code>extract_candidates</code> with <code>ExtractionStrategy</code> enum + <code>STRATEGY_REGISTRY</code>
+      (+ sync test), <code>field_marker</code>.</td>
+    <td>Strategy-choice facts asserted; tuple-subset settings (v1) verified; escaped-newline cases from
+      <code>test_escaped_newline_extraction.py</code> re-expressed against outputs, not node names (fixes finding #3).</td></tr>
+  <tr><td>5</td><td><b>Named definitions + parity harness</b></td>
+    <td><code>definitions.py</code>; harness comparing <code>run_preprocessing</code> vs
+      <code>extract_code_with_profile</code>.</td>
+    <td>Over the synthetic dataset + HumanEval+ snapshot: <code>trace["output"].source == extracted_code</code>
+      (or both absent/None), for v1, v2, and field-marker. Target: zero mismatches before old-path migration.</td></tr>
+  <tr><td>6</td><td><b>Contract tests</b></td>
+    <td>Round-trip + serialization suites.</td>
+    <td>Every corruption recipe: corrupt → preprocess → <code>code_analysis.equivalent</code> (P-L3 round trips);
+      serialized-trace projection golden test; deserialize-and-rerun equality.</td></tr>
+</table>
+</div>
+
+<div class="grid" style="margin-top:18px">
+  <div class="card">
+    <h3>Parity is behavioral, not trace-shaped.</h3>
+    <ul>
+      <li>The harness compares <span class="key">outputs and absence causes</span>, never the old
+        <code>ExtractionTraceNode</code> tree — asserting internal decision-tree shapes is what P-L3 forbids
+        and finding #3 flagged.</li>
+      <li>Facts that matter downstream (<span class="key">chosen alternative, candidate counts</span>) get their own
+        assertions as the new stable surface.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Old pipeline retires in a later, separate change.</h3>
+    <ul>
+      <li><code>code_extraction</code>/<code>code_parsing</code> keep serving <code>/explain</code>, the viewer, and
+        <code>scoring.py</code> until parity holds and metrics consume traces.</li>
+      <li>Then one <span class="key">clean breaking change</span> swaps consumers and deletes the old modules —
+        no long-lived dual paths.</li>
+      <li>The exported <code>humaneval.__all__</code> is test-enforced; update façade and test together.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Semantics preserved from today's pipeline.</h3>
+    <ul>
+      <li><span class="key">Empty input</span>: extract fails ⇒ <code>Absent("no candidates")</code> — scoring's
+        <code>EMPTY_SUBMISSION</code> maps from the cause later.</li>
+      <li><span class="key">split_on_name_guard</span> may multiply candidates; splits are inserted in place so
+        conservative-first order survives.</li>
+      <li><span class="key">dedent</span> stays a step but is omitted from default definitions
+        (today's <code>apply_dedent=False</code>).</li>
+      <li><span class="key">Import handling mutates candidates</span> — as three explicit steps, definitions
+        that dedupe without inferring, or skip repair entirely, exist for measurement.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Settings stay dicts, validated at bind time.</h3>
+    <ul>
+      <li><code>StepSpec.settings: dict[str, JsonValue]</code> keeps definitions serializable without a
+        discriminated settings union per step.</li>
+      <li>The cost — no static settings typing — is paid back by <span class="key">bind-time validation against
+        <code>Step.Settings</code></span> raising WiringError.</li>
+      <li>If settings grow complex, a typed union is a <span class="key">versioned definition change</span>, decided
+        then.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Corruption recipes become the standing adversarial corpus.</h3>
+    <ul>
+      <li>Every recovery step should name the <span class="key">corruption recipes that exercise it</span>
+        (fences ↔ <code>add_code_fences</code>, smart quotes ↔ <code>add_smart_quotes</code>, …).</li>
+      <li>Gap check while wiring the round-trip suite: recovery steps <span class="key">without a matching
+        corruption</span> get one added to <code>synthetic/corruptions</code> (P-L2).</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Known risks.</h3>
+    <ul>
+      <li><span class="key">Ordering drift</span>: today fence-stripping happens per-candidate <em>after</em>
+        block splitting; the parity harness is the guard that decomposition didn't reorder semantics.</li>
+      <li><span class="key">Facts volume</span>: per-candidate rejection facts can be large; cap stored source
+        excerpts the way the runner script clips reprs (8000 chars) if traces bloat.</li>
+      <li><span class="key">Intermediate volume</span>: ~17 atomic steps each retain a full text value (P-S4);
+        if serialized traces bloat, dedupe identical consecutive values by reference at serialization time —
+        lossless, so still within S3.</li>
+      <li><span class="key">Coverage gap inherited</span>: <code>code_parsing</code> has no dedicated test file today;
+        the parity harness + step tests become its effective regression suite before deletion.</li>
+    </ul>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</main>
+</body>
+</html>
