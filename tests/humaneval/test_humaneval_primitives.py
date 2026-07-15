@@ -11,7 +11,6 @@ import pytest
 import zstandard
 
 import dr_code.humaneval as humaneval
-import dr_code.humaneval.task as task_module
 from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
@@ -53,7 +52,10 @@ from dr_code.humaneval.task import (
     run_subprocess_batch,
 )
 from dr_code.humaneval.sandbox import (
+    SandboxCompletedProcess,
+    SandboxError,
     SandboxOutputLimitError,
+    SandboxRunner,
     SandboxTimeoutError,
 )
 
@@ -155,31 +157,24 @@ def test_humaneval_public_api_is_curated() -> None:
     assert set(humaneval.__all__) == EXPECTED_HUMANEVAL_PUBLIC_API
 
 
-class _CompletedProcessStub:
-    def __init__(
-        self,
-        *,
-        stdout: str,
-        stderr: str = "",
-        returncode: int = 0,
-    ) -> None:
-        self.stdout = stdout
-        self.stderr = stderr
-        self.returncode = returncode
+@pytest.fixture
+def local_runner() -> SandboxRunner:
+    """A real, injectable runner that keeps primitive tests fast.
 
-
-@pytest.fixture(autouse=True)
-def _use_local_test_runner(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep primitive tests fast; the OCI contract has dedicated probes."""
+    It runs the candidate under the host interpreter instead of the OCI
+    sandbox; the container contract has its own probes in ``test_sandbox``.
+    Injected via ``run_in_sandbox=`` rather than patched, so the seam is a
+    real function argument.
+    """
 
     def run_local_python(
         *,
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> subprocess.CompletedProcess[str]:
+    ) -> SandboxCompletedProcess:
         try:
-            return subprocess.run(
+            completed = subprocess.run(
                 [sys.executable, "-I", "-c", source],
                 input=input_json,
                 capture_output=True,
@@ -189,8 +184,36 @@ def _use_local_test_runner(monkeypatch: pytest.MonkeyPatch) -> None:
             )
         except subprocess.TimeoutExpired as exc:
             raise SandboxTimeoutError(str(exc)) from exc
+        return SandboxCompletedProcess(
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
 
-    monkeypatch.setattr(task_module, "run_python_in_sandbox", run_local_python)
+    return run_local_python
+
+
+def _stub_runner(
+    *,
+    stdout: str,
+    stderr: str = "",
+    returncode: int = 0,
+) -> SandboxRunner:
+    """Build a runner that returns a fixed completed process."""
+
+    def run(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess:
+        return SandboxCompletedProcess(
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+    return run
 
 
 def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
@@ -352,7 +375,9 @@ def test_apply_cleaning_extracts_known_submission_shapes(
     assert "print('trailing')" not in candidates[0]
 
 
-def test_evaluation_passes_when_best_function_passes() -> None:
+def test_evaluation_passes_when_best_function_passes(
+    local_runner: SandboxRunner,
+) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
@@ -363,6 +388,7 @@ def test_evaluation_passes_when_best_function_passes() -> None:
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
+        run_in_sandbox=local_runner,
     )
 
     assert result.best_function_name == "add_one"
@@ -375,7 +401,9 @@ def test_evaluation_passes_when_best_function_passes() -> None:
     assert summary.failure_count == 0
 
 
-def test_evaluation_prefers_entry_point_when_pass_counts_tie() -> None:
+def test_evaluation_prefers_entry_point_when_pass_counts_tie(
+    local_runner: SandboxRunner,
+) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
@@ -386,13 +414,16 @@ def test_evaluation_prefers_entry_point_when_pass_counts_tie() -> None:
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
+        run_in_sandbox=local_runner,
     )
 
     assert result.best_function_name == "add_one"
     assert result.passed is True
 
 
-def test_evaluation_fails_when_best_function_does_not_pass_all_cases() -> None:
+def test_evaluation_fails_when_best_function_does_not_pass_all_cases(
+    local_runner: SandboxRunner,
+) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
@@ -403,6 +434,7 @@ def test_evaluation_fails_when_best_function_does_not_pass_all_cases() -> None:
             "    return x + 1 if x == 1 else x\n"
         ),
         timeout_seconds=2.0,
+        run_in_sandbox=local_runner,
     )
 
     assert result.best_function_name == "add_one"
@@ -410,7 +442,9 @@ def test_evaluation_fails_when_best_function_does_not_pass_all_cases() -> None:
     assert result.status_counts == {"passed": 1, "failed": 1}
 
 
-def test_evaluation_uses_highest_pass_count() -> None:
+def test_evaluation_uses_highest_pass_count(
+    local_runner: SandboxRunner,
+) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
@@ -421,6 +455,7 @@ def test_evaluation_uses_highest_pass_count() -> None:
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
+        run_in_sandbox=local_runner,
     )
 
     assert result.best_function_name == "helper"
@@ -428,7 +463,9 @@ def test_evaluation_uses_highest_pass_count() -> None:
     assert result.status_counts == {"passed": 2}
 
 
-def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
+def test_evaluate_humaneval_code_reports_timeout_per_case(
+    local_runner: SandboxRunner,
+) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
@@ -437,6 +474,7 @@ def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
             "        pass\n"
         ),
         timeout_seconds=0.2,
+        run_in_sandbox=local_runner,
     )
 
     assert result.passed is False
@@ -447,23 +485,20 @@ def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
 
 
 def test_run_subprocess_batch_raises_for_malformed_runner_output() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(
-            stdout=(
-                '[{"case_id": "case_0", "status": "passed", "message": ""}, '
-                '{"case_id": "case_1", "status": "nonsense"}]'
-            ),
-        )
+    runner = _stub_runner(
+        stdout=(
+            '[{"case_id": "case_0", "status": "passed", "message": ""}, '
+            '{"case_id": "case_1", "status": "nonsense"}]'
+        ),
+    )
 
-    with (
-        patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run),
-        pytest.raises(EvaluationHarnessError) as exc_info,
-    ):
+    with pytest.raises(EvaluationHarnessError) as exc_info:
         run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
+            run_in_sandbox=runner,
         )
 
     results = exc_info.value.case_results
@@ -537,16 +572,13 @@ def test_evaluation_outcome_reports_tests_failed_when_case_fails() -> None:
 
 
 def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout=_PARTIAL_RUNNER_PASSED_CASE_0)
-
-    with patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run):
-        result = score_humaneval_submission(
-            raw_submission="def add_one(x):\n    return x + 1\n",
-            task=_task(),
-            parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-            timeout_seconds=2.0,
-        )
+    result = score_humaneval_submission(
+        raw_submission="def add_one(x):\n    return x + 1\n",
+        task=_task(),
+        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+        timeout_seconds=2.0,
+        run_in_sandbox=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+    )
 
     assert isinstance(result, CompletedScore)
     assert result.outcome is SubmissionOutcome.EVALUATION_INCOMPLETE
@@ -557,16 +589,13 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
 
 
 def test_score_humaneval_submission_returns_harness_failure() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout="not-json")
-
-    with patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run):
-        result = score_humaneval_submission(
-            raw_submission="def add_one(x):\n    return x + 1\n",
-            task=_task(),
-            parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-            timeout_seconds=2.0,
-        )
+    result = score_humaneval_submission(
+        raw_submission="def add_one(x):\n    return x + 1\n",
+        task=_task(),
+        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+        timeout_seconds=2.0,
+        run_in_sandbox=_stub_runner(stdout="not-json"),
+    )
 
     assert isinstance(result, HarnessFailure)
     assert result.kind == "harness_failure"
@@ -574,6 +603,35 @@ def test_score_humaneval_submission_returns_harness_failure() -> None:
     assert result.cause.exception_type == "JSONDecodeError"
     assert result.evaluation is not None
     assert result.evaluation.results[0].elapsed_seconds is not None
+
+
+def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
+    """A broken sandbox is a harness failure, never a scored result.
+
+    A candidate must not benefit from generic sandbox breakage: the base
+    ``SandboxError`` surfaces as a ``HarnessFailure`` rather than a
+    ``CompletedScore`` with a zero score.
+    """
+
+    def broken_sandbox(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess:
+        raise SandboxError("sandbox runtime is unavailable")
+
+    result = score_humaneval_submission(
+        raw_submission="def add_one(x):\n    return x + 1\n",
+        task=_task(),
+        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+        timeout_seconds=2.0,
+        run_in_sandbox=broken_sandbox,
+    )
+
+    assert isinstance(result, HarnessFailure)
+    assert result.kind == "harness_failure"
+    assert result.cause.exception_type == "SandboxError"
 
 
 def test_score_humaneval_submission_reports_empty_submission() -> None:
@@ -593,15 +651,12 @@ def test_score_humaneval_submission_reports_empty_submission() -> None:
 
 
 def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout=_PARTIAL_RUNNER_PASSED_CASE_0)
-
-    with patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run):
-        result = evaluate_human_eval_code(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            timeout_seconds=2.0,
-        )
+    result = evaluate_human_eval_code(
+        task=_task(),
+        candidate_code="def add_one(x):\n    return x + 1\n",
+        timeout_seconds=2.0,
+        run_in_sandbox=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+    )
 
     assert result.passed is False
     assert result.coverage_complete is False
@@ -739,16 +794,13 @@ def test_parse_human_eval_tests_rejects_invalid_formats(
 
 
 def test_run_subprocess_batch_scores_candidate_kill_returncode() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout="", stderr="", returncode=137)
-
-    with patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run):
-        results = run_subprocess_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            function_name="add_one",
-            timeout_seconds=2.0,
-        )
+    results = run_subprocess_batch(
+        task=_task(),
+        candidate_code="def add_one(x):\n    return x + 1\n",
+        function_name="add_one",
+        timeout_seconds=2.0,
+        run_in_sandbox=_stub_runner(stdout="", stderr="", returncode=137),
+    )
 
     assert len(results) == 2
     assert all(
@@ -758,16 +810,21 @@ def test_run_subprocess_batch_scores_candidate_kill_returncode() -> None:
 
 
 def test_run_subprocess_batch_scores_output_limit_as_candidate_error() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
+    def overflowing_sandbox(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess:
         raise SandboxOutputLimitError("sandbox output exceeded limit")
 
-    with patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run):
-        results = run_subprocess_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            function_name="add_one",
-            timeout_seconds=2.0,
-        )
+    results = run_subprocess_batch(
+        task=_task(),
+        candidate_code="def add_one(x):\n    return x + 1\n",
+        function_name="add_one",
+        timeout_seconds=2.0,
+        run_in_sandbox=overflowing_sandbox,
+    )
 
     assert len(results) == 2
     assert all(
@@ -782,31 +839,31 @@ def test_run_subprocess_batch_scores_output_limit_as_candidate_error() -> None:
         '[{"case_id": "case_0", "status": "passed", "message": ""},'
         ' {"case_id": "case_0", "status": "passed", "message": ""}]',
         '[{"case_id": "case_99", "status": "passed", "message": ""}]',
+        '[{"case_id": "case_0", "status": "passed", "message": ""},'
+        ' {"case_id": "case_1", "status": "passed", "message": ""},'
+        ' {"case_id": "case_2", "status": "passed", "message": ""}]',
     ],
-    ids=("duplicate", "unknown"),
+    ids=("duplicate", "unknown", "more_rows_than_cases"),
 )
 def test_run_subprocess_batch_rejects_invalid_case_ids(
     runner_stdout: str,
 ) -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout=runner_stdout)
-
-    with (
-        patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run),
-        pytest.raises(
-            EvaluationHarnessError,
-            match="duplicate or unknown case ids",
-        ),
+    with pytest.raises(
+        EvaluationHarnessError,
+        match="duplicate or unknown case ids",
     ):
         run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
+            run_in_sandbox=_stub_runner(stdout=runner_stdout),
         )
 
 
-def test_candidate_module_level_sys_exit_is_scored() -> None:
+def test_candidate_module_level_sys_exit_is_scored(
+    local_runner: SandboxRunner,
+) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
@@ -816,6 +873,7 @@ def test_candidate_module_level_sys_exit_is_scored() -> None:
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
+        run_in_sandbox=local_runner,
     )
 
     assert result.passed is False
@@ -823,22 +881,15 @@ def test_candidate_module_level_sys_exit_is_scored() -> None:
 
 
 def test_run_subprocess_batch_raises_for_nonzero_returncode() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(
-            stdout="",
-            stderr="runner crashed",
-            returncode=1,
-        )
+    runner = _stub_runner(stdout="", stderr="runner crashed", returncode=1)
 
-    with (
-        patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run),
-        pytest.raises(EvaluationHarnessError) as exc_info,
-    ):
+    with pytest.raises(EvaluationHarnessError) as exc_info:
         run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
+            run_in_sandbox=runner,
         )
 
     results = exc_info.value.case_results
@@ -849,18 +900,13 @@ def test_run_subprocess_batch_raises_for_nonzero_returncode() -> None:
 
 
 def test_run_subprocess_batch_raises_for_invalid_json() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout="not-json")
-
-    with (
-        patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run),
-        pytest.raises(EvaluationHarnessError) as exc_info,
-    ):
+    with pytest.raises(EvaluationHarnessError) as exc_info:
         run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
+            run_in_sandbox=_stub_runner(stdout="not-json"),
         )
 
     results = exc_info.value.case_results
@@ -871,18 +917,13 @@ def test_run_subprocess_batch_raises_for_invalid_json() -> None:
 
 
 def test_run_subprocess_batch_raises_for_non_list_json() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(stdout='{"not": "a list"}')
-
-    with (
-        patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run),
-        pytest.raises(EvaluationHarnessError) as exc_info,
-    ):
+    with pytest.raises(EvaluationHarnessError) as exc_info:
         run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
+            run_in_sandbox=_stub_runner(stdout='{"not": "a list"}'),
         )
 
     results = exc_info.value.case_results
@@ -890,20 +931,15 @@ def test_run_subprocess_batch_raises_for_non_list_json() -> None:
 
 
 def test_run_subprocess_batch_fallback_case_id_is_harness_detail() -> None:
-    def fake_run(*args: Any, **kwargs: Any) -> _CompletedProcessStub:
-        return _CompletedProcessStub(
-            stdout='[{"status": "passed", "message": ""}]',
-        )
+    runner = _stub_runner(stdout='[{"status": "passed", "message": ""}]')
 
-    with (
-        patch("dr_code.humaneval.task.run_python_in_sandbox", fake_run),
-        pytest.raises(EvaluationHarnessError) as exc_info,
-    ):
+    with pytest.raises(EvaluationHarnessError) as exc_info:
         run_subprocess_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
+            run_in_sandbox=runner,
         )
 
     results = exc_info.value.case_results

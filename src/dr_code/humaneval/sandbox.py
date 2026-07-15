@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import BinaryIO, Final
+from typing import BinaryIO, Final, Protocol
 
 
 SANDBOX_IMAGE: Final[str] = (
@@ -57,6 +57,23 @@ class SandboxCompletedProcess:
     returncode: int
     stdout: str
     stderr: str
+
+
+class SandboxRunner(Protocol):
+    """The callable contract for executing candidate code in isolation.
+
+    `run_python_in_sandbox` is the production implementation; the evaluation
+    entry points accept any conforming callable so tests can substitute a
+    local runner without patching module globals.
+    """
+
+    def __call__(
+        self,
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess: ...
 
 
 def run_python_in_sandbox(
