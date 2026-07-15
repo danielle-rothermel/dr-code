@@ -176,7 +176,7 @@
       <div class="grade a"><div class="g-letter">A−</div><div class="g-name">synthetic/</div>
         <div class="g-note">22 adapters, injectable builder, thin CLI</div></div>
       <div class="grade b"><div class="g-letter">B+</div><div class="g-name">serve/ &amp; viewer/</div>
-        <div class="g-note">thin HTTP adapter; schema-only viewer contract</div></div>
+        <div class="g-note">thin HTTP adapter; domain-agnostic viewer primitives</div></div>
       <div class="grade b"><div class="g-letter">B−</div><div class="g-name">humaneval/</div>
         <div class="g-note">deep sandbox; overloaded task.py; hardcoded seam</div></div>
     </div>
@@ -264,22 +264,19 @@
 
         <rect x="500" y="105" width="330" height="105" class="nodebox" rx="12"/>
         <text x="520" y="135" class="lbl" font-weight="700">schemas.py — CLI</text>
-        <text x="520" y="158" class="sub">dumps JSON Schema for viewer codegen</text>
+        <text x="520" y="158" class="sub">dumps HumanEval JSON Schema</text>
         <text x="520" y="178" class="sub">python -m dr_code.schemas humaneval</text>
 
         <rect x="950" y="95" width="480" height="115" class="nodebox" rx="12" stroke-dasharray="7 5"/>
         <text x="970" y="125" class="lbl" font-weight="700">viewer/ — TypeScript workspace</text>
-        <text x="970" y="148" class="sub">not shipped in the wheel; consumes generated types only</text>
-        <text x="970" y="168" class="sub">gen:serve → openapi-typescript → serve.ts</text>
-        <text x="970" y="188" class="sub">gen:humaneval → humaneval.ts</text>
+        <text x="970" y="148" class="sub">not shipped in the wheel; no Python schema dependency</text>
+        <text x="970" y="168" class="sub">CodeBlock · CodeDiff · StatusBadge</text>
+        <text x="970" y="188" class="sub">private gallery for visual verification</text>
 
         <!-- edges -->
         <path class="edge" d="M275,210 L275,305"/>
         <path class="edge" d="M665,210 L560,305"/>
         <text x="590" y="255" class="sub">humaneval.task models</text>
-        <path class="edge dash" d="M950,140 L460,148"/>
-        <path class="edge dash" d="M950,175 L830,168"/>
-        <text x="620" y="95" class="sub">codegen only — no shared logic, JSON schemas are the whole contract</text>
 
         <path class="edge" d="M300,440 L245,545"/>
         <path class="edge" d="M420,440 L565,545"/>
@@ -309,7 +306,7 @@
     <tr><td><code>dr_code/serve/</code></td><td>5</td><td class="num">~230</td>
         <td>façade exporting exactly 2 names</td><td><code>python -m dr_code.serve</code> (serve, openapi)</td></tr>
     <tr><td><code>viewer/</code></td><td>TS workspace</td><td class="num">—</td>
-        <td>consumes generated <code>serve.ts</code> / <code>humaneval.ts</code> only</td><td>pnpm</td></tr>
+        <td>three domain-agnostic React primitives + private gallery</td><td>pnpm</td></tr>
   </table>
   <p style="font-size:14px; color:var(--muted); margin-top:10px">
     CLIs use <span class="key"><code>python -m</code></span>. The <code>[serve]</code> extra keeps HTTP dependencies optional.
@@ -735,7 +732,7 @@ def runner_script() -&gt; str:
       </p>
       <p style="font-size:14.5px">
         <code>CodeExtractionResult.trace</code> mirrors the pipeline, but is also persisted, returned by
-        <code>POST /explain</code>, and rendered by the viewer. <span class="key">Its shape is a product contract</span>, so
+        <code>POST /explain</code>. <span class="key">Its shape is a product contract</span>, so
         pipeline refactors are interface changes. Internal tests should not casually pin node names.
       </p>
     </div>
@@ -791,19 +788,18 @@ def explain(request: ExplainRequest) -&gt; ExtractionTrace:
       </p>
     </div>
     <div class="card">
-      <h3>The viewer shares schemas with Python, not logic.</h3>
+      <h3>The viewer is independent of Python schemas.</h3>
       <div class="flow" style="flex-direction:column; align-items:stretch">
-        <div class="node ext"><b>viewer/ (TypeScript, pnpm)</b><small>renders traces · never ships in the wheel</small></div>
-        <div class="arr" style="text-align:center">↑ generated types only</div>
-        <div class="node"><b>serve.ts ← openapi-typescript ← <code>python -m dr_code.serve openapi</code></b></div>
-        <div class="node"><b>humaneval.ts ← <code>python -m dr_code.schemas humaneval</code></b></div>
-        <div class="arr" style="text-align:center">↑ source of truth</div>
-        <div class="node hot"><b>Python pydantic models</b><small>humaneval.task · code_parsing.ExtractionTrace</small></div>
+        <div class="node ext"><b>viewer/ (TypeScript, pnpm)</b><small>domain-agnostic · never ships in the wheel</small></div>
+        <div class="arr" style="text-align:center">↓ exports</div>
+        <div class="node"><b>CodeBlock · CodeDiff · StatusBadge</b></div>
+        <div class="arr" style="text-align:center">↓ composed by consumers</div>
+        <div class="node hot"><b>Application-specific views and data</b><small>caller-owned contracts</small></div>
       </div>
       <p style="font-size:14.5px">
-        <code>viewer/</code> and <code>serve/</code> share <span class="key">generated schemas, not logic</span>.
-        <code>schemas.py</code> hides runtime-only AST fields behind one schema hook, though its name implies ownership of
-        types it only exports.
+        <code>viewer/</code> has <span class="key">no Python schema dependency</span>; its private gallery uses static
+        fixtures for visual checks. Independently, <code>schemas.py</code> hides runtime-only AST fields behind one schema
+        hook, though its name implies ownership of types it only exports.
       </p>
     </div>
   </div>
@@ -884,7 +880,7 @@ def explain(request: ExplainRequest) -&gt; ExtractionTrace:
       <td>Make them private behind <code>parse_human_eval_tests</code> once it moves here (finding #1); add an <code>__all__</code>.</td></tr>
     <tr><td>5</td><td><span class="sev med">MED</span></td><td><code>CodeExtractionResult.trace</code></td>
       <td>interface = everything a caller must know</td>
-      <td>The trace mirrors the pipeline's internal decision tree <em>and</em> is the product surface of <code>/explain</code> + the viewer. Its shape is a de-facto stable contract, raising the cost of every pipeline refactor.</td>
+      <td>The trace mirrors the pipeline's internal decision tree <em>and</em> is persisted and exposed by <code>/explain</code>. Its shape is a de-facto stable contract, raising the cost of every pipeline refactor.</td>
       <td>Commit to it consciously: document which trace fields are contract vs diagnostic, and keep repo-internal tests off the node names (finding #3).</td></tr>
     <tr><td>6</td><td><span class="sev med">MED</span></td><td><code>test_sandbox_unit.py</code> :17–55</td>
       <td>don't expose internal seams to tests</td>

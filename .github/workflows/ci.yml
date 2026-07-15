@@ -37,3 +37,5 @@ jobs:
         working-directory: viewer
       - run: pnpm build
         working-directory: viewer
+      - run: pnpm test
+        working-directory: viewer

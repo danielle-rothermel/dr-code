@@ -1,16 +1,12 @@
-/* @dr-code/viewer base styles (ADR 0006).
-   Consumers import once, e.g. in the root layout:
-   import "@dr-code/viewer/styles.css" */
+@import "@fontsource-variable/fira-code/wght.css";
 
-/* Fira Code with ligatures on every code surface. */
+/* @dr-code/viewer base styles. Consumers import this file once. */
+
 .drv-code-block pre,
 .drv-code-block code,
-.drv-transform-diff,
-.drv-case-table code,
-.drv-task-card code,
-.drv-extraction-trace code {
-  font-family: "Fira Code", ui-monospace, "SF Mono", Menlo, Consolas,
-    monospace;
+.drv-code-diff {
+  font-family: "Fira Code Variable", ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace;
   font-variant-ligatures: contextual;
 }
 
@@ -21,60 +17,57 @@
   border-radius: 6px;
 }
 
-/* Ligatures can visually mask single-character changes, so disable
-   them inside intraline-change spans (ADR 0006). @git-diff-view 0.1.6
-   (pinned) marks intraline ranges with data-diff-highlight and wraps
-   syntax-highlighted range segments with data-range-start. */
-.drv-transform-diff [data-diff-highlight],
-.drv-transform-diff [data-range-start] {
+/* @git-diff-view sets an inline Menlo-first stack on its scroll containers. */
+.drv-code-diff .diff-table-scroll-container {
+  font-family: "Fira Code Variable", ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace !important;
+}
+
+/* Ligatures can visually mask single-character changes. The pinned
+   @git-diff-view version marks intraline ranges with these attributes. */
+.drv-code-diff [data-diff-highlight],
+.drv-code-diff [data-range-start] {
   font-variant-ligatures: none;
 }
 
-/* Check verdicts and case statuses. */
-.drv-trace-verdict-pass,
-.drv-case-status-passed {
+.drv-status-badge {
+  display: inline-block;
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.25em 0.5em;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+
+.drv-status-badge[data-status="success"][data-theme="light"] {
   color: #1a7f37;
 }
 
-.drv-trace-verdict-fail,
-.drv-case-status-failed,
-.drv-case-status-error,
-.drv-trace-error {
+.drv-status-badge[data-status="success"][data-theme="dark"] {
+  color: #56d364;
+}
+
+.drv-status-badge[data-status="failure"][data-theme="light"] {
   color: #cf222e;
 }
 
-.drv-case-status-timeout {
+.drv-status-badge[data-status="failure"][data-theme="dark"] {
+  color: #ff7b72;
+}
+
+.drv-status-badge[data-status="warning"][data-theme="light"] {
   color: #9a6700;
 }
 
-.drv-trace-kind {
-  font-size: 0.75em;
-  text-transform: uppercase;
-  opacity: 0.6;
-  margin-right: 0.5em;
+.drv-status-badge[data-status="warning"][data-theme="dark"] {
+  color: #e3b341;
 }
 
-.drv-trace-node summary {
-  cursor: pointer;
+.drv-status-badge[data-status="neutral"][data-theme="light"] {
+  color: #57606a;
 }
 
-.drv-trace-children,
-.drv-trace-node > :not(summary) {
-  margin-left: 1.25rem;
-}
-
-.drv-trace-candidate-selected {
-  border-left: 3px solid #1a7f37;
-  padding-left: 0.5rem;
-}
-
-.drv-case-table {
-  border-collapse: collapse;
-}
-
-.drv-case-table th,
-.drv-case-table td {
-  padding: 0.25rem 0.6rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
-  text-align: left;
+.drv-status-badge[data-status="neutral"][data-theme="dark"] {
+  color: #8c959f;
 }

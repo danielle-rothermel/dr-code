@@ -1,65 +1,146 @@
-# viewer/ — dr-code React component workspace
+# `viewer/` — React code-visualization primitives
 
-The canonical React components for code visualization across the
-dr-code ecosystem (ADR 0006). One pnpm workspace, one package:
-`@dr-code/viewer` at `packages/viewer`. It never ships in the Python
-wheel — the wheel stays toolchain-pure.
+This pnpm workspace contains the publishable `@dr-code/viewer` package and its
+private visual gallery. The package provides domain-agnostic React primitives;
+it is not included in the Python wheel.
 
-## Stack (pinned)
+## Public API
 
-- **shiki 3.x** — `@git-diff-view/shiki` hard-depends on shiki `^3`;
-  one engine and one grammar/theme system across panels and diffs.
-- **@git-diff-view/react + /file + /shiki** — 0.x solo-maintainer,
-  pinned exact and fully wrapped so they are swappable in one place.
-- **react-shiki/core** — client-tier highlighting, same shiki engine.
-- React 19 peer deps; consumers are Next.js App Router.
+Import all components and their prop types from `@dr-code/viewer`.
 
-## Two-tier architecture
+### `CodeBlock`
 
-| Tier | Components | Notes |
-| --- | --- | --- |
-| Server (RSC, zero client JS) | `<CodeBlock>`, `<TaskCard>` | shiki `codeToHtml` in async server components |
-| Client | `<CodeBlockClient>`, `<TransformDiff>`, `<ExtractionTraceView>` | `<TransformDiff>` takes two plain string props and computes the diff in-browser; DiffFile instances never cross the RSC boundary |
-| Shared | `<EvaluationCaseTable>` | no client JS of its own |
+Renders a syntax-highlighted code panel.
 
-Consumers import only these components, never shiki or @git-diff-view
-directly.
+```tsx
+<CodeBlock
+  code={source}
+  lang="typescript"
+  theme="dark"
+  className="result-code"
+/>
+```
 
-## Consuming
+- `code: string`
+- `lang?: string` — defaults to `python`
+- `theme?: "light" | "dark"` — defaults to `light`
+- `className?: string`
 
-Install as a pnpm git dependency pinned to a rev:
+### `CodeDiff`
+
+Computes and renders a syntax-highlighted diff from two strings. Callers never
+need to construct or pass a diff-library object.
+
+```tsx
+<CodeDiff
+  oldContent={before}
+  newContent={after}
+  oldName="before.ts"
+  newName="after.ts"
+  lang="typescript"
+  mode="split"
+  theme="dark"
+/>
+```
+
+- `oldContent: string`
+- `newContent: string`
+- `oldName?: string` — defaults to `before`
+- `newName?: string` — defaults to `after`
+- `lang?: string` — defaults to `python`
+- `mode?: "split" | "unified"` — defaults to `unified`
+- `theme?: "light" | "dark"` — defaults to `light`
+
+### `StatusBadge`
+
+Renders caller-provided content with a semantic status color.
+
+```tsx
+<StatusBadge status="success" theme="dark">Passed</StatusBadge>
+```
+
+- `status: "success" | "failure" | "warning" | "neutral"`
+- `children: ReactNode`
+- `theme?: "light" | "dark"` — defaults to `light`
+- `className?: string`
+
+The public contract stays deliberately small: strings, small unions,
+`className`, and `children`. The package does not accept application-domain
+objects or own their schemas. Callers compose these primitives into their own
+pages and domain views.
+
+## Languages and loading behavior
+
+The package bundles these grammars:
+
+| Language | Accepted `lang` values |
+| --- | --- |
+| Python | `python`, `py` |
+| JavaScript | `javascript`, `js`, `cjs`, `mjs` |
+| TypeScript | `typescript`, `ts`, `cts`, `mts` |
+| JSON | `json` |
+| Shell | `shellscript`, `bash`, `sh`, `shell`, `zsh` |
+
+`CodeBlock` and `CodeDiff` are synchronous client components with no
+server-only API. They can be rendered by plain React DOM or Vite applications
+and used at a client boundary in an RSC application. While their highlighters
+load, `CodeBlock` renders its source as plain `<pre><code>` text and `CodeDiff`
+renders `newContent` the same way. The highlighted view replaces that fallback
+when loading completes. Updated props immediately restore the fallback until
+the corresponding highlighted output is ready, so stale source is never shown.
+`StatusBadge` does not load anything asynchronously. Pass the same explicit
+`theme` to each primitive when composing a light or dark surface.
+
+## Consuming the package
+
+Install a revision as a pnpm git dependency:
 
 ```jsonc
-// package.json
-"dependencies": {
-  "@dr-code/viewer": "github:danielle-rothermel/dr-code#<rev>&path:/viewer/packages/viewer"
+{
+  "dependencies": {
+    "@dr-code/viewer": "github:danielle-rothermel/dr-code#<rev>&path:/viewer/packages/viewer"
+  }
 }
 ```
 
-The package builds from source on install (`prepare` runs tsc). Import
-the base styles once, e.g. in the root layout:
+The package builds on installation through its `prepare` script. Consumers
+must provide React 19 and React DOM 19.
+
+Import the base styles once at the application root:
 
 ```ts
 import "@dr-code/viewer/styles.css";
 ```
 
-Code panels use Fira Code with ligatures; ligatures are disabled inside
-intraline-change spans of diffs, where they can mask single-character
-changes. Load the Fira Code font in the consuming app.
+The styles are required for the component layout, diff presentation, badge
+colors, and bundled variable Fira Code font. Code surfaces fall back to the
+system monospace stack while the font loads.
 
-## Types
+## Gallery
 
-Generated, committed under `packages/viewer/src/gen/`:
+`@dr-code/gallery` is a private Vite app for visually checking every primitive
+with static fixtures. It shows light and dark presentations, all badge states,
+short and long examples in every bundled language, and changed and unchanged
+diffs in both unified and split modes. Its Vite configuration resolves the
+viewer package to `src/`, so component and style edits appear immediately
+during development without a separate viewer build.
 
-- `gen/serve.ts` — from the serve OpenAPI schema
-  (`pnpm gen:serve`, runs `uv run python -m dr_code.serve openapi`).
-- `gen/humaneval.ts` — from the library pydantic JSON-schema dump
-  (`pnpm gen:humaneval`, runs `uv run python -m dr_code.schemas humaneval`).
+From `viewer/`, install dependencies and start the development server:
 
-Regenerate with `pnpm gen` from `packages/viewer` (needs `uv` and the
-repo's Python env; maintainer-only).
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter @dr-code/gallery dev
+```
 
-## Checks
+Build the gallery without starting a server:
+
+```bash
+pnpm --filter @dr-code/gallery build
+```
+
+## Verification
+
+Run the complete workspace checks from `viewer/`:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -68,5 +149,6 @@ pnpm build
 pnpm test
 ```
 
-`scripts/pre-check.sh` runs the install/typecheck/build gate when pnpm
-is available; CI always runs it.
+The recursive typecheck and build commands cover both the publishable package
+and the gallery. After component or style changes, also run the gallery and
+inspect both theme columns in a browser.
