@@ -1,7 +1,7 @@
 {
   "name": "@dr-code/viewer",
   "version": "0.1.0",
-  "description": "dr-code's canonical React components for code visualization (shiki v3 two-tier rendering standard, ADR 0006)",
+  "description": "Domain-agnostic React primitives for code visualization",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -13,20 +13,16 @@
   },
   "files": [
     "dist",
-    "src",
-    "schemas"
+    "src"
   ],
   "sideEffects": [
     "**/*.css"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "prepare": "tsc -p tsconfig.build.json",
-    "gen": "pnpm gen:serve && pnpm gen:humaneval",
-    "gen:serve": "uv run --directory ../../.. python -m dr_code.serve openapi > schemas/serve-openapi.json && openapi-typescript schemas/serve-openapi.json -o src/gen/serve.ts",
-    "gen:humaneval": "uv run --directory ../../.. python -m dr_code.schemas humaneval > schemas/humaneval.schema.json && json2ts --input schemas/humaneval.schema.json --output src/gen/humaneval.ts --additionalProperties false"
+    "prepare": "pnpm build"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -38,16 +34,13 @@
     "@git-diff-view/shiki": "0.1.6",
     "@shikijs/langs": "3.23.0",
     "@shikijs/themes": "3.23.0",
-    "react-shiki": "0.10.1",
     "shiki": "3.23.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "json-schema-to-typescript": "^15.0.4",
     "jsdom": "^26.1.0",
-    "openapi-typescript": "^7.8.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "typescript": "^5.8.0",

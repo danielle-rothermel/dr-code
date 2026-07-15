@@ -9,32 +9,38 @@ import { DEFAULT_LANGUAGE } from "./themes.js";
 
 import "@git-diff-view/react/styles/diff-view-pure.css";
 
-export type TransformDiffMode = "split" | "unified";
-export type TransformDiffTheme = "light" | "dark";
+export type CodeDiffMode = "split" | "unified";
+export type CodeDiffTheme = "light" | "dark";
 
-export interface TransformDiffProps {
+export interface CodeDiffProps {
   oldContent: string;
   newContent: string;
   oldName?: string;
   newName?: string;
   lang?: string;
-  mode?: TransformDiffMode;
-  theme?: TransformDiffTheme;
+  mode?: CodeDiffMode;
+  theme?: CodeDiffTheme;
 }
 
-const DIFF_MODES: Record<TransformDiffMode, DiffModeEnum> = {
+const DIFF_MODES: Record<CodeDiffMode, DiffModeEnum> = {
   split: DiffModeEnum.Split,
   unified: DiffModeEnum.Unified,
 };
 
 type DiffFileInstance = ReturnType<typeof generateDiffFile>;
 
-/**
- * Client-tier diff of two plain strings, computed in-browser.
- * DiffFile instances cannot cross the RSC boundary, so this component
- * only ever accepts strings (ADR 0006).
- */
-export function TransformDiff({
+interface RenderedDiff {
+  diffFile: DiffFileInstance;
+  oldContent: string;
+  newContent: string;
+  oldName: string;
+  newName: string;
+  lang: string;
+  theme: CodeDiffTheme;
+}
+
+/** A syntax-highlighted diff computed from two plain strings. */
+export function CodeDiff({
   oldContent,
   newContent,
   oldName = "before",
@@ -42,8 +48,8 @@ export function TransformDiff({
   lang = DEFAULT_LANGUAGE,
   mode = "unified",
   theme = "light",
-}: TransformDiffProps) {
-  const [diffFile, setDiffFile] = useState<DiffFileInstance | null>(null);
+}: CodeDiffProps) {
+  const [rendered, setRendered] = useState<RenderedDiff | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -62,26 +68,43 @@ export function TransformDiff({
       file.initSyntax({ registerHighlighter: highlighter });
       file.buildSplitDiffLines();
       file.buildUnifiedDiffLines();
-      setDiffFile(file);
+      setRendered({
+        diffFile: file,
+        oldContent,
+        newContent,
+        oldName,
+        newName,
+        lang,
+        theme,
+      });
     });
     return () => {
       active = false;
     };
   }, [oldContent, newContent, oldName, newName, lang, theme]);
 
-  if (diffFile === null) {
+  if (
+    rendered === null ||
+    rendered.oldContent !== oldContent ||
+    rendered.newContent !== newContent ||
+    rendered.oldName !== oldName ||
+    rendered.newName !== newName ||
+    rendered.lang !== lang ||
+    rendered.theme !== theme
+  ) {
     return (
-      <div className="drv-transform-diff drv-transform-diff-pending">
+      <div className="drv-code-diff drv-code-diff-pending">
         <pre>
           <code>{newContent}</code>
         </pre>
       </div>
     );
   }
+
   return (
-    <div className="drv-transform-diff">
+    <div className="drv-code-diff">
       <DiffView
-        diffFile={diffFile}
+        diffFile={rendered.diffFile}
         diffViewMode={DIFF_MODES[mode]}
         diffViewTheme={theme}
         diffViewHighlight

@@ -5,7 +5,6 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "gen": "pnpm -r gen"
+    "test": "pnpm -r test"
   }
 }
