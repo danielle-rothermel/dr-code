@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unicodedata
 
 import pytest
@@ -67,7 +68,6 @@ from dr_code.text_transforms import (
     drop_after_last_return,
     drop_if_name,
     normalize_line_endings,
-    normalize_smart_quotes,
     normalize_text,
     strip_code_fences,
     strip_trailing_whitespace,
@@ -90,7 +90,6 @@ GARBAGE_TEXT = (
 TEXT_STEPS = (
     NormalizeLineEndings,
     NormalizeUnicode,
-    NormalizeSmartQuotes,
     ExpandTabs,
     StripTrailingWhitespace,
     CollapseBlankRuns,
@@ -158,12 +157,34 @@ def test_normalize_unicode_applies_nfkc() -> None:
     )
 
 
-def test_normalize_smart_quotes_wraps_function() -> None:
-    raw = "s = ‘a’"
-    out = NormalizeSmartQuotes().apply(TextArtifact(text=raw))
-    assert out.value == TextArtifact(
-        text=normalize_smart_quotes(raw)
-    )
+def test_normalize_smart_quotes_converts_delimiters() -> None:
+    cs = CodeCandidateSetArtifact(candidates=("x = “a”\n",))
+    out = NormalizeSmartQuotes().apply(cs)
+    assert out.value == CodeCandidateSetArtifact(candidates=('x = "a"\n',))
+
+
+def test_normalize_smart_quotes_preserves_string_contents() -> None:
+    src = 'x = "don’t “quote” me"\n'
+    cs = CodeCandidateSetArtifact(candidates=(src,))
+    out = NormalizeSmartQuotes().apply(cs)
+    assert out.value == CodeCandidateSetArtifact(candidates=(src,))
+
+
+def test_normalize_smart_quotes_comment_apostrophe_not_a_delimiter() -> None:
+    # The apostrophe in the comment must not open string state; the real
+    # literal's smart-quote contents stay preserved.
+    src = "# don't\nx = 'a“b'\n"
+    cs = CodeCandidateSetArtifact(candidates=(src,))
+    out = NormalizeSmartQuotes().apply(cs)
+    assert out.value == CodeCandidateSetArtifact(candidates=(src,))
+
+
+def test_normalize_smart_quotes_converts_delimiters_after_comment() -> None:
+    src = "# don't\ndef f():\n    return “x”"
+    expected = "# don't\ndef f():\n    return \"x\""
+    cs = CodeCandidateSetArtifact(candidates=(src,))
+    out = NormalizeSmartQuotes().apply(cs)
+    assert out.value == CodeCandidateSetArtifact(candidates=(expected,))
 
 
 def test_expand_tabs_uses_tab_width_setting() -> None:
@@ -387,7 +408,17 @@ def test_extract_candidates_default_strategies_order() -> None:
         ExtractionStrategy.FENCED_BLOCKS,
         ExtractionStrategy.MARKDOWN_WRAPPER,
         ExtractionStrategy.ESCAPED_PYTHON,
+        ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER,
     )
+
+
+def test_extract_candidates_escaped_markdown_wrapper_strategy() -> None:
+    # JSON-wrapped, markdown-list-wrapped code: only the unescape + wrapper
+    # rung recovers it.
+    text = json.dumps("- def add(a, b):\n-     return a + b")
+    out = ExtractCandidates().apply(TextArtifact(text=text))
+    assert out.facts["alternative"] == "escaped_markdown_wrapper"
+    assert out.value.candidates == ("def add(a, b):\n    return a + b",)
 
 
 def test_extract_candidates_all_fail_raises() -> None:

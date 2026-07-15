@@ -28,7 +28,7 @@ class StepName(StrEnum):
     FIELD_MARKER_EXTRACT = "field_marker_extract"
     # elementwise candidate transforms
     STRIP_FENCES = "strip_fences"
-    DEDENT_CANDIDATES = "dedent_candidates"  # parity; not in default defs
+    DEDENT_CANDIDATES = "dedent_candidates"  # in every best-effort def
     SPLIT_ON_NAME_GUARD = "split_on_name_guard"  # drop_if_name
     DROP_AFTER_LAST_RETURN = "drop_after_last_return"
     # import handling — infer_necessary_imports unbundled

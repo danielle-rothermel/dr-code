@@ -5,8 +5,9 @@ Rebuilds the code-extraction pipeline as one-operation-per-step so a
 runner produces a ``Trace`` from the ``dr_code.trace`` boundary-contract
 package.
 
-Core functions (``text_transforms``, ``text_analysis``, ``code_analysis``,
-``humaneval/import_inference``) are reused as-is as step bodies.
+Core functions (``text_transforms``, ``text_analysis``, ``code_analysis``)
+are reused as-is as step bodies; import inference lives here in
+``preprocessing.import_inference`` and the old pipeline delegates to it.
 """
 
 from __future__ import annotations
@@ -18,12 +19,9 @@ from dr_code.preprocessing.definition import (
 )
 from dr_code.preprocessing.definitions import (
     BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-    BEST_EFFORT_V1_DEFINITION,
     BEST_EFFORT_V2_DEFINITION,
     DEFINITION_VERSION,
-    FIELD_MARKER_V1_DEFINITION,
     FIELD_MARKER_V2_DEFINITION,
-    LEGACY_DEFINITION_VERSION,
     STRICT_FIELD_MARKER_DEFINITION_ID,
     SUPPORTED_DEFINITION_IDS,
     SUPPORTED_DEFINITION_VERSIONS,
@@ -52,13 +50,10 @@ from dr_code.preprocessing.steps.extract_candidates import (
 
 __all__ = [
     "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
-    "BEST_EFFORT_V1_DEFINITION",
     "BEST_EFFORT_V2_DEFINITION",
     "DEFAULT_STRATEGIES",
     "DEFINITION_VERSION",
-    "FIELD_MARKER_V1_DEFINITION",
     "FIELD_MARKER_V2_DEFINITION",
-    "LEGACY_DEFINITION_VERSION",
     "STRICT_FIELD_MARKER_DEFINITION_ID",
     "SUPPORTED_DEFINITION_IDS",
     "SUPPORTED_DEFINITION_VERSIONS",
