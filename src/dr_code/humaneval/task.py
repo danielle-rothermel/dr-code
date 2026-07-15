@@ -62,6 +62,7 @@ from dr_code.humaneval.parsed_tests import (
 from dr_code.humaneval.sandbox import (
     CANDIDATE_KILL_RETURNCODES,
     SandboxOutputLimitError,
+    SandboxRunner,
     SandboxTimeoutError,
     run_python_in_sandbox,
 )
@@ -540,6 +541,7 @@ def evaluate_human_eval_code(
     candidate_code: str,
     timeout_seconds: float,
     candidate_ast: ast.Module | None = None,
+    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
 ) -> EvaluationTaskResult:
     parsed_tests = require_parsed_tests(task)
     function_names = top_level_function_names(
@@ -559,6 +561,7 @@ def evaluate_human_eval_code(
                     timeout_seconds=timeout_seconds,
                     checks=checks,
                     runner_source=runner_source,
+                    run_in_sandbox=run_in_sandbox,
                 )
             )
         except EvaluationHarnessError as exc:
@@ -624,6 +627,7 @@ def run_subprocess_batch(
     timeout_seconds: float,
     checks: list[SingleCaseCheck] | None = None,
     runner_source: str | None = None,
+    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
 ) -> list[EvaluationCaseResult]:
     parsed_tests = require_parsed_tests(task)
     check_payloads = (
@@ -641,7 +645,7 @@ def run_subprocess_batch(
     )
     started_at = time.perf_counter()
     try:
-        completed = run_python_in_sandbox(
+        completed = run_in_sandbox(
             source=runner_source or runner_script(),
             input_json=payload.model_dump_json(),
             timeout_seconds=timeout_seconds,
