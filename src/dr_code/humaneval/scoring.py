@@ -18,6 +18,7 @@ from pydantic import (
     StrictStr,
 )
 
+from dr_code.humaneval.batch_runner import evaluate_human_eval_code
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
     CodeParserProfile,
@@ -32,7 +33,6 @@ from dr_code.humaneval.task import (
     EvaluationCaseStatus,
     EvaluationTaskResult,
     HumanEvalTask,
-    evaluate_human_eval_code,
 )
 
 UNKNOWN_FAILURE_CLASS = "unknown"

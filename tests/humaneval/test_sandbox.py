@@ -16,11 +16,9 @@ from dr_code.humaneval.sandbox import (
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
 )
+from dr_code.humaneval.batch_runner import evaluate_human_eval_code
 from dr_code.humaneval.scoring import CompletedScore, score_humaneval_submission
-from dr_code.humaneval.task import (
-    HumanEvalTask,
-    evaluate_human_eval_code,
-)
+from dr_code.humaneval.task import HumanEvalTask
 
 
 # The probes are opt-in locally but always run in CI: they must fail loudly
