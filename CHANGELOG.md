@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-15
+
+- Removed superseded design-review and eval-flow hero artifacts, and updated
+  the preprocessing and metrics plans to reflect the current HumanEval
+  boundaries and consumers.
+- Updated the package description to cover producer-blind HumanEval+
+  execution and synthetic corruption datasets.
+
+## 2026-07-14
+
+- Split HumanEval test parsing and sandbox batch orchestration out of
+  `task.py`, extracted the sandbox runner into a dependency-free Python
+  resource, and injected `SandboxRunner` through the evaluation entry points.
+- Removed the dead `serve`/explain facade and replaced the repo-specific
+  viewer surface with domain-agnostic viewer primitives and a gallery.
+- Made escaped-newline tests assert behavior instead of trace-node names,
+  documented the extraction-trace contract, made corruption implementations
+  explicit ABCs, and warmed sandbox containers before timed probes.
+- Added the eval-flow design and implementation plans and the serializable
+  `dr_code.trace` boundary contract package.
+
 ## 2026-07-13
 
 - Moved HumanEval candidate execution into a fail-closed OCI sandbox with no
