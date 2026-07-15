@@ -4,17 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Final, get_args
 
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
-from dr_code.trace.provenance import TraceProducer
+from dr_code.trace.provenance import EXTERNAL_PRODUCER, TraceProducer
 
 INPUT_KEY: Final = "input"
 OUTPUT_KEY: Final = "output"
 RESERVED_KEYS: Final = frozenset({INPUT_KEY, OUTPUT_KEY})
 
 TraceValue = Artifact | Absent
+
+# Concrete runtime classes that a TraceValue may be, derived from the
+# Artifact union metadata plus Absent. get_args(Artifact) unwraps the
+# Annotated[Union[...], Field] form to the member model classes.
+_TRACE_VALUE_TYPES: Final = (*get_args(get_args(Artifact)[0]), Absent)
 
 
 class WiringError(Exception):
@@ -38,13 +43,27 @@ class Trace:
     def __post_init__(self) -> None:
         """Validate RESERVED_KEYS ⊆ values; reject non-TraceValue
         entries."""
-        raise NotImplementedError
+        missing = RESERVED_KEYS - self.values.keys()
+        if missing:
+            raise WiringError(
+                "trace missing reserved key(s): "
+                + ", ".join(sorted(missing))
+            )
+        for key, val in self.values.items():
+            if not isinstance(val, _TRACE_VALUE_TYPES):
+                raise WiringError(
+                    f"value for key {key!r} is not a TraceValue: "
+                    f"{type(val).__name__}"
+                )
 
     def value(self, key: str) -> TraceValue:
         """Missing key raises WiringError. Present-but-Absent returns the
         Absent value — callers decide what not-applicable means for them.
         """
-        raise NotImplementedError
+        try:
+            return self.values[key]
+        except KeyError:
+            raise WiringError(f"trace has no value for key {key!r}") from None
 
 
 def external_trace(
@@ -56,4 +75,8 @@ def external_trace(
     validates value types on the way in, stamps
     producer=EXTERNAL_PRODUCER (X-S2).
     """
-    raise NotImplementedError
+    return Trace(
+        values=dict(values),
+        producer=EXTERNAL_PRODUCER,
+        step_facts=dict(step_facts) if step_facts is not None else {},
+    )

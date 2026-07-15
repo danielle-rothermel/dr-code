@@ -24,4 +24,4 @@ class Absent(FrozenModel):
 
 
 def is_absent(value: object) -> TypeGuard[Absent]:
-    raise NotImplementedError
+    return isinstance(value, Absent)
