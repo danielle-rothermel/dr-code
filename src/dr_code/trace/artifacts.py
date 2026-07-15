@@ -66,4 +66,4 @@ def parsed_module(code: CodeArtifact) -> ast.Module:
     ViewCache); never stored on the artifact, so serialization stays
     lossless-by-construction.
     """
-    raise NotImplementedError
+    return ast.parse(code.source)

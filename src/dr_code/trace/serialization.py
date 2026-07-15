@@ -29,11 +29,21 @@ def serialize_trace(trace: Trace) -> SerializedTrace:
     """Total for traces built from TraceValue types. May lose warm
     caches, never information; round-trip must be value-equal (S3).
     """
-    raise NotImplementedError
+    return SerializedTrace(
+        producer=trace.producer,
+        values=dict(trace.values),
+        step_facts={k: dict(v) for k, v in trace.step_facts.items()},
+    )
 
 
 def deserialize_trace(serialized: SerializedTrace) -> Trace:
     """Restored traces have cold caches; measuring one later must equal
     measuring the fresh trace now — enforced by a metrics-side test.
     """
-    raise NotImplementedError
+    return Trace(
+        values=dict(serialized.values),
+        producer=serialized.producer,
+        step_facts={
+            k: dict(v) for k, v in serialized.step_facts.items()
+        },
+    )
