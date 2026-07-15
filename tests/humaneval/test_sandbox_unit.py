@@ -1,3 +1,14 @@
+"""Conscious exception: tests ``sandbox._*`` helpers directly.
+
+These private helpers pin fail-closed security invariants (credential
+scrubbing, immutable-digest enforcement, local-image inspection, runtime
+allow-list) that must be verifiable without a live container runtime. The
+same invariants are covered end-to-end by the CI-run OCI probes in
+``tests/humaneval/test_sandbox.py``. The helpers must not be promoted to
+public API to satisfy testing convention: the sandbox's minimal 3-kwarg
+interface (``run_python_in_sandbox``) is deliberate.
+"""
+
 from __future__ import annotations
 
 import subprocess
@@ -52,4 +63,18 @@ def test_missing_runtime_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sandbox.shutil, "which", lambda _: None)
 
     with pytest.raises(sandbox.SandboxError, match="runtime is unavailable"):
+        sandbox._resolve_runtime()
+
+
+def test_unlisted_runtime_fails_closed_before_which_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DR_CODE_SANDBOX_RUNTIME", "podman-remote")
+
+    def fail(_: str) -> None:
+        raise AssertionError("which must not run for an unlisted runtime")
+
+    monkeypatch.setattr(sandbox.shutil, "which", fail)
+
+    with pytest.raises(sandbox.SandboxError, match="docker.*podman"):
         sandbox._resolve_runtime()
