@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import abc
 import random
 from typing import ClassVar
 
@@ -9,7 +10,7 @@ from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import CorruptionName
 
 
-class Corruption:
+class Corruption(abc.ABC):
     """Base class for synthetic corruptions.
 
     Subclasses must declare:
@@ -25,5 +26,6 @@ class Corruption:
 
     NAME: ClassVar[CorruptionName]
 
+    @abc.abstractmethod
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         raise NotImplementedError
