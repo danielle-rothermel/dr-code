@@ -7,6 +7,22 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+__all__ = [
+    "HumanEvalTestCaseKind",
+    "InputExpressionTestCase",
+    "InputOracleTestCase",
+    "InputResultTestCase",
+    "ParsedTestCaseSummary",
+    "ParsedTests",
+    "ParsedTestsSummary",
+    "SingleCaseCheck",
+    "TestCase",
+    "UnsupportedTestFormatError",
+    "find_check_function",
+    "parse_human_eval_tests",
+    "support_code_without_check",
+]
+
 EXPECTED_ARG_INDEX = 1
 TOLERANCE_ARG_INDEX = 2
 PAIR_TARGET_SIZE = 2
@@ -226,8 +242,8 @@ class ParsedTestsSummary(BaseModel):
     original_test: str
 
 
-def literal_assignment(function_node: ast.FunctionDef, name: str) -> Any:
-    value = find_assignment_value(function_node, name)
+def _literal_assignment(function_node: ast.FunctionDef, name: str) -> Any:
+    value = _find_assignment_value(function_node, name)
     if value is None:
         raise UnsupportedTestFormatError(
             f"Could not find assignment for {name!r}"
@@ -240,7 +256,7 @@ def literal_assignment(function_node: ast.FunctionDef, name: str) -> Any:
         ) from exc
 
 
-def find_assignment_value(
+def _find_assignment_value(
     function_node: ast.FunctionDef,
     name: str,
 ) -> ast.expr | None:
@@ -253,7 +269,7 @@ def find_assignment_value(
     return None
 
 
-def find_for_loop(function_node: ast.FunctionDef) -> ast.For:
+def _find_for_loop(function_node: ast.FunctionDef) -> ast.For:
     for stmt in function_node.body:
         if isinstance(stmt, ast.For):
             return stmt
@@ -262,7 +278,7 @@ def find_for_loop(function_node: ast.FunctionDef) -> ast.For:
     )
 
 
-def find_assertion_call(function_node: ast.FunctionDef) -> ast.Call | None:
+def _find_assertion_call(function_node: ast.FunctionDef) -> ast.Call | None:
     for node in ast.walk(function_node):
         if (
             isinstance(node, ast.Call)
@@ -273,7 +289,7 @@ def find_assertion_call(function_node: ast.FunctionDef) -> ast.Call | None:
     return None
 
 
-def find_assert_statement(function_node: ast.FunctionDef) -> ast.Assert:
+def _find_assert_statement(function_node: ast.FunctionDef) -> ast.Assert:
     for node in ast.walk(function_node):
         if isinstance(node, ast.Assert):
             return node
@@ -282,7 +298,7 @@ def find_assert_statement(function_node: ast.FunctionDef) -> ast.Assert:
     )
 
 
-def find_oracle_name(assertion_call: ast.Call) -> str | None:
+def _find_oracle_name(assertion_call: ast.Call) -> str | None:
     if len(assertion_call.args) <= EXPECTED_ARG_INDEX:
         return None
     expected_expr = assertion_call.args[EXPECTED_ARG_INDEX]
@@ -293,7 +309,7 @@ def find_oracle_name(assertion_call: ast.Call) -> str | None:
     return None
 
 
-def assertion_tolerance(assertion_call: ast.Call) -> float:
+def _assertion_tolerance(assertion_call: ast.Call) -> float:
     if len(assertion_call.args) <= TOLERANCE_ARG_INDEX:
         return 0
     value = assertion_call.args[TOLERANCE_ARG_INDEX]
@@ -308,7 +324,7 @@ def assertion_tolerance(assertion_call: ast.Call) -> float:
     raise UnsupportedTestFormatError("Assertion tolerance must be numeric")
 
 
-def for_loop_names(loop_node: ast.For) -> tuple[str | None, str, str]:
+def _for_loop_names(loop_node: ast.For) -> tuple[str | None, str, str]:
     target = loop_node.target
     if (
         isinstance(target, ast.Tuple)
@@ -332,3 +348,114 @@ def for_loop_names(loop_node: ast.For) -> tuple[str | None, str, str]:
     ):
         return (None, target.elts[0].id, target.elts[1].id)
     raise UnsupportedTestFormatError("Unsupported for-loop target shape")
+
+
+def find_check_function(tree: ast.Module) -> ast.FunctionDef:
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "check":
+            return node
+    raise UnsupportedTestFormatError(
+        "Could not find check(candidate) function"
+    )
+
+
+def support_code_without_check(tree: ast.Module) -> str:
+    support_nodes = [
+        node
+        for node in tree.body
+        if not (isinstance(node, ast.FunctionDef) and node.name == "check")
+    ]
+    module = ast.Module(body=support_nodes, type_ignores=[])
+    return ast.unparse(module)
+
+
+def parse_human_eval_tests(test_str: str) -> ParsedTests:
+    tree = ast.parse(test_str)
+    check_node = find_check_function(tree)
+    if len(check_node.args.args) != 1:
+        raise UnsupportedTestFormatError(
+            "Expected check(candidate) with one positional argument"
+        )
+
+    inputs = _literal_assignment(check_node, "inputs")
+    results_value = _find_assignment_value(check_node, "results")
+    assertion_call = _find_assertion_call(check_node)
+    tolerance = (
+        _assertion_tolerance(assertion_call) if assertion_call else 0
+    )
+    support_code = support_code_without_check(tree)
+    candidate_arg_name = check_node.args.args[0].arg
+
+    cases: list[TestCase]
+    if results_value is not None:
+        results = _literal_assignment(check_node, "results")
+        if len(inputs) != len(results):
+            raise UnsupportedTestFormatError(
+                f"len(inputs)={len(inputs)} does not match "
+                f"len(results)={len(results)}"
+            )
+        if assertion_call is None:
+            loop_node = _find_for_loop(check_node)
+            index_name, input_name, expected_name = _for_loop_names(
+                loop_node
+            )
+            assert_statement = _find_assert_statement(check_node)
+            cases = [
+                InputExpressionTestCase(
+                    case_id=f"case_{index}",
+                    args=args,
+                    expected=expected,
+                    expression=ast.unparse(assert_statement),
+                    input_name=input_name,
+                    expected_name=expected_name,
+                    index_name=index_name,
+                )
+                for index, (args, expected) in enumerate(
+                    zip(inputs, results, strict=True)
+                )
+            ]
+            test_type = HumanEvalTestCaseKind.INPUT_EXPRESSION
+        else:
+            cases = [
+                InputResultTestCase(
+                    case_id=f"case_{index}",
+                    args=args,
+                    expected=expected,
+                    atol=tolerance,
+                )
+                for index, (args, expected) in enumerate(
+                    zip(inputs, results, strict=True)
+                )
+            ]
+            test_type = HumanEvalTestCaseKind.INPUT_RESULT
+    else:
+        _ = _find_for_loop(check_node)
+        if assertion_call is None:
+            raise UnsupportedTestFormatError(
+                "Expected assertion(..., ref_func(*inp), ...) for oracle tests"
+            )
+        oracle_name = _find_oracle_name(assertion_call)
+        if oracle_name is None:
+            raise UnsupportedTestFormatError(
+                "Expected assertion(..., ref_func(*inp), ...) for oracle tests"
+            )
+        cases = [
+            InputOracleTestCase(
+                case_id=f"case_{index}",
+                args=args,
+                oracle_name=oracle_name,
+                atol=tolerance,
+            )
+            for index, args in enumerate(inputs)
+        ]
+        test_type = HumanEvalTestCaseKind.INPUT_ORACLE
+
+    return ParsedTests(
+        test_type=test_type,
+        support_code=support_code,
+        check_name=check_node.name,
+        candidate_arg_name=candidate_arg_name,
+        assertion_name="assertion",
+        cases=cases,
+        original_test=test_str,
+    )

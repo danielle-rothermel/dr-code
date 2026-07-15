@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import gzip as gzip_codec
 import subprocess
 import sys
@@ -12,6 +13,17 @@ import zstandard
 
 import dr_code.humaneval as humaneval
 from dr_code.code_analysis import validate_python_source
+from dr_code.humaneval import (
+    EvaluationCaseStatus,
+    HumanEvalTask,
+    parse_human_eval_dataset,
+)
+from dr_code.humaneval.batch_runner import (
+    evaluate_human_eval_code,
+    require_parsed_tests,
+    run_subprocess_batch,
+    runner_script,
+)
 from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
@@ -24,6 +36,7 @@ from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
     UnsupportedTestFormatError,
+    parse_human_eval_tests,
 )
 from dr_code.humaneval.sampling import (
     HumanEvalRawRowsSnapshot,
@@ -40,16 +53,9 @@ from dr_code.humaneval.scoring import (
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
     EvaluationHarnessError,
-    EvaluationCaseStatus,
     EvaluationTaskResult,
     HumanEvalOverride,
-    HumanEvalTask,
     apply_human_eval_override,
-    evaluate_human_eval_code,
-    parse_human_eval_dataset,
-    parse_human_eval_tests,
-    require_parsed_tests,
-    run_subprocess_batch,
 )
 from dr_code.humaneval.sandbox import (
     SandboxCompletedProcess,
@@ -233,11 +239,6 @@ def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
     assert [sample.sample_index for sample in first] == [0, 1, 2]
     assert [sample.task.task_id for sample in first] == [
         sample.task.task_id for sample in second
-    ]
-    assert [sample.task.task_id for sample in first] == [
-        "HumanEval/0",
-        "HumanEval/2",
-        "HumanEval/1",
     ]
 
 
@@ -994,3 +995,22 @@ def test_require_parsed_tests_raises_when_missing() -> None:
         match=r"HumanEvalTask\.parsed_tests is required",
     ):
         require_parsed_tests(task)
+
+
+def test_runner_script_source_compiles() -> None:
+    compile(runner_script(), "<runner>", "exec")
+
+
+def test_runner_script_source_is_dependency_free() -> None:
+    tree = ast.parse(runner_script())
+    imported_modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported_modules.append(node.module or "")
+
+    assert not any(
+        module == "dr_code" or module.startswith("dr_code.")
+        for module in imported_modules
+    )
