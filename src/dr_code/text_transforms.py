@@ -243,7 +243,13 @@ def _is_unpaired_escape(source: str, index: int, escaped: str) -> bool:
 
 
 def drop_if_name(text: str) -> list[str]:
-    """Split `text` on `if __name__` guard lines, dropping the guards."""
+    """Split `text` on `if __name__` guard lines, dropping the guards.
+
+    Constraint: a "guard line" is any line whose text contains the substring
+    `if __name__` — including comment and string lines — and the split is on
+    every occurrence of that line's exact text. A deliberate lossy heuristic
+    for LLM-output cleanup, not a syntactic guard detector.
+    """
     lines = text.split(LINE_SEP)
     split_lines = [line for line in lines if "if __name__" in line]
     if not split_lines:

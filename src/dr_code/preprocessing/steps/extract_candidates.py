@@ -39,6 +39,9 @@ class ExtractionStrategy(StrEnum):
         "markdown_wrapper"  # strip_markdown_wrappers per block
     )
     ESCAPED_PYTHON = "escaped_python"  # recover_escaped_python, re-extract
+    ESCAPED_MARKDOWN_WRAPPER = (
+        "escaped_markdown_wrapper"  # unescape, then strip_markdown_wrappers
+    )
 
 
 #: ``(text: str) -> CodeCandidateSetArtifact | None`` — None means the
@@ -85,16 +88,40 @@ def _escaped_python(text: str) -> CodeCandidateSetArtifact | None:
     return _to_candidate_set(candidate_blocks(unescaped))
 
 
+def _escaped_markdown_wrapper(
+    text: str,
+) -> CodeCandidateSetArtifact | None:
+    """Recover escaped Python, then strip a markdown wrapper per block.
+
+    Mirrors the old pipeline's ``unescaped_markdown_wrapper_fallback``: the
+    unescaped-then-plain rung (``escaped_python``) can miss code hidden
+    behind blockquote/list markers, so this retries with
+    ``strip_markdown_wrappers`` applied to each block.
+    """
+    unescaped = recover_escaped_python(text)
+    if unescaped is None:
+        return None
+    stripped = [
+        strip_markdown_wrappers(block)
+        for block in candidate_blocks(unescaped)
+    ]
+    return _to_candidate_set(stripped)
+
+
 STRATEGY_REGISTRY: dict[str, ExtractionStrategyFn] = {
     ExtractionStrategy.FENCED_BLOCKS.value: _fenced_blocks,
     ExtractionStrategy.MARKDOWN_WRAPPER.value: _markdown_wrapper,
     ExtractionStrategy.ESCAPED_PYTHON.value: _escaped_python,
+    ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER.value: (
+        _escaped_markdown_wrapper
+    ),
 }
 
 DEFAULT_STRATEGIES: Final = (
     ExtractionStrategy.FENCED_BLOCKS,
     ExtractionStrategy.MARKDOWN_WRAPPER,
     ExtractionStrategy.ESCAPED_PYTHON,
+    ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER,
 )
 
 

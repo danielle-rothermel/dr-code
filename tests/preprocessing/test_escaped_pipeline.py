@@ -33,7 +33,6 @@ def _escaped_pipeline_definition() -> PreprocessingDefinition:
         steps=(
             _spec("le", StepName.NORMALIZE_LINE_ENDINGS),
             _spec("unicode", StepName.NORMALIZE_UNICODE),
-            _spec("smart", StepName.NORMALIZE_SMART_QUOTES),
             _spec("tabs", StepName.EXPAND_TABS),
             _spec("strip", StepName.STRIP_TRAILING_WHITESPACE),
             _spec("blank", StepName.COLLAPSE_BLANK_RUNS),

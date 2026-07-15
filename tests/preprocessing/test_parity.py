@@ -1,17 +1,23 @@
-"""Output parity: named definitions vs. the old ``extract_code_with_profile``.
+"""Output parity (and intended divergence) vs. ``extract_code_with_profile``.
 
-For every profile (best-effort v2, best-effort v1, field-marker v2/v1) and a
-diverse input battery — including every corruption recipe and both-absent
-cases — the *extracted output* of ``run_preprocessing`` over the named
-definition must equal the *extracted output* of the old
-``extract_code_with_profile``. We compare extracted strings only (``None``
-old <-> ``Absent`` new), never trace shapes: the two pipelines record
-provenance differently by design, and only the extracted code is a stable
-contract.
+The named v2 definitions reproduce the old ``extract_code_with_profile``
+output on every input where the new behaviour is intended-identical — a
+diverse battery including every corruption recipe and both-absent cases. We
+compare extracted strings only (``None`` old <-> ``Absent`` new), never trace
+shapes: the two pipelines record provenance differently by design.
+
+A small set of inputs is *deliberately* different now (string-aware
+smart-quote recovery, the empty-fence drop, the field-marker code-repr
+rejection). Those live in the divergence section below, which asserts the new
+behaviour and, where cheap, that the old pipeline differs. Two changes that
+might look divergent are not: the fourth extraction rung *restores* parity on
+the JSON-wrapped markdown case, and the import-inference fix flows into the
+old pipeline via delegation — so both hold parity.
 """
 
 from __future__ import annotations
 
+import json
 import random
 
 import pytest
@@ -51,8 +57,8 @@ def _corrupt(recipe_name: str) -> str:
 
 
 #: Direct-shaped inputs exercising each extraction path plus both-absent
-#: cases (empty / whitespace / prose-only / no-marker) where both pipelines
-#: must produce nothing.
+#: cases. Inputs whose behaviour the new pipeline intentionally changes are
+#: NOT here — they live in the divergence section.
 _DIRECT_INPUTS: dict[str, str] = {
     "clean": CLEAN,
     "fenced": "```python\n" + CLEAN + "```\n",
@@ -64,9 +70,9 @@ _DIRECT_INPUTS: dict[str, str] = {
     "name_guard": CLEAN
     + "\nif __name__ == '__main__':\n    print(make_array([1]))\n",
     "escaped_json": '"import numpy as np\\n\\ndef f():\\n    return 1\\n"',
+    "json_wrapped_markdown": json.dumps("- def add(a, b):\n-     return a + b"),
     "field_marker": "[[ ## code ## ]]\ndef f():\n    return 1\n",
     "field_marker_literal": "[[ ## code ## ]]\n{1: 2, 3: 4}\n",
-    "field_marker_repr": '[[ ## code ## ]]\ncode = "def f(): pass"\n',
     "field_marker_empty": "[[ ## code ## ]]\n\n",
     # both-absent cases
     "empty": "",
@@ -101,16 +107,17 @@ def _old_output(profile_id: str, version: str, raw: str) -> str | None:
 
 _PROFILES = [
     (BEST_EFFORT_ID, "v2"),
-    (BEST_EFFORT_ID, "v1"),
     (FIELD_MARKER_ID, "v2"),
-    (FIELD_MARKER_ID, "v1"),
 ]
+
+
+# --- intended-identical parity across v2 coordinates -----------------
 
 
 @pytest.mark.parametrize(
     "profile_id, version",
     _PROFILES,
-    ids=["best-effort-v2", "best-effort-v1", "field-marker-v2", "field-marker-v1"],
+    ids=["best-effort-v2", "field-marker-v2"],
 )
 @pytest.mark.parametrize("input_name", sorted(_ALL_INPUTS))
 def test_output_parity_with_old_pipeline(
@@ -131,13 +138,11 @@ def test_output_parity_with_old_pipeline(
 @pytest.mark.parametrize(
     "profile_id, version",
     _PROFILES,
-    ids=["best-effort-v2", "best-effort-v1", "field-marker-v2", "field-marker-v1"],
+    ids=["best-effort-v2", "field-marker-v2"],
 )
 def test_both_pipelines_absent_on_empty_input(
     profile_id: str, version: str
 ) -> None:
-    # The both-absent case is a real parity point: empty raw yields None
-    # from the old pipeline and Absent from the new one.
     definition = resolve_preprocessing_definition(
         definition_id=profile_id, version=version
     )
@@ -146,3 +151,80 @@ def test_both_pipelines_absent_on_empty_input(
         "output"
     )
     assert is_absent(output)
+
+
+def test_fourth_rung_restores_parity_on_json_wrapped_markdown() -> None:
+    # Item 1: the escaped_markdown_wrapper rung makes both pipelines recover
+    # the JSON-wrapped, markdown-list-wrapped code — parity, not divergence.
+    raw = json.dumps("- def add(a, b):\n-     return a + b")
+    definition = resolve_preprocessing_definition(
+        definition_id=BEST_EFFORT_ID, version="v2"
+    )
+    expected = "def add(a, b):\n    return a + b"
+    assert _old_output(BEST_EFFORT_ID, "v2", raw) == expected
+    assert _new_output(definition, raw) == expected
+
+
+def test_import_inference_fix_holds_parity_via_delegation() -> None:
+    # Item 7: the bound-name fix lives in the shared module the old pipeline
+    # delegates to, so neither injects a bogus import for a shadowed name.
+    raw = "def solve(F):\n    return F + 1\n"
+    definition = resolve_preprocessing_definition(
+        definition_id=BEST_EFFORT_ID, version="v2"
+    )
+    old = _old_output(BEST_EFFORT_ID, "v2", raw)
+    new = _new_output(definition, raw)
+    assert old == new
+    assert new is not None
+    assert "import torch.nn.functional as F" not in new
+
+
+# --- intended divergences: new behaviour, old pipeline differs -------
+
+
+def test_smart_quote_delimiters_recovered_only_by_new_pipeline() -> None:
+    raw = "def greet():\n    return “hello”"
+    definition = resolve_preprocessing_definition(
+        definition_id=BEST_EFFORT_ID, version="v2"
+    )
+    new = _new_output(definition, raw)
+    assert new == 'def greet():\n    return "hello"'
+    # The old pipeline never normalizes smart delimiters, so it can't compile
+    # this candidate and gives up.
+    assert _old_output(BEST_EFFORT_ID, "v2", raw) is None
+
+
+def test_smart_quotes_inside_literal_preserved_by_new_pipeline() -> None:
+    raw = "def f():\n    return \"don’t “quote” me\""
+    definition = resolve_preprocessing_definition(
+        definition_id=BEST_EFFORT_ID, version="v2"
+    )
+    new = _new_output(definition, raw)
+    # Contents inside the ASCII-quoted literal are untouched; both pipelines
+    # extract, so this is parity on contents but proves the step is scoped.
+    assert new == raw
+    assert _old_output(BEST_EFFORT_ID, "v2", raw) == raw
+
+
+def test_empty_fence_is_absent_only_in_new_pipeline() -> None:
+    raw = "```\n\n```"
+    definition = resolve_preprocessing_definition(
+        definition_id=BEST_EFFORT_ID, version="v2"
+    )
+    output = run_preprocessing(definition, TextArtifact(text=raw)).value(
+        "output"
+    )
+    assert is_absent(output)
+    # The old pipeline selects the empty string as the extracted code.
+    assert _old_output(BEST_EFFORT_ID, "v2", raw) == ""
+
+
+def test_field_marker_code_repr_rejected_only_in_new_pipeline() -> None:
+    raw = '[[ ## code ## ]]\ncode = "def f(): pass"\n'
+    definition = resolve_preprocessing_definition(
+        definition_id=FIELD_MARKER_ID, version="v2"
+    )
+    new = _new_output(definition, raw)
+    assert new is None
+    # The old field-marker path lacks the code-repr filter, so it accepts it.
+    assert _old_output(FIELD_MARKER_ID, "v2", raw) == 'code = "def f(): pass"'
