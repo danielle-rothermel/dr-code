@@ -1,0 +1,27 @@
+"""Absent sentinel with causal lineage."""
+
+from __future__ import annotations
+
+from typing import Literal, TypeGuard
+
+from dr_code.models import FrozenModel
+
+
+class Absent(FrozenModel):
+    """A step failed for this input; downstream values inherit the cause.
+
+    Present-but-Absent is data (eval-flow L2): consumers emit
+    not-applicable records instead of raising.
+    """
+
+    kind: Literal["absent"] = "absent"
+    # instance name that originated the failure
+    failed_step: str
+    # human-readable reason, stable for lineage joins
+    cause: str
+    # downstream instance names that inherited it
+    propagated_through: tuple[str, ...] = ()
+
+
+def is_absent(value: object) -> TypeGuard[Absent]:
+    raise NotImplementedError
