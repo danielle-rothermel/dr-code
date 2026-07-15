@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import gzip as gzip_codec
 import subprocess
 import sys
@@ -50,6 +51,7 @@ from dr_code.humaneval.task import (
     parse_human_eval_tests,
     require_parsed_tests,
     run_subprocess_batch,
+    runner_script,
 )
 from dr_code.humaneval.sandbox import (
     SandboxCompletedProcess,
@@ -994,3 +996,22 @@ def test_require_parsed_tests_raises_when_missing() -> None:
         match=r"HumanEvalTask\.parsed_tests is required",
     ):
         require_parsed_tests(task)
+
+
+def test_runner_script_source_compiles() -> None:
+    compile(runner_script(), "<runner>", "exec")
+
+
+def test_runner_script_source_is_dependency_free() -> None:
+    tree = ast.parse(runner_script())
+    imported_modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported_modules.append(node.module or "")
+
+    assert not any(
+        module == "dr_code" or module.startswith("dr_code.")
+        for module in imported_modules
+    )
