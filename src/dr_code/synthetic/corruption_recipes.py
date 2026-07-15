@@ -5,7 +5,8 @@ from __future__ import annotations
 import random
 from typing import Final
 
-from dr_code.synthetic.models import CorruptedSample, FrozenModel
+from dr_code.models import FrozenModel
+from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import CorruptionName
 from dr_code.synthetic.corruptions import REGISTRY
 
