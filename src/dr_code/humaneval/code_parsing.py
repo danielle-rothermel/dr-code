@@ -69,6 +69,26 @@ class CandidateSelectionTrace(BaseModel):
 
 
 class ExtractionTrace(BaseModel):
+    """How one submission was parsed, split into contract vs. diagnostic.
+
+    This trace is persisted, returned by the `/explain` HTTP boundary, and
+    rendered by the viewer, so its fields carry two different stability
+    promises:
+
+    Product contract (stable; downstream consumers may depend on them):
+        `profile`, `extraction_method`, `selected_candidate_index`,
+        `extraction_error`. These name the *outcome* of parsing (which
+        profile ran, which method won, why nothing was selected) and are the
+        fields callers should assert against.
+
+    Diagnostic / internal (may change between versions without notice):
+        `roots` and each `CandidateSelectionTrace`'s per-node structure,
+        `rationale`. The node `name`s mirror the pipeline's transform and
+        check steps one-to-one, so they shift whenever the pipeline is
+        refactored. Treat them as a human-debuggable audit log, not an API:
+        do not pin node names, node counts, or child ordering.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     profile: CodeParserProfile
