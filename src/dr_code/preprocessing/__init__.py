@@ -16,6 +16,19 @@ from dr_code.preprocessing.definition import (
     StepSpec,
     preprocessing_definition_hash,
 )
+from dr_code.preprocessing.definitions import (
+    BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
+    BEST_EFFORT_V1_DEFINITION,
+    BEST_EFFORT_V2_DEFINITION,
+    DEFINITION_VERSION,
+    FIELD_MARKER_V1_DEFINITION,
+    FIELD_MARKER_V2_DEFINITION,
+    LEGACY_DEFINITION_VERSION,
+    STRICT_FIELD_MARKER_DEFINITION_ID,
+    SUPPORTED_DEFINITION_IDS,
+    SUPPORTED_DEFINITION_VERSIONS,
+    resolve_preprocessing_definition,
+)
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.runner import (
@@ -38,10 +51,20 @@ from dr_code.preprocessing.steps.extract_candidates import (
 )
 
 __all__ = [
+    "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
+    "BEST_EFFORT_V1_DEFINITION",
+    "BEST_EFFORT_V2_DEFINITION",
+    "DEFAULT_STRATEGIES",
+    "DEFINITION_VERSION",
+    "FIELD_MARKER_V1_DEFINITION",
+    "FIELD_MARKER_V2_DEFINITION",
+    "LEGACY_DEFINITION_VERSION",
+    "STRICT_FIELD_MARKER_DEFINITION_ID",
+    "SUPPORTED_DEFINITION_IDS",
+    "SUPPORTED_DEFINITION_VERSIONS",
     "AlternativesStep",
     "BoundStep",
     "CandidateMapStep",
-    "DEFAULT_STRATEGIES",
     "ExtractionStrategy",
     "PreprocessingDefinition",
     "REGISTRY",
@@ -54,5 +77,6 @@ __all__ = [
     "StepSpec",
     "bind_definition",
     "preprocessing_definition_hash",
+    "resolve_preprocessing_definition",
     "run_preprocessing",
 ]
