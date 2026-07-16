@@ -47,7 +47,6 @@ class _TraceBinding:
     value: Artifact | None
     auxiliary: dict[str, Artifact]
     absence: Absent | None
-    requests: tuple[ExecutionRequest, ...] = ()
     planning_failure: Exception | None = None
 
 
@@ -115,7 +114,7 @@ def extract_metrics_batch(
                 continue
             assert binding.value is not None
             try:
-                binding.requests = binding.operator.execution_requests(
+                binding_requests = binding.operator.execution_requests(
                     binding.value,
                     binding.auxiliary,
                 )
@@ -124,7 +123,7 @@ def extract_metrics_batch(
             except Exception as exc:
                 binding.planning_failure = exc
                 continue
-            requests.extend(binding.requests)
+            requests.extend(binding_requests)
 
     cache = (
         execution_cache
