@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 import ast
-import gzip as gzip_codec
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch
 
 import pytest
-import zstandard
 
 import dr_code.humaneval as humaneval
 from dr_code.code_analysis import validate_python_source
@@ -27,10 +23,6 @@ from dr_code.humaneval.batch_runner import (
 from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-)
-from dr_code.humaneval.compression import (
-    CompressionMethod,
-    compression_metrics,
 )
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
@@ -67,7 +59,6 @@ from dr_code.humaneval.sandbox import (
 
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
-    "AstMetricsPayload",
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
     "CodeExtractionResult",
@@ -85,19 +76,12 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "HumanEvalScoringProfile",
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
-    "HumanEvalTaskTestMetricsPayload",
     "HumanEvalTestCaseKind",
-    "MetricsPayload",
-    "MetricsStagePayload",
-    "NodeOutputMetricsSource",
     "PARSER_PROFILE_VERSION",
-    "PythonLeakageMetricsPayload",
     "STRICT_FIELD_MARKER_PARSER_PROFILE",
     "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
-    "TextMetricsPayload",
-    "build_metrics_payload",
     "evaluation_aggregate_metrics",
     "extract_code_with_profile",
     "load_human_eval_rows",
@@ -663,69 +647,6 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.coverage_complete is False
     assert result.failures == []
     assert result.status_counts == {"passed": 1}
-
-
-def test_compression_metrics_are_stable_for_methods_and_ratios() -> None:
-    representation = b"return 1"
-    metrics = compression_metrics(
-        ground_truth_code="def f():\n    return 1\n",
-        representation_text=representation.decode(),
-    )
-
-    assert set(metrics) == {CompressionMethod.GZIP, CompressionMethod.ZSTD}
-    gzip = metrics[CompressionMethod.GZIP]
-    assert gzip.ground_truth_bytes == len(b"def f():\n    return 1\n")
-    assert gzip.representation_bytes == len(representation)
-    assert gzip.compressed_bytes == len(gzip_codec.compress(representation))
-    assert gzip.ratio_to_ground_truth == pytest.approx(
-        gzip.compressed_bytes / gzip.ground_truth_bytes
-    )
-    assert metrics[CompressionMethod.ZSTD].compressed_bytes == len(
-        zstandard.ZstdCompressor().compress(representation)
-    )
-
-
-def test_compression_metrics_keep_empty_ground_truth_ratio_null() -> None:
-    metrics = compression_metrics(
-        ground_truth_code="",
-        representation_text="return 1",
-    )
-
-    assert all(
-        metric.ratio_to_ground_truth is None
-        for metric in metrics.values()
-    )
-    assert all(
-        metric.percent_reduction_vs_ground_truth is None
-        for metric in metrics.values()
-    )
-
-
-def test_metrics_payload_compresses_each_distinct_text_once() -> None:
-    code = "def add_one(x):\n    return x + 1\n"
-    calls: list[str] = []
-
-    def fake_payload(
-        *,
-        ground_truth_code: str,
-        representation_text: str,
-    ) -> dict[str, Any]:
-        assert ground_truth_code
-        calls.append(representation_text)
-        return {"gzip": {"compressed_text": representation_text}}
-
-    with patch(
-        "dr_code.humaneval.metrics.compression_metrics_payload",
-        fake_payload,
-    ):
-        payload = humaneval.build_metrics_payload(
-            raw_submission=code,
-            extracted_code=code,
-            task=_task(),
-        )
-
-    assert calls == [code]
-    assert payload.stages[0].compression == payload.stages[1].compression
 
 
 def test_apply_cleaning_returns_empty_for_blank_input() -> None:

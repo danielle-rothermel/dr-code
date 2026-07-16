@@ -1,7 +1,7 @@
 """Operator parity contracts (plan section 2 stubs + the existing-code map).
 
-Each of the six operators must reproduce the behaviour of the existing
-``dr_code.humaneval`` implementation it ports. Those modules are the oracles:
+Each of the six operators ports the behaviour of a former
+``dr_code.humaneval`` implementation:
 
 * ``metrics.text_metrics``          → ``text_stats``
 * ``metrics.python_leakage_metrics``→ ``code_leakage`` (task_names setting)
@@ -10,6 +10,14 @@ Each of the six operators must reproduce the behaviour of the existing
 * ``humaneval/compression.py``      → ``compressed_length``
   (one codec+level per question, pinned levels)
 * ``batch_runner.evaluate_human_eval_code`` → ``code_test`` (counts + attribution)
+
+The old ``metrics.py`` / ``compression.py`` modules were the parity oracles
+while the operators were being ported. Plan step 5 retires that path in one
+coordinated break, so the pure-function oracles no longer exist. Per the plan
+("moves ... tests, then deletes the old path — no aliases or shims"), parity
+against those deleted oracles is now locked in as golden-value assertions on
+fixed sample inputs; ``code_test`` still parity-checks against the live
+``batch_runner`` oracle, which is kept.
 
 Operators are engine-managed classes registered in ``REGISTRY`` and reached
 only through ``extract_metrics`` (plan X-M4) — never called as bare functions.
@@ -23,19 +31,15 @@ from __future__ import annotations
 
 import gzip
 
-from dr_code.humaneval.compression import (
-    CompressionMethod,
-    ZSTD_COMPRESSOR,
-    compression_metrics,
-)
-from dr_code.humaneval.metrics import (
-    ast_metrics,
-    python_leakage_metrics,
-    text_metrics,
-)
+import zstandard
+
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 
 from metrics.helpers import code_test_trace, evaluate_oracle
+
+# gzip.compress and ZstdCompressor()'s implicit defaults were gzip level 9 and
+# zstd level 3; the pinned questions must reproduce those exact sizes (X-M2).
+_ZSTD_DEFAULT_LEVEL = 3
 
 SAMPLE_TEXT = (
     "Here is some text with a `code` fence:\n"
@@ -93,52 +97,58 @@ def _value(record, key):
 # text_stats  ←  metrics.text_metrics
 # ===========================================================================
 
+# Golden values locked from the retired ``metrics.text_metrics`` oracle.
+_TEXT_STATS_GOLDEN = {
+    "character_count": 141,
+    "byte_count": 141,
+    "line_count": 7,
+    "nonempty_line_count": 6,
+    "word_count": 24,
+    "average_word_length": 3.7916666666666665,
+    "punctuation_count": 18,
+    "symbol_count": 6,
+}
+
+
 def test_text_stats_matches_text_metrics_field_for_field() -> None:
-    oracle = text_metrics(SAMPLE_TEXT)
     record = _extract(_definition([_question("text_stats")]), _text_trace(SAMPLE_TEXT))[0]
 
-    for field in (
-        "character_count",
-        "byte_count",
-        "line_count",
-        "nonempty_line_count",
-        "word_count",
-        "average_word_length",
-        "punctuation_count",
-        "symbol_count",
-    ):
-        assert _value(record, field) == getattr(oracle, field), field
+    for field, expected in _TEXT_STATS_GOLDEN.items():
+        assert _value(record, field) == expected, field
 
 
 def test_text_stats_empty_text_matches_oracle() -> None:
-    oracle = text_metrics("")
     record = _extract(_definition([_question("text_stats")]), _text_trace(""))[0]
-    assert _value(record, "character_count") == oracle.character_count == 0
-    assert _value(record, "line_count") == oracle.line_count == 0
+    assert _value(record, "character_count") == 0
+    assert _value(record, "line_count") == 0
 
 
 # ===========================================================================
 # code_leakage  ←  metrics.python_leakage_metrics (task_names setting)
 # ===========================================================================
 
+# Golden values locked from the retired ``metrics.python_leakage_metrics``
+# oracle, for task_names=("foo", "HumanEval/x").
+_CODE_LEAKAGE_GOLDEN = {
+    "keyword_count": 7,
+    "code_marker_count": 4,
+    "fenced_code_block_count": 1,
+    "code_like_line_count": 2,
+    "operator_count": 6,
+    "punctuation_density": 0.1276595744680851,
+    "task_name_hit_count": 1,
+}
+
+
 def test_code_leakage_matches_python_leakage_metrics_field_for_field() -> None:
     task_names = ("foo", "HumanEval/x")
-    oracle = python_leakage_metrics(SAMPLE_TEXT, task_names=task_names)
     record = _extract(
         _definition([_question("code_leakage", task_names=list(task_names))]),
         _text_trace(SAMPLE_TEXT),
     )[0]
 
-    for field in (
-        "keyword_count",
-        "code_marker_count",
-        "fenced_code_block_count",
-        "code_like_line_count",
-        "operator_count",
-        "punctuation_density",
-        "task_name_hit_count",
-    ):
-        assert _value(record, field) == getattr(oracle, field), field
+    for field, expected in _CODE_LEAKAGE_GOLDEN.items():
+        assert _value(record, field) == expected, field
 
 
 def test_code_leakage_task_names_are_part_of_identity() -> None:
@@ -160,8 +170,6 @@ def test_code_leakage_task_names_are_part_of_identity() -> None:
 # ===========================================================================
 
 def test_parse_outcome_reports_parse_ok_for_valid_code() -> None:
-    oracle = ast_metrics(SAMPLE_CODE)
-    assert oracle.parse_ok is True
     record = _extract(
         _definition([_question("parse_outcome")]), _code_trace(SAMPLE_CODE)
     )[0]
@@ -170,7 +178,6 @@ def test_parse_outcome_reports_parse_ok_for_valid_code() -> None:
 
 def test_parse_outcome_reports_parse_error_for_invalid_code() -> None:
     invalid = "def f(:\n    pass\n"
-    assert ast_metrics(invalid).parse_ok is False
     record = _extract(
         _definition([_question("parse_outcome")]), _code_trace(invalid)
     )[0]
@@ -186,45 +193,47 @@ def test_parse_outcome_accepts_text_artifacts() -> None:
     assert _value(record, "parse_ok") is True
 
 
+# Golden structure counts locked from the retired ``metrics.ast_metrics``
+# oracle on SAMPLE_CODE.
+_AST_STATS_GOLDEN = {
+    "top_level_function_count": 1,
+    "nested_function_count": 0,
+    "async_function_count": 0,
+    "lambda_count": 0,
+    "class_count": 0,
+    "import_count": 0,
+    "ast_node_count": 27,
+    "statement_count": 6,
+    "branch_count": 1,
+    "return_count": 2,
+    "yield_count": 0,
+    "call_count": 0,
+    "assignment_count": 1,
+    "comprehension_count": 0,
+    "literal_count": 3,
+    "max_branch_depth": 1,
+    "function_count": 1,
+    "total_argument_count": 2,
+    "positional_only_argument_count": 0,
+    "keyword_only_argument_count": 0,
+    "vararg_count": 0,
+    "kwarg_count": 0,
+    "decorated_function_count": 0,
+    "annotated_return_count": 0,
+    "docstring_function_count": 1,
+    "total_function_body_statement_count": 4,
+    "max_function_body_statement_count": 4,
+    "max_function_line_span": 6,
+}
+
+
 def test_ast_stats_matches_ast_metrics_structure_counts() -> None:
-    oracle = ast_metrics(SAMPLE_CODE)
-    assert oracle.parse_ok is True
     record = _extract(
         _definition([_question("ast_stats")]), _code_trace(SAMPLE_CODE)
     )[0]
 
-    fields = (
-        "top_level_function_count",
-        "nested_function_count",
-        "async_function_count",
-        "lambda_count",
-        "class_count",
-        "import_count",
-        "ast_node_count",
-        "statement_count",
-        "branch_count",
-        "return_count",
-        "yield_count",
-        "call_count",
-        "assignment_count",
-        "comprehension_count",
-        "literal_count",
-        "max_branch_depth",
-        "function_count",
-        "total_argument_count",
-        "positional_only_argument_count",
-        "keyword_only_argument_count",
-        "vararg_count",
-        "kwarg_count",
-        "decorated_function_count",
-        "annotated_return_count",
-        "docstring_function_count",
-        "total_function_body_statement_count",
-        "max_function_body_statement_count",
-        "max_function_line_span",
-    )
-    for field in fields:
-        assert _value(record, field) == getattr(oracle, field), field
+    for field, expected in _AST_STATS_GOLDEN.items():
+        assert _value(record, field) == expected, field
 
 
 # ===========================================================================
@@ -244,9 +253,14 @@ def _reference_trace(text: str, reference: str):
 def test_compressed_length_gzip_level_9_reproduces_default(task) -> None:
     """Pinned gzip level 9 reproduces today's implicit gzip.compress default."""
     reference = task.ground_truth_code
-    oracle = compression_metrics(
-        ground_truth_code=reference, representation_text=SAMPLE_TEXT
-    )[CompressionMethod.GZIP]
+    # The retired oracle used gzip.compress()'s implicit default (level 9) and
+    # divided the compressed size by the ground-truth byte length.
+    expected_compressed = len(
+        gzip.compress(SAMPLE_TEXT.encode("utf-8"), compresslevel=9)
+    )
+    ground_truth_bytes = len(reference.encode("utf-8"))
+    expected_ratio = expected_compressed / ground_truth_bytes
+    expected_percent_reduction = (1.0 - expected_ratio) * 100.0
 
     record = _extract(
         _definition(
@@ -254,24 +268,17 @@ def test_compressed_length_gzip_level_9_reproduces_default(task) -> None:
         ),
         _reference_trace(SAMPLE_TEXT, reference),
     )[0]
-    assert _value(record, "compressed_bytes") == oracle.compressed_bytes
-    assert _value(record, "representation_bytes") == oracle.representation_bytes
-    assert _value(record, "ratio_to_reference") == oracle.ratio_to_ground_truth
-    assert _value(record, "percent_reduction") == (
-        oracle.percent_reduction_vs_ground_truth
+    assert _value(record, "compressed_bytes") == expected_compressed
+    assert _value(record, "representation_bytes") == len(
+        SAMPLE_TEXT.encode("utf-8")
     )
-    # and it matches raw gzip at level 9
-    assert record.values["compressed_bytes"] == len(
-        gzip.compress(SAMPLE_TEXT.encode("utf-8"), compresslevel=9)
-    )
+    assert _value(record, "ratio_to_reference") == expected_ratio
+    assert _value(record, "percent_reduction") == expected_percent_reduction
 
 
 def test_compressed_length_zstd_level_3_reproduces_default(task) -> None:
     """Pinned zstd level 3 reproduces today's ZstdCompressor() singleton."""
     reference = task.ground_truth_code
-    oracle = compression_metrics(
-        ground_truth_code=reference, representation_text=SAMPLE_TEXT
-    )[CompressionMethod.ZSTD]
 
     record = _extract(
         _definition(
@@ -279,9 +286,11 @@ def test_compressed_length_zstd_level_3_reproduces_default(task) -> None:
         ),
         _reference_trace(SAMPLE_TEXT, reference),
     )[0]
-    assert _value(record, "compressed_bytes") == oracle.compressed_bytes
+    # The retired oracle used ZstdCompressor() with its implicit default level.
     assert record.values["compressed_bytes"] == len(
-        ZSTD_COMPRESSOR.compress(SAMPLE_TEXT.encode("utf-8"))
+        zstandard.ZstdCompressor(level=_ZSTD_DEFAULT_LEVEL).compress(
+            SAMPLE_TEXT.encode("utf-8")
+        )
     )
 
 

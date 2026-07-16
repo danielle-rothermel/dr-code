@@ -9,11 +9,9 @@ from dr_code.humaneval.code_parsing import (
     CodeParserProfile,
     resolve_parser_profile,
 )
-from dr_code.humaneval.metrics import (
-    HUMANEVAL_METRICS_PROFILE_ID,
-    HUMANEVAL_METRICS_PROFILE_VERSION,
-)
 
+HUMANEVAL_METRICS_PROFILE_ID = "humaneval-metrics"
+HUMANEVAL_METRICS_PROFILE_VERSION = "v1"
 HUMANEVAL_SCORING_PROFILE_ID = "humaneval"
 LEGACY_HUMANEVAL_SCORING_PROFILE_VERSION = "v1"
 HUMANEVAL_SCORING_PROFILE_VERSION = "v2"
