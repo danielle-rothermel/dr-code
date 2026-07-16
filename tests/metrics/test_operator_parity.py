@@ -393,15 +393,53 @@ def test_code_test_best_function_is_mechanical_max_passes(
 
 
 def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
-    """Partial runner output (incomplete coverage, no failures) is a measured
-    record, not an error — coverage_complete is the fact (X-M3)."""
+    """Genuinely incomplete runner output (fewer results than cases, no
+    failures) is a measured record, not an error, and coverage_complete is the
+    fact "did every case produce a result" (False here) — a fact, not a
+    verdict (X-M3).
+
+    coverage_complete is fact-shaped, matching the live oracle
+    ``EvaluationTaskResult.coverage_complete`` (``result_count ==
+    total_cases``); pass/fail thresholds belong in the policy consumer.
+    """
     from metrics.helpers import partial_pass_runner_output, scripted_runner
 
+    # Only case_0 is reported for a two-case task: genuine incomplete coverage.
+    incomplete_output = partial_pass_runner_output(
+        passed=("case_0",), case_ids=("case_0",)
+    )
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(stdout=partial_pass_runner_output()),
+        run_in_sandbox=scripted_runner(stdout=incomplete_output),
     )[0]
     assert record.status.value == "measured"
     assert record.values["passed_count"] == 1
+    assert record.values["failed_count"] == 0
     assert record.values["coverage_complete"] is False
+
+
+def test_code_test_complete_coverage_with_failure_is_covered(
+    task, good_submission
+) -> None:
+    """Complete coverage with a failing case: coverage_complete is True (every
+    case produced a result) even though a case failed — the fact/verdict split.
+
+    Matches the live oracle: for the same input (case_0 passed, case_1 failed,
+    both reported) ``EvaluationTaskResult.coverage_complete`` is True and its
+    outcome is ``tests_failed`` — the pass/fail threshold lives in the policy
+    consumer, not in coverage_complete.
+    """
+    from metrics.helpers import partial_pass_runner_output, scripted_runner
+
+    # Both cases reported, one failing: complete coverage, one failure.
+    complete_with_failure = partial_pass_runner_output()
+    record = _extract(
+        _definition([_code_test_question()]),
+        code_test_trace(good_submission, task),
+        run_in_sandbox=scripted_runner(stdout=complete_with_failure),
+    )[0]
+    assert record.status.value == "measured"
+    assert record.values["passed_count"] == 1
+    assert record.values["failed_count"] == 1
+    assert record.values["coverage_complete"] is True

@@ -151,10 +151,6 @@ class CodeTest(MetricOperator):
             "coverage_complete": (
                 best_function_name is not None
                 and len(best_statuses) == total_cases
-                and all(
-                    status is EvaluationCaseStatus.PASSED
-                    for status in best_statuses
-                )
             ),
             "function_count": len(function_names),
             "best_function_name": best_function_name,
