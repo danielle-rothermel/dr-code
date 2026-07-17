@@ -347,7 +347,7 @@ def test_prepopulated_execution_cache_skips_the_runner(
 
 
 def test_pure_operators_never_call_the_runner(counting_runner) -> None:
-    """Pure operators declare no execution requests (X-M4)."""
+    """Pure operators declare no execution requests."""
     text = "def f(x):\n    return x\n"
     trace = external_trace(
         {"input": CodeArtifact(source=text), "output": CodeArtifact(source=text)}

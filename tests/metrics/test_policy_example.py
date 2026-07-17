@@ -2,7 +2,7 @@
 
 ``dr_code.metrics.policy_example`` is the example *consumer*: it derives a
 ``SubmissionOutcome``-equivalent verdict from a ``code_test`` record (plan S5).
-Facts stay in records; thresholds and verdicts stay in the consumer (X-M3).
+Facts stay in records; thresholds and verdicts stay in the consumer.
 
 The contract is **outcome parity** with
 ``dr_code.humaneval.scoring.score_humaneval_submission``: for a submission that
@@ -149,7 +149,7 @@ def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Facts stay in records; verdicts stay in the consumer (X-M3).
+# Facts stay in records; verdicts stay in the consumer.
 # ---------------------------------------------------------------------------
 
 def test_code_test_record_carries_no_verdict_fields(

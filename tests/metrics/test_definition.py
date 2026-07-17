@@ -2,7 +2,7 @@
 
 Covers ``MetricQuestion`` / ``MetricsDefinition`` — frozen, equality-based
 comparability, the unique ``(metric, on, settings)`` validator, settings as
-part of identity, and ``metrics_definition_hash`` determinism (design X-M2).
+part of identity, and ``metrics_definition_hash`` determinism.
 
 ``dr_code.metrics`` is imported lazily inside each test so the suite collects
 cleanly against the missing package and fails hard (never skips) when absent.
@@ -82,7 +82,7 @@ def test_metric_question_is_frozen() -> None:
 
 
 def test_metric_questions_compare_equal_by_value() -> None:
-    """Equality is the comparability contract (X-M1); deterministic content
+    """Equality is the comparability contract; deterministic content
     identity is metrics_definition_hash (JSON-based), not Python __hash__."""
     assert _question() == _question()
 

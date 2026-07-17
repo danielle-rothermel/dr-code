@@ -145,7 +145,7 @@ def test_metric_record_defaults_settings_to_empty() -> None:
 
 
 def test_equal_records_compare_equal() -> None:
-    """Records participate in equality-based comparison across runs (X-M1).
+    """Records participate in equality-based comparison across runs.
     Deterministic content identity is metrics_definition_hash / record_rows,
     not Python __hash__ (records carry dict values)."""
     assert _record() == _record()

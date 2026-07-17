@@ -20,11 +20,11 @@ fixed sample inputs; ``code_test`` still parity-checks against the live
 ``batch_runner`` oracle, which is kept.
 
 Operators are engine-managed classes registered in ``REGISTRY`` and reached
-only through ``extract_metrics`` (plan X-M4) — never called as bare functions.
+only through ``extract_metrics`` — never called as bare functions.
 
 ``dr_code.metrics`` is imported lazily inside each test. Compression levels
 are pinned explicitly (gzip 9, zstd 3) to reproduce today's implicit defaults
-exactly (X-M2).
+exactly.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 from metrics.helpers import code_test_trace, evaluate_oracle
 
 # gzip.compress and ZstdCompressor()'s implicit defaults were gzip level 9 and
-# zstd level 3; the pinned questions must reproduce those exact sizes (X-M2).
+# zstd level 3; the pinned questions must reproduce those exact sizes.
 _ZSTD_DEFAULT_LEVEL = 3
 
 SAMPLE_TEXT = (
@@ -364,7 +364,7 @@ def test_compressed_length_without_reference_has_no_ratio() -> None:
 
 
 def test_compressed_level_is_part_of_identity() -> None:
-    """A different level is a different question (X-M2)."""
+    """A different level is a different question."""
     trace = _text_trace(SAMPLE_TEXT)
     r6 = _extract(
         _definition([_question("compressed_length", compression={"method": "gzip", "level": 1})]), trace
@@ -568,7 +568,7 @@ def test_code_test_best_function_is_mechanical_max_passes(
     task, local_runner
 ) -> None:
     """best_function_name is an observation (max-passes), not a verdict — it
-    stays in values; score/outcome stay in the consumer (X-M3)."""
+    stays in values; score/outcome stay in the consumer."""
     candidate = (
         "def add_one(x):\n    return x + 1\n"
         "def decoy(x):\n    return x - 1\n"
@@ -588,7 +588,7 @@ def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
     """Genuinely incomplete runner output (fewer results than cases, no
     failures) is a measured record, not an error, and coverage_complete is the
     fact "did every case produce a result" (False here) — a fact, not a
-    verdict (X-M3).
+    verdict.
 
     coverage_complete is fact-shaped, matching the live oracle
     ``EvaluationTaskResult.coverage_complete`` (``result_count ==
