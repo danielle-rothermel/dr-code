@@ -381,6 +381,133 @@ def test_code_test_kill_returncode_attributed_to_candidate(
     assert record.values["passed_count"] == 0
 
 
+def test_code_test_nonzero_exit_attributed_to_candidate(
+    task, good_submission
+) -> None:
+    """An unexpected nonzero returncode (e.g. ``os._exit(5)``) is
+    candidate-controlled data: it becomes all-ERROR case statuses in a measured
+    record, not an ``EvaluationHarnessError`` that aborts the batch."""
+    from metrics.helpers import scripted_runner
+
+    record = _extract(
+        _definition([_code_test_question()]),
+        code_test_trace(good_submission, task),
+        run_in_sandbox=scripted_runner(returncode=5, stdout="", stderr="boom"),
+    )[0]
+    assert record.status.value == "measured"
+    assert record.values["error_count"] == record.values["total_cases"]
+    assert record.values["passed_count"] == 0
+
+
+def test_code_test_malformed_stdout_attributed_to_candidate(
+    task, good_submission
+) -> None:
+    """Malformed runner stdout (candidate shares the runner's stdout) is
+    candidate data: it becomes all-ERROR case statuses in a measured record,
+    not a batch-aborting error. Covers the JSON-decode / shape / case-id
+    validation branches."""
+    from metrics.helpers import scripted_runner
+
+    for bad_stdout in (
+        "this is not json{",  # JSON decode failure
+        '{"not": "a list"}',  # wrong shape (object, not list)
+        '[{"case_id": "ghost", "status": "passed"}]',  # unknown case id
+    ):
+        record = _extract(
+            _definition([_code_test_question()]),
+            code_test_trace(good_submission, task),
+            run_in_sandbox=scripted_runner(returncode=0, stdout=bad_stdout),
+        )[0]
+        assert record.status.value == "measured", bad_stdout
+        assert (
+            record.values["error_count"] == record.values["total_cases"]
+        ), bad_stdout
+        assert record.values["passed_count"] == 0, bad_stdout
+
+
+def test_code_test_sandbox_error_still_propagates(
+    task, good_submission
+) -> None:
+    """``SandboxError`` is raised at the sandbox boundary before candidate code
+    runs, so it remains the only propagating infrastructure path and still
+    aborts the batch loudly -- it is not reclassified to case statuses."""
+    import pytest
+
+    from dr_code.humaneval.sandbox import SandboxError
+
+    from metrics.helpers import raising_runner
+
+    with pytest.raises(SandboxError):
+        _extract(
+            _definition([_code_test_question()]),
+            code_test_trace(good_submission, task),
+            run_in_sandbox=raising_runner(SandboxError("boundary broke")),
+        )
+
+
+def test_code_test_selector_parity_with_task_selector() -> None:
+    """Parity guard for the duplicated best-function truth: the operator's
+    ``_best_function_name`` and ``humaneval.task.select_best_function_name``
+    agree over the same synthetic status sets. When the old scoring path
+    retires, both copies and this guard go together."""
+    from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
+    from dr_code.humaneval.task import (
+        EvaluationCaseResult,
+        EvaluationCaseStatus,
+        select_best_function_name,
+    )
+    from dr_code.metrics.operators.code_test import (
+        _best_function_name,
+        _passed_counts,
+    )
+
+    P = EvaluationCaseStatus.PASSED
+    F = EvaluationCaseStatus.FAILED
+
+    scenarios = [
+        # (function_names, entry_point, statuses_by_name)
+        (["add_one"], "add_one", {"add_one": [P, P]}),
+        (["add_one", "decoy"], "add_one", {"add_one": [P, P], "decoy": [F, F]}),
+        # Decoy passes more cases: mechanical max ignores the entry point.
+        (["add_one", "decoy"], "add_one", {"add_one": [P, F], "decoy": [P, P]}),
+        # Tie on passes: entry-point tiebreak wins.
+        (["add_one", "decoy"], "add_one", {"add_one": [P], "decoy": [P]}),
+        # Tie, neither is the entry point: earliest index wins.
+        (["a", "b"], "entry", {"a": [P], "b": [P]}),
+        # No statuses recorded at all.
+        (["a", "b"], "a", {}),
+        ([], "a", {}),
+    ]
+
+    for function_names, entry_point, statuses_by_name in scenarios:
+        results = [
+            EvaluationCaseResult(
+                task_id="t",
+                case_id=f"{name}-{index}",
+                function_name=name,
+                status=status,
+                test_type=HumanEvalTestCaseKind.INPUT_RESULT,
+            )
+            for name, statuses in statuses_by_name.items()
+            for index, status in enumerate(statuses)
+        ]
+        operator_pick = _best_function_name(
+            function_names=function_names,
+            entry_point=entry_point,
+            passed_counts=_passed_counts(statuses_by_name),
+        )
+        task_pick = select_best_function_name(
+            function_names=function_names,
+            entry_point=entry_point,
+            results=results,
+        )
+        assert operator_pick == task_pick, (
+            function_names,
+            entry_point,
+            statuses_by_name,
+        )
+
+
 def test_code_test_best_function_is_mechanical_max_passes(
     task, local_runner
 ) -> None:

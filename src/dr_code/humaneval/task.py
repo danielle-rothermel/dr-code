@@ -131,6 +131,13 @@ def _results_for_function(
     ]
 
 
+# PARITY TWIN: duplicated by ``dr_code.metrics.operators.code_test``
+# ``_best_function_name`` (which holds bare statuses, not
+# ``EvaluationCaseResult`` objects). Both stay live while this old scoring path
+# runs; a parity test (tests/metrics/test_operator_parity.py) pins the two
+# selectors equal. RETIREMENT PLAN: when the scoring path retires, this copy
+# goes with it and the parity test is deleted. Any behaviour fix must land in
+# both twins.
 def select_best_function_name(
     *,
     function_names: list[str],
@@ -185,6 +192,9 @@ class EvaluationTaskResult(BaseModel):
             and result.status is not EvaluationCaseStatus.PASSED
         ]
 
+    # PARITY TWIN: duplicated by the coverage_complete value in
+    # ``dr_code.metrics.operators.code_test.CodeTest.compute``. Retires with
+    # this scoring path; kept equal by the metrics parity test.
     @computed_field
     @property
     def coverage_complete(self) -> bool:
