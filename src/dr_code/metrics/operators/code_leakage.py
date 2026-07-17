@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import keyword
-import re
 import string
 from collections.abc import Mapping
 
@@ -15,16 +14,15 @@ from dr_code.metrics.operators.base import (
     artifact_text,
 )
 from dr_code.metrics.records import MetricScalar
+from dr_code.text_analysis import (
+    CODE_LIKE_LINE_RE,
+    FENCE_LINE_RE,
+    OPERATOR_CHARS,
+    WORD_RE,
+)
 from dr_code.trace import Artifact, ArtifactKind
 
-_WORD_RE = re.compile(r"\b\w+\b")
-_FENCED_CODE_RE = re.compile(r"```|~~~")
-_CODE_LIKE_LINE_RE = re.compile(
-    r"^\s*(def |async def |class |import |from |return\b|if |for |while |"
-    r"try:|except\b|with |[A-Za-z_]\w*\s*=)"
-)
 _CODE_MARKERS = frozenset({"def", "return", "import", "class"})
-_OPERATOR_CHARS = frozenset("+-*/%=<>!&|^~:@")
 
 
 class CodeLeakageSettings(OperatorSettings):
@@ -33,7 +31,7 @@ class CodeLeakageSettings(OperatorSettings):
 
 class CodeLeakage(MetricOperator):
     NAME = MetricName.CODE_LEAKAGE
-    VERSION = "1"
+    VERSION = "2"
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
     Settings = CodeLeakageSettings
@@ -46,7 +44,7 @@ class CodeLeakage(MetricOperator):
     ) -> dict[str, MetricScalar]:
         _ = aux, ctx
         text = artifact_text(value)
-        words = _WORD_RE.findall(text)
+        words = WORD_RE.findall(text)
         punctuation_count = sum(
             1 for character in text if character in string.punctuation
         )
@@ -59,17 +57,17 @@ class CodeLeakage(MetricOperator):
             "code_marker_count": sum(
                 1 for word in words if word in _CODE_MARKERS
             ),
-            "fenced_code_block_count": len(
-                _FENCED_CODE_RE.findall(text)
+            "fenced_code_block_count": sum(
+                1 for line in text.splitlines() if FENCE_LINE_RE.match(line)
             )
             // 2,
             "code_like_line_count": sum(
                 1
                 for line in text.splitlines()
-                if _CODE_LIKE_LINE_RE.match(line)
+                if CODE_LIKE_LINE_RE.match(line)
             ),
             "operator_count": sum(
-                1 for character in text if character in _OPERATOR_CHARS
+                1 for character in text if character in OPERATOR_CHARS
             ),
             "punctuation_density": (
                 punctuation_count / len(text) if text else None

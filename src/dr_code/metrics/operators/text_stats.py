@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import string
 from collections.abc import Mapping
 
@@ -13,11 +12,10 @@ from dr_code.metrics.operators.base import (
     artifact_text,
 )
 from dr_code.metrics.records import MetricScalar
+from dr_code.text_analysis import OPERATOR_CHARS, WORD_RE
 from dr_code.trace import Artifact, ArtifactKind
 
 _TEXT_ENCODING = "utf-8"
-_WORD_RE = re.compile(r"\b\w+\b")
-_OPERATOR_CHARS = frozenset("+-*/%=<>!&|^~:@")
 
 
 class TextStats(MetricOperator):
@@ -34,7 +32,7 @@ class TextStats(MetricOperator):
     ) -> dict[str, MetricScalar]:
         _ = aux, ctx
         text = artifact_text(value)
-        words = _WORD_RE.findall(text)
+        words = WORD_RE.findall(text)
         word_lengths = [len(word) for word in words]
         return {
             "character_count": len(text),
@@ -51,6 +49,6 @@ class TextStats(MetricOperator):
                 1 for character in text if character in string.punctuation
             ),
             "symbol_count": sum(
-                1 for character in text if character in _OPERATOR_CHARS
+                1 for character in text if character in OPERATOR_CHARS
             ),
         }

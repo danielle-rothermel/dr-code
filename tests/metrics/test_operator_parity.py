@@ -128,7 +128,13 @@ def test_text_stats_empty_text_matches_oracle() -> None:
 # ===========================================================================
 
 # Golden values locked from the retired ``metrics.python_leakage_metrics``
-# oracle, for task_names=("foo", "HumanEval/x").
+# oracle, for task_names=("foo", "HumanEval/x"). ``code_leakage`` now sources
+# its fence/code-like-line matching from ``dr_code.text_analysis`` (review
+# unit 5) instead of local near-duplicate regexes; SAMPLE_TEXT happens to
+# produce identical counts under both the old and unified regexes (no
+# indented-only lines, comments, or extra keyword-only lines), so these
+# values are unchanged. See ``test_code_leakage_pins_shared_heuristic_values``
+# below for a sample that exercises the broadened behavior.
 _CODE_LEAKAGE_GOLDEN = {
     "keyword_count": 7,
     "code_marker_count": 4,
@@ -163,6 +169,56 @@ def test_code_leakage_task_names_are_part_of_identity() -> None:
     )[0]
     assert none_rec.values["task_name_hit_count"] == 0
     assert named_rec.values["task_name_hit_count"] >= 1
+
+
+# ``code_leakage`` unified on the shared ``dr_code.text_analysis`` regexes
+# (review unit 5) instead of its own near-duplicate ``_CODE_LIKE_LINE_RE`` /
+# ``_FENCED_CODE_RE``. The shared regexes are deliberately broader —
+# indented lines, comments, and more keywords count as code-like, and
+# fences match as whole lines rather than ``` occurrences — so this is a
+# pin of the new, intended values, not a copy of retired-oracle behavior.
+# A future tweak to the shared heuristics (e.g. for extraction quality)
+# will fail this test loudly instead of silently drifting code_leakage.
+_SHARED_HEURISTIC_SAMPLE = (
+    "Explanation text before any code.\n"
+    "```python\n"
+    "def solve(x):\n"
+    "    # walk through the input\n"
+    "    total = 0\n"
+    "    for item in x:\n"
+    "        total += item\n"
+    "    return total\n"
+    "```\n"
+    "More prose mentioning pass, continue, and break as English words.\n"
+)
+_SHARED_HEURISTIC_GOLDEN = {
+    "keyword_count": 9,
+    "code_marker_count": 2,
+    "fenced_code_block_count": 1,
+    "code_like_line_count": 6,
+    "operator_count": 5,
+    "punctuation_density": 0.07860262008733625,
+    "task_name_hit_count": 0,
+}
+
+
+def test_code_leakage_pins_shared_heuristic_values() -> None:
+    """Pins code_leakage's use of the shared text_analysis regexes.
+
+    Under the retired local regexes, this sample's ``code_like_line_count``
+    would be 4 (the comment line and the ``total += item`` augmented-assign
+    line would not match); under the shared, broader
+    ``CODE_LIKE_LINE_RE`` it is 6. ``fenced_code_block_count`` is unchanged
+    here (1) since both regexes agree on whole-line ``` fences in this
+    sample.
+    """
+    record = _extract(
+        _definition([_question("code_leakage", task_names=[])]),
+        _text_trace(_SHARED_HEURISTIC_SAMPLE),
+    )[0]
+
+    for field, expected in _SHARED_HEURISTIC_GOLDEN.items():
+        assert _value(record, field) == expected, field
 
 
 # ===========================================================================
