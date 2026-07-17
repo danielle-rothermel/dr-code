@@ -34,37 +34,6 @@ _COMPREHENSION_NODES = (
 _LITERAL_NODES = (ast.Constant, ast.List, ast.Tuple, ast.Set, ast.Dict)
 _FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
-_AST_FIELDS = (
-    "top_level_function_count",
-    "nested_function_count",
-    "async_function_count",
-    "lambda_count",
-    "class_count",
-    "import_count",
-    "ast_node_count",
-    "statement_count",
-    "branch_count",
-    "return_count",
-    "yield_count",
-    "call_count",
-    "assignment_count",
-    "comprehension_count",
-    "literal_count",
-    "max_branch_depth",
-    "function_count",
-    "total_argument_count",
-    "positional_only_argument_count",
-    "keyword_only_argument_count",
-    "vararg_count",
-    "kwarg_count",
-    "decorated_function_count",
-    "annotated_return_count",
-    "docstring_function_count",
-    "total_function_body_statement_count",
-    "max_function_body_statement_count",
-    "max_function_line_span",
-)
-
 
 class AstStats(MetricOperator):
     NAME = MetricName.AST_STATS
@@ -78,9 +47,18 @@ class AstStats(MetricOperator):
         ctx: EngineContext,
     ) -> dict[str, MetricScalar]:
         _ = aux
-        tree = ctx.views.parsed_module(artifact_text(value))
+        source = artifact_text(value)
+        tree = ctx.views.parsed_module(source)
         if tree is None:
-            return {field: 0 for field in _AST_FIELDS}
+            # CodeArtifact documents "passed a compile check upstream", so an
+            # unparseable CODE artifact is a producer contract violation, not
+            # an empty module. Raise (→ operator_failure) instead of
+            # fabricating all-zero fields that would be indistinguishable
+            # from a genuinely empty module. Parse facts remain the job of
+            # ``parse_outcome``.
+            raise ValueError(
+                f"ast_stats requires parseable code: {ctx.views.parse_error(source)}"
+            )
 
         nodes = list(ast.walk(tree))
         top_level_functions = [

@@ -216,6 +216,25 @@ def test_operator_exception_becomes_an_operator_failure_record(
     assert record.metric is MetricName.TEXT_STATS
 
 
+def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> None:
+    """CodeArtifact documents "passed a compile check upstream", so unparseable
+    CODE is a producer contract violation -- ast_stats must not mask it as an
+    all-zero (indistinguishable from empty) measurement. It becomes an
+    OPERATOR_FAILURE record, consistent with code_test's SyntaxError-on-parse
+    behavior; parse facts stay the job of parse_outcome."""
+    from dr_code.metrics import MetricName
+
+    invalid = "def f(:\n    pass\n"
+    trace = external_trace(
+        {"input": CodeArtifact(source=invalid), "output": CodeArtifact(source=invalid)}
+    )
+    definition = _definition([_q("ast_stats", on="input")])
+    record = _extract(definition, trace)[0]
+    assert record.status.value == "operator_failure"
+    assert record.metric is MetricName.AST_STATS
+    assert record.values == {}
+
+
 # ===========================================================================
 # Infrastructure SandboxError raises; candidate timeout is data (L3).
 # ===========================================================================
