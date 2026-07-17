@@ -252,6 +252,29 @@ def test_infrastructure_sandbox_error_raises(task) -> None:
         )
 
 
+def test_missing_execution_outcome_raises_engine_invariant_error(
+    task, local_runner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If CodeTest.compute rebuilds an ExecutionRequest that diverges from
+    what execution_requests planned, ctx.outcome_for's lookup misses. That
+    is an engine bug, not a metric bug: it must surface as
+    EngineInvariantError out of the batch, never get swallowed into an
+    operator_failure record."""
+    from dr_code.metrics.engine.engine import EngineInvariantError
+    from dr_code.metrics.operators.code_test import CodeTest
+
+    candidate = "def add_one(x):\n    return x + 1\n"
+    trace = code_test_trace(candidate, task)
+    definition = _definition([_q("code_test", on="input")])
+
+    def no_requests(self, value, aux):  # noqa: ANN001
+        return ()
+
+    monkeypatch.setattr(CodeTest, "execution_requests", no_requests)
+    with pytest.raises(EngineInvariantError):
+        _extract(definition, trace, run_in_sandbox=local_runner)
+
+
 def test_sandbox_timeout_is_candidate_data_not_infrastructure(task) -> None:
     """A candidate timeout is attributed to the candidate as data (timeout
     cases), not a raised SandboxError (batch_runner attribution parity)."""

@@ -42,8 +42,7 @@ class _QuestionBinding:
 @dataclass(slots=True)
 class _TraceBinding:
     trace: Trace
-    question: MetricQuestion
-    operator: MetricOperator
+    question_binding: _QuestionBinding  # pairing validated in _bind_questions
     value: Artifact | None
     auxiliary: dict[str, Artifact]
     absence: Absent | None
@@ -62,6 +61,35 @@ class _RecordIdentity:
     metrics_definition_id: str
     metrics_definition_version: str
 
+    @classmethod
+    def from_binding(
+        cls, definition: MetricsDefinition, binding: _TraceBinding
+    ) -> _RecordIdentity:
+        question_binding = binding.question_binding
+        question = question_binding.question
+        producer = binding.trace.producer
+        return cls(
+            metric=question.metric,
+            metric_version=question_binding.operator.VERSION,
+            settings=dict(question.settings),
+            on_key=question.on,
+            producer_id=producer.producer_id,
+            producer_version=producer.version,
+            producer_definition_hash=producer.definition_hash,
+            metrics_definition_id=definition.definition_id,
+            metrics_definition_version=definition.version,
+        )
+
+
+class EngineInvariantError(Exception):
+    """Raised when the engine's own bind/plan/execute invariants break.
+
+    For example: an operator's ``compute`` rebuilds an ``ExecutionRequest``
+    that diverges from what ``execution_requests`` planned, so no outcome
+    was ever computed for it. This is an engine bug, not a metric bug, and
+    must never be attributed to the operator as an ``operator_failure``.
+    """
+
 
 @dataclass(frozen=True, slots=True)
 class _EngineContext:
@@ -69,7 +97,13 @@ class _EngineContext:
     outcomes: Mapping[str, ExecutionOutcome]
 
     def outcome_for(self, request: ExecutionRequest) -> ExecutionOutcome:
-        return self.outcomes[request.cache_key]
+        try:
+            return self.outcomes[request.cache_key]
+        except KeyError as exc:
+            raise EngineInvariantError(
+                f"no execution outcome planned for request "
+                f"{request.cache_key!r}"
+            ) from exc
 
 
 def extract_metrics(
@@ -113,8 +147,9 @@ def extract_metrics_batch(
             if binding.absence is not None:
                 continue
             assert binding.value is not None
+            operator = binding.question_binding.operator
             try:
-                binding_requests = binding.operator.execution_requests(
+                binding_requests = operator.execution_requests(
                     binding.value,
                     binding.auxiliary,
                 )
@@ -222,29 +257,10 @@ def _bind_trace_question(
 
     return _TraceBinding(
         trace=trace,
-        question=question,
-        operator=operator,
+        question_binding=question_binding,
         value=value,
         auxiliary=auxiliary,
         absence=absence or auxiliary_absence,
-    )
-
-
-def _record_identity(
-    definition: MetricsDefinition,
-    binding: _TraceBinding,
-) -> _RecordIdentity:
-    producer = binding.trace.producer
-    return _RecordIdentity(
-        metric=binding.question.metric,
-        metric_version=binding.operator.VERSION,
-        settings=dict(binding.question.settings),
-        on_key=binding.question.on,
-        producer_id=producer.producer_id,
-        producer_version=producer.version,
-        producer_definition_hash=producer.definition_hash,
-        metrics_definition_id=definition.definition_id,
-        metrics_definition_version=definition.version,
     )
 
 
@@ -253,7 +269,7 @@ def _compute_record(
     binding: _TraceBinding,
     context: _EngineContext,
 ) -> MetricRecord:
-    identity = _record_identity(definition, binding)
+    identity = _RecordIdentity.from_binding(definition, binding)
     if binding.absence is not None:
         return _build_record(
             identity,
@@ -266,7 +282,7 @@ def _compute_record(
 
     assert binding.value is not None
     try:
-        values = binding.operator.compute(
+        values = binding.question_binding.operator.compute(
             binding.value,
             binding.auxiliary,
             context,
@@ -276,7 +292,7 @@ def _compute_record(
             status=RecordStatus.MEASURED,
             values=values,
         )
-    except (SandboxError, EvaluationHarnessError):
+    except (SandboxError, EvaluationHarnessError, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)
