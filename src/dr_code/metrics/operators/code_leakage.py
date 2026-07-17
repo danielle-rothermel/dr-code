@@ -10,10 +10,10 @@ from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
+    OperatorResult,
     OperatorSettings,
     artifact_text,
 )
-from dr_code.metrics.records import MetricScalar
 from dr_code.text_analysis import (
     CODE_LIKE_LINE_RE,
     FENCE_LINE_RE,
@@ -29,7 +29,17 @@ class CodeLeakageSettings(OperatorSettings):
     task_names: tuple[str, ...] = ()
 
 
-class CodeLeakage(MetricOperator):
+class CodeLeakageResult(OperatorResult):
+    keyword_count: int
+    code_marker_count: int
+    fenced_code_block_count: int
+    code_like_line_count: int
+    operator_count: int
+    punctuation_density: float | None
+    task_name_hit_count: int
+
+
+class CodeLeakage(MetricOperator[CodeLeakageSettings]):
     NAME = MetricName.CODE_LEAKAGE
     VERSION = "2"
     INPUT = ArtifactKind.TEXT
@@ -41,40 +51,38 @@ class CodeLeakage(MetricOperator):
         value: Artifact,
         aux: Mapping[str, Artifact],
         ctx: EngineContext,
-    ) -> dict[str, MetricScalar]:
+    ) -> CodeLeakageResult:
         _ = aux, ctx
         text = artifact_text(value)
         words = WORD_RE.findall(text)
         punctuation_count = sum(
             1 for character in text if character in string.punctuation
         )
-        settings = self.settings
-        assert isinstance(settings, CodeLeakageSettings)
-        return {
-            "keyword_count": sum(
+        return CodeLeakageResult(
+            keyword_count=sum(
                 1 for word in words if keyword.iskeyword(word)
             ),
-            "code_marker_count": sum(
+            code_marker_count=sum(
                 1 for word in words if word in _CODE_MARKERS
             ),
-            "fenced_code_block_count": sum(
+            fenced_code_block_count=sum(
                 1 for line in text.splitlines() if FENCE_LINE_RE.match(line)
             )
             // 2,
-            "code_like_line_count": sum(
+            code_like_line_count=sum(
                 1
                 for line in text.splitlines()
                 if CODE_LIKE_LINE_RE.match(line)
             ),
-            "operator_count": sum(
+            operator_count=sum(
                 1 for character in text if character in OPERATOR_CHARS
             ),
-            "punctuation_density": (
+            punctuation_density=(
                 punctuation_count / len(text) if text else None
             ),
-            "task_name_hit_count": sum(
+            task_name_hit_count=sum(
                 text.count(task_name)
-                for task_name in settings.task_names
+                for task_name in self.settings.task_names
                 if task_name
             ),
-        }
+        )

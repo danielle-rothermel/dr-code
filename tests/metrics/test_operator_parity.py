@@ -320,7 +320,7 @@ def test_compressed_length_gzip_level_9_reproduces_default(task) -> None:
 
     record = _extract(
         _definition(
-            [_question("compressed_length", method="gzip", level=9, reference_key="reference")]
+            [_question("compressed_length", compression={"method": "gzip", "level": 9}, reference_key="reference")]
         ),
         _reference_trace(SAMPLE_TEXT, reference),
     )[0]
@@ -338,7 +338,7 @@ def test_compressed_length_zstd_level_3_reproduces_default(task) -> None:
 
     record = _extract(
         _definition(
-            [_question("compressed_length", method="zstd", level=3, reference_key="reference")]
+            [_question("compressed_length", compression={"method": "zstd", "level": 3}, reference_key="reference")]
         ),
         _reference_trace(SAMPLE_TEXT, reference),
     )[0]
@@ -353,7 +353,7 @@ def test_compressed_length_zstd_level_3_reproduces_default(task) -> None:
 def test_compressed_length_without_reference_has_no_ratio() -> None:
     """No reference_key ⇒ ratio stays None (empty-reference behaviour)."""
     record = _extract(
-        _definition([_question("compressed_length", method="gzip", level=9)]),
+        _definition([_question("compressed_length", compression={"method": "gzip", "level": 9})]),
         _text_trace(SAMPLE_TEXT),
     )[0]
     assert record.values["compressed_bytes"] == len(
@@ -367,10 +367,10 @@ def test_compressed_level_is_part_of_identity() -> None:
     """A different level is a different question (X-M2)."""
     trace = _text_trace(SAMPLE_TEXT)
     r6 = _extract(
-        _definition([_question("compressed_length", method="gzip", level=1)]), trace
+        _definition([_question("compressed_length", compression={"method": "gzip", "level": 1})]), trace
     )[0]
     r9 = _extract(
-        _definition([_question("compressed_length", method="gzip", level=9)]), trace
+        _definition([_question("compressed_length", compression={"method": "gzip", "level": 9})]), trace
     )[0]
     assert r9.values["compressed_bytes"] <= r6.values["compressed_bytes"]
 

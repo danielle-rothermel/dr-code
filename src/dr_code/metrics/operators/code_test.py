@@ -39,9 +39,9 @@ from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
+    OperatorResult,
     OperatorSettings,
 )
-from dr_code.metrics.records import MetricScalar
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
@@ -68,16 +68,25 @@ class CodeTestSettings(OperatorSettings):
         return self
 
 
-class CodeTest(MetricOperator):
+class CodeTestResult(OperatorResult):
+    total_cases: int
+    passed_count: int
+    failed_count: int
+    error_count: int
+    timeout_count: int
+    coverage_complete: bool
+    function_count: int
+    best_function_name: str | None
+
+
+class CodeTest(MetricOperator[CodeTestSettings]):
     NAME = MetricName.CODE_TEST
     VERSION = "1"
     INPUT = ArtifactKind.CODE
     Settings = CodeTestSettings
 
     def auxiliary_keys(self) -> tuple[str, ...]:
-        settings = self.settings
-        assert isinstance(settings, CodeTestSettings)
-        return (settings.task_key,)
+        return (self.settings.task_key,)
 
     def accepted_auxiliary_kinds(
         self,
@@ -111,7 +120,7 @@ class CodeTest(MetricOperator):
         value: Artifact,
         aux: Mapping[str, Artifact],
         ctx: EngineContext,
-    ) -> dict[str, MetricScalar]:
+    ) -> CodeTestResult:
         source = _code_source(value)
         task = self._task(aux)
         function_names = _top_level_function_names(source)
@@ -147,12 +156,12 @@ class CodeTest(MetricOperator):
         )
         counts = Counter(status.value for status in best_statuses)
         total_cases = _total_cases(task)
-        return {
-            "total_cases": total_cases,
-            "passed_count": counts.get(EvaluationCaseStatus.PASSED.value, 0),
-            "failed_count": counts.get(EvaluationCaseStatus.FAILED.value, 0),
-            "error_count": counts.get(EvaluationCaseStatus.ERROR.value, 0),
-            "timeout_count": counts.get(
+        return CodeTestResult(
+            total_cases=total_cases,
+            passed_count=counts.get(EvaluationCaseStatus.PASSED.value, 0),
+            failed_count=counts.get(EvaluationCaseStatus.FAILED.value, 0),
+            error_count=counts.get(EvaluationCaseStatus.ERROR.value, 0),
+            timeout_count=counts.get(
                 EvaluationCaseStatus.TIMEOUT.value,
                 0,
             ),
@@ -160,18 +169,16 @@ class CodeTest(MetricOperator):
             # (dr_code.humaneval.task): "did every case produce a result", not a
             # pass/fail verdict. Pinned equal by the parity test; retires with
             # the old scoring path.
-            "coverage_complete": (
+            coverage_complete=(
                 best_function_name is not None
                 and len(best_statuses) == total_cases
             ),
-            "function_count": len(function_names),
-            "best_function_name": best_function_name,
-        }
+            function_count=len(function_names),
+            best_function_name=best_function_name,
+        )
 
     def _task(self, aux: Mapping[str, Artifact]) -> HumanEvalTask:
-        settings = self.settings
-        assert isinstance(settings, CodeTestSettings)
-        artifact = aux[settings.task_key]
+        artifact = aux[self.settings.task_key]
         if not isinstance(artifact, JsonArtifact):
             raise TypeError("code_test task must be a JSON artifact")
         return _validate_task_payload(artifact)
@@ -183,8 +190,6 @@ class CodeTest(MetricOperator):
         candidate_code: str,
         function_name: str,
     ) -> ExecutionRequest:
-        settings = self.settings
-        assert isinstance(settings, CodeTestSettings)
         parsed_tests = task.parsed_tests
         if parsed_tests is None:
             raise ValueError("HumanEvalTask.parsed_tests is required")
@@ -199,7 +204,7 @@ class CodeTest(MetricOperator):
         return ExecutionRequest(
             source=runner_script(),
             input_json=payload.model_dump_json(),
-            timeout_seconds=settings.timeout_seconds,
+            timeout_seconds=self.settings.timeout_seconds,
             computation_id=_COMPUTATION_ID,
         )
 

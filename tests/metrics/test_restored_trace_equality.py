@@ -46,7 +46,7 @@ def _mixed_definition():
             MetricQuestion(
                 metric=MetricName.COMPRESSED_LENGTH,
                 on="code",
-                settings={"method": "gzip", "level": 9},
+                settings={"compression": {"method": "gzip", "level": 9}},
             ),
         ),
     )

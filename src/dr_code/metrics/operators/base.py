@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import ClassVar, Protocol
+from typing import ClassVar, Generic, Protocol, TypeVar
 
 from dr_code.metrics.engine.execution import (
     ExecutionOutcome,
@@ -25,6 +25,16 @@ class OperatorSettings(FrozenModel):
     """Validated parameters that determine an operator's semantics."""
 
 
+SettingsT = TypeVar("SettingsT", bound=OperatorSettings)
+
+
+class OperatorResult(FrozenModel):
+    """Typed operator output; flattened to record values at the record boundary."""
+
+    def to_values(self) -> dict[str, MetricScalar]:
+        return self.model_dump(mode="python")
+
+
 class EngineContext(Protocol):
     """Engine services available during phase-two computation."""
 
@@ -33,7 +43,7 @@ class EngineContext(Protocol):
     def outcome_for(self, request: ExecutionRequest) -> ExecutionOutcome: ...
 
 
-class MetricOperator:
+class MetricOperator(Generic[SettingsT]):
     """Question implementation managed by the metrics engine."""
 
     NAME: ClassVar[MetricName]
@@ -42,8 +52,8 @@ class MetricOperator:
     ACCEPTED_INPUTS: ClassVar[frozenset[ArtifactKind]]
     Settings: ClassVar[type[OperatorSettings]] = OperatorSettings
 
-    def __init__(self, settings: OperatorSettings) -> None:
-        self.settings = settings
+    def __init__(self, settings: SettingsT) -> None:
+        self.settings: SettingsT = settings
 
     @classmethod
     def accepted_input_kinds(cls) -> frozenset[ArtifactKind]:
@@ -77,7 +87,7 @@ class MetricOperator:
         value: Artifact,
         aux: Mapping[str, Artifact],
         ctx: EngineContext,
-    ) -> dict[str, MetricScalar]:
+    ) -> OperatorResult:
         raise NotImplementedError
 
 

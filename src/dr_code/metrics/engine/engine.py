@@ -282,7 +282,7 @@ def _compute_record(
 
     assert binding.value is not None
     try:
-        values = binding.question_binding.operator.compute(
+        result = binding.question_binding.operator.compute(
             binding.value,
             binding.auxiliary,
             context,
@@ -290,7 +290,7 @@ def _compute_record(
         return _build_record(
             identity,
             status=RecordStatus.MEASURED,
-            values=values,
+            values=result.to_values(),
         )
     except (SandboxError, EvaluationHarnessError, EngineInvariantError):
         raise

@@ -9,9 +9,10 @@ from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
+    OperatorResult,
+    OperatorSettings,
     artifact_text,
 )
-from dr_code.metrics.records import MetricScalar
 from dr_code.trace import Artifact, ArtifactKind
 
 _BRANCH_NODES = (
@@ -35,7 +36,38 @@ _LITERAL_NODES = (ast.Constant, ast.List, ast.Tuple, ast.Set, ast.Dict)
 _FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
-class AstStats(MetricOperator):
+class AstStatsResult(OperatorResult):
+    top_level_function_count: int
+    nested_function_count: int
+    async_function_count: int
+    lambda_count: int
+    class_count: int
+    import_count: int
+    ast_node_count: int
+    statement_count: int
+    branch_count: int
+    return_count: int
+    yield_count: int
+    call_count: int
+    assignment_count: int
+    comprehension_count: int
+    literal_count: int
+    max_branch_depth: int
+    function_count: int
+    total_argument_count: int
+    positional_only_argument_count: int
+    keyword_only_argument_count: int
+    vararg_count: int
+    kwarg_count: int
+    decorated_function_count: int
+    annotated_return_count: int
+    docstring_function_count: int
+    total_function_body_statement_count: int
+    max_function_body_statement_count: int
+    max_function_line_span: int
+
+
+class AstStats(MetricOperator[OperatorSettings]):
     NAME = MetricName.AST_STATS
     VERSION = "1"
     INPUT = ArtifactKind.CODE
@@ -45,7 +77,7 @@ class AstStats(MetricOperator):
         value: Artifact,
         aux: Mapping[str, Artifact],
         ctx: EngineContext,
-    ) -> dict[str, MetricScalar]:
+    ) -> AstStatsResult:
         _ = aux
         source = artifact_text(value)
         tree = ctx.views.parsed_module(source)
@@ -67,88 +99,88 @@ class AstStats(MetricOperator):
         all_functions = [
             node for node in nodes if isinstance(node, _FUNCTION_NODES)
         ]
-        return {
-            "top_level_function_count": len(top_level_functions),
-            "nested_function_count": (
+        return AstStatsResult(
+            top_level_function_count=len(top_level_functions),
+            nested_function_count=(
                 len(all_functions) - len(top_level_functions)
             ),
-            "async_function_count": sum(
+            async_function_count=sum(
                 isinstance(node, ast.AsyncFunctionDef)
                 for node in all_functions
             ),
-            "lambda_count": sum(
+            lambda_count=sum(
                 isinstance(node, ast.Lambda) for node in nodes
             ),
-            "class_count": sum(
+            class_count=sum(
                 isinstance(node, ast.ClassDef) for node in nodes
             ),
-            "import_count": sum(
+            import_count=sum(
                 isinstance(node, ast.Import | ast.ImportFrom)
                 for node in nodes
             ),
-            "ast_node_count": len(nodes),
-            "statement_count": sum(
+            ast_node_count=len(nodes),
+            statement_count=sum(
                 isinstance(node, ast.stmt) for node in nodes
             ),
-            "branch_count": sum(
+            branch_count=sum(
                 isinstance(node, _BRANCH_NODES) for node in nodes
             ),
-            "return_count": sum(
+            return_count=sum(
                 isinstance(node, ast.Return) for node in nodes
             ),
-            "yield_count": sum(
+            yield_count=sum(
                 isinstance(node, ast.Yield | ast.YieldFrom)
                 for node in nodes
             ),
-            "call_count": sum(isinstance(node, ast.Call) for node in nodes),
-            "assignment_count": sum(
+            call_count=sum(isinstance(node, ast.Call) for node in nodes),
+            assignment_count=sum(
                 isinstance(node, _ASSIGNMENT_NODES) for node in nodes
             ),
-            "comprehension_count": sum(
+            comprehension_count=sum(
                 isinstance(node, _COMPREHENSION_NODES) for node in nodes
             ),
-            "literal_count": sum(
+            literal_count=sum(
                 isinstance(node, _LITERAL_NODES) for node in nodes
             ),
-            "max_branch_depth": _max_branch_depth(tree),
-            "function_count": len(all_functions),
-            "total_argument_count": sum(
+            max_branch_depth=_max_branch_depth(tree),
+            function_count=len(all_functions),
+            total_argument_count=sum(
                 _function_argument_count(node) for node in all_functions
             ),
-            "positional_only_argument_count": sum(
+            positional_only_argument_count=sum(
                 len(node.args.posonlyargs) for node in all_functions
             ),
-            "keyword_only_argument_count": sum(
+            keyword_only_argument_count=sum(
                 len(node.args.kwonlyargs) for node in all_functions
             ),
-            "vararg_count": sum(
+            vararg_count=sum(
                 node.args.vararg is not None for node in all_functions
             ),
-            "kwarg_count": sum(
+            kwarg_count=sum(
                 node.args.kwarg is not None for node in all_functions
             ),
-            "decorated_function_count": sum(
+            decorated_function_count=sum(
                 bool(node.decorator_list) for node in all_functions
             ),
-            "annotated_return_count": sum(
+            annotated_return_count=sum(
                 node.returns is not None for node in all_functions
             ),
-            "docstring_function_count": sum(
+            docstring_function_count=sum(
                 ast.get_docstring(node) is not None
                 for node in all_functions
             ),
-            "total_function_body_statement_count": sum(
+            total_function_body_statement_count=sum(
                 len(node.body) for node in all_functions
             ),
-            "max_function_body_statement_count": max(
+            max_function_body_statement_count=max(
                 (len(node.body) for node in all_functions),
                 default=0,
             ),
-            "max_function_line_span": max(
+            max_function_line_span=max(
                 (_function_line_span(node) for node in all_functions),
                 default=0,
             ),
-        }
+        )
 
 
 def _function_argument_count(

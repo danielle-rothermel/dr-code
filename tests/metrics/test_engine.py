@@ -82,11 +82,13 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
 
 
 def test_invalid_operator_settings_is_a_wiring_error(counting_runner) -> None:
-    """compressed_length requires an explicit method+level; bad settings wire."""
+    """compressed_length requires a valid compression config; bad settings wire."""
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
-    definition = _definition([_q("compressed_length", method="gzip")])  # no level
+    definition = _definition(
+        [_q("compressed_length", compression={"method": "gzip", "level": 99})]
+    )  # gzip level out of range
     with pytest.raises(WiringError):
         _extract(definition, trace, run_in_sandbox=counting_runner)
     assert counting_runner.call_count == 0
