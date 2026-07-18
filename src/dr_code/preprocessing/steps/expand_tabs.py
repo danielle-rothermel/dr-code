@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import Step, StepSettings, StepOutput
-from dr_code.trace import ArtifactKind, TextArtifact
+from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class ExpandTabsSettings(StepSettings):
@@ -15,7 +15,7 @@ class ExpandTabsSettings(StepSettings):
     tab_width: int = 4
 
 
-class ExpandTabs(Step):
+class ExpandTabs(Step[ExpandTabsSettings]):
     """Expand tabs to spaces using ``str.expandtabs(tab_width)``."""
 
     NAME: ClassVar[StepName] = StepName.EXPAND_TABS
@@ -24,7 +24,8 @@ class ExpandTabs(Step):
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     Settings = ExpandTabsSettings
 
-    def apply(self, value: TextArtifact) -> StepOutput:
+    def apply(self, value: Artifact) -> StepOutput:
+        assert isinstance(value, TextArtifact)
         return StepOutput(
             value=TextArtifact(
                 text=value.text.expandtabs(self.settings.tab_width)

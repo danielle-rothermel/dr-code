@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import ClassVar, Generic, TypeVar, cast
 
 from dr_code.models import FrozenModel
 from dr_code.trace import (
@@ -25,6 +25,9 @@ class StepSettings(FrozenModel):
 
     A step with no tunables uses this empty base directly.
     """
+
+
+SettingsT = TypeVar("SettingsT", bound=StepSettings)
 
 
 class StepFailedError(Exception):
@@ -52,7 +55,7 @@ class StepOutput:
     facts: Mapping[str, str] = field(default_factory=dict)
 
 
-class Step:
+class Step(Generic[SettingsT]):
     """Base class for preprocessing steps.
 
     Subclasses declare ``NAME``, ``VERSION``, ``INPUT``/``OUTPUT`` kinds,
@@ -66,18 +69,20 @@ class Step:
     OUTPUT: ClassVar[ArtifactKind]
     Settings: ClassVar[type[StepSettings]] = StepSettings
 
-    def __init__(self, settings: StepSettings | None = None) -> None:
+    def __init__(self, settings: SettingsT | None = None) -> None:
         # Optional so steps with no tunables instantiate as ``StepCls()``;
         # bind_definition always passes explicit validated settings.
-        self.settings = (
-            settings if settings is not None else self.Settings()
+        self.settings: SettingsT = (
+            settings
+            if settings is not None
+            else cast(SettingsT, self.Settings())
         )
 
     def apply(self, value: Artifact) -> StepOutput:  # pragma: no cover
         raise NotImplementedError
 
 
-class CandidateMapStep(Step):
+class CandidateMapStep(Step[StepSettings]):
     """Elementwise ``CandidateSet -> CandidateSet``; fan-out stays data.
 
     ``apply`` maps over candidates in order, flattening list results in
@@ -104,7 +109,7 @@ class CandidateMapStep(Step):
         )
 
 
-class AlternativesStep(Step):
+class AlternativesStep(Step[SettingsT], Generic[SettingsT]):
     """Ordered first-success ladder inside one step — never pipeline branches.
 
     ``apply`` tries alternatives conservative-first; the winner's name is
@@ -121,9 +126,7 @@ class AlternativesStep(Step):
         for name, strategy_fn in self.alternatives():
             result = strategy_fn(value)
             if result is not None:
-                return StepOutput(
-                    value=result, facts={"alternative": name}
-                )
+                return StepOutput(value=result, facts={"alternative": name})
         raise StepFailedError("no alternative produced candidates")
 
 

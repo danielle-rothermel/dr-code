@@ -12,6 +12,11 @@ import re
 from collections.abc import Iterable
 from typing import Final
 
+# NOTE: The constants below are consumed by metric operators (currently
+# `code_leakage` and `text_stats`), whose recorded values are part of a
+# question's metric identity. Changing any of these patterns/sets changes
+# those operators' output and therefore requires bumping the affected
+# operators' `VERSION`.
 FENCE_LINE_RE: Final[re.Pattern[str]] = re.compile(
     r"^[ \t]*(?P<fence>```|~~~)(?P<tag>[A-Za-z0-9_+\-]*)[ \t]*$"
 )
@@ -25,6 +30,8 @@ CODE_LIKE_LINE_RE: Final[re.Pattern[str]] = re.compile(
     r"#|"
     r"[a-zA-Z_]\w*\s*=)"
 )
+WORD_RE: Final[re.Pattern[str]] = re.compile(r"\b\w+\b")
+OPERATOR_CHARS: Final[frozenset[str]] = frozenset("+-*/%=<>!&|^~:@")
 LINE_SEP: Final[str] = "\n"
 
 
@@ -129,6 +136,11 @@ def code_like_blocks(blocks: Iterable[str]) -> list[str]:
 
 
 __all__ = [
+    "CODE_ANCHOR_LINE_RE",
+    "CODE_LIKE_LINE_RE",
+    "FENCE_LINE_RE",
+    "OPERATOR_CHARS",
+    "WORD_RE",
     "candidate_blocks",
     "anchored_code_blocks",
     "code_like_blocks",

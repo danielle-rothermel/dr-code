@@ -7,6 +7,7 @@ from typing import ClassVar
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import Step, StepOutput
 from dr_code.trace import (
+    Artifact,
     ArtifactKind,
     CodeCandidateSetArtifact,
 )
@@ -25,7 +26,8 @@ class ReturnAll(Step):
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
-    def apply(self, value: CodeCandidateSetArtifact) -> StepOutput:
+    def apply(self, value: Artifact) -> StepOutput:
+        assert isinstance(value, CodeCandidateSetArtifact)
         return StepOutput(
             value=value,
             facts={"candidate_count": str(len(value.candidates))},

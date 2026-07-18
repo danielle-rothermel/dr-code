@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypeGuard
+from typing import Literal, TypeIs
 
 from dr_code.models import FrozenModel
 
@@ -23,5 +23,5 @@ class Absent(FrozenModel):
     propagated_through: tuple[str, ...] = ()
 
 
-def is_absent(value: object) -> TypeGuard[Absent]:
+def is_absent(value: object) -> TypeIs[Absent]:
     return isinstance(value, Absent)

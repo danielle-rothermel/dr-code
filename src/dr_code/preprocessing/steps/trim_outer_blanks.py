@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import Step, StepOutput
-from dr_code.trace import ArtifactKind, TextArtifact
+from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class TrimOuterBlanks(Step):
@@ -20,7 +20,8 @@ class TrimOuterBlanks(Step):
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
 
-    def apply(self, value: TextArtifact) -> StepOutput:
+    def apply(self, value: Artifact) -> StepOutput:
+        assert isinstance(value, TextArtifact)
         return StepOutput(value=TextArtifact(text=value.text.strip("\n")))
 
 

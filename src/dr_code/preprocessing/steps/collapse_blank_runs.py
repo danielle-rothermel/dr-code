@@ -7,7 +7,7 @@ from typing import ClassVar
 from dr_code.text_transforms import collapse_blank_runs
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import Step, StepOutput
-from dr_code.trace import ArtifactKind, TextArtifact
+from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class CollapseBlankRuns(Step):
@@ -18,7 +18,8 @@ class CollapseBlankRuns(Step):
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
 
-    def apply(self, value: TextArtifact) -> StepOutput:
+    def apply(self, value: Artifact) -> StepOutput:
+        assert isinstance(value, TextArtifact)
         return StepOutput(
             value=TextArtifact(text=collapse_blank_runs(value.text))
         )

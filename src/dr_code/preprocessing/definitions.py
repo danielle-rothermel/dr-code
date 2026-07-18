@@ -33,6 +33,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from pydantic import JsonValue
+
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
     FIELD_MARKER_NAME,
@@ -72,7 +74,7 @@ _DEFAULT_EXTRACT_ALTERNATIVES: Final[tuple[str, ...]] = (
 def _spec(
     instance_name: str,
     step: StepName,
-    **settings: object,
+    **settings: JsonValue,
 ) -> StepSpec:
     """Build a ``StepSpec``; settings pass through as JSON values."""
     return StepSpec(

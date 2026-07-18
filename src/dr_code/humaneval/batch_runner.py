@@ -104,6 +104,10 @@ def evaluate_human_eval_code(
     )
 
 
+# PARITY TWIN: duplicated by ``dr_code.metrics.operators.code_test``
+# ``_top_level_function_names``. Both stay live while the old scoring path runs
+# and retire together. Baseline quirk (documented, not fixed): duplicate
+# top-level names (legal Python) are all returned; any fix must land in both.
 def top_level_function_names(
     code_str: str,
     *,
