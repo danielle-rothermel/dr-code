@@ -43,6 +43,14 @@ class ExecutionOutcome(FrozenModel):
 
 
 class ExecutionCache(Protocol):
+    """Outcome cache keyed by ``ExecutionRequest.cache_key``.
+
+    The key hashes only the request fields; the injected ``SandboxRunner``
+    is not part of it. A cache instance must therefore be scoped to a single
+    runner/runtime -- sharing one across runners can silently return an
+    outcome produced by a different execution environment.
+    """
+
     def get(self, key: str) -> ExecutionOutcome | None: ...
 
     def put(self, key: str, outcome: ExecutionOutcome) -> None: ...

@@ -19,6 +19,8 @@ EXTRACTION_FAILED) are upstream of ``code_test`` and out of its record scope.
 
 from __future__ import annotations
 
+import pytest
+
 from dr_code.humaneval.code_parsing import BEST_EFFORT_HUMANEVAL_PARSER_PROFILE
 from dr_code.humaneval.scoring import (
     SubmissionOutcome,
@@ -163,3 +165,32 @@ def test_code_test_record_carries_no_verdict_fields(
     assert "score" not in record.values
     assert "pass_at_k" not in record.values
     assert "passed" not in record.values
+
+
+def test_derive_outcome_rejects_negative_counts() -> None:
+    """A corrupt or tampered record cannot cancel failures with negative
+    counts (failed_count=-1 + error_count=1 would otherwise read as zero
+    failures and derive PASSED)."""
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.records import MetricRecord, RecordStatus
+
+    record = MetricRecord(
+        metric=MetricName.CODE_TEST,
+        metric_version="1",
+        on_key="input",
+        producer_id="policy",
+        producer_version="1",
+        producer_definition_hash=None,
+        metrics_definition_id="policy",
+        metrics_definition_version="1",
+        status=RecordStatus.MEASURED,
+        values={
+            "function_count": 1,
+            "failed_count": -1,
+            "error_count": 1,
+            "timeout_count": 0,
+            "coverage_complete": True,
+        },
+    )
+    with pytest.raises(ValueError, match="non-negative"):
+        _derive_outcome(record)

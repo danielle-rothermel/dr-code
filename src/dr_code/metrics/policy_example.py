@@ -34,8 +34,10 @@ def derive_outcome(record: MetricRecord) -> SubmissionOutcome:
 
 def _integer_fact(record: MetricRecord, key: str) -> int:
     value = record.values.get(key)
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"code_test record requires integer fact {key!r}")
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(
+            f"code_test record requires non-negative integer fact {key!r}"
+        )
     return value
 
 
