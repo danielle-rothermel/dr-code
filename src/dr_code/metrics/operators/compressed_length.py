@@ -68,7 +68,7 @@ class CompressedLength(MetricOperator[CompressedLengthSettings]):
         value: Artifact,
         aux: Mapping[str, Artifact],
         ctx: EngineContext,
-    ) -> OperatorResult:
+    ) -> CompressedLengthResult:
         _ = ctx
         compression = self.settings.compression
         representation = artifact_text(value).encode("utf-8")

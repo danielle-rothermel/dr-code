@@ -6,6 +6,7 @@ from dr_code.metrics.definition import (
     metrics_definition_hash,
 )
 from dr_code.metrics.engine.engine import (
+    EngineInvariantError,
     extract_metrics,
     extract_metrics_batch,
 )
@@ -18,6 +19,7 @@ __all__ = (
     "MetricRecord",
     "MetricsDefinition",
     "RecordStatus",
+    "EngineInvariantError",
     "extract_metrics",
     "extract_metrics_batch",
     "metrics_definition_hash",

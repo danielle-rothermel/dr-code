@@ -262,7 +262,7 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
     is an engine bug, not a metric bug: it must surface as
     EngineInvariantError out of the batch, never get swallowed into an
     operator_failure record."""
-    from dr_code.metrics.engine.engine import EngineInvariantError
+    from dr_code.metrics import EngineInvariantError
     from dr_code.metrics.operators.code_test import CodeTest
 
     candidate = "def add_one(x):\n    return x + 1\n"

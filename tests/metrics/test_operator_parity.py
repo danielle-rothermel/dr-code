@@ -467,6 +467,7 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
     for bad_stdout in (
         "this is not json{",  # JSON decode failure
         '{"not": "a list"}',  # wrong shape (object, not list)
+        '[{"case_id": "case_0"}]',  # result schema validation failure
         '[{"case_id": "ghost", "status": "passed"}]',  # unknown case id
     ):
         record = _extract(

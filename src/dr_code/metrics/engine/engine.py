@@ -12,7 +12,6 @@ from dr_code.humaneval.sandbox import (
     SandboxRunner,
     run_python_in_sandbox,
 )
-from dr_code.humaneval.task import EvaluationHarnessError
 from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
 from dr_code.metrics.engine.execution import (
     ExecutionCache,
@@ -153,7 +152,7 @@ def extract_metrics_batch(
                     binding.value,
                     binding.auxiliary,
                 )
-            except (SandboxError, EvaluationHarnessError):
+            except (SandboxError, EngineInvariantError):
                 raise
             except Exception as exc:
                 binding.planning_failure = exc
@@ -292,7 +291,7 @@ def _compute_record(
             status=RecordStatus.MEASURED,
             values=result.to_values(),
         )
-    except (SandboxError, EvaluationHarnessError, EngineInvariantError):
+    except (SandboxError, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)
