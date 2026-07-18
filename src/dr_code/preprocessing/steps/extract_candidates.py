@@ -35,9 +35,7 @@ class ExtractionStrategy(StrEnum):
     """The ladder's constituents, individually selectable per definition."""
 
     FENCED_BLOCKS = "fenced_blocks"  # text_analysis.candidate_blocks
-    MARKDOWN_WRAPPER = (
-        "markdown_wrapper"  # strip_markdown_wrappers per block
-    )
+    MARKDOWN_WRAPPER = "markdown_wrapper"  # strip_markdown_wrappers per block
     ESCAPED_PYTHON = "escaped_python"  # recover_escaped_python, re-extract
     ESCAPED_MARKDOWN_WRAPPER = (
         "escaped_markdown_wrapper"  # unescape, then strip_markdown_wrappers
@@ -59,9 +57,7 @@ def _to_candidate_set(
     no code-like candidate survives, so first-success ladder logic falls
     through to the next strategy.
     """
-    candidates = [
-        block for block in code_like_blocks(blocks) if block.strip()
-    ]
+    candidates = [block for block in code_like_blocks(blocks) if block.strip()]
     if not candidates:
         return None
     return CodeCandidateSetArtifact(candidates=tuple(candidates))
@@ -102,8 +98,7 @@ def _escaped_markdown_wrapper(
     if unescaped is None:
         return None
     stripped = [
-        strip_markdown_wrappers(block)
-        for block in candidate_blocks(unescaped)
+        strip_markdown_wrappers(block) for block in candidate_blocks(unescaped)
     ]
     return _to_candidate_set(stripped)
 
@@ -135,7 +130,7 @@ class ExtractCandidatesSettings(StepSettings):
     alternatives: tuple[ExtractionStrategy, ...] = DEFAULT_STRATEGIES
 
 
-class ExtractCandidates(AlternativesStep):
+class ExtractCandidates(AlternativesStep[ExtractCandidatesSettings]):
     """Text -> CandidateSet: first-success ladder over an ordered tuple.
 
     Resolves ``settings.alternatives`` through ``STRATEGY_REGISTRY``, in

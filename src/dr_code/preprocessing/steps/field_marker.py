@@ -13,6 +13,7 @@ from dr_code.preprocessing.steps.base import (
     StepSettings,
 )
 from dr_code.trace import (
+    Artifact,
     ArtifactKind,
     CodeCandidateSetArtifact,
     TextArtifact,
@@ -25,7 +26,7 @@ class FieldMarkerSettings(StepSettings):
     field_name: str = "code"
 
 
-class FieldMarker(Step):
+class FieldMarker(Step[FieldMarkerSettings]):
     """Text -> CandidateSet for the strict field-marker profile.
 
     Wraps ``code_parsing.field_marker_value``: extracts the text between
@@ -40,7 +41,8 @@ class FieldMarker(Step):
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     Settings = FieldMarkerSettings
 
-    def apply(self, value: TextArtifact) -> StepOutput:
+    def apply(self, value: Artifact) -> StepOutput:
+        assert isinstance(value, TextArtifact)
         field_value = field_marker_value(
             value.text, field_name=self.settings.field_name
         )

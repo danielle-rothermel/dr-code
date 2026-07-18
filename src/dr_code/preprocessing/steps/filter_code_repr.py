@@ -8,6 +8,7 @@ from dr_code.humaneval.code_parsing import is_code_repr_assignment
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import Step, StepOutput
 from dr_code.trace import (
+    Artifact,
     ArtifactKind,
     CodeCandidateSetArtifact,
 )
@@ -25,7 +26,8 @@ class FilterCodeRepr(Step):
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
-    def apply(self, value: CodeCandidateSetArtifact) -> StepOutput:
+    def apply(self, value: Artifact) -> StepOutput:
+        assert isinstance(value, CodeCandidateSetArtifact)
         survivors: list[str] = []
         facts: dict[str, str] = {}
         for index, candidate in enumerate(value.candidates):
