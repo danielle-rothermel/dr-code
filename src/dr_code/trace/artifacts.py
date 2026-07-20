@@ -6,7 +6,7 @@ import ast
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, model_validator
 
 from dr_code.models import FrozenModel
 
@@ -34,6 +34,20 @@ class CodeArtifact(FrozenModel):
     source: str
 
 
+class CandidateOrigin(FrozenModel):
+    """One decoder-text variant and discovery rule that yielded a candidate."""
+
+    variant: str
+    strategy: str
+
+
+class CandidateLineage(FrozenModel):
+    """Stable post-cleaning identity plus every extraction origin."""
+
+    candidate_id: str | None = None
+    origins: tuple[CandidateOrigin, ...] = ()
+
+
 class CodeCandidateSetArtifact(FrozenModel):
     """Ordered candidate sources, conservative first. Fan-out as data
     (P-S2)."""
@@ -42,6 +56,21 @@ class CodeCandidateSetArtifact(FrozenModel):
         ArtifactKind.CODE_CANDIDATE_SET
     )
     candidates: tuple[str, ...]
+    lineage: tuple[CandidateLineage, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_lineage_alignment(self) -> CodeCandidateSetArtifact:
+        if self.lineage and len(self.lineage) != len(self.candidates):
+            raise ValueError(
+                "candidate lineage must be empty or aligned with candidates"
+            )
+        return self
+
+    def lineage_at(self, index: int) -> CandidateLineage:
+        """Return aligned lineage, or an empty record for legacy producers."""
+        if not self.lineage:
+            return CandidateLineage()
+        return self.lineage[index]
 
 
 class JsonArtifact(FrozenModel):

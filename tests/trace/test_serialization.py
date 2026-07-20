@@ -13,6 +13,8 @@ from dr_code.trace import (
     OUTPUT_KEY,
     TRACE_SCHEMA_VERSION,
     Absent,
+    CandidateLineage,
+    CandidateOrigin,
     CodeArtifact,
     CodeCandidateSetArtifact,
     JsonArtifact,
@@ -28,7 +30,21 @@ from dr_code.trace import (
 _FULL_VALUES = {
     INPUT_KEY: TextArtifact(text="prompt"),
     OUTPUT_KEY: CodeArtifact(source="x = 1\n"),
-    "candidates": CodeCandidateSetArtifact(candidates=("a", "b")),
+    "candidates": CodeCandidateSetArtifact(
+        candidates=("a", "b"),
+        lineage=(
+            CandidateLineage(
+                candidate_id="candidate-a",
+                origins=(
+                    CandidateOrigin(
+                        variant="normalized_raw_response",
+                        strategy="fenced_blocks",
+                    ),
+                ),
+            ),
+            CandidateLineage(candidate_id="candidate-b"),
+        ),
+    ),
     "payload": JsonArtifact(payload={"task": "HumanEval/0"}),
     "missing": Absent(
         failed_step="parse",

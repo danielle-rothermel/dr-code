@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
     resolve_preprocessing_definition,
     run_preprocessing,
 )
@@ -31,20 +32,21 @@ from dr_code.trace import (
     serialize_trace,
 )
 
-BEST_EFFORT_ID = "humaneval-best-effort"
-FIELD_MARKER_ID = "humaneval-field-marker"
+DEFINITION_ID = HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID
 
 _FENCED = "Here is the code:\n```python\ndef f(x):\n    return x + 1\n```\n"
 
 
-def _best_effort_v2():
+def _function_candidates_v1():
     return resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
+        definition_id=DEFINITION_ID, version="v1"
     )
 
 
 def _trace(raw: str) -> Trace:
-    return run_preprocessing(_best_effort_v2(), TextArtifact(text=raw))
+    return run_preprocessing(
+        _function_candidates_v1(), TextArtifact(text=raw)
+    )
 
 
 def _assert_round_trip(trace: Trace) -> Trace:
@@ -75,25 +77,24 @@ def _assert_json_round_trip(trace: Trace) -> Trace:
 
 def test_round_trip_preserves_code_output_and_facts() -> None:
     trace = _trace(_FENCED)
-    assert isinstance(trace.value("output"), CodeArtifact)
+    assert isinstance(trace.value("output"), CodeCandidateSetArtifact)
 
     restored = _assert_round_trip(trace)
     out = restored.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert out.source == trace.value("output").source
-    # The extraction alternative fact is preserved.
-    assert restored.step_facts["extract_candidates"] == {
-        "alternative": "fenced_blocks"
-    }
+    assert isinstance(out, CodeCandidateSetArtifact)
+    assert out == trace.value("output")
+    assert restored.step_facts["extract_candidates"]["alternative"] == (
+        "fenced_blocks"
+    )
 
 
 def test_round_trip_preserves_producer_id_and_version() -> None:
     trace = _trace(_FENCED)
     restored = _assert_round_trip(trace)
-    assert restored.producer.producer_id == BEST_EFFORT_ID
-    assert restored.producer.version == "v2"
+    assert restored.producer.producer_id == DEFINITION_ID
+    assert restored.producer.version == "v1"
     assert restored.producer.definition_hash == preprocessing_definition_hash(
-        _best_effort_v2()
+        _function_candidates_v1()
     )
 
 

@@ -4,6 +4,8 @@ from dr_code.trace.absent import Absent, is_absent
 from dr_code.trace.artifacts import (
     Artifact,
     ArtifactKind,
+    CandidateLineage,
+    CandidateOrigin,
     CodeArtifact,
     CodeCandidateSetArtifact,
     JsonArtifact,
@@ -36,6 +38,8 @@ __all__ = (
     "Absent",
     "Artifact",
     "ArtifactKind",
+    "CandidateLineage",
+    "CandidateOrigin",
     "CodeArtifact",
     "CodeCandidateSetArtifact",
     "EXTERNAL_PRODUCER",

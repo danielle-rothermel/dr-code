@@ -20,6 +20,7 @@ from dr_code.code_analysis import (
     format_function_signature,
     function_locals,
     function_params,
+    is_cpython_parser_stack_overflow,
     module_level_names,
     top_level_import_linenos,
     validate_python,
@@ -52,6 +53,54 @@ def test_validate_python_source_with_ast_returns_reusable_tree() -> None:
     validated = validate_python_source_with_ast(UNPARSEABLE)
     assert validated.validation.parse_ok is False
     assert validated.tree is None
+
+
+def test_validate_python_source_classifies_only_parser_stack_memory_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def parser_stack_overflow(source: str) -> ast.Module:
+        raise MemoryError("Parser stack overflowed")
+
+    monkeypatch.setattr(ast, "parse", parser_stack_overflow)
+    validated = validate_python_source("x = 1\n")
+
+    assert validated.parser_stack_overflow is True
+    assert validated.parse_ok is False
+    assert validated.compile_ok is False
+    assert validated.parse_error == "MemoryError: Parser stack overflowed"
+    assert is_cpython_parser_stack_overflow(
+        MemoryError("Parser stack overflowed - source too complex")
+    )
+    assert not is_cpython_parser_stack_overflow(MemoryError("out of memory"))
+
+
+def test_validate_python_source_reraises_unrelated_memory_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def out_of_memory(source: str) -> ast.Module:
+        raise MemoryError("allocation failed")
+
+    monkeypatch.setattr(ast, "parse", out_of_memory)
+    with pytest.raises(MemoryError, match="allocation failed"):
+        validate_python_source("x = 1\n")
+
+
+def test_validate_python_source_records_parser_recursion_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def parser_recursion(source: str) -> ast.Module:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(ast, "parse", parser_recursion)
+    validated = validate_python_source("x = 1\n")
+
+    assert validated.parser_stack_overflow is False
+    assert validated.parser_recursion_overflow is True
+    assert validated.parse_ok is False
+    assert validated.compile_ok is False
+    assert validated.parse_error == (
+        "RecursionError: maximum recursion depth exceeded"
+    )
 
 
 def test_equivalent_ignores_formatting_and_docstrings() -> None:

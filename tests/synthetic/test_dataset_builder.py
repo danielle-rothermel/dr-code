@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from dr_code.code_analysis import equivalent
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-    extract_code_with_profile,
+from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    bind_preprocessing,
 )
 from dr_code.synthetic.models import SyntheticSample
 from dr_code.synthetic import (
@@ -17,6 +17,11 @@ from dr_code.synthetic import (
     load_dataset,
     load_humaneval_plus,
     save_dataset,
+)
+from dr_code.trace import CodeCandidateSetArtifact, TextArtifact
+
+PREPROCESSING_RUNNER = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION
 )
 
 SEMANTIC_ROUND_TRIP_EXCLUDED_RECIPES: frozenset[str] = frozenset(
@@ -88,15 +93,14 @@ def test_recoverable_generated_samples_round_trip_to_ground_truth() -> None:
         if sample.recipe_name in SEMANTIC_ROUND_TRIP_EXCLUDED_RECIPES:
             continue
 
-        extraction = extract_code_with_profile(
-            sample.corrupted_source,
-            profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-        )
+        output = PREPROCESSING_RUNNER.run(
+            TextArtifact(text=sample.corrupted_source)
+        ).value("output")
 
-        assert extraction.extracted_code is not None, sample.sample_id
-        assert equivalent(
-            extraction.extracted_code,
-            sample.ground_truth_source,
+        assert isinstance(output, CodeCandidateSetArtifact), sample.sample_id
+        assert any(
+            equivalent(candidate, sample.ground_truth_source)
+            for candidate in output.candidates
         ), sample.sample_id
         checked += 1
 

@@ -112,15 +112,36 @@ class CandidateMapStep(Step[StepSettings]):
 
     def apply(self, value: Artifact) -> StepOutput:
         candidates = _candidate_set(value).candidates
+        candidate_set = _candidate_set(value)
         mapped: list[str] = []
-        for candidate in candidates:
+        lineage = []
+        for index, candidate in enumerate(candidates):
             result = self.apply_to_candidate(candidate)
             if isinstance(result, list):
                 mapped.extend(result)
+                if candidate_set.lineage:
+                    lineage.extend(
+                        candidate_set.lineage_at(index).model_copy(
+                            update={"candidate_id": None}
+                        )
+                        for _ in result
+                    )
             else:
                 mapped.append(result)
+                if candidate_set.lineage:
+                    lineage.append(
+                        candidate_set.lineage_at(index).model_copy(
+                            update={"candidate_id": None}
+                        )
+                    )
         return StepOutput(
-            value=CodeCandidateSetArtifact(candidates=tuple(mapped))
+            value=CodeCandidateSetArtifact(
+                candidates=tuple(mapped), lineage=tuple(lineage)
+            ),
+            facts={
+                "input_candidate_count": len(candidates),
+                "output_candidate_count": len(mapped),
+            },
         )
 
 

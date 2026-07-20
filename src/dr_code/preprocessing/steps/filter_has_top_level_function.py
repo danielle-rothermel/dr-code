@@ -1,7 +1,8 @@
-"""Keep only candidates that compile."""
+"""Keep candidates that define a function at module scope."""
 
 from __future__ import annotations
 
+import ast
 from typing import ClassVar
 
 from pydantic import JsonValue
@@ -18,11 +19,11 @@ from dr_code.trace import (
 )
 
 
-class FilterCompilable(Step):
-    """Keep candidates that parse and compile as Python source."""
+class FilterHasTopLevelFunction(Step):
+    """Keep candidates with at least one top-level sync or async function."""
 
-    NAME: ClassVar[StepName] = StepName.FILTER_COMPILABLE
-    VERSION: ClassVar[str] = "2"
+    NAME: ClassVar[StepName] = StepName.FILTER_HAS_TOP_LEVEL_FUNCTION
+    VERSION: ClassVar[str] = "1"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
@@ -30,7 +31,7 @@ class FilterCompilable(Step):
         assert isinstance(value, CodeCandidateSetArtifact)
         survivors: list[str] = []
         lineage: list[CandidateLineage] = []
-        survivor_validations: list[dict[str, JsonValue]] = []
+        survivor_details: list[dict[str, JsonValue]] = []
         rejections: list[dict[str, JsonValue]] = []
 
         for index, candidate in enumerate(value.candidates):
@@ -46,12 +47,7 @@ class FilterCompilable(Step):
             candidate_id = value.lineage_at(index).candidate_id
             if candidate_id is not None:
                 diagnostics["candidate_id"] = candidate_id
-            if validation.compile_ok:
-                survivors.append(candidate)
-                survivor_validations.append(diagnostics)
-                if value.lineage:
-                    lineage.append(value.lineage_at(index))
-            else:
+            if not validation.compile_ok:
                 rejections.append(
                     {
                         **diagnostics,
@@ -66,17 +62,53 @@ class FilterCompilable(Step):
                         ),
                     }
                 )
+                continue
+
+            assert validated.tree is not None
+            functions = [
+                statement
+                for statement in validated.tree.body
+                if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef)
+            ]
+            function_names = [function.name for function in functions]
+            async_function_names = [
+                function.name
+                for function in functions
+                if isinstance(function, ast.AsyncFunctionDef)
+            ]
+            function_details: dict[str, JsonValue] = {
+                **diagnostics,
+                "top_level_function_count": len(functions),
+                "top_level_function_names": function_names,
+                "top_level_async_function_names": async_function_names,
+                "has_async_top_level_function": bool(async_function_names),
+            }
+            if not functions:
+                rejections.append(
+                    {
+                        **function_details,
+                        "reason_code": "no_top_level_function",
+                    }
+                )
+                continue
+
+            survivors.append(candidate)
+            survivor_details.append(function_details)
+            if value.lineage:
+                lineage.append(value.lineage_at(index))
 
         facts: dict[str, JsonValue] = {
             "input_candidate_count": len(value.candidates),
             "survivor_candidate_count": len(survivors),
-            "survivors": survivor_validations,
+            "survivors": survivor_details,
             "rejections": rejections,
         }
         if not survivors:
             raise StepFailedError(
-                "no candidate compiled",
-                failure_code=PreprocessingFailureCode.NO_COMPILABLE_CANDIDATE,
+                "no candidate defined a top-level function",
+                failure_code=(
+                    PreprocessingFailureCode.NO_TOP_LEVEL_FUNCTION_CANDIDATE
+                ),
                 facts=facts,
             )
         return StepOutput(
@@ -87,4 +119,4 @@ class FilterCompilable(Step):
         )
 
 
-__all__ = ["FilterCompilable"]
+__all__ = ["FilterHasTopLevelFunction"]

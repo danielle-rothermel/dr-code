@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import unicodedata
 
 import pytest
 
-from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.import_inference import infer_necessary_imports
-from dr_code.preprocessing.failures import PreprocessingFailureCode
-from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
-from dr_code.preprocessing.steps.base import Step, StepFailedError, StepOutput
+from dr_code.preprocessing.steps.base import Step
 from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
 )
@@ -28,13 +26,12 @@ from dr_code.preprocessing.steps.extract_candidates import (
     ExtractCandidatesSettings,
     ExtractionStrategy,
 )
-from dr_code.preprocessing.steps.field_marker import (
-    FieldMarker,
-    FieldMarkerSettings,
-)
 from dr_code.preprocessing.steps.filter_code_repr import FilterCodeRepr
 from dr_code.preprocessing.steps.filter_compilable import (
     FilterCompilable,
+)
+from dr_code.preprocessing.steps.filter_has_top_level_function import (
+    FilterHasTopLevelFunction,
 )
 from dr_code.preprocessing.steps.filter_plain_literal import (
     FilterPlainLiteral,
@@ -74,6 +71,7 @@ from dr_code.text_transforms import (
     strip_trailing_whitespace,
 )
 from dr_code.trace import (
+    CandidateLineage,
     CodeArtifact,
     CodeCandidateSetArtifact,
     TextArtifact,
@@ -305,17 +303,61 @@ def test_import_step_sequence_equals_infer_necessary_imports(
     assert value.candidates == (infer_necessary_imports(source),)
 
 
+def test_import_inference_passes_parser_stack_candidate_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.preprocessing import import_inference
+
+    def parser_stack_overflow(source: str) -> ast.Module:
+        raise MemoryError("Parser stack overflowed")
+
+    monkeypatch.setattr(import_inference.ast, "parse", parser_stack_overflow)
+    source = "x = 1\n"
+    output = InferMissingImports().apply(
+        CodeCandidateSetArtifact(candidates=(source,))
+    )
+
+    assert output.value.candidates == (source,)
+
+
+def test_import_inference_reraises_unrelated_memory_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.preprocessing import import_inference
+
+    def out_of_memory(source: str) -> ast.Module:
+        raise MemoryError("allocation failed")
+
+    monkeypatch.setattr(import_inference.ast, "parse", out_of_memory)
+    with pytest.raises(MemoryError, match="allocation failed"):
+        InferMissingImports().apply(
+            CodeCandidateSetArtifact(candidates=("x = 1\n",))
+        )
+
+
 # --- filters record rejection facts ----------------------------------
 
 
-def test_filter_compilable_keeps_compilable() -> None:
+def test_filter_compilable_keeps_compilable_with_parse_compile_facts() -> None:
     cs = CodeCandidateSetArtifact(
         candidates=("x = 1\n", "def broken(:\n")
     )
     out = FilterCompilable().apply(cs)
     assert out.value.candidates == ("x = 1\n",)
-    assert "rejected_1" in out.facts
-    assert "SyntaxError" in out.facts["rejected_1"]
+    assert out.facts["input_candidate_count"] == 2
+    assert out.facts["survivor_candidate_count"] == 1
+    assert out.facts["survivors"] == [
+        {
+            "input_index": 0,
+            "parse_ok": True,
+            "parse_error": None,
+            "compile_ok": True,
+            "compile_error": None,
+        }
+    ]
+    assert out.facts["rejections"][0]["input_index"] == 1
+    assert out.facts["rejections"][0]["reason_code"] == "not_compilable"
+    assert "SyntaxError" in out.facts["rejections"][0]["compile_error"]
 
 
 def test_filter_plain_literal_drops_literals() -> None:
@@ -324,7 +366,21 @@ def test_filter_plain_literal_drops_literals() -> None:
     )
     out = FilterPlainLiteral().apply(cs)
     assert out.value.candidates == ("x = 1\n",)
-    assert out.facts["rejected_0"] == "plain literal module"
+    assert out.facts == {
+        "input_candidate_count": 2,
+        "survivor_candidate_count": 1,
+        "survivors": [{"input_index": 1}],
+        "rejections": [
+            {
+                "input_index": 0,
+                "reason_code": "plain_literal_module",
+                "parse_ok": True,
+                "parse_error": None,
+                "compile_ok": True,
+                "compile_error": None,
+            }
+        ],
+    }
 
 
 def test_filter_code_repr_drops_repr_assignments() -> None:
@@ -333,7 +389,185 @@ def test_filter_code_repr_drops_repr_assignments() -> None:
     )
     out = FilterCodeRepr().apply(cs)
     assert out.value.candidates == ("x = 1\n",)
-    assert out.facts["rejected_0"] == "code repr assignment"
+    assert out.facts["rejections"][0]["reason_code"] == "code_repr_assignment"
+
+
+@pytest.mark.parametrize(
+    ("step", "candidate", "failure_code", "reason_code"),
+    (
+        (
+            FilterPlainLiteral(),
+            "[1, 2, 3]",
+            "plain_literal_only",
+            "plain_literal_module",
+        ),
+        (
+            FilterCodeRepr(),
+            'code = "x = 1"',
+            "code_repr_only",
+            "code_repr_assignment",
+        ),
+        (
+            FilterCompilable(),
+            "def broken(:\n",
+            "no_compilable_candidate",
+            "not_compilable",
+        ),
+        (
+            FilterHasTopLevelFunction(),
+            "x = 1\n",
+            "no_top_level_function_candidate",
+            "no_top_level_function",
+        ),
+    ),
+)
+def test_filter_terminal_failures_include_structured_facts(
+    step: Step,
+    candidate: str,
+    failure_code: str,
+    reason_code: str,
+) -> None:
+    from dr_code.preprocessing.steps.base import StepFailedError
+
+    with pytest.raises(StepFailedError) as raised:
+        step.apply(CodeCandidateSetArtifact(candidates=(candidate,)))
+
+    error = raised.value
+    assert error.failure_code == failure_code
+    assert error.facts["input_candidate_count"] == 1
+    assert error.facts["survivor_candidate_count"] == 0
+    assert error.facts["rejections"][0]["input_index"] == 0
+    assert error.facts["rejections"][0]["reason_code"] == reason_code
+
+
+@pytest.mark.parametrize(
+    ("step", "candidates"),
+    (
+        (FilterPlainLiteral(), ("[1]", "def retained():\n    return 1\n")),
+        (FilterCodeRepr(), ('code = "x = 1"', "def retained():\n    return 1\n")),
+        (FilterCompilable(), ("def broken(:\n", "def retained():\n    return 1\n")),
+        (FilterHasTopLevelFunction(), ("x = 1\n", "def retained():\n    return 1\n")),
+    ),
+)
+def test_filters_preserve_survivor_lineage(
+    step: Step, candidates: tuple[str, str]
+) -> None:
+    input_value = CodeCandidateSetArtifact(
+        candidates=candidates,
+        lineage=(
+            CandidateLineage(candidate_id="rejected"),
+            CandidateLineage(candidate_id="retained"),
+        ),
+    )
+
+    output = step.apply(input_value).value
+
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert output.candidates == (candidates[1],)
+    assert output.lineage_at(0).candidate_id == "retained"
+    assert step.apply(input_value).facts["rejections"][0][
+        "candidate_id"
+    ] == "rejected"
+
+
+def test_filter_has_top_level_function_keeps_async_function_with_facts() -> None:
+    candidate = "async def fetch():\n    return 1\n"
+    out = FilterHasTopLevelFunction().apply(
+        CodeCandidateSetArtifact(candidates=(candidate,))
+    )
+
+    assert out.value.candidates == (candidate,)
+    assert out.facts["survivors"] == [
+        {
+            "input_index": 0,
+            "parse_ok": True,
+            "parse_error": None,
+            "compile_ok": True,
+            "compile_error": None,
+            "top_level_function_count": 1,
+            "top_level_function_names": ["fetch"],
+            "top_level_async_function_names": ["fetch"],
+            "has_async_top_level_function": True,
+        }
+    ]
+
+
+def test_filter_has_top_level_function_rejects_nested_function() -> None:
+    from dr_code.preprocessing.steps.base import StepFailedError
+
+    nested_only = "if True:\n    def nested():\n        return 1\n"
+    with pytest.raises(StepFailedError) as raised:
+        FilterHasTopLevelFunction().apply(
+            CodeCandidateSetArtifact(candidates=(nested_only,))
+        )
+
+    assert raised.value.failure_code == "no_top_level_function_candidate"
+    assert raised.value.facts["rejections"][0]["top_level_function_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("step", "failure_code"),
+    (
+        (FilterCompilable(), "no_compilable_candidate"),
+        (FilterHasTopLevelFunction(), "no_top_level_function_candidate"),
+    ),
+)
+def test_filters_reject_cpython_parser_stack_overflow(
+    monkeypatch: pytest.MonkeyPatch, step: Step, failure_code: str
+) -> None:
+    from dr_code import code_analysis
+    from dr_code.preprocessing.steps.base import StepFailedError
+
+    def parser_stack_overflow(source: str) -> ast.Module:
+        raise MemoryError("Parser stack overflowed")
+
+    monkeypatch.setattr(code_analysis.ast, "parse", parser_stack_overflow)
+    with pytest.raises(StepFailedError) as raised:
+        step.apply(CodeCandidateSetArtifact(candidates=("x = 1\n",)))
+
+    assert raised.value.failure_code == failure_code
+    rejection = raised.value.facts["rejections"][0]
+    assert rejection["reason_code"] == "parser_stack_overflow"
+    assert rejection["parse_error"] == "MemoryError: Parser stack overflowed"
+
+
+@pytest.mark.parametrize("step", (FilterPlainLiteral(), FilterCodeRepr()))
+def test_literal_and_repr_filters_preserve_parser_stack_candidates(
+    monkeypatch: pytest.MonkeyPatch, step: Step
+) -> None:
+    from dr_code import code_analysis
+
+    def parser_stack_overflow(source: str) -> ast.Module:
+        raise MemoryError("Parser stack overflowed")
+
+    monkeypatch.setattr(code_analysis.ast, "parse", parser_stack_overflow)
+    candidate = "x = 1\n"
+    output = step.apply(CodeCandidateSetArtifact(candidates=(candidate,)))
+
+    assert output.value.candidates == (candidate,)
+    assert output.facts["rejections"] == []
+
+
+@pytest.mark.parametrize(
+    "step",
+    (
+        FilterPlainLiteral(),
+        FilterCodeRepr(),
+        FilterCompilable(),
+        FilterHasTopLevelFunction(),
+    ),
+)
+def test_filters_reraise_unrelated_memory_error(
+    monkeypatch: pytest.MonkeyPatch, step: Step
+) -> None:
+    from dr_code import code_analysis
+
+    def out_of_memory(source: str) -> ast.Module:
+        raise MemoryError("allocation failed")
+
+    monkeypatch.setattr(code_analysis.ast, "parse", out_of_memory)
+    with pytest.raises(MemoryError, match="allocation failed"):
+        step.apply(CodeCandidateSetArtifact(candidates=("x = 1\n",)))
 
 
 # --- cardinality knobs -----------------------------------------------
@@ -357,7 +591,10 @@ def test_return_all_passes_through_with_count() -> None:
     cs = CodeCandidateSetArtifact(candidates=("a", "b"))
     out = ReturnAll().apply(cs)
     assert out.value == cs
-    assert out.facts["candidate_count"] == "2"
+    assert out.facts == {
+        "outcome_code": "function_candidates_extracted",
+        "candidate_count": 2,
+    }
 
 
 # --- extract_candidates: strategy ladder -----------------------------
@@ -367,7 +604,8 @@ def test_extract_candidates_records_chosen_alternative() -> None:
     fenced = "```python\ndef f():\n    return 1\n```"
     out = ExtractCandidates().apply(TextArtifact(text=fenced))
     assert out.facts["alternative"] == "fenced_blocks"
-    assert out.value.candidates == ("def f():\n    return 1",)
+    assert "def f():\n    return 1" in out.value.candidates
+    assert len(out.value.lineage) == len(out.value.candidates)
 
 
 def test_extract_candidates_markdown_strategy_when_no_fence() -> None:
@@ -383,7 +621,7 @@ def test_extract_candidates_escaped_python_strategy() -> None:
     text = r"prose\ndef f():\n    return 1"
     out = ExtractCandidates().apply(TextArtifact(text=text))
     assert out.facts["alternative"] == "escaped_python"
-    assert "def f():" in out.value.candidates[0]
+    assert any("def f():" in candidate for candidate in out.value.candidates)
 
 
 def test_extract_candidates_tuple_subset_setting() -> None:
@@ -419,7 +657,7 @@ def test_extract_candidates_escaped_markdown_wrapper_strategy() -> None:
     text = json.dumps("- def add(a, b):\n-     return a + b")
     out = ExtractCandidates().apply(TextArtifact(text=text))
     assert out.facts["alternative"] == "escaped_markdown_wrapper"
-    assert out.value.candidates == ("def add(a, b):\n    return a + b",)
+    assert "def add(a, b):\n    return a + b" in out.value.candidates
 
 
 def test_extract_candidates_all_fail_raises() -> None:
@@ -434,45 +672,7 @@ def test_extract_candidates_all_fail_raises() -> None:
 
 
 def test_extract_candidates_empty_input_raises() -> None:
-    with pytest.raises(StepFailedError) as raised:
+    from dr_code.preprocessing.steps.base import StepFailedError
+
+    with pytest.raises(StepFailedError):
         ExtractCandidates().apply(TextArtifact(text=""))
-    assert (
-        raised.value.failure_code
-        is PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES
-    )
-
-
-# --- field_marker step -----------------------------------------------
-
-
-def test_field_marker_extracts_code_field() -> None:
-    text = "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"
-    out = FieldMarker().apply(TextArtifact(text=text))
-    assert out.value.candidates == ("def f():\n    return 1",)
-    assert out.facts["field_name"] == "code"
-
-
-def test_field_marker_missing_raises() -> None:
-    with pytest.raises(StepFailedError) as raised:
-        FieldMarker().apply(TextArtifact(text="no markers here"))
-    assert (
-        raised.value.failure_code
-        is PreprocessingFailureCode.MISSING_FIELD_MARKER
-    )
-
-
-def test_field_marker_empty_code_raises() -> None:
-    with pytest.raises(StepFailedError) as raised:
-        FieldMarker().apply(TextArtifact(text="[[ ## code ## ]]\n  \n"))
-    assert (
-        raised.value.failure_code
-        is PreprocessingFailureCode.EMPTY_FIELD_MARKER_CODE
-    )
-
-
-def test_field_marker_custom_field_name() -> None:
-    text = "[[ ## solution ## ]]\nx = 1\n"
-    out = FieldMarker(
-        FieldMarkerSettings(field_name="solution")
-    ).apply(TextArtifact(text=text))
-    assert out.value.candidates == ("x = 1",)

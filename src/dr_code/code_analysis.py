@@ -27,6 +27,8 @@ class PythonSourceValidation(BaseModel):
     parse_error: str | None
     compile_ok: bool
     compile_error: str | None
+    parser_stack_overflow: bool = False
+    parser_recursion_overflow: bool = False
 
 
 class AnnotationKind(StrEnum):
@@ -86,6 +88,15 @@ def validate_python(source: str) -> None:
     ast.parse(source)
 
 
+def is_cpython_parser_stack_overflow(error: MemoryError) -> bool:
+    """Whether ``error`` is CPython's parser-recursion failure.
+
+    This deliberately does not treat general memory exhaustion as malformed
+    source. Callers must allow unrelated ``MemoryError`` instances to escape.
+    """
+    return str(error).startswith("Parser stack overflowed")
+
+
 @dataclass(frozen=True)
 class SourceValidationWithTree:
     validation: PythonSourceValidation
@@ -97,28 +108,54 @@ def validate_python_source_with_ast(
 ) -> SourceValidationWithTree:
     """Return parse/compile diagnostics without raising, plus the parsed
     module for reuse (None when parsing failed)."""
+    parser_stack_overflow = False
+    parser_recursion_overflow = False
     try:
         parsed_module = ast.parse(source)
     except (SyntaxError, ValueError) as exc:
         parse_ok = False
         parse_error = f"{type(exc).__name__}: {exc}"
         parsed_module = None
+    except RecursionError as exc:
+        parse_ok = False
+        parse_error = f"{type(exc).__name__}: {exc}"
+        parsed_module = None
+        parser_recursion_overflow = True
+    except MemoryError as exc:
+        if not is_cpython_parser_stack_overflow(exc):
+            raise
+        parse_ok = False
+        parse_error = f"{type(exc).__name__}: {exc}"
+        parsed_module = None
+        parser_stack_overflow = True
     else:
         parse_ok = True
         parse_error = None
 
-    try:
-        compile(
-            parsed_module if parsed_module is not None else source,
-            "<candidate>",
-            "exec",
-        )
-    except (SyntaxError, ValueError) as exc:
+    if parser_stack_overflow or parser_recursion_overflow:
+        # Retrying through ``compile(source, ...)`` would invoke the same
+        # parser and can repeat the expensive recursion failure.
         compile_ok = False
-        compile_error = f"{type(exc).__name__}: {exc}"
+        compile_error = parse_error
     else:
-        compile_ok = True
-        compile_error = None
+        try:
+            compile(
+                parsed_module if parsed_module is not None else source,
+                "<candidate>",
+                "exec",
+            )
+        except (SyntaxError, ValueError, RecursionError) as exc:
+            compile_ok = False
+            compile_error = f"{type(exc).__name__}: {exc}"
+        except MemoryError as exc:
+            if not is_cpython_parser_stack_overflow(exc):
+                raise
+            compile_ok = False
+            compile_error = f"{type(exc).__name__}: {exc}"
+            parser_stack_overflow = True
+        else:
+            compile_ok = True
+            compile_error = None
 
     return SourceValidationWithTree(
         validation=PythonSourceValidation(
@@ -126,6 +163,8 @@ def validate_python_source_with_ast(
             parse_error=parse_error,
             compile_ok=compile_ok,
             compile_error=compile_error,
+            parser_stack_overflow=parser_stack_overflow,
+            parser_recursion_overflow=parser_recursion_overflow,
         ),
         tree=parsed_module,
     )
@@ -468,6 +507,7 @@ __all__ = [
     "format_function_signature",
     "function_locals",
     "function_params",
+    "is_cpython_parser_stack_overflow",
     "is_string_literal_stmt",
     "module_level_names",
     "top_level_import_linenos",

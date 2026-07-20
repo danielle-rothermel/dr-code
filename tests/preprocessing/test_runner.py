@@ -278,11 +278,8 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     extract_val = trace.value("e")
     assert is_absent(extract_val)
     assert extract_val.failed_step == "e"
-    assert extract_val.cause == "no alternative produced candidates"
-    assert (
-        extract_val.failure_code
-        == PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES
-    )
+    assert extract_val.cause == "no code candidates extracted"
+    assert extract_val.failure_code == "no_code_candidates"
 
     # downstream steps inherit the same Absent, propagated_through grows
     strip_val = trace.value("s")
@@ -298,7 +295,7 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     assert set(trace.values) == {"input", "e", "s", "sel", "output"}
 
 
-def test_run_select_first_empty_set_yields_absent() -> None:
+def test_filter_exhaustion_yields_absent_before_select_first() -> None:
     definition = _def(
         (
             StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
@@ -309,14 +306,11 @@ def test_run_select_first_empty_set_yields_absent() -> None:
     trace = run_preprocessing(definition, TextArtifact(text="def broken(:"))
     out = trace.value("output")
     assert is_absent(out)
-    assert out.failed_step == "sel"
-    assert out.cause == "no candidate survived filtering"
-    assert (
-        out.failure_code
-        == PreprocessingFailureCode.NO_CANDIDATE_TO_SELECT
-    )
+    assert out.failed_step == "flt"
+    assert out.failure_code == "no_compilable_candidate"
+    assert "sel" in out.propagated_through
     # rejection reason recorded as fact
-    assert "rejected_0" in trace.step_facts["flt"]
+    assert trace.step_facts["flt"]["rejections"][0]["input_index"] == 0
 
 
 def test_run_step_facts_merged() -> None:
@@ -330,7 +324,8 @@ def test_run_step_facts_merged() -> None:
         definition,
         TextArtifact(text="```python\ndef f():\n    return 1\n```"),
     )
-    assert trace.step_facts["e"] == {"alternative": "fenced_blocks"}
+    assert trace.step_facts["e"]["alternative"] == "fenced_blocks"
+    assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
 def test_run_propagated_absent_records_each_step() -> None:
@@ -375,7 +370,8 @@ def test_run_full_fenced_pipeline() -> None:
     assert isinstance(out, CodeArtifact)
     assert "import numpy as np" in out.source
     assert "def f(x):" in out.source
-    assert trace.step_facts["e"] == {"alternative": "fenced_blocks"}
+    assert trace.step_facts["e"]["alternative"] == "fenced_blocks"
+    assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
 # --- escaped-newline behavior cases, re-expressed against the pipeline

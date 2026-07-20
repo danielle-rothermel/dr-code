@@ -14,6 +14,8 @@ import ast
 import re
 from typing import Final
 
+from dr_code.code_analysis import is_cpython_parser_stack_overflow
+
 IMPORT_ALIAS_MAP: Final[dict[str, str]] = {
     "np": "import numpy as np",
     "pd": "import pandas as pd",
@@ -114,8 +116,12 @@ def infer_necessary_imports(source: str) -> str:
 def _parse_or_none(text: str) -> ast.AST | None:
     try:
         return ast.parse(text)
-    except SyntaxError:
+    except (SyntaxError, ValueError, RecursionError):
         return None
+    except MemoryError as exc:
+        if is_cpython_parser_stack_overflow(exc):
+            return None
+        raise
 
 
 def _repair_import_line(line: str) -> str | None:

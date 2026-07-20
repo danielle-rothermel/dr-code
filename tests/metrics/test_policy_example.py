@@ -9,10 +9,9 @@ The contract is **outcome parity** with
 extracts cleanly to code, the consumer's outcome over the ``code_test`` record
 equals scoring's outcome over the evaluation.
 
-Only the evaluation-derived outcomes a ``code_test`` record can carry are
-tested (PASSED, TESTS_FAILED, NO_TOP_LEVEL_FUNCTIONS, TIMED_OUT,
-EVALUATION_INCOMPLETE). Pre-extraction outcomes (EMPTY_SUBMISSION,
-EXTRACTION_FAILED) are upstream of ``code_test`` and out of its record scope.
+Only evaluation-derived outcomes for sources accepted by official
+preprocessing are parity-tested. A module without a top-level function is now
+rejected before ``code_test`` and is covered as an explicit boundary case.
 
 ``dr_code.metrics`` is imported lazily inside each test.
 """
@@ -21,7 +20,6 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.code_parsing import BEST_EFFORT_HUMANEVAL_PARSER_PROFILE
 from dr_code.humaneval.scoring import (
     SubmissionOutcome,
     score_humaneval_submission,
@@ -69,7 +67,6 @@ def _score_outcome(submission, task, *, runner, timeout=5.0) -> str:
     result = score_humaneval_submission(
         raw_submission=submission,
         task=task,
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=timeout,
         run_in_sandbox=runner,
     )
@@ -111,9 +108,17 @@ def test_tests_failed_outcome_parity(
     )
 
 
-def test_no_top_level_functions_outcome_parity(task, local_runner) -> None:
+def test_no_top_level_functions_is_rejected_before_scoring(
+    task, local_runner
+) -> None:
     submission = "x = 1\n"  # compiles, no top-level functions
-    _assert_parity(submission, task, runner=local_runner)
+    scoring_outcome = _score_outcome(
+        submission, task, runner=local_runner
+    )
+    assert scoring_outcome == SubmissionOutcome.PREPROCESSING_FAILED.value
+
+    # A manually constructed code_test trace can still describe the lower-level
+    # evaluator behavior, but it is outside official preprocessing acceptance.
     record = _code_test_record(
         code_test_trace(submission, task), runner=local_runner
     )

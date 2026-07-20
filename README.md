@@ -21,5 +21,23 @@ mechanically reshape those facts, but should not reclassify preprocessing
 results. A missing external value remains an ingestion concern because there
 is no text artifact to process.
 
+The public HumanEval flow is
+`humaneval-function-candidates@v1`. Bind it once for batch work; every
+successful output is a nonempty ordered candidate set whose entries compile,
+contain at least one top-level function, and carry stable candidate IDs plus
+their extraction origins. `[[ ## code ## ]]` is supported as an input
+representation inside this flow, not as a separate parser mode.
+
+```python
+from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    bind_preprocessing,
+)
+
+runner = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION
+)
+```
+
 See the [decoder-output preprocessing analysis plan](docs/decoder-output-preprocessing-plan.html)
-for the proposed exhaustive function-candidate pipeline and corpus audit.
+for the flow’s design and the reproducible corpus audit built on it.

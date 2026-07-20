@@ -21,9 +21,6 @@ from dr_code.humaneval.batch_runner import (
     runner_script,
 )
 from dr_code.humaneval.code_extraction import apply_cleaning
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-)
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -36,11 +33,13 @@ from dr_code.humaneval.sampling import (
     sample_human_eval_tasks_from_rows,
 )
 from dr_code.humaneval.scoring import (
+    CandidateHarnessFailure,
+    CompletedCandidateScore,
     CompletedScore,
-    HarnessFailure,
     SubmissionOutcome,
     evaluation_outcome,
     score_humaneval_submission,
+    submission_outcome,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
@@ -59,10 +58,8 @@ from dr_code.humaneval.sandbox import (
 
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
-    "CodeExtractionResult",
-    "CodeParserProfile",
+    "CandidateHarnessFailure",
+    "CompletedCandidateScore",
     "CompletedScore",
     "DEFAULT_HUMANEVAL_SCORING_PROFILE",
     "DEFAULT_HUMANEVAL_TIMEOUT_SECONDS",
@@ -71,23 +68,18 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "EvaluationTaskSummary",
     "HUMANEVAL_SCORING_PROFILE_ID",
     "HUMANEVAL_SCORING_PROFILE_VERSION",
-    "HarnessFailure",
     "HarnessFailureCause",
+    "HumanEvalCandidateScore",
     "HumanEvalScoringProfile",
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
-    "PARSER_PROFILE_VERSION",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
     "evaluation_aggregate_metrics",
-    "extract_code_with_profile",
     "load_human_eval_rows",
     "parse_human_eval_dataset",
     "resolve_humaneval_scoring_profile",
-    "resolve_parser_profile",
     "sample_human_eval_tasks",
     "sample_human_eval_tasks_from_rows",
     "score_humaneval_submission",
@@ -556,11 +548,14 @@ def test_evaluation_outcome_reports_tests_failed_when_case_fails() -> None:
     assert evaluation_outcome(evaluation) is SubmissionOutcome.TESTS_FAILED
 
 
+def test_submission_outcome_reports_no_candidates_for_empty_input() -> None:
+    assert submission_outcome(()) is SubmissionOutcome.NO_CANDIDATES
+
+
 def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
         run_in_sandbox=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
     )
@@ -568,26 +563,27 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     assert isinstance(result, CompletedScore)
     assert result.outcome is SubmissionOutcome.EVALUATION_INCOMPLETE
     assert result.score == 0.0
-    assert result.evaluation is not None
-    assert result.evaluation.failures == []
-    assert result.evaluation.coverage_complete is False
+    candidate = result.candidates[0]
+    assert isinstance(candidate, CompletedCandidateScore)
+    assert candidate.evaluation.failures == []
+    assert candidate.evaluation.coverage_complete is False
 
 
 def test_score_humaneval_submission_returns_harness_failure() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
         run_in_sandbox=_stub_runner(stdout="not-json"),
     )
 
-    assert isinstance(result, HarnessFailure)
-    assert result.kind == "harness_failure"
-    assert result.failure_class == "unknown"
-    assert result.cause.exception_type == "JSONDecodeError"
-    assert result.evaluation is not None
-    assert result.evaluation.results[0].elapsed_seconds is not None
+    assert result.outcome is SubmissionOutcome.HARNESS_FAILURE
+    candidate = result.candidates[0]
+    assert isinstance(candidate, CandidateHarnessFailure)
+    assert candidate.failure_class == "unknown"
+    assert candidate.cause.exception_type == "JSONDecodeError"
+    assert candidate.evaluation is not None
+    assert candidate.evaluation.results[0].elapsed_seconds is not None
 
 
 def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
@@ -609,30 +605,96 @@ def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
         run_in_sandbox=broken_sandbox,
     )
 
-    assert isinstance(result, HarnessFailure)
-    assert result.kind == "harness_failure"
-    assert result.cause.exception_type == "SandboxError"
+    assert result.outcome is SubmissionOutcome.HARNESS_FAILURE
+    candidate = result.candidates[0]
+    assert isinstance(candidate, CandidateHarnessFailure)
+    assert candidate.cause.exception_type == "SandboxError"
 
 
 def test_score_humaneval_submission_reports_empty_submission() -> None:
     result = score_humaneval_submission(
         raw_submission=" \n\t ",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
     )
 
     assert isinstance(result, CompletedScore)
     assert result.kind == "completed"
     assert result.raw_submission == " \n\t "
-    assert result.extraction.raw_submission == " \n\t "
-    assert result.outcome is SubmissionOutcome.EMPTY_SUBMISSION
-    assert result.evaluation is None
+    assert result.outcome is SubmissionOutcome.PREPROCESSING_FAILED
+    assert result.preprocessing_failure_code is not None
+    assert result.candidates == ()
+
+
+def test_score_humaneval_submission_evaluates_every_candidate() -> None:
+    evaluated_inputs: list[str] = []
+
+    def recording_runner(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess:
+        evaluated_inputs.append(input_json)
+        return SandboxCompletedProcess(
+            returncode=0,
+            stdout=(
+                '[{"case_id": "case_0", "status": "passed"}, '
+                '{"case_id": "case_1", "status": "passed"}]'
+            ),
+            stderr="",
+        )
+
+    result = score_humaneval_submission(
+        raw_submission=(
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x\n"
+            "```\n"
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x + 1\n"
+            "```\n"
+        ),
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_sandbox=recording_runner,
+    )
+
+    assert [candidate.candidate_index for candidate in result.candidates] == [
+        0,
+        1,
+    ]
+    assert len(result.candidates) == 2
+    assert all(candidate.candidate_id for candidate in result.candidates)
+    assert len({candidate.candidate_id for candidate in result.candidates}) == 2
+    assert len(evaluated_inputs) == 2
+
+
+def test_scoring_does_not_filter_candidates_by_task_entry_point() -> None:
+    result = score_humaneval_submission(
+        raw_submission=(
+            "def deliberately_different_name(x):\n"
+            "    return x + 1\n"
+        ),
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_sandbox=_stub_runner(
+            stdout=(
+                '[{"case_id": "case_0", "status": "passed"}, '
+                '{"case_id": "case_1", "status": "passed"}]'
+            )
+        ),
+    )
+
+    assert result.outcome is SubmissionOutcome.PASSED
+    assert result.candidates[0].candidate_code.startswith(
+        "def deliberately_different_name"
+    )
 
 
 def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
@@ -676,7 +738,6 @@ def test_score_humaneval_submission_rejects_non_string_input() -> None:
         score_humaneval_submission(
             raw_submission={"code": "def add_one(x):\n    return x + 1\n"},  # type: ignore[arg-type]
             task=_task(),
-            parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
             timeout_seconds=2.0,
         )
 

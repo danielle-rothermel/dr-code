@@ -13,9 +13,6 @@ from dr_code.humaneval.sandbox import (
     SandboxOutputLimitError,
     run_python_in_sandbox,
 )
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-)
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
 from dr_code.humaneval.scoring import CompletedScore, score_humaneval_submission
 from dr_code.humaneval.task import HumanEvalTask
@@ -74,7 +71,6 @@ def test_known_good_submission_scores_inside_real_sandbox() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
     )
 

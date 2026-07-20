@@ -1,8 +1,4 @@
-"""Pure HumanEval scoring primitives.
-
-`SubmissionOutcome` is part of the score contract so consumers can persist
-why a submission scored zero without parsing error text.
-"""
+"""HumanEval scoring over declared preprocessing candidates."""
 
 from __future__ import annotations
 
@@ -19,20 +15,23 @@ from pydantic import (
 )
 
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
-from dr_code.humaneval.code_parsing import (
-    CodeExtractionResult,
-    CodeParserProfile,
-    extract_code_with_profile,
-)
-from dr_code.humaneval.sandbox import (
-    SandboxRunner,
-    run_python_in_sandbox,
-)
+from dr_code.humaneval.sandbox import SandboxRunner, run_python_in_sandbox
 from dr_code.humaneval.task import (
-    EvaluationHarnessError,
     EvaluationCaseStatus,
+    EvaluationHarnessError,
     EvaluationTaskResult,
     HumanEvalTask,
+)
+from dr_code.preprocessing import (
+    BoundPreprocessingRunner,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    bind_preprocessing,
+)
+from dr_code.trace import (
+    CodeCandidateSetArtifact,
+    TextArtifact,
+    Trace,
+    is_absent,
 )
 
 UNKNOWN_FAILURE_CLASS = "unknown"
@@ -42,21 +41,11 @@ class SubmissionOutcome(StrEnum):
     PASSED = "passed"
     TESTS_FAILED = "tests_failed"
     EVALUATION_INCOMPLETE = "evaluation_incomplete"
-    EMPTY_SUBMISSION = "empty_submission"
-    EXTRACTION_FAILED = "extraction_failed"
     NO_TOP_LEVEL_FUNCTIONS = "no_top_level_functions"
     TIMED_OUT = "timed_out"
-
-
-class CompletedScore(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["completed"] = "completed"
-    raw_submission: str
-    extraction: CodeExtractionResult
-    outcome: SubmissionOutcome
-    score: float
-    evaluation: EvaluationTaskResult | None = None
+    PREPROCESSING_FAILED = "preprocessing_failed"
+    NO_CANDIDATES = "no_candidates"
+    HARNESS_FAILURE = "harness_failure"
 
 
 class HarnessFailureCause(BaseModel):
@@ -66,21 +55,55 @@ class HarnessFailureCause(BaseModel):
     message: StrictStr
 
 
-class HarnessFailure(BaseModel):
+class CompletedCandidateScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["completed"] = "completed"
+    candidate_index: StrictInt
+    candidate_id: StrictStr
+    candidate_code: StrictStr
+    outcome: SubmissionOutcome
+    score: float
+    evaluation: EvaluationTaskResult
+
+
+class CandidateHarnessFailure(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["harness_failure"] = "harness_failure"
-    raw_submission: str
-    extraction: CodeExtractionResult | None = None
+    candidate_index: StrictInt
+    candidate_id: StrictStr
+    candidate_code: StrictStr
     evaluation: EvaluationTaskResult | None = None
     cause: HarnessFailureCause
     failure_class: StrictStr
 
 
-HumanEvalSubmissionScore = Annotated[
-    CompletedScore | HarnessFailure,
+HumanEvalCandidateScore = Annotated[
+    CompletedCandidateScore | CandidateHarnessFailure,
     Field(discriminator="kind"),
 ]
+
+
+class CompletedScore(BaseModel):
+    """All candidate results for one raw submission.
+
+    Preprocessing determines which source candidates are safe to execute;
+    candidate and function success remain application-level scoring policy.
+    """
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    kind: Literal["completed"] = "completed"
+    raw_submission: str
+    preprocessing: Trace
+    preprocessing_failure_code: StrictStr | None = None
+    candidates: tuple[HumanEvalCandidateScore, ...]
+    outcome: SubmissionOutcome
+    score: float
+
+
+HumanEvalSubmissionScore = CompletedScore
 
 
 class EvaluationAggregateMetrics(BaseModel):
@@ -98,53 +121,107 @@ class EvaluationAggregateMetrics(BaseModel):
     status_counts: dict[StrictStr, StrictInt]
 
 
+DEFAULT_HUMANEVAL_PREPROCESSING_RUNNER = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION
+)
+
+
 def score_humaneval_submission(
     *,
     raw_submission: str,
     task: HumanEvalTask,
-    parser_profile: CodeParserProfile,
     timeout_seconds: float,
+    preprocessing_runner: BoundPreprocessingRunner = (
+        DEFAULT_HUMANEVAL_PREPROCESSING_RUNNER
+    ),
     run_in_sandbox: SandboxRunner = run_python_in_sandbox,
 ) -> HumanEvalSubmissionScore:
-    """Score one submission under a parser profile."""
+    """Preprocess and score every returned candidate in deterministic order."""
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
 
-    extraction = extract_code_with_profile(
-        raw_submission,
-        profile=parser_profile,
-    )
-    if extraction.extracted_code is None:
-        outcome = extraction_failure_outcome(extraction)
+    preprocessing = preprocessing_runner.run(TextArtifact(text=raw_submission))
+    output = preprocessing.value("output")
+    if is_absent(output):
         return CompletedScore(
             raw_submission=raw_submission,
-            extraction=extraction,
-            outcome=outcome,
+            preprocessing=preprocessing,
+            preprocessing_failure_code=output.failure_code,
+            candidates=(),
+            outcome=SubmissionOutcome.PREPROCESSING_FAILED,
             score=0.0,
-            evaluation=None,
+        )
+    if not isinstance(output, CodeCandidateSetArtifact):
+        raise TypeError(
+            "HumanEval preprocessing must output a CodeCandidateSetArtifact"
+        )
+    if not output.candidates:
+        return CompletedScore(
+            raw_submission=raw_submission,
+            preprocessing=preprocessing,
+            candidates=(),
+            outcome=SubmissionOutcome.NO_CANDIDATES,
+            score=0.0,
         )
 
+    candidates_list: list[HumanEvalCandidateScore] = []
+    for index, candidate_code in enumerate(output.candidates):
+        candidate_id = output.lineage_at(index).candidate_id
+        if candidate_id is None:
+            raise TypeError(
+                "HumanEval preprocessing candidates must carry candidate_id"
+            )
+        candidates_list.append(
+            score_humaneval_candidate(
+                candidate_index=index,
+                candidate_id=candidate_id,
+                candidate_code=candidate_code,
+                task=task,
+                timeout_seconds=timeout_seconds,
+                run_in_sandbox=run_in_sandbox,
+            )
+        )
+    candidates = tuple(candidates_list)
+    outcome = submission_outcome(candidates)
+    return CompletedScore(
+        raw_submission=raw_submission,
+        preprocessing=preprocessing,
+        candidates=candidates,
+        outcome=outcome,
+        score=1.0 if outcome is SubmissionOutcome.PASSED else 0.0,
+    )
+
+
+def score_humaneval_candidate(
+    *,
+    candidate_index: int,
+    candidate_id: str,
+    candidate_code: str,
+    task: HumanEvalTask,
+    timeout_seconds: float,
+    run_in_sandbox: SandboxRunner,
+) -> HumanEvalCandidateScore:
     try:
         evaluation = evaluate_human_eval_code(
             task=task,
-            candidate_code=extraction.extracted_code,
+            candidate_code=candidate_code,
             timeout_seconds=timeout_seconds,
-            candidate_ast=extraction.parsed_candidate,
             run_in_sandbox=run_in_sandbox,
         )
     except EvaluationHarnessError as exc:
-        return HarnessFailure(
-            raw_submission=raw_submission,
-            extraction=extraction,
+        return CandidateHarnessFailure(
+            candidate_index=candidate_index,
+            candidate_id=candidate_id,
+            candidate_code=candidate_code,
             evaluation=exc.evaluation,
             cause=harness_failure_cause(exc),
             failure_class=UNKNOWN_FAILURE_CLASS,
         )
     except Exception as exc:
-        return HarnessFailure(
-            raw_submission=raw_submission,
-            extraction=extraction,
-            evaluation=None,
+        return CandidateHarnessFailure(
+            candidate_index=candidate_index,
+            candidate_id=candidate_id,
+            candidate_code=candidate_code,
             cause=HarnessFailureCause(
                 exception_type=type(exc).__name__,
                 message=str(exc),
@@ -153,21 +230,49 @@ def score_humaneval_submission(
         )
 
     outcome = evaluation_outcome(evaluation)
-    return CompletedScore(
-        raw_submission=raw_submission,
-        extraction=extraction,
+    return CompletedCandidateScore(
+        candidate_index=candidate_index,
+        candidate_id=candidate_id,
+        candidate_code=candidate_code,
         outcome=outcome,
         score=1.0 if outcome is SubmissionOutcome.PASSED else 0.0,
         evaluation=evaluation,
     )
 
 
-def extraction_failure_outcome(
-    extraction: CodeExtractionResult,
+def submission_outcome(
+    candidates: tuple[HumanEvalCandidateScore, ...],
 ) -> SubmissionOutcome:
-    if extraction.extraction_error == "empty raw submission":
-        return SubmissionOutcome.EMPTY_SUBMISSION
-    return SubmissionOutcome.EXTRACTION_FAILED
+    if not candidates:
+        return SubmissionOutcome.NO_CANDIDATES
+    completed = [
+        candidate
+        for candidate in candidates
+        if isinstance(candidate, CompletedCandidateScore)
+    ]
+    if any(
+        candidate.outcome is SubmissionOutcome.PASSED
+        for candidate in completed
+    ):
+        return SubmissionOutcome.PASSED
+    if len(completed) != len(candidates):
+        return SubmissionOutcome.HARNESS_FAILURE
+    if any(
+        candidate.outcome is SubmissionOutcome.TIMED_OUT
+        for candidate in completed
+    ):
+        return SubmissionOutcome.TIMED_OUT
+    if any(
+        candidate.outcome is SubmissionOutcome.EVALUATION_INCOMPLETE
+        for candidate in completed
+    ):
+        return SubmissionOutcome.EVALUATION_INCOMPLETE
+    if all(
+        candidate.outcome is SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
+        for candidate in completed
+    ):
+        return SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
+    return SubmissionOutcome.TESTS_FAILED
 
 
 def evaluation_outcome(
@@ -216,3 +321,20 @@ def evaluation_aggregate_metrics(
         passed=evaluation.passed,
         status_counts=status_counts,
     )
+
+
+__all__ = [
+    "CandidateHarnessFailure",
+    "CompletedCandidateScore",
+    "CompletedScore",
+    "EvaluationAggregateMetrics",
+    "HarnessFailureCause",
+    "HumanEvalCandidateScore",
+    "HumanEvalSubmissionScore",
+    "SubmissionOutcome",
+    "evaluation_aggregate_metrics",
+    "evaluation_outcome",
+    "score_humaneval_candidate",
+    "score_humaneval_submission",
+    "submission_outcome",
+]
