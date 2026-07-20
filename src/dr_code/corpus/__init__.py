@@ -19,6 +19,11 @@ from dr_code.corpus.preprocessing_artifacts import (
     project_preprocessing_result,
     write_projected_part,
 )
+from dr_code.corpus.preprocessing_analysis import (
+    PreprocessingAnalysisArtifacts,
+    PreprocessingAnalysisError,
+    analyze_preprocessing_corpus,
+)
 
 __all__ = (
     "CandidateEvaluationError",
@@ -31,6 +36,9 @@ __all__ = (
     "STEP_FACTS_SCHEMA",
     "ProjectedArtifacts",
     "ProjectedPart",
+    "PreprocessingAnalysisArtifacts",
+    "PreprocessingAnalysisError",
+    "analyze_preprocessing_corpus",
     "combine_projected_parts",
     "evaluate_preprocessing_candidates",
     "project_preprocessing_result",

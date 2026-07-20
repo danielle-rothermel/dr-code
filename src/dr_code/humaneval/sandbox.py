@@ -8,10 +8,13 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import gettempdir
 from typing import BinaryIO, Final, Protocol
 
 
@@ -27,6 +30,7 @@ MAX_SANDBOX_OUTPUT_BYTES: Final[int] = 1_048_576
 SANDBOX_MEMORY_BYTES: Final[int] = 256 * 1024 * 1024
 SANDBOX_TMPFS_BYTES: Final[int] = 16 * 1024 * 1024
 SANDBOX_OPEN_FILES: Final[int] = 64
+SANDBOX_STARTUP_TIMEOUT_SECONDS: Final[float] = 10.0
 # Container exit codes attributable to the candidate hitting a sandbox
 # resource boundary rather than to a broken sandbox: 137 is SIGKILL from the
 # memory limit or the CPU hard limit (python runs as container PID 1, which
@@ -104,6 +108,7 @@ def run_python_in_sandbox(
     _require_local_image(runtime, image)
 
     name = f"dr-code-humaneval-{uuid.uuid4().hex}"
+    cidfile = Path(gettempdir()) / f"{name}.cid"
     cpu_seconds = max(1, math.ceil(timeout_seconds))
     command = [
         runtime,
@@ -111,6 +116,8 @@ def run_python_in_sandbox(
         "--rm",
         "--interactive",
         "--pull=never",
+        "--cidfile",
+        str(cidfile),
         "--name",
         name,
         "--label",
@@ -177,13 +184,33 @@ def run_python_in_sandbox(
             daemon=True,
         ),
     ]
-    for thread in threads:
-        thread.start()
-
-    deadline = time.monotonic() + timeout_seconds
+    started_threads: list[threading.Thread] = []
+    container_id: str | None = None
+    startup_timed_out = False
     timed_out = False
-    termination_error: SandboxError | None = None
     try:
+        for thread in threads:
+            thread.start()
+            started_threads.append(thread)
+
+        startup_deadline = time.monotonic() + SANDBOX_STARTUP_TIMEOUT_SECONDS
+        while (
+            container_id is None
+            and process.poll() is None
+            and time.monotonic() < startup_deadline
+        ):
+            container_id = _read_container_id(cidfile)
+            if container_id is not None:
+                break
+            time.sleep(0.01)
+        if container_id is None:
+            container_id = _read_container_id(cidfile)
+        startup_timed_out = container_id is None and process.poll() is None
+        deadline = (
+            time.monotonic()
+            if startup_timed_out
+            else time.monotonic() + timeout_seconds
+        )
         while process.poll() is None:
             if overflow.is_set():
                 break
@@ -192,18 +219,34 @@ def run_python_in_sandbox(
                 break
             time.sleep(0.01)
     finally:
-        if process.poll() is None:
-            try:
-                _terminate_container(runtime, name, process)
-            except SandboxError as exc:
-                termination_error = exc
-        for thread in threads:
-            thread.join(timeout=1.0)
+        active_exception = sys.exception()
+        try:
+            returncode = process.poll()
+            if returncode is None or container_id is None:
+                try:
+                    _terminate_container(
+                        runtime, container_id or name, process
+                    )
+                except SandboxError as exc:
+                    if active_exception is not None:
+                        raise exc from active_exception
+                    raise
+        finally:
+            for thread in started_threads:
+                thread.join(timeout=1.0)
+            cidfile.unlink(missing_ok=True)
 
-    if termination_error is not None:
-        raise termination_error
     if any(thread.is_alive() for thread in threads):
         raise SandboxError("sandbox IPC threads could not be terminated")
+    if startup_timed_out:
+        raise SandboxError(
+            "sandbox container did not start within "
+            f"{SANDBOX_STARTUP_TIMEOUT_SECONDS} seconds"
+        )
+    if container_id is None:
+        raise SandboxError(
+            "sandbox runtime exited before producing a container ID"
+        )
     if timed_out:
         raise SandboxTimeoutError(
             f"sandbox exceeded {timeout_seconds} seconds"
@@ -231,6 +274,14 @@ def _resolve_runtime() -> str:
     if runtime is None:
         raise SandboxError(f"sandbox runtime is unavailable: {configured}")
     return runtime
+
+
+def _read_container_id(path: Path) -> str | None:
+    try:
+        value = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError):
+        return None
+    return value if re.fullmatch(r"[0-9a-f]{64}", value) else None
 
 
 def _validate_image_reference(image: str) -> None:
@@ -323,27 +374,35 @@ def _terminate_container(
     process: subprocess.Popen[bytes],
 ) -> None:
     environment = _runtime_environment()
-    for command in (
-        [runtime, "kill", "--signal=KILL", name],
-        [runtime, "rm", "--force", name],
-    ):
-        try:
-            subprocess.run(
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                timeout=5,
-                env=environment,
-            )
-        except (OSError, subprocess.SubprocessError):
-            continue
+    try:
+        subprocess.run(
+            [runtime, "kill", "--signal=KILL", name],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+            env=environment,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
     if process.poll() is None:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            # On macOS the runtime CLI's process group can include a helper
+            # that the caller cannot signal, even though the direct child is
+            # still ours.  Kill that child directly; the container itself was
+            # already addressed by immutable name above and is verified gone
+            # below.
+            try:
+                process.kill()
+            except OSError as exc:
+                raise SandboxError(
+                    "sandbox process could not be signaled"
+                ) from exc
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired as exc:
@@ -351,12 +410,23 @@ def _terminate_container(
             "sandbox process group could not be terminated"
         ) from exc
 
-    inspected = _cleanup_command(
-        [runtime, "container", "inspect", name],
-        environment=environment,
-    )
-    if inspected.returncode == 0:
-        raise SandboxError("sandbox container survived forced termination")
+    # Only remove after the `run` client has exited. Removing while that
+    # client is still completing its create/start request can race with the
+    # daemon and leave a late-created container behind.
+    removal_deadline = time.monotonic() + 5.0
+    while True:
+        _cleanup_command(
+            [runtime, "rm", "--force", name], environment=environment
+        )
+        inspected = _cleanup_command(
+            [runtime, "container", "inspect", name],
+            environment=environment,
+        )
+        if inspected.returncode != 0:
+            break
+        if time.monotonic() >= removal_deadline:
+            raise SandboxError("sandbox container survived forced termination")
+        time.sleep(0.05)
     runtime_status = _cleanup_command(
         [runtime, "info"],
         environment=environment,

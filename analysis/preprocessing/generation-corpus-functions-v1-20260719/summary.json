@@ -1,4 +1,186 @@
 {
+  "candidate_evaluation": {
+    "available": true,
+    "candidate_membership_count": 325769,
+    "candidate_outcomes": [
+      {
+        "candidate_count": 65,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.00019953,
+        "failure_type": "<null>",
+        "official_outcome": "evaluation_incomplete",
+        "record_status": "measured",
+        "test_outcome": "failed"
+      },
+      {
+        "candidate_count": 43483,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.13347802,
+        "failure_type": "<null>",
+        "official_outcome": "tests_failed",
+        "record_status": "measured",
+        "test_outcome": "failed"
+      },
+      {
+        "candidate_count": 141975,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.43581495,
+        "failure_type": "<null>",
+        "official_outcome": "passed",
+        "record_status": "measured",
+        "test_outcome": "passed"
+      },
+      {
+        "candidate_count": 140246,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.43050751,
+        "failure_type": "<null>",
+        "official_outcome": "timed_out",
+        "record_status": "measured",
+        "test_outcome": "timed_out"
+      }
+    ],
+    "deduplicated_evaluation_count": 216527,
+    "extracted_sample_count": 300184,
+    "funnel": [
+      {
+        "count": 325769,
+        "denominator": "extracted_final_candidates",
+        "denominator_count": 325769,
+        "rate": 1.0,
+        "stage": "extracted final candidates",
+        "unit": "candidate_row"
+      },
+      {
+        "count": 325769,
+        "denominator": "extracted_final_candidates",
+        "denominator_count": 325769,
+        "rate": 1.0,
+        "stage": "evaluation attempted candidates",
+        "unit": "candidate_row"
+      },
+      {
+        "count": 325769,
+        "denominator": "extracted_final_candidates",
+        "denominator_count": 325769,
+        "rate": 1.0,
+        "stage": "tested candidates",
+        "unit": "candidate_row"
+      },
+      {
+        "count": 141975,
+        "denominator": "extracted_final_candidates",
+        "denominator_count": 325769,
+        "rate": 0.43581495,
+        "stage": "candidate passed",
+        "unit": "candidate_row"
+      },
+      {
+        "count": 43548,
+        "denominator": "extracted_final_candidates",
+        "denominator_count": 325769,
+        "rate": 0.13367754,
+        "stage": "candidate failed",
+        "unit": "candidate_row"
+      },
+      {
+        "count": 140246,
+        "denominator": "extracted_final_candidates",
+        "denominator_count": 325769,
+        "rate": 0.43050751,
+        "stage": "candidate timed_out",
+        "unit": "candidate_row"
+      },
+      {
+        "count": 0,
+        "denominator": "extracted_final_candidates",
+        "denominator_count": 325769,
+        "rate": 0.0,
+        "stage": "candidate infrastructure_failure",
+        "unit": "candidate_row"
+      }
+    ],
+    "limitations": [
+      "The candidate evaluation manifest does not contain membership/results file hashes; same-run linkage is validated through row counts, full relational joins, singleton coordinates, and deterministic evaluation keys."
+    ],
+    "provenance": {
+      "manifest": {
+        "complete": true,
+        "label": "candidate_evaluation_manifest.json",
+        "membership_rows": 325769,
+        "result_rows": 216527,
+        "schema_version": 1,
+        "sha256": "660bd54df2d74499c2a20e9f8c95fbeb5952c05539dd54b7d3a3a65dd60ea615"
+      },
+      "semantic_coordinates": {
+        "completed_at": "2026-07-20T09:38:12.723896+00:00",
+        "execution_fingerprint": "b6c08244f829e6a0f9b98a19c61a08afa28f4f6a78538338ca35efa25d5c053a",
+        "metrics_definition": {
+          "definition_id": "humaneval-metrics",
+          "questions": [
+            {
+              "metric": "code_test",
+              "on": "candidate",
+              "settings": {
+                "task_key": "task",
+                "timeout_seconds": 2.0
+              }
+            }
+          ],
+          "version": "v1"
+        },
+        "metrics_definition_hash": "79d1065c6f64464bc56dc345b5346d5670f2b65c05610e472109e240f13a48e79e280b40ef4d09cbc054ad00ef46b974be8cc91aca81fc3f7986f5c22ed20455",
+        "metrics_profile": "humaneval-metrics@v1",
+        "operator": "code_test@1",
+        "operator_settings": {
+          "task_key": "task",
+          "timeout_seconds": 2.0
+        },
+        "python": "3.13.2",
+        "python_implementation": "CPython",
+        "runner_identity": "oci:docker:sha256:b0ea75e88e3047e718fd301b7e375894567ee0b75be093ef688b67fccef4fe45",
+        "sandbox_image": "sha256:b0ea75e88e3047e718fd301b7e375894567ee0b75be093ef688b67fccef4fe45",
+        "snapshot_sha256": "141cdc0e5f035fae5b614640f866f8d5c544462d7f51fe59174c87235b8b4fe2",
+        "trusted_source_sha256": {
+          "dr_code.corpus.candidate_evaluation": "33b923de9d02cf9f15fb68bf13664917633b58777edf7388a52764a207ae9d3a",
+          "dr_code.humaneval.batch_runner": "37583731301d936946502e16999b952c4d1d39d478085080d94f590e8396bebb",
+          "dr_code.humaneval.parsed_code": "c3ffe1d07eaf0a928447e68c6002c65bda837ae8905010e104ea19b4598246af",
+          "dr_code.humaneval.parsed_tests": "94eb76cd71e8c436082e81b44ca8c16e902f7ff7ddfc9efda5321dffa6e7faa8",
+          "dr_code.humaneval.sandbox": "f22c13521d854d7e778e67117c414ca238bbe8cd8477f175f2a2c9214dee4819",
+          "dr_code.humaneval.task": "240ebef036c1d5373585f9e56f109a1b2b3ac05a8e21413138f21984c5b60878",
+          "dr_code.metrics.engine.execution": "6be139124a50556fedaf1f4c3cd5f4a74183fbb252ab49dfae30a2680936ba7c",
+          "dr_code.metrics.operators.code_test": "5034885f9bb8e6f3b88edd447ae5d7f10a8ec1eb4c998a1e9978daf89eb67cdf",
+          "runner_script": "e7c2c15f441002afca9d024f341611d4d4202df7cf4c60eba70531bdee9adcc2"
+        }
+      }
+    },
+    "sample_best_outcomes": [
+      {
+        "best_test_outcome": "passed",
+        "extracted_sample_count": 300184,
+        "rate_of_extracted_samples": 0.45229926,
+        "sample_count": 135773
+      },
+      {
+        "best_test_outcome": "failed",
+        "extracted_sample_count": 300184,
+        "rate_of_extracted_samples": 0.13780881,
+        "sample_count": 41368
+      },
+      {
+        "best_test_outcome": "timed_out",
+        "extracted_sample_count": 300184,
+        "rate_of_extracted_samples": 0.40989193,
+        "sample_count": 123043
+      },
+      {
+        "best_test_outcome": "infrastructure_failure",
+        "extracted_sample_count": 300184,
+        "rate_of_extracted_samples": 0.0,
+        "sample_count": 0
+      }
+    ]
+  },
   "candidate_invariants": {
     "final_candidate_rows": 325769,
     "successful_candidate_rows": 325769,
@@ -54,9 +236,10 @@
     }
   ],
   "limitations": [
-    "This is a preprocessing-only analysis; it does not claim task correctness or execution success.",
-    "Candidate-evaluation membership/results may be recorded as optional provenance, but are not joined until their contract is defined.",
-    "Viewer examples cap raw decoder and candidate text at 1200 and 1200 characters."
+    "Preprocessing metrics alone do not claim task correctness or execution success.",
+    "Viewer examples cap raw decoder and candidate text at 1200 and 1200 characters.",
+    "Candidate test rates describe HumanEval+ execution under the supplied evaluation profile; they do not generalize to non-HumanEval tasks.",
+    "The candidate evaluation manifest does not contain membership/results file hashes; same-run linkage is validated through row counts, full relational joins, singleton coordinates, and deterministic evaluation keys."
   ],
   "outcomes": [
     {
@@ -133,17 +316,29 @@
     }
   ],
   "provenance": {
-    "analysis_module_sha256": "685a23a6af6d2febc6fc78b5f57b7c98b6438ff8d0d2b07ce2bde9137d4e023d",
+    "analysis_module_sha256": "53d50e0b21f372cd277aeadbf635c482d07b53375153d8272df92beb8e66bc6e",
     "corpus": {
       "label": "generation-corpus.parquet",
       "sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5"
     },
     "optional_inputs": {
+      "candidate_evaluation_manifest": {
+        "exists": true,
+        "label": "candidate_evaluation_manifest.json",
+        "provided": true,
+        "sha256": "660bd54df2d74499c2a20e9f8c95fbeb5952c05539dd54b7d3a3a65dd60ea615"
+      },
       "candidate_membership": {
-        "provided": false
+        "exists": true,
+        "label": "candidate_membership.parquet",
+        "provided": true,
+        "sha256": "a7ec93d3319187ebea9afefaa6fec4af890375da5cf7b5a4dad22b732220a305"
       },
       "candidate_results": {
-        "provided": false
+        "exists": true,
+        "label": "candidate_results.parquet",
+        "provided": true,
+        "sha256": "d0a546bf6225e2072308c72f77b467029c22f34d3aa6a46f77fe9c5177838173"
       }
     },
     "relations": {
@@ -158,7 +353,7 @@
     "run_manifest_sha256": "f2ed46fa3ea87facd97628e6d52b5b7fc58e6a9378d336e122c1c382f80be832"
   },
   "rejection_sample_count": 18589,
-  "schema_version": 1,
+  "schema_version": 2,
   "source_kind_reconciliation": [
     {
       "decoder_output_blank_count": 31,
@@ -216,9 +411,17 @@
       "path": "tables/candidate_multiplicity.parquet",
       "row_count": 27
     },
+    "candidate_test_outcomes": {
+      "path": "tables/candidate_test_outcomes.parquet",
+      "row_count": 4
+    },
     "compile_warnings": {
       "path": "tables/compile_warnings.parquet",
       "row_count": 27
+    },
+    "evaluation_funnel": {
+      "path": "tables/evaluation_funnel.parquet",
+      "row_count": 7
     },
     "failure_modes": {
       "path": "tables/failure_modes.parquet",
@@ -231,6 +434,26 @@
     "outcome_by_dimension": {
       "path": "tables/outcome_by_dimension.parquet",
       "row_count": 3096
+    },
+    "sample_best_test_outcomes": {
+      "path": "tables/sample_best_test_outcomes.parquet",
+      "row_count": 4
+    },
+    "test_success_by_dimension": {
+      "path": "tables/test_success_by_dimension.parquet",
+      "row_count": 260
+    },
+    "test_success_by_multiplicity": {
+      "path": "tables/test_success_by_multiplicity.parquet",
+      "row_count": 8
+    },
+    "test_success_by_origin": {
+      "path": "tables/test_success_by_origin.parquet",
+      "row_count": 10
+    },
+    "test_success_by_preprocessing_outcome": {
+      "path": "tables/test_success_by_preprocessing_outcome.parquet",
+      "row_count": 8
     }
   }
 }

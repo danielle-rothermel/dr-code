@@ -44,3 +44,45 @@ for the flow’s design and the reproducible corpus audit built on it.
 
 For full HumanEval+ scoring that requires NumPy, see the
 [reproducible sandbox-image build and preflight flow](docs/humaneval-plus-sandbox.md).
+
+## Corpus evaluation and analysis
+
+Completed preprocessing runs contain `results.parquet`, `candidates.parquet`,
+`step_facts.parquet`, and `rejections.parquet` plus a complete manifest. The
+candidate evaluator preserves every `(sample_id, candidate_id, candidate_index)`
+membership while deduplicating execution by task and source. Its
+`candidate_membership.parquet` relation joins those sample candidates to
+`candidate_results.parquet` through `evaluation_key`; analysis always validates
+the full join before computing test rates.
+
+The repository-adjacent shared-artifact convention is
+`../gen-viewer/data/preprocessing-runs/<run-id>/` for preprocessing and
+`../gen-viewer/data/candidate-evaluations/<run-id>/` for test results. These
+full artifacts are intentionally not committed. Run or resume evaluation from
+an explicit source checkout and pinned HumanEval+ snapshot:
+
+```bash
+DR_CODE_SANDBOX_IMAGE='sha256:<locally-built-image-id>' \
+  uv run python scripts/evaluate_preprocessing_candidates.py \
+  --preprocessing-run ../gen-viewer/data/preprocessing-runs/<run-id> \
+  --corpus ../gen-viewer/data/generation-corpus.parquet \
+  --output ../gen-viewer/data/candidate-evaluations/<run-id> \
+  --snapshot tests/corpus/humanevalplus_snapshot.json \
+  --max-workers 14
+```
+
+Then produce deterministic compact Parquet tables, JSON, Markdown, and viewer
+data with the evaluation manifest and its paired relations:
+
+```bash
+uv run python scripts/analyze_preprocessing_corpus.py \
+  --corpus ../gen-viewer/data/generation-corpus.parquet \
+  --run-dir ../gen-viewer/data/preprocessing-runs/<run-id> \
+  --candidate-membership ../gen-viewer/data/candidate-evaluations/<run-id>/candidate_membership.parquet \
+  --candidate-results ../gen-viewer/data/candidate-evaluations/<run-id>/candidate_results.parquet \
+  --candidate-evaluation-manifest ../gen-viewer/data/candidate-evaluations/<run-id>/candidate_evaluation_manifest.json \
+  --output-dir analysis/preprocessing/<run-id>
+```
+
+Both CLIs fail closed on incompatible or partial artifacts. The analysis API
+is also available as `dr_code.corpus.analyze_preprocessing_corpus`.
