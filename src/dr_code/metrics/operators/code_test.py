@@ -103,16 +103,10 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         value: Artifact,
         aux: Mapping[str, Artifact],
     ) -> tuple[ExecutionRequest, ...]:
-        source = _code_source(value)
-        task = self._task(aux)
-        function_names = _top_level_function_names(source)
-        return tuple(
-            self._request(
-                task=task,
-                candidate_code=source,
-                function_name=function_name,
-            )
-            for function_name in function_names
+        return plan_code_test_requests(
+            task=self._task(aux),
+            candidate_source=_code_source(value),
+            timeout_seconds=self.settings.timeout_seconds,
         )
 
     def compute(
@@ -121,60 +115,21 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         aux: Mapping[str, Artifact],
         ctx: EngineContext,
     ) -> CodeTestResult:
-        source = _code_source(value)
         task = self._task(aux)
-        function_names = _top_level_function_names(source)
-        requests = tuple(
-            self._request(
-                task=task,
-                candidate_code=source,
-                function_name=function_name,
-            )
-            for function_name in function_names
+        candidate_source = _code_source(value)
+        requests = plan_code_test_requests(
+            task=task,
+            candidate_source=candidate_source,
+            timeout_seconds=self.settings.timeout_seconds,
         )
-        statuses_by_name: dict[str, list[EvaluationCaseStatus]] = {}
-        for function_name, request in zip(
-            function_names,
-            requests,
-            strict=True,
-        ):
-            statuses = _statuses_from_outcome(
-                outcome=ctx.outcome_for(request),
-                task=task,
-            )
-            statuses_by_name.setdefault(function_name, []).extend(statuses)
-
-        best_function_name = _best_function_name(
-            function_names=function_names,
-            entry_point=task.entry_point,
-            passed_counts=_passed_counts(statuses_by_name),
-        )
-        best_statuses = (
-            statuses_by_name[best_function_name]
-            if best_function_name is not None
-            else []
-        )
-        counts = Counter(status.value for status in best_statuses)
-        total_cases = _total_cases(task)
-        return CodeTestResult(
-            total_cases=total_cases,
-            passed_count=counts.get(EvaluationCaseStatus.PASSED.value, 0),
-            failed_count=counts.get(EvaluationCaseStatus.FAILED.value, 0),
-            error_count=counts.get(EvaluationCaseStatus.ERROR.value, 0),
-            timeout_count=counts.get(
-                EvaluationCaseStatus.TIMEOUT.value,
-                0,
-            ),
-            # PARITY TWIN of ``EvaluationTaskResult.coverage_complete``
-            # (dr_code.humaneval.task): "did every case produce a result", not a
-            # pass/fail verdict. Pinned equal by the parity test; retires with
-            # the old scoring path.
-            coverage_complete=(
-                best_function_name is not None
-                and len(best_statuses) == total_cases
-            ),
-            function_count=len(function_names),
-            best_function_name=best_function_name,
+        return compute_code_test_result(
+            task=task,
+            candidate_source=candidate_source,
+            timeout_seconds=self.settings.timeout_seconds,
+            outcomes={
+                request.cache_key: ctx.outcome_for(request)
+                for request in requests
+            },
         )
 
     def _task(self, aux: Mapping[str, Artifact]) -> HumanEvalTask:
@@ -183,30 +138,99 @@ class CodeTest(MetricOperator[CodeTestSettings]):
             raise TypeError("code_test task must be a JSON artifact")
         return _validate_task_payload(artifact)
 
-    def _request(
-        self,
-        *,
-        task: HumanEvalTask,
-        candidate_code: str,
-        function_name: str,
-    ) -> ExecutionRequest:
-        parsed_tests = task.parsed_tests
-        if parsed_tests is None:
-            raise ValueError("HumanEvalTask.parsed_tests is required")
-        payload = HumanEvalRunnerPayload(
-            task_id=task.task_id,
-            candidate_code=candidate_code,
-            support_code=parsed_tests.support_code,
+
+def plan_code_test_requests(
+    *,
+    task: HumanEvalTask,
+    candidate_source: str,
+    timeout_seconds: float,
+) -> tuple[ExecutionRequest, ...]:
+    """Plan official ``code_test`` requests for an already validated task."""
+
+    return tuple(
+        _code_test_request(
+            task=task,
+            candidate_code=candidate_source,
             function_name=function_name,
-            test_type=parsed_tests.test_type,
-            checks=list(parsed_tests.iter_checks(candidate_name="candidate")),
+            timeout_seconds=timeout_seconds,
         )
-        return ExecutionRequest(
-            source=runner_script(),
-            input_json=payload.model_dump_json(),
-            timeout_seconds=self.settings.timeout_seconds,
-            computation_id=_COMPUTATION_ID,
+        for function_name in _top_level_function_names(candidate_source)
+    )
+
+
+def compute_code_test_result(
+    *,
+    task: HumanEvalTask,
+    candidate_source: str,
+    timeout_seconds: float,
+    outcomes: Mapping[str, ExecutionOutcome],
+) -> CodeTestResult:
+    """Compute official facts from planned requests and their outcomes."""
+
+    function_names = _top_level_function_names(candidate_source)
+    requests = plan_code_test_requests(
+        task=task,
+        candidate_source=candidate_source,
+        timeout_seconds=timeout_seconds,
+    )
+    statuses_by_name: dict[str, list[EvaluationCaseStatus]] = {}
+    for function_name, request in zip(function_names, requests, strict=True):
+        statuses = _statuses_from_outcome(
+            outcome=outcomes[request.cache_key], task=task
         )
+        statuses_by_name.setdefault(function_name, []).extend(statuses)
+
+    best_function_name = _best_function_name(
+        function_names=function_names,
+        entry_point=task.entry_point,
+        passed_counts=_passed_counts(statuses_by_name),
+    )
+    best_statuses = (
+        statuses_by_name[best_function_name]
+        if best_function_name is not None
+        else []
+    )
+    counts = Counter(status.value for status in best_statuses)
+    total_cases = _total_cases(task)
+    return CodeTestResult(
+        total_cases=total_cases,
+        passed_count=counts.get(EvaluationCaseStatus.PASSED.value, 0),
+        failed_count=counts.get(EvaluationCaseStatus.FAILED.value, 0),
+        error_count=counts.get(EvaluationCaseStatus.ERROR.value, 0),
+        timeout_count=counts.get(EvaluationCaseStatus.TIMEOUT.value, 0),
+        coverage_complete=(
+            best_function_name is not None
+            and len(best_statuses) == total_cases
+        ),
+        function_count=len(function_names),
+        best_function_name=best_function_name,
+    )
+
+
+def _code_test_request(
+    *,
+    task: HumanEvalTask,
+    candidate_code: str,
+    function_name: str,
+    timeout_seconds: float,
+) -> ExecutionRequest:
+    parsed_tests = task.parsed_tests
+    if parsed_tests is None:
+        raise ValueError("HumanEvalTask.parsed_tests is required")
+    payload = HumanEvalRunnerPayload(
+        task_id=task.task_id,
+        candidate_code=candidate_code,
+        support_code=parsed_tests.support_code,
+        function_name=function_name,
+        test_type=parsed_tests.test_type,
+        checks=list(parsed_tests.iter_checks(candidate_name="candidate")),
+    )
+    return ExecutionRequest(
+        source=runner_script(),
+        input_json=payload.model_dump_json(),
+        timeout_seconds=timeout_seconds,
+        computation_id=_COMPUTATION_ID,
+    )
 
 
 def _validate_task_payload(artifact: JsonArtifact) -> HumanEvalTask:

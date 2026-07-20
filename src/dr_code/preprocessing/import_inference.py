@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import re
+import warnings
 from typing import Final
 
 from dr_code.code_analysis import is_cpython_parser_stack_overflow
@@ -113,14 +114,19 @@ def infer_necessary_imports(source: str) -> str:
 
 
 def _parse_or_none(text: str) -> ast.AST | None:
-    try:
-        return ast.parse(text)
-    except (SyntaxError, ValueError, RecursionError):
-        return None
-    except MemoryError as exc:
-        if is_cpython_parser_stack_overflow(exc):
+    # Structural cleaning does not own diagnostic facts. Later validation
+    # filters capture SyntaxWarning events into the trace, so suppress this
+    # earlier speculative parse instead of leaking duplicate diagnostics.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        try:
+            return ast.parse(text)
+        except (SyntaxError, ValueError, RecursionError):
             return None
-        raise
+        except MemoryError as exc:
+            if is_cpython_parser_stack_overflow(exc):
+                return None
+            raise
 
 
 def _repair_import_line(line: str) -> str | None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from dr_code.code_analysis import validate_python_source
@@ -111,6 +113,21 @@ def test_infer_necessary_imports_still_injects_free_name() -> None:
     # conservative about bound names, not about all names.
     source = "def solve(x):\n    return np.array(x)\n"
     result = infer_necessary_imports(source)
+    assert result.startswith("import numpy as np\n")
+
+
+def test_speculative_parse_does_not_leak_syntax_warnings() -> None:
+    invalid_escape = chr(92) + "q"
+    source = (
+        f"def f():\n    value = '{invalid_escape}'\n"
+        "    return np.array(value)\n"
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", SyntaxWarning)
+        result = infer_necessary_imports(source)
+
+    assert caught == []
     assert result.startswith("import numpy as np\n")
 
 

@@ -17,7 +17,7 @@ from dr_code.trace import (
 )
 
 
-def _candidate_id(source: str) -> str:
+def candidate_id_for_source(source: str) -> str:
     """Return a content-derived identity stable across processes and runs."""
     digest = hashlib.blake2b(
         source.encode("utf-8"), digest_size=16
@@ -69,7 +69,8 @@ class DedupeCandidates(Step):
 
         lineage = tuple(
             CandidateLineage(
-                candidate_id=_candidate_id(source), origins=tuple(origins)
+                candidate_id=candidate_id_for_source(source),
+                origins=tuple(origins),
             )
             for source, origins in zip(sources, merged_origins, strict=True)
         )
@@ -107,4 +108,4 @@ class DedupeCandidates(Step):
         )
 
 
-__all__ = ["DedupeCandidates"]
+__all__ = ["DedupeCandidates", "candidate_id_for_source"]

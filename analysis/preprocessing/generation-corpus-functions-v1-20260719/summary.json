@@ -1,0 +1,236 @@
+{
+  "candidate_invariants": {
+    "final_candidate_rows": 325769,
+    "successful_candidate_rows": 325769,
+    "validated_samples": 365216
+  },
+  "denominators": {
+    "all": 365216,
+    "nonblank": 307761,
+    "present": 307870
+  },
+  "funnel": [
+    {
+      "count": 365216,
+      "rate": 1.0,
+      "rate_label": "share of all samples",
+      "stage": "source samples",
+      "unit": "sample"
+    },
+    {
+      "count": 307870,
+      "rate": 0.84298059,
+      "rate_label": "share of all samples",
+      "stage": "decoder output present",
+      "unit": "sample"
+    },
+    {
+      "count": 307761,
+      "rate": 0.84268214,
+      "rate_label": "share of all samples",
+      "stage": "decoder output nonblank",
+      "unit": "sample"
+    },
+    {
+      "count": 300184,
+      "rate": 0.82193551,
+      "rate_label": "share of all samples",
+      "stage": "function candidates extracted",
+      "unit": "sample"
+    },
+    {
+      "count": 325769,
+      "rate": 1.08523106,
+      "rate_label": "candidates per extracted sample",
+      "stage": "final candidates",
+      "unit": "candidate_row"
+    },
+    {
+      "count": 292726,
+      "rate": 0.89856923,
+      "rate_label": "share of final candidate rows",
+      "stage": "final candidates with converged origins",
+      "unit": "candidate_row"
+    }
+  ],
+  "limitations": [
+    "This is a preprocessing-only analysis; it does not claim task correctness or execution success.",
+    "Candidate-evaluation membership/results may be recorded as optional provenance, but are not joined until their contract is defined.",
+    "Viewer examples cap raw decoder and candidate text at 1200 and 1200 characters."
+  ],
+  "outcomes": [
+    {
+      "count_all": 109,
+      "count_nonblank": 0,
+      "count_present": 109,
+      "outcome": "decoder_output_blank",
+      "rate_of_all": 0.00029845,
+      "rate_of_nonblank": 0.0,
+      "rate_of_present": 0.00035405
+    },
+    {
+      "count_all": 57346,
+      "count_nonblank": 0,
+      "count_present": 0,
+      "outcome": "decoder_output_missing",
+      "rate_of_all": 0.15701941,
+      "rate_of_nonblank": 0.0,
+      "rate_of_present": 0.0
+    },
+    {
+      "count_all": 300184,
+      "count_nonblank": 300184,
+      "count_present": 300184,
+      "outcome": "function_candidates_extracted",
+      "rate_of_all": 0.82193551,
+      "rate_of_nonblank": 0.97538025,
+      "rate_of_present": 0.97503492
+    },
+    {
+      "count_all": 363,
+      "count_nonblank": 363,
+      "count_present": 363,
+      "outcome": "no_code_candidates",
+      "rate_of_all": 0.00099393,
+      "rate_of_nonblank": 0.00117949,
+      "rate_of_present": 0.00117907
+    },
+    {
+      "count_all": 5050,
+      "count_nonblank": 5050,
+      "count_present": 5050,
+      "outcome": "no_compilable_candidate",
+      "rate_of_all": 0.01382743,
+      "rate_of_nonblank": 0.01640884,
+      "rate_of_present": 0.01640303
+    },
+    {
+      "count_all": 1,
+      "count_nonblank": 1,
+      "count_present": 1,
+      "outcome": "no_nonblank_cleaned_candidate",
+      "rate_of_all": 2.74e-06,
+      "rate_of_nonblank": 3.25e-06,
+      "rate_of_present": 3.25e-06
+    },
+    {
+      "count_all": 1965,
+      "count_nonblank": 1965,
+      "count_present": 1965,
+      "outcome": "no_top_level_function_candidate",
+      "rate_of_all": 0.00538038,
+      "rate_of_nonblank": 0.00638482,
+      "rate_of_present": 0.00638256
+    },
+    {
+      "count_all": 198,
+      "count_nonblank": 198,
+      "count_present": 198,
+      "outcome": "plain_literal_only",
+      "rate_of_all": 0.00054214,
+      "rate_of_nonblank": 0.00064336,
+      "rate_of_present": 0.00064313
+    }
+  ],
+  "provenance": {
+    "analysis_module_sha256": "685a23a6af6d2febc6fc78b5f57b7c98b6438ff8d0d2b07ce2bde9137d4e023d",
+    "corpus": {
+      "label": "generation-corpus.parquet",
+      "sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5"
+    },
+    "optional_inputs": {
+      "candidate_membership": {
+        "provided": false
+      },
+      "candidate_results": {
+        "provided": false
+      }
+    },
+    "relations": {
+      "candidates": "64d3effc33089e1fa36aa1db9ce0377e55cf3b324e1e8ab41105c0d99106e560",
+      "rejections": "e17bca912f2651bc76395b69341ef0ff8f6008f44807893c01db9606bbf7bb9a",
+      "results": "127388a2e09c6a64b50784e95e510fdc3e96b261a9d54d8ee613d4af83c8f2f2",
+      "step_facts": "25a2c257dba0166fdc49790623eefd568e309fd7841843f690a4aff48cafd04f"
+    },
+    "run": {
+      "run_id": "generation-corpus-functions-v1-20260719"
+    },
+    "run_manifest_sha256": "f2ed46fa3ea87facd97628e6d52b5b7fc58e6a9378d336e122c1c382f80be832"
+  },
+  "rejection_sample_count": 18589,
+  "schema_version": 1,
+  "source_kind_reconciliation": [
+    {
+      "decoder_output_blank_count": 31,
+      "decoder_output_missing_count": 111,
+      "decoder_output_nonblank_count": 53961,
+      "decoder_output_present_count": 53992,
+      "sample_count": 54103,
+      "sample_rate_of_all": 0.14813973,
+      "source_kind": "archive_v1_generation_run",
+      "source_kind_value_state": "nonblank"
+    },
+    {
+      "decoder_output_blank_count": 0,
+      "decoder_output_missing_count": 0,
+      "decoder_output_nonblank_count": 177700,
+      "decoder_output_present_count": 177700,
+      "sample_count": 177700,
+      "sample_rate_of_all": 0.48656138,
+      "source_kind": "code_eval_source_line",
+      "source_kind_value_state": "nonblank"
+    },
+    {
+      "decoder_output_blank_count": 78,
+      "decoder_output_missing_count": 56323,
+      "decoder_output_nonblank_count": 71881,
+      "decoder_output_present_count": 71959,
+      "sample_count": 128282,
+      "sample_rate_of_all": 0.35124967,
+      "source_kind": "legacy_dbos_generation_attempt",
+      "source_kind_value_state": "nonblank"
+    },
+    {
+      "decoder_output_blank_count": 0,
+      "decoder_output_missing_count": 906,
+      "decoder_output_nonblank_count": 0,
+      "decoder_output_present_count": 0,
+      "sample_count": 906,
+      "sample_rate_of_all": 0.00248072,
+      "source_kind": "legacy_domain_partial",
+      "source_kind_value_state": "nonblank"
+    },
+    {
+      "decoder_output_blank_count": 0,
+      "decoder_output_missing_count": 6,
+      "decoder_output_nonblank_count": 4219,
+      "decoder_output_present_count": 4219,
+      "sample_count": 4225,
+      "sample_rate_of_all": 0.0115685,
+      "source_kind": "whetstone_v6_generation_run",
+      "source_kind_value_state": "nonblank"
+    }
+  ],
+  "tables": {
+    "candidate_multiplicity": {
+      "path": "tables/candidate_multiplicity.parquet",
+      "row_count": 27
+    },
+    "compile_warnings": {
+      "path": "tables/compile_warnings.parquet",
+      "row_count": 27
+    },
+    "failure_modes": {
+      "path": "tables/failure_modes.parquet",
+      "row_count": 11
+    },
+    "origin_contribution": {
+      "path": "tables/origin_contribution.parquet",
+      "row_count": 12
+    },
+    "outcome_by_dimension": {
+      "path": "tables/outcome_by_dimension.parquet",
+      "row_count": 3096
+    }
+  }
+}

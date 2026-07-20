@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,7 +15,10 @@ from dr_code.humaneval.sandbox import (
     run_python_in_sandbox,
 )
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
-from dr_code.humaneval.scoring import CompletedScore, score_humaneval_submission
+from dr_code.humaneval.scoring import (
+    CompletedScore,
+    score_humaneval_submission,
+)
 from dr_code.humaneval.task import HumanEvalTask
 
 
@@ -225,10 +229,7 @@ def test_candidate_sys_exit_is_scored_not_harness_failure() -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
-            "import sys\n"
-            "sys.exit(0)\n"
-            "def add_one(x):\n"
-            "    return x + 1\n"
+            "import sys\nsys.exit(0)\ndef add_one(x):\n    return x + 1\n"
         ),
         timeout_seconds=2.0,
     )
@@ -283,5 +284,34 @@ def test_stdout_json_ipc_is_bounded() -> None:
         )
 
 
+def test_local_image_id_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = shutil.which(os.environ.get("DR_CODE_SANDBOX_RUNTIME", "docker"))
+    assert runtime is not None
+    completed = subprocess.run(
+        [runtime, "image", "inspect", "--format={{.Id}}", SANDBOX_IMAGE],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    image_id = completed.stdout.strip()
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", image_id)
+    monkeypatch.setenv("DR_CODE_SANDBOX_IMAGE", image_id)
+
+    result = run_python_in_sandbox(
+        source="input()\nprint('[]')\n",
+        input_json="{}",
+        timeout_seconds=2.0,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "[]\n"
+
+
 def test_ci_uses_the_documented_immutable_image() -> None:
-    assert os.environ.get("DR_CODE_SANDBOX_IMAGE", SANDBOX_IMAGE) == SANDBOX_IMAGE
+    if os.environ.get("CI") is None:
+        pytest.skip("the default-image assertion is specific to CI wiring")
+    assert (
+        os.environ.get("DR_CODE_SANDBOX_IMAGE", SANDBOX_IMAGE) == SANDBOX_IMAGE
+    )

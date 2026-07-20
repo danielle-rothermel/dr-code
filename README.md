@@ -41,3 +41,6 @@ runner = bind_preprocessing(
 
 See the [decoder-output preprocessing analysis plan](docs/decoder-output-preprocessing-plan.html)
 for the flow’s design and the reproducible corpus audit built on it.
+
+For full HumanEval+ scoring that requires NumPy, see the
+[reproducible sandbox-image build and preflight flow](docs/humaneval-plus-sandbox.md).

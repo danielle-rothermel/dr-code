@@ -19,7 +19,10 @@ SANDBOX_IMAGE: Final[str] = (
     "python:3.13.14-slim@"
     "sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280"
 )
-MAX_SANDBOX_INPUT_BYTES: Final[int] = 1_048_576
+# HumanEval+/113 alone serializes to 1,255,579 bytes.  Four MiB admits that
+# payload and up to roughly 0.5 MiB of escaped candidate source while keeping
+# the host-to-container IPC input bounded.  The output bound stays tighter.
+MAX_SANDBOX_INPUT_BYTES: Final[int] = 4 * 1024 * 1024
 MAX_SANDBOX_OUTPUT_BYTES: Final[int] = 1_048_576
 SANDBOX_MEMORY_BYTES: Final[int] = 256 * 1024 * 1024
 SANDBOX_TMPFS_BYTES: Final[int] = 16 * 1024 * 1024
@@ -136,6 +139,9 @@ def run_python_in_sandbox(
         "--env=HOME=/tmp",
         "--env=PYTHONDONTWRITEBYTECODE=1",
         "--env=PYTHONHASHSEED=0",
+        # NumPy's bundled OpenBLAS otherwise creates worker threads during
+        # import, which conflicts with the deliberate one-process limit.
+        "--env=OPENBLAS_NUM_THREADS=1",
         image,
         "python",
         "-I",
@@ -228,6 +234,9 @@ def _resolve_runtime() -> str:
 
 
 def _validate_image_reference(image: str) -> None:
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", image) is not None:
+        return
+
     name, separator, digest = image.rpartition("@")
     if (
         not name
