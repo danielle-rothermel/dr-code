@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Final
+from collections.abc import Mapping
+from typing import Any, Final, Literal
+
+from pydantic import JsonValue, model_validator
 
 from dr_code.models import FrozenModel
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
+from dr_code.trace.facts import reject_nonfinite_floats
 from dr_code.trace.provenance import TraceProducer
 from dr_code.trace.trace import Trace
 
-TRACE_SCHEMA_VERSION: Final = 1
+TRACE_SCHEMA_VERSION: Final = 2
 
 
 class SerializedTrace(FrozenModel):
@@ -19,10 +23,54 @@ class SerializedTrace(FrozenModel):
     external schemas.
     """
 
-    schema_version: int = TRACE_SCHEMA_VERSION
+    # Version 1 payloads are upgraded during validation. Model instances are
+    # always canonical v2, so dumping one can never emit a hybrid v1 envelope.
+    schema_version: Literal[2] = TRACE_SCHEMA_VERSION
     producer: TraceProducer
     values: dict[str, Artifact | Absent]
-    step_facts: dict[str, dict[str, str]] = {}
+    step_facts: dict[str, dict[str, JsonValue]] = {}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _upgrade_v1_and_validate_v2(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+
+        payload = dict(value)
+        version = payload.get("schema_version", TRACE_SCHEMA_VERSION)
+        values = payload.get("values")
+        if not isinstance(values, Mapping):
+            return payload
+
+        migrated_values: dict[str, Any] = {}
+        for key, trace_value in values.items():
+            if isinstance(trace_value, Absent):
+                migrated_values[key] = trace_value
+                continue
+            if not isinstance(trace_value, Mapping):
+                migrated_values[key] = trace_value
+                continue
+            trace_value_payload = dict(trace_value)
+            if trace_value_payload.get("kind") == "absent":
+                if version == 1:
+                    trace_value_payload.setdefault(
+                        "failure_code", "legacy.unknown"
+                    )
+                elif "failure_code" not in trace_value_payload:
+                    raise ValueError(
+                        "schema v2 Absent values require failure_code"
+                    )
+            migrated_values[key] = trace_value_payload
+
+        if version == 1:
+            payload["schema_version"] = TRACE_SCHEMA_VERSION
+        payload["values"] = migrated_values
+        return payload
+
+    @model_validator(mode="after")
+    def _validate_facts_are_json_lossless(self) -> SerializedTrace:
+        reject_nonfinite_floats(self.step_facts, path="step_facts")
+        return self
 
 
 def serialize_trace(trace: Trace) -> SerializedTrace:

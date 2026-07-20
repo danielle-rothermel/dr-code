@@ -11,12 +11,15 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import ClassVar, Generic, TypeVar, cast
 
+from pydantic import JsonValue
+
 from dr_code.models import FrozenModel
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
     CodeCandidateSetArtifact,
 )
+from dr_code.trace.absent import LEGACY_FAILURE_CODE
 from dr_code.preprocessing.names import StepName
 
 
@@ -38,9 +41,19 @@ class StepFailedError(Exception):
     raised at bind time).
     """
 
-    def __init__(self, cause: str) -> None:
+    def __init__(
+        self,
+        cause: str,
+        *,
+        failure_code: str = LEGACY_FAILURE_CODE,
+        facts: Mapping[str, JsonValue] | None = None,
+    ) -> None:
         super().__init__(cause)
-        self.cause = cause
+        self.cause: str = cause
+        self.failure_code: str = failure_code
+        self.facts: dict[str, JsonValue] = (
+            dict(facts) if facts is not None else {}
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +65,7 @@ class StepOutput:
     """
 
     value: Artifact
-    facts: Mapping[str, str] = field(default_factory=dict)
+    facts: Mapping[str, JsonValue] = field(default_factory=dict)
 
 
 class Step(Generic[SettingsT]):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from dr_code.preprocessing.definition import (
@@ -10,19 +12,39 @@ from dr_code.preprocessing.definition import (
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
+    BoundPreprocessingRunner,
     BoundStep,
     bind_definition,
+    bind_preprocessing,
     run_preprocessing,
 )
+from dr_code.preprocessing.steps.base import Step, StepFailedError, StepSettings
 from dr_code.trace import (
-    Absent,
+    Artifact,
+    ArtifactKind,
     CodeArtifact,
-    CodeCandidateSetArtifact,
     TextArtifact,
     Trace,
     WiringError,
     is_absent,
 )
+
+
+class _FailingTextStep(Step[StepSettings]):
+    NAME = StepName.NORMALIZE_UNICODE
+    VERSION = "test"
+    INPUT = ArtifactKind.TEXT
+    OUTPUT = ArtifactKind.TEXT
+
+    def apply(self, value: Artifact):  # noqa: ARG002
+        raise StepFailedError(
+            "cannot recover this input",
+            failure_code="test.unrecoverable",
+            facts={
+                "candidates": ["candidate-0"],
+                "reason": {"kind": "unrecoverable"},
+            },
+        )
 
 
 def _def(
@@ -108,6 +130,57 @@ def test_bind_accepts_valid_kind_chain() -> None:
     assert len(bound) == 3
 
 
+def test_bound_runner_is_immutable_and_does_not_retain_live_definition() -> None:
+    definition = _def(
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+    )
+    runner = bind_preprocessing(definition)
+
+    assert isinstance(runner, BoundPreprocessingRunner)
+    with pytest.raises(FrozenInstanceError):
+        setattr(runner, "bound_steps", ())
+
+    definition.steps[0].settings["later_mutation"] = True
+    assert runner.bound_steps[0].step.settings == StepSettings()
+
+
+def test_bound_runner_matches_one_shot_execution() -> None:
+    definition = _def(
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+    )
+    input_value = TextArtifact(text="ｄｅｆ")
+
+    assert bind_preprocessing(definition).run(input_value) == run_preprocessing(
+        definition, input_value
+    )
+
+
+def test_bound_runner_binds_steps_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    definition = _def(
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+    )
+    import dr_code.preprocessing.runner as runner_mod
+
+    calls = 0
+    original = runner_mod.bind_definition
+
+    def count_bind(definition: PreprocessingDefinition) -> tuple[BoundStep, ...]:
+        nonlocal calls
+        calls += 1
+        return original(definition)
+
+    monkeypatch.setattr(runner_mod, "bind_definition", count_bind)
+    runner = runner_mod.bind_preprocessing(definition)
+
+    assert runner.run(TextArtifact(text="ｄｅｆ")).value("output") == TextArtifact(
+        text="def"
+    )
+    assert runner.run(TextArtifact(text="ｇ")).value("output") == TextArtifact(
+        text="g"
+    )
+    assert calls == 1
+
+
 # --- run: basic execution -------------------------------------------
 
 
@@ -139,13 +212,47 @@ def test_run_empty_definition_output_equals_input() -> None:
     assert trace.value("output") == TextArtifact(text="x")
 
 
-def test_run_input_kind_mismatch_raises_wiring_error() -> None:
+def test_bound_runner_input_kind_mismatch_raises_wiring_error() -> None:
     definition = _def(
         (StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),)
     )
     # extract_candidates expects Text; pass a CodeArtifact.
     with pytest.raises(WiringError):
-        run_preprocessing(definition, CodeArtifact(source="x = 1"))
+        bind_preprocessing(definition).run(CodeArtifact(source="x = 1"))
+
+
+def test_bound_runner_preserves_structured_step_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = _def(
+        (
+            StepSpec(instance_name="fail", step=StepName.NORMALIZE_UNICODE),
+            StepSpec(
+                instance_name="downstream",
+                step=StepName.NORMALIZE_LINE_ENDINGS,
+            ),
+        )
+    )
+    import dr_code.preprocessing.runner as runner_mod
+
+    monkeypatch.setitem(
+        runner_mod.REGISTRY,
+        StepName.NORMALIZE_UNICODE.value,
+        _FailingTextStep,
+    )
+    trace = bind_preprocessing(definition).run(TextArtifact(text="x"))
+
+    failure = trace.value("fail")
+    assert is_absent(failure)
+    assert failure.failure_code == "test.unrecoverable"
+    assert trace.step_facts["fail"] == {
+        "candidates": ["candidate-0"],
+        "reason": {"kind": "unrecoverable"},
+    }
+
+    propagated = trace.value("downstream")
+    assert is_absent(propagated)
+    assert propagated.failure_code == "test.unrecoverable"
 
 
 # --- run: Absent propagation -----------------------------------------

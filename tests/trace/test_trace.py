@@ -129,9 +129,17 @@ def test_external_trace_validates_value_types() -> None:
 def test_external_trace_accepts_step_facts() -> None:
     trace = external_trace(
         _minimal_values(),
-        step_facts={"step_a": {"chosen": "candidate_0"}},
+        step_facts={
+            "step_a": {
+                "chosen": "candidate_0",
+                "candidates": {"accepted": [0, 2], "rejected": [1]},
+            }
+        },
     )
-    assert trace.step_facts["step_a"] == {"chosen": "candidate_0"}
+    assert trace.step_facts["step_a"] == {
+        "chosen": "candidate_0",
+        "candidates": {"accepted": [0, 2], "rejected": [1]},
+    }
 
 
 # --- producer identity -----------------------------------------------

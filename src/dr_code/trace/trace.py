@@ -6,8 +6,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final, get_args
 
+from pydantic import JsonValue
+
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
+from dr_code.trace.facts import reject_nonfinite_floats
 from dr_code.trace.provenance import EXTERNAL_PRODUCER, TraceProducer
 
 INPUT_KEY: Final = "input"
@@ -35,7 +38,9 @@ class Trace:
     # flat namespace; must contain input & output
     values: Mapping[str, TraceValue]
     producer: TraceProducer
-    step_facts: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    step_facts: Mapping[str, Mapping[str, JsonValue]] = field(
+        default_factory=dict
+    )
     # step_facts: provenance recorded by steps (chosen alternative,
     # rejection reasons, candidate counts) keyed by instance name —
     # facts, never judgments (P-L2)
@@ -55,6 +60,7 @@ class Trace:
                     f"value for key {key!r} is not a TraceValue: "
                     f"{type(val).__name__}"
                 )
+        reject_nonfinite_floats(self.step_facts, path="step_facts")
 
     def value(self, key: str) -> TraceValue:
         """Missing key raises WiringError. Present-but-Absent returns the
@@ -69,7 +75,7 @@ class Trace:
 def external_trace(
     values: Mapping[str, TraceValue],
     *,
-    step_facts: Mapping[str, Mapping[str, str]] | None = None,
+    step_facts: Mapping[str, Mapping[str, JsonValue]] | None = None,
 ) -> Trace:
     """Boundary constructor for artifacts built outside dr-code:
     validates value types on the way in, stamps

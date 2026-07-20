@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import math
+
+import pytest
+from pydantic import ValidationError
+
 from dr_code.trace import (
     EXTERNAL_PRODUCER,
     INPUT_KEY,
@@ -18,6 +23,7 @@ from dr_code.trace import (
     deserialize_trace,
     serialize_trace,
 )
+from dr_code.trace.absent import LEGACY_FAILURE_CODE
 
 # A trace exercising every artifact kind plus an Absent value.
 _FULL_VALUES = {
@@ -28,6 +34,7 @@ _FULL_VALUES = {
     "missing": Absent(
         failed_step="parse",
         cause="syntax error",
+        failure_code="preprocessing.syntax_error",
         propagated_through=("score",),
     ),
 }
@@ -37,7 +44,12 @@ def _full_trace() -> Trace:
     return Trace(
         values=dict(_FULL_VALUES),
         producer=TraceProducer(producer_id="preproc-1", version="1.0"),
-        step_facts={"parse": {"reason": "unbalanced parens"}},
+        step_facts={
+            "parse": {
+                "reason": "unbalanced parens",
+                "rejected": {"count": 2, "indices": [0, 3]},
+            }
+        },
     )
 
 
@@ -65,7 +77,10 @@ def test_serialize_carries_artifacts_and_absences() -> None:
 def test_serialize_carries_step_facts() -> None:
     serialized = serialize_trace(_full_trace())
     assert serialized.step_facts == {
-        "parse": {"reason": "unbalanced parens"}
+        "parse": {
+            "reason": "unbalanced parens",
+            "rejected": {"count": 2, "indices": [0, 3]},
+        }
     }
 
 
@@ -126,6 +141,62 @@ def test_json_round_trip_preserves_absent() -> None:
         serialized.model_dump_json()
     )
     assert reparsed.values["missing"] == _FULL_VALUES["missing"]
+
+
+def test_legacy_v1_absent_materializes_legacy_failure_code() -> None:
+    legacy_payload = {
+        "schema_version": 1,
+        "producer": {"producer_id": "preproc-1", "version": "1.0"},
+        "values": {
+            INPUT_KEY: {"kind": "text", "text": "prompt"},
+            OUTPUT_KEY: {
+                "kind": "absent",
+                "failed_step": "parse",
+                "cause": "syntax error",
+                "propagated_through": ["score"],
+            },
+        },
+    }
+
+    legacy = SerializedTrace.model_validate(legacy_payload)
+    restored = deserialize_trace(legacy)
+    output = restored.value(OUTPUT_KEY)
+
+    assert legacy.schema_version == TRACE_SCHEMA_VERSION
+    assert isinstance(output, Absent)
+    assert output.failure_code == LEGACY_FAILURE_CODE
+    assert serialize_trace(restored).schema_version == TRACE_SCHEMA_VERSION
+
+
+def test_schema_v2_absent_requires_failure_code() -> None:
+    payload = {
+        "schema_version": 2,
+        "producer": {"producer_id": "preproc-1", "version": "1.0"},
+        "values": {
+            INPUT_KEY: {"kind": "text", "text": "prompt"},
+            OUTPUT_KEY: {
+                "kind": "absent",
+                "failed_step": "parse",
+                "cause": "syntax error",
+            },
+        },
+    }
+
+    with pytest.raises(ValidationError, match="require failure_code"):
+        SerializedTrace.model_validate(payload)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+def test_nonfinite_step_fact_is_rejected(value: float) -> None:
+    with pytest.raises(ValueError, match="non-finite float"):
+        Trace(
+            values={
+                INPUT_KEY: TextArtifact(text="in"),
+                OUTPUT_KEY: TextArtifact(text="out"),
+            },
+            producer=EXTERNAL_PRODUCER,
+            step_facts={"parse": {"score": value}},
+        )
 
 
 def test_full_pipeline_json_to_trace_value_equal() -> None:

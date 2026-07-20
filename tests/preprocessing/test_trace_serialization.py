@@ -15,6 +15,7 @@ from dr_code.preprocessing import (
     run_preprocessing,
 )
 from dr_code.preprocessing.definition import preprocessing_definition_hash
+from dr_code.preprocessing.steps.base import StepFailedError, StepOutput
 from dr_code.trace import (
     Absent,
     CodeArtifact,
@@ -26,6 +27,7 @@ from dr_code.trace import (
     is_absent,
     serialize_trace,
 )
+from dr_code.trace.absent import LEGACY_FAILURE_CODE
 
 BEST_EFFORT_ID = "humaneval-best-effort"
 FIELD_MARKER_ID = "humaneval-field-marker"
@@ -112,6 +114,24 @@ def test_round_trip_preserves_candidate_set_kind() -> None:
 
 def test_json_round_trip_is_lossless() -> None:
     _assert_json_round_trip(_trace(_FENCED))
+
+
+def test_step_contract_accepts_structured_facts() -> None:
+    facts = {"candidates": {"accepted": [0], "rejected": [1, 2]}}
+    output = StepOutput(
+        value=CodeCandidateSetArtifact(candidates=("x = 1",)), facts=facts
+    )
+    error = StepFailedError(
+        "no candidate survived",
+        failure_code="preprocessing.no_candidates",
+        facts={"rejected": [{"index": 0, "reason": "syntax"}]},
+    )
+    legacy_error = StepFailedError("no candidate survived")
+
+    assert output.facts == facts
+    assert error.failure_code == "preprocessing.no_candidates"
+    assert error.facts == {"rejected": [{"index": 0, "reason": "syntax"}]}
+    assert legacy_error.failure_code == LEGACY_FAILURE_CODE
 
 
 # --- absent trace: causal lineage and propagation survive ------------

@@ -30,8 +30,10 @@ from dr_code.preprocessing.definitions import (
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.runner import (
+    BoundPreprocessingRunner,
     BoundStep,
     bind_definition,
+    bind_preprocessing,
     run_preprocessing,
 )
 from dr_code.preprocessing.steps.base import (
@@ -58,6 +60,7 @@ __all__ = [
     "SUPPORTED_DEFINITION_IDS",
     "SUPPORTED_DEFINITION_VERSIONS",
     "AlternativesStep",
+    "BoundPreprocessingRunner",
     "BoundStep",
     "CandidateMapStep",
     "ExtractionStrategy",
@@ -71,6 +74,7 @@ __all__ = [
     "StepSettings",
     "StepSpec",
     "bind_definition",
+    "bind_preprocessing",
     "preprocessing_definition_hash",
     "resolve_preprocessing_definition",
     "run_preprocessing",

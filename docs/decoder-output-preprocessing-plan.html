@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="doc.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/vs.min.css">
+<title>dr-code · Function-Candidate Preprocessing &amp; Corpus Analysis Plan</title>
+</head>
+<body>
+<main>
+
+<h1>Function-Candidate Preprocessing &amp; Corpus Analysis Plan</h1>
+<div class="byline">dr-code · 2026-07-19</div>
+
+<div class="hero">
+  This plan has two ordered parts. <span class="key">Part I updates
+  <code>dr_code.preprocessing</code></span> so one exhaustive, function-oriented
+  definition returns every valid candidate and directly records all semantic
+  analysis facts. <span class="key">Part II assumes that flow exists</span> and
+  describes the corpus analysis we will perform from its traces. The parquet
+  writer remains a thin persistence adapter: it attaches source identity and
+  serializes pipeline-owned results without reclassifying them.
+</div>
+
+<div class="layer-head"><span class="n">00</span><h2>Execution orchestration</h2></div>
+
+<p>
+  Implementation proceeds as a five-PR Graphite stack. The root Sol-high agent
+  owns architecture, integration, Git/Graphite operations, full-corpus runs,
+  and final conclusions. Terra agents implement disjoint modules; Luna agents
+  perform read-only audits, corpus reconnaissance, CI triage, and visual QA.
+  No worker performs branch operations in the shared worktree.
+</p>
+
+<div class="codeblock">
+  <div class="cb-head"><span>Graphite stack</span><span>target: origin/main</span></div>
+  <pre><code class="language-plaintext">PR 1  trace contracts + bound runner
+  └─ PR 2  exhaustive function-candidate pipeline
+       └─ PR 3  corpus runner + artifact writer
+            └─ PR 4  full analysis + candidate test execution
+                 └─ PR 5  Vite/React preprocessing analysis viewer</code></pre>
+</div>
+
+<div class="grid-3">
+  <div class="card">
+    <h3>Sol · high effort</h3>
+    <ul>
+      <li>Freeze public contracts and integration seams.</li>
+      <li>Review every worker diff and own shared registries.</li>
+      <li>Operate Graphite, full runs, CI repair, and final synthesis.</li>
+      <li>Perform an independent findings-first review of the complete stack.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Terra · high/medium effort</h3>
+    <ul>
+      <li>High: trace schemas, extraction, provenance, artifacts, evaluation, UI.</li>
+      <li>Medium: isolated filters, CLI mechanics, fixtures, adapters, and tests.</li>
+      <li>Each worker owns explicit files and never reverts another worker.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Luna · medium effort</h3>
+    <ul>
+      <li>Inventory call sites and legacy surfaces before edits.</li>
+      <li>Audit real-corpus invariants and representative examples.</li>
+      <li>Triage CI evidence and perform visual/accessibility checks.</li>
+    </ul>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>PR</th>
+      <th>Primary result</th>
+      <th>Parallel work</th>
+      <th>Merge gate</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1 · contracts</td>
+      <td>Structured failure facts, stable codes, serialization, and bind-once runner</td>
+      <td>Trace model and runner workers; Luna consumer audit</td>
+      <td>Round-trip, compatibility, full Python checks</td>
+    </tr>
+    <tr>
+      <td>2 · pipeline</td>
+      <td>One exhaustive v1 definition returning all function-bearing candidates</td>
+      <td>Extraction/provenance and filters/parser workers; Luna fixture audit</td>
+      <td>Every outcome, ordering, dedupe, JSON, marker, async, parser-limit tests</td>
+    </tr>
+    <tr>
+      <td>3 · corpus</td>
+      <td>Typer batch runner, relational Parquet artifacts, resume, and manifest</td>
+      <td>Schema/writer and CLI/checkpoint workers; Luna corpus audit</td>
+      <td>Atomic publication, resume, smoke shard, row invariants</td>
+    </tr>
+    <tr>
+      <td>4 · analysis</td>
+      <td>Complete preprocessing/test runs, report, summaries, transitions, examples</td>
+      <td>Execution/cache and analysis/report workers; Luna independent validation</td>
+      <td>Complete manifests, reconciled totals, evidence-backed conclusions</td>
+    </tr>
+    <tr>
+      <td>5 · viewer</td>
+      <td>Static-data Vite/React app using <code>@dr-code/viewer</code></td>
+      <td>App and payload/test workers; Luna visual/accessibility QA</td>
+      <td>Typecheck, build, tests, responsive browser inspection, exact totals</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  The orchestration is complete only when every PR is open against the fork’s
+  <code>main</code> with green CI; the full preprocessing and candidate-test
+  manifests are complete and validated; compact analysis deliverables are
+  committed; the full Parquet artifacts remain available in the shared
+  workspace; and the viewer has passed automated and visual checks. The final
+  handoff includes PR links, run IDs, artifact paths, key counts, conclusions,
+  and evidence-backed suggestions for any additional recovery rules.
+</div>
+
+<div class="layer-head"><span class="n">01</span><h2>Update the preprocessing flow</h2></div>
+
+<div class="section-head"><h2>The target is one exhaustive, directly labeled contract</h2></div>
+
+<figure class="panel">
+  <div class="flow">
+    <div class="node ext">
+      Input boundary
+      <small>null outside · every string inside</small>
+    </div>
+    <div class="arr">→</div>
+    <div class="node">
+      Bound runner
+      <small>bind definition once per run</small>
+    </div>
+    <div class="arr">→</div>
+    <div class="node hot">
+      Exhaustive extraction
+      <small>all variants × all discovery rules</small>
+    </div>
+    <div class="arr">→</div>
+    <div class="node warn">
+      Candidate validation
+      <small>clean · compile · require function</small>
+    </div>
+    <div class="arr">→</div>
+    <div class="node ext">
+      Authoritative trace
+      <small>candidates or labeled absence</small>
+    </div>
+  </div>
+  <figcaption>
+    Missing external data is the only classification outside preprocessing.
+    Empty strings, whitespace-only strings, and every nonblank string enter the
+    same named pipeline and receive pipeline-owned outcomes.
+  </figcaption>
+</figure>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>Name the result rather than the heuristic</h3>
+    <ul>
+      <li>Register only <span class="key"><code>humaneval-function-candidates@v1</code></span>.</li>
+      <li>Export <code>HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION</code>.</li>
+      <li>Use version 1 because both the descriptive ID and output contract are new.</li>
+      <li>Preserve old traces as historical data, but do not keep definition aliases.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Make success and failure explicit</h3>
+    <ul>
+      <li>Success is a <span class="key">nonempty ordered candidate set</span>.</li>
+      <li>Every survivor compiles and contains a top-level <code>def</code> or <code>async def</code>.</li>
+      <li>Failure is <code>Absent</code> with a stable <code>failure_code</code>, failed step, cause, and structured facts.</li>
+      <li><code>return_all</code> replaces <code>select_first</code>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>The trace owns analysis semantics</h3>
+    <p>
+      Extraction provenance, stage counts, deduplication lineage, rejection
+      codes, parser diagnostics, and function facts originate in preprocessing.
+      Adapters may flatten them into columns, but may not infer new outcomes.
+    </p>
+  </div>
+  <div class="card">
+    <h3>Function identity remains application policy</h3>
+    <p>
+      The filter requires a top-level function but never a particular name.
+      Applications may add a name-aware step or filter preprocessing or test
+      results. Executable tests determine task satisfaction.
+    </p>
+  </div>
+</div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>public use</span><span>bind once · run many</span></div>
+  <pre><code class="language-python">runner = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+)
+
+for decoder_output in present_decoder_outputs:
+    trace = runner.run(TextArtifact(text=decoder_output))
+
+    # success: nonempty CodeCandidateSetArtifact + structured facts
+    # failure: Absent(failure_code=..., failed_step=..., cause=...)</code></pre>
+</div>
+
+<div class="section-head"><h2>The new flow exhausts recovery before it filters</h2></div>
+
+<div class="codeblock">
+  <div class="cb-head"><span>humaneval-function-candidates@v1</span><span>ordered pipeline</span></div>
+  <pre><code class="language-plaintext">normalize text
+  → require nonblank normalized text
+  → produce every applicable text variant
+      normalized response
+      decoded whole-response JSON string
+      top-level JSON object's "code" value
+      [[ ## code ## ]] payload
+  → run every discovery rule over every variant
+      fenced / first-unfenced blocks
+      anchored code blocks
+      Markdown wrapper removal
+      structural escaped-Python recovery
+  → emit variant, strategy, and candidate provenance
+  → clean every candidate
+  → filter candidates that became blank
+  → deduplicate cleaned candidates, preserving first occurrence and all origins
+  → filter plain literals
+  → filter encoded code representations
+  → filter non-compilable candidates
+  → filter candidates without a top-level function
+  → emit candidate IDs, rejection records, compilation facts, and function facts
+  → return_all</code></pre>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Input or parsing shape</th>
+      <th>Current state</th>
+      <th>v1 treatment</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Empty or whitespace-only response</td>
+      <td>Usually classified before preprocessing</td>
+      <td>Normalize, then emit <code>decoder_output_blank</code> from <code>require_nonblank_text</code>.</td>
+    </tr>
+    <tr>
+      <td>Fenced/unfenced code, Python anchors, Markdown lists or quotes</td>
+      <td>Present in the current four-strategy first-success ladder</td>
+      <td>Retain all rules, run all of them, and record each candidate’s origin.</td>
+    </tr>
+    <tr>
+      <td>Escaped Python or whole-response JSON string</td>
+      <td>Partially covered by <code>recover_escaped_python</code></td>
+      <td>Decode into text variants before exhaustive discovery.</td>
+    </tr>
+    <tr>
+      <td>Top-level JSON object with string <code>code</code></td>
+      <td>Not implemented; the largest measured recovery gap</td>
+      <td>Decode the field and pass it through every discovery and cleaning rule.</td>
+    </tr>
+    <tr>
+      <td><code>[[ ## code ## ]]</code> payload</td>
+      <td>Implemented through a separate named definition/profile</td>
+      <td>Keep payload decoding as one text variant; remove the separate identity.</td>
+    </tr>
+    <tr>
+      <td><code>code = "def f(): ..."</code> assignment</td>
+      <td>Explicitly rejected</td>
+      <td>Continue rejecting; measured corpus evidence did not justify decoding it.</td>
+    </tr>
+    <tr>
+      <td>XML tags, inline-backtick repair, speculative syntax completion</td>
+      <td>Unsupported; no recurring, semantics-preserving rule was established</td>
+      <td>Do not add without concrete recurrence, fixtures, and a safe recovery rule.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout danger">
+  Make parser complexity a candidate-level failure before the full-corpus run.
+  Python 3.13 can raise <code>MemoryError: Parser stack overflowed</code> for a
+  sufficiently long operator chain. Convert only that specific parser-limit
+  condition into a rejection; continue to re-raise genuine memory exhaustion.
+</div>
+
+<div class="section-head"><h2>Failure labels and facts are public preprocessing output</h2></div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>Extend the data-failure contract</h3>
+    <p>
+      Give <code>StepFailedError</code> a stable failure code and structured
+      facts. Preserve the stable code on the compact <code>Absent</code> marker
+      and the structured diagnostics in that step’s trace facts. A filter that
+      removes the last candidate fails from that filter rather than passing an
+      empty set to a generic final failure.
+    </p>
+  </div>
+  <div class="card">
+    <h3>Use structured, JSON-valued facts</h3>
+    <p>
+      Replace string-only step facts with JSON-valued facts so lists of
+      candidate origins, rejection records, counts, and AST summaries remain
+      typed and directly serializable.
+    </p>
+  </div>
+  <div class="card">
+    <h3>Preserve candidate identity through the flow</h3>
+    <p>
+      Assign a stable post-cleaning <code>candidate_id</code> and record the raw
+      variant/strategy origins merged into it by deduplication. Rejection facts
+      and later test results can then refer to the same candidate.
+    </p>
+  </div>
+  <div class="card">
+    <h3>Emit structural facts where parsing occurs</h3>
+    <p>
+      Compilation and function filters already need the AST. They should emit
+      parse/compile diagnostics, top-level function count, and function names;
+      the corpus analyzer should not parse the source again.
+    </p>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Terminal pipeline code</th>
+      <th>Originating step</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><code>decoder_output_blank</code></td><td><code>require_nonblank_text</code></td><td>A present string normalized to empty.</td></tr>
+    <tr><td><code>no_code_candidates</code></td><td><code>extract_candidates</code></td><td>No variant/rule pair produced code-like content.</td></tr>
+    <tr><td><code>no_nonblank_cleaned_candidate</code></td><td><code>filter_nonblank_candidates</code></td><td>All extracted content became empty during cleaning.</td></tr>
+    <tr><td><code>plain_literal_only</code></td><td><code>filter_plain_literal</code></td><td>Every survivor was a literal-only module.</td></tr>
+    <tr><td><code>code_repr_only</code></td><td><code>filter_code_repr</code></td><td>Every survivor was an encoded code assignment.</td></tr>
+    <tr><td><code>no_compilable_candidate</code></td><td><code>filter_compilable</code></td><td>No survivor compiled as Python.</td></tr>
+    <tr><td><code>no_top_level_function_candidate</code></td><td><code>filter_has_top_level_function</code></td><td>Compilable modules existed, but none contained a top-level function.</td></tr>
+    <tr><td><code>function_candidates_extracted</code></td><td><code>return_all</code></td><td>A nonempty set of valid function-bearing candidates was returned.</td></tr>
+  </tbody>
+</table>
+
+<div class="section-head"><h2>Confirmed system findings define the implementation scope</h2></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Current fact</th>
+      <th>Why it matters</th>
+      <th>Required update</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="../src/dr_code/preprocessing/steps/base.py"><code>AlternativesStep</code></a> stops after the first nonempty strategy.</td>
+      <td>An unusable early result can hide useful later candidates.</td>
+      <td>Use exhaustive ordered union with provenance, then deduplicate after cleaning.</td>
+    </tr>
+    <tr>
+      <td><a href="../src/dr_code/preprocessing/steps/select_first.py"><code>select_first</code></a> is structure-blind.</td>
+      <td>It truncates both alternative candidates and later function-bearing candidates.</td>
+      <td>Remove it from the named definition and finish with <code>return_all</code>.</td>
+    </tr>
+    <tr>
+      <td><a href="../src/dr_code/preprocessing/steps/filter_compilable.py"><code>filter_compilable</code></a> accepts modules without functions.</td>
+      <td>Compilation alone is weaker than the new output contract.</td>
+      <td>Add <code>filter_has_top_level_function</code> after compilation.</td>
+    </tr>
+    <tr>
+      <td>The field-marker path is a separate definition and legacy strict parser profile.</td>
+      <td>The marker is an input representation, not a distinct acceptance policy.</td>
+      <td>Remove both identities and keep marker payload decoding in exhaustive extraction.</td>
+    </tr>
+    <tr>
+      <td>v2 collapses filter exhaustion into “no candidate survived filtering.”</td>
+      <td>The final absence hides literal, representation, syntax, and structure failures.</td>
+      <td>Emit stable codes and facts from the step that exhausts the set.</td>
+    </tr>
+    <tr>
+      <td>Two audited rows escape as parser-stack <code>MemoryError</code>.</td>
+      <td>A data-shaped parser limit can abort an otherwise recoverable batch.</td>
+      <td>Handle the exact parser-limit condition at every AST boundary.</td>
+    </tr>
+    <tr>
+      <td><a href="../src/dr_code/preprocessing/runner.py"><code>run_preprocessing</code></a> binds on every call.</td>
+      <td>Registry resolution and settings validation repeat for 307,870 strings.</td>
+      <td>Add a public bound runner now and reuse it across the corpus.</td>
+    </tr>
+    <tr>
+      <td><a href="../src/dr_code/preprocessing/definition.py">The definition hash</a> omits bound implementation versions and source.</td>
+      <td>Edited implementations can retain the same definition hash.</td>
+      <td>Record commit, dirty/source hash, and resolved step versions in the run manifest.</td>
+    </tr>
+    <tr>
+      <td><code>ast_stats</code> and <code>code_test</code> consume one <code>CodeArtifact</code>.</td>
+      <td>Candidate-set output changes downstream wiring.</td>
+      <td>Emit required AST facts in preprocessing; fan out successful candidates only at the later test boundary.</td>
+    </tr>
+    <tr>
+      <td><code>pyarrow</code> is only available transitively through <code>datasets</code>.</td>
+      <td>A direct PyArrow corpus writer should own its dependency.</td>
+      <td>If the writer imports it, declare it directly with <code>uv add pyarrow</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="section-head"><h2>Implement and verify the redesign in four slices</h2></div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>1. Establish public contracts</h3>
+    <ul>
+      <li>Add the new definition ID, v1 definition, stable outcome codes, and JSON-valued facts.</li>
+      <li>Make success nonempty and failure directly labeled.</li>
+      <li>Remove field-marker and legacy strict identities without aliases.</li>
+      <li>Update exports, serialization, wiring tests, and permanent boundary documentation.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>2. Make extraction exhaustive</h3>
+    <ul>
+      <li>Add raw, decoded JSON string, JSON <code>code</code>, and marker-payload variants.</li>
+      <li>Run every discovery rule, clean every candidate, and deduplicate with origin preservation.</li>
+      <li>Add blank, compilable, and top-level-function filters with candidate-level facts.</li>
+      <li>Turn the specific parser-stack limit into a recorded rejection.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>3. Bind once and persist traces</h3>
+    <ul>
+      <li>Introduce the public bound-runner API and reuse it for all present strings.</li>
+      <li>Add a Typer CLI with explicit input, output directory, and batch-size options.</li>
+      <li>Serialize pipeline labels, facts, and candidates without semantic postprocessing.</li>
+      <li>Publish parquet and its manifest atomically.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>4. Prove the new contract</h3>
+    <ul>
+      <li>Cover every outcome code and multi-candidate ordering/deduplication behavior.</li>
+      <li>Test blank input, JSON objects, marker payloads, async functions, and parser limits.</li>
+      <li>Assert every success is nonempty, compilable, and function-bearing.</li>
+      <li>Assert no present string escapes without a complete trace.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>Every run gets an immutable manifest</h3>
+    <ul>
+      <li>Corpus path, SHA-256, schema, and expected row count</li>
+      <li>Serialized definition and definition hash</li>
+      <li>Git commit, dirty flag/source hash, and resolved step versions</li>
+      <li>Start/completion time, output rows, outcome totals, and completion state</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Runs are append-only and publish atomically</h3>
+    <p>
+      Store runs under <code>../gen-viewer/data/preprocessing-runs/</code> with
+      unique IDs. Write partial artifacts first, validate them, and publish only
+      with <code>complete: true</code>. Never overwrite an earlier result set.
+    </p>
+  </div>
+</div>
+
+<div class="layer-head"><span class="n">02</span><h2>Analyze the corpus with the new flow in place</h2></div>
+
+<div class="callout">
+  Everything below assumes <code>humaneval-function-candidates@v1</code> is
+  deployed, every present string has a complete authoritative trace, and the
+  sidecar faithfully serializes those facts. We will query pipeline labels—not
+  reconstruct them from raw outputs in the analysis job.
+</div>
+
+<div class="section-head"><h2>Start with the complete corpus denominator</h2></div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>365,216 rows remain visible in every report</h3>
+    <ul>
+      <li><span class="key">57,346 null outputs</span> are the external missing-data population.</li>
+      <li><span class="key">307,870 present strings</span> enter preprocessing.</li>
+      <li>The pipeline will directly identify the <span class="key">109 whitespace-only strings</span>.</li>
+      <li>The previously audited nonblank population is 307,761.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3><code>sample_id</code> is the lossless metadata join</h3>
+    <ul>
+      <li>All 365,216 IDs are non-null and distinct.</li>
+      <li>Every present decoder output has a non-null <code>task_id</code>.</li>
+      <li>Model, prompt, source, task, date, and fidelity fields stay in the corpus.</li>
+      <li>The sidecar does not duplicate those dimensions.</li>
+    </ul>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Source kind</th>
+      <th>Total</th>
+      <th>Null output</th>
+      <th>Blank output</th>
+      <th>Nonblank output</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><code>archive_v1_generation_run</code></td><td>54,103</td><td>111</td><td>31</td><td>53,961</td></tr>
+    <tr><td><code>code_eval_source_line</code></td><td>177,700</td><td>0</td><td>0</td><td>177,700</td></tr>
+    <tr><td><code>legacy_dbos_generation_attempt</code></td><td>128,282</td><td>56,323</td><td>78</td><td>71,881</td></tr>
+    <tr><td><code>legacy_domain_partial</code></td><td>906</td><td>906</td><td>0</td><td>0</td></tr>
+    <tr><td><code>whetstone_v6_generation_run</code></td><td>4,225</td><td>6</td><td>0</td><td>4,219</td></tr>
+    <tr><td><strong>Total</strong></td><td><strong>365,216</strong></td><td><strong>57,346</strong></td><td><strong>109</strong></td><td><strong>307,761</strong></td></tr>
+  </tbody>
+</table>
+
+<div class="section-head"><h2>The analysis artifact is a thin, joinable trace projection</h2></div>
+
+<div class="grid-3">
+  <div class="card">
+    <h3>Adapter-owned identity</h3>
+    <ul>
+      <li><code>sample_id</code>, <code>run_id</code></li>
+      <li><code>decoder_output_presence</code></li>
+      <li><code>raw_output_sha256</code></li>
+      <li>One result row per source row</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Pipeline-owned result</h3>
+    <ul>
+      <li><code>outcome_code</code> or <code>failure_code</code></li>
+      <li><code>failed_step</code>, cause, propagated lineage</li>
+      <li>Per-stage counts and structured rejection records</li>
+      <li>Variant and strategy contribution</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Pipeline-owned candidates</h3>
+    <ul>
+      <li><code>candidate_id</code>, cleaned source, all origins</li>
+      <li>Parse and compile diagnostics</li>
+      <li>Top-level function count and names</li>
+      <li>Deduplication and ordering facts</li>
+    </ul>
+  </div>
+</div>
+
+<p>
+  The writer may mechanically flatten facts into typed columns and child tables.
+  It must preserve the complete pipeline meaning and must not classify source
+  text, parse candidates, or invent failure labels. Large repeated intermediate
+  values may be retained only for a bounded diagnostic sample as long as every
+  emitted fact and final candidate remains available.
+</p>
+
+<div class="codeblock">
+  <div class="cb-head"><span>DuckDB</span><span>enrich trace results with corpus metadata</span></div>
+  <pre><code class="language-sql">SELECT
+    corpus.*,
+    result.* EXCLUDE (sample_id)
+FROM read_parquet('generation-corpus.parquet') AS corpus
+JOIN read_parquet('preprocessing-runs/&lt;run-id&gt;.parquet') AS result
+USING (sample_id);</code></pre>
+</div>
+
+<div class="section-head"><h2>Six analyses explain coverage, failures, and usefulness</h2></div>
+
+<div class="grid-3">
+  <div class="card">
+    <h3>1. Corpus and preprocessing funnel</h3>
+    <ul>
+      <li>Missing versus present decoder output</li>
+      <li>Blank, no candidate, filtered, and successful populations</li>
+      <li>Absolute counts and rates against both total and present-string denominators</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>2. Failure morphology</h3>
+    <ul>
+      <li>Terminal failure code and failed step</li>
+      <li>Syntax/compile error classes and parser-limit cases</li>
+      <li>Literal, code-repr, cleaned-empty, and no-function populations</li>
+      <li>Representative samples per stable code</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>3. Recovery-rule contribution</h3>
+    <ul>
+      <li>Candidate yield by text variant and discovery strategy</li>
+      <li>Unique recoveries attributable to JSON, marker, escaped, or Markdown rules</li>
+      <li>Rules that produce duplicates or only rejected candidates</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>4. Candidate multiplicity and ambiguity</h3>
+    <ul>
+      <li>Survivor count per output</li>
+      <li>How often multiple strategies converge on one cleaned candidate</li>
+      <li>How often candidates contain multiple top-level functions</li>
+      <li>Ordering and candidate-set changes between runs</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>5. Metadata-conditioned behavior</h3>
+    <ul>
+      <li>Outcome and rule contribution by model and source kind</li>
+      <li>Prompt, task, date, and fidelity slices</li>
+      <li>Concentrated failure modes that suggest targeted future rules</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>6. Extraction versus executable correctness</h3>
+    <ul>
+      <li>Fan every successful candidate into the applicable tests</li>
+      <li>Join test results by <code>sample_id</code> and <code>candidate_id</code></li>
+      <li>Compare extractable, testable, passing, and failing populations</li>
+      <li>Do not impose a preprocessing-time function-name requirement</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section-head"><h2>The v2 audit supplies the comparison baseline</h2></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Current v2 outcome</th>
+      <th>Rows</th>
+      <th>Interpretation for the v1 comparison</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Selected compilable code</td><td>289,470</td><td>Current first-survivor policy returned one <code>CodeArtifact</code>.</td></tr>
+    <tr><td>Selected code with a top-level function</td><td>287,614</td><td>The selected module met the future structural requirement.</td></tr>
+    <tr><td>Selected code without a top-level function</td><td>1,856</td><td>These should become directly labeled no-function failures unless another candidate survives.</td></tr>
+    <tr><td>Absent at candidate extraction</td><td>9,617</td><td>Exhaustive variants/rules may recover part of this population.</td></tr>
+    <tr><td>Absent at <code>select_first</code></td><td>8,672</td><td>v1 should replace this generic bucket with precise filter-stage codes.</td></tr>
+    <tr><td>Unexpected parser-stack <code>MemoryError</code></td><td>2</td><td>v1 should retain both as recorded candidate failures without aborting.</td></tr>
+    <tr><td><strong>Total nonblank outputs</strong></td><td><strong>307,761</strong></td><td>The audited v2 population is fully accounted for.</td></tr>
+  </tbody>
+</table>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>JSON-object decoding is the largest measured opportunity</h3>
+    <ul>
+      <li><span class="key">16,888 outputs</span> are top-level JSON objects with a string <code>code</code> field.</li>
+      <li>Current best-effort fails on 12,543 of those objects.</li>
+      <li>Decoding the field and rerunning current extraction recovered a top-level function in <span class="key">12,360 failures</span>.</li>
+      <li>v1 provenance will measure exact unique recovery after every rule is exhaustive.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Marker decoding belongs in the general rule set</h3>
+    <ul>
+      <li><span class="key">56,363 outputs</span> contain <code>[[ ## code ## ]]</code>.</li>
+      <li>Current general extraction already succeeds on 55,643 of them.</li>
+      <li>Only 720 fail current best-effort; isolating the payload recovered one additional function.</li>
+      <li>v1 will measure marker contribution without maintaining a separate mode.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout warn">
+  These baseline counts describe extraction and AST shape, not semantic
+  correctness. Under the new flow, preprocessing supplies structural facts and
+  stable candidates; executable tests supply behavioral evidence afterward.
+</div>
+
+<div class="section-head"><h2>The analysis run has explicit completion criteria</h2></div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>Data integrity</h3>
+    <ul>
+      <li>Exactly 365,216 sidecar rows and unique <code>sample_id</code> values</li>
+      <li>57,346 missing external outputs and 307,870 preprocessing traces</li>
+      <li>109 pipeline-labeled blank inputs</li>
+      <li>No unexpected per-input exceptions</li>
+      <li>Every success nonempty, compilable, and function-bearing</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Analysis deliverables</h3>
+    <ul>
+      <li>Overall and metadata-sliced outcome funnels</li>
+      <li>Failure-code tables with deterministic review samples</li>
+      <li>Unique recovery and duplicate contribution by rule</li>
+      <li>Candidate multiplicity and structural summaries</li>
+      <li>v2→v1 transition report and candidate-level test-result join</li>
+    </ul>
+  </div>
+</div>
+
+<p>
+  The result is a reproducible separation of concerns: preprocessing owns all
+  interpretation of decoder text and code candidates; the corpus job owns
+  identity, persistence, and metadata joins; test execution owns behavioral
+  correctness. That boundary lets us iterate on extraction rules and compare
+  runs without rebuilding analysis semantics outside the official pipeline.
+</p>
+
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>
