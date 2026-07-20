@@ -103,14 +103,49 @@ def test_validate_python_source_records_parser_recursion_error(
     )
 
 
+def test_validate_python_source_captures_syntax_warnings() -> None:
+    source = "def f():\n    return '" + chr(92) + "q'\n"
+    validated = validate_python_source(source)
+
+    assert validated.compile_ok is True
+    assert validated.compile_warnings
+    assert validated.compile_warnings[0].startswith("SyntaxWarning:")
+
+
+def test_validate_python_source_preserves_warning_source_locations() -> None:
+    invalid_escape = chr(92) + "q"
+    source = f"a = '{invalid_escape}'\nb = '{invalid_escape}'\n"
+
+    validated = validate_python_source(source)
+
+    assert len(validated.compile_warnings) == 2
+    assert validated.compile_warnings[0].endswith("(line 1)")
+    assert validated.compile_warnings[1].endswith("(line 2)")
+
+
+def test_validate_python_source_preserves_repeated_warnings_on_one_line() -> (
+    None
+):
+    validated = validate_python_source("a = x is 1; b = y is 1\n")
+
+    assert len(validated.compile_warnings) == 2
+    assert all(
+        warning.endswith("(line 1)") for warning in validated.compile_warnings
+    )
+
+
 def test_equivalent_ignores_formatting_and_docstrings() -> None:
     a = 'def f(x):\n    """Doc."""\n    return (x + 1)\n'
     b = "def f(x):\n    return x + 1\n"
     assert equivalent(a, b)
 
 
-def test_equivalent_is_false_for_different_code_and_unparseable_input() -> None:
-    assert not equivalent("def f():\n    return 1\n", "def f():\n    return 2\n")
+def test_equivalent_is_false_for_different_code_and_unparseable_input() -> (
+    None
+):
+    assert not equivalent(
+        "def f():\n    return 1\n", "def f():\n    return 2\n"
+    )
     assert not equivalent(UNPARSEABLE, "x = 1\n")
 
 
@@ -142,7 +177,9 @@ def test_annotation_sites_include_source_location_and_value_flag() -> None:
 
     sites = annotation_sites(tree)
 
-    assert [(site.kind, site.name, site.annotation_source) for site in sites] == [
+    assert [
+        (site.kind, site.name, site.annotation_source) for site in sites
+    ] == [
         (AnnotationKind.PARAMETER, "x", "int"),
         (AnnotationKind.RETURN, None, "str"),
         (AnnotationKind.VARIABLE, "y", "list[int]"),
@@ -195,7 +232,10 @@ def test_function_signature_helpers_return_plain_analysis_values() -> None:
     assert format_function_signature(function) == (
         "async def f(x: int, *args: str, y: bool=False, **kwargs) -> str:"
     )
-    assert [(arg.name, arg.annotation_source) for arg in extract_function_args(function)] == [
+    assert [
+        (arg.name, arg.annotation_source)
+        for arg in extract_function_args(function)
+    ] == [
         ("x", "int"),
         ("y", "bool"),
     ]
@@ -218,7 +258,9 @@ def test_comment_and_docstring_sites_share_text_site_shape() -> None:
     hash_comments = extract_hash_comments(source)
     docstrings = extract_docstrings(tree)
 
-    assert [(site.kind, site.text, site.location.lineno) for site in hash_comments] == [
+    assert [
+        (site.kind, site.text, site.location.lineno) for site in hash_comments
+    ] == [
         (TextSiteKind.HASH_COMMENT, "module comment", 1),
         (TextSiteKind.HASH_COMMENT, "inline comment", 5),
     ]

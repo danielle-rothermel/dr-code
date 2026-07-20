@@ -33,7 +33,7 @@ class FilterPlainLiteral(Step):
     """Drop candidates that are a single container-literal expression."""
 
     NAME: ClassVar[StepName] = StepName.FILTER_PLAIN_LITERAL
-    VERSION: ClassVar[str] = "2"
+    VERSION: ClassVar[str] = "3"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
@@ -58,6 +58,7 @@ class FilterPlainLiteral(Step):
                     "parse_error": validation.parse_error,
                     "compile_ok": validation.compile_ok,
                     "compile_error": validation.compile_error,
+                    "compile_warnings": list(validation.compile_warnings),
                 }
                 if candidate_id is not None:
                     rejection["candidate_id"] = candidate_id

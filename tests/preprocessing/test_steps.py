@@ -353,6 +353,7 @@ def test_filter_compilable_keeps_compilable_with_parse_compile_facts() -> None:
             "parse_error": None,
             "compile_ok": True,
             "compile_error": None,
+            "compile_warnings": [],
         }
     ]
     assert out.facts["rejections"][0]["input_index"] == 1
@@ -378,6 +379,7 @@ def test_filter_plain_literal_drops_literals() -> None:
                 "parse_error": None,
                 "compile_ok": True,
                 "compile_error": None,
+                "compile_warnings": [],
             }
         ],
     }
@@ -484,6 +486,7 @@ def test_filter_has_top_level_function_keeps_async_function_with_facts() -> None
             "parse_error": None,
             "compile_ok": True,
             "compile_error": None,
+            "compile_warnings": [],
             "top_level_function_count": 1,
             "top_level_function_names": ["fetch"],
             "top_level_async_function_names": ["fetch"],

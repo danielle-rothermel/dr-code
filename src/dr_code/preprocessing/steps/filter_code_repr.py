@@ -41,7 +41,7 @@ class FilterCodeRepr(Step):
     """Drop candidates shaped like ``code = \"...\"``."""
 
     NAME: ClassVar[StepName] = StepName.FILTER_CODE_REPR
-    VERSION: ClassVar[str] = "2"
+    VERSION: ClassVar[str] = "3"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
@@ -66,6 +66,7 @@ class FilterCodeRepr(Step):
                     "parse_error": validation.parse_error,
                     "compile_ok": validation.compile_ok,
                     "compile_error": validation.compile_error,
+                    "compile_warnings": list(validation.compile_warnings),
                 }
                 if candidate_id is not None:
                     rejection["candidate_id"] = candidate_id

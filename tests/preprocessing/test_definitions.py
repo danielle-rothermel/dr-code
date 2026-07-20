@@ -16,6 +16,7 @@ from dr_code.preprocessing.definitions import (
     SUPPORTED_DEFINITION_IDS,
     SUPPORTED_DEFINITION_VERSIONS,
 )
+from dr_code.preprocessing.registry import REGISTRY
 
 DEFINITION_ID = HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID
 VERSION = "v1"
@@ -71,7 +72,9 @@ def test_definition_is_stable_hashable_and_bindable() -> None:
     assert bind_definition(definition)
 
 
-def test_definition_orders_exhaustion_cleaning_and_structural_filters() -> None:
+def test_definition_orders_exhaustion_cleaning_and_structural_filters() -> (
+    None
+):
     names = [step.instance_name for step in _resolve().steps]
     assert names.index("require_nonblank_text") < names.index(
         "extract_candidates"
@@ -106,3 +109,15 @@ def test_definition_runs_all_four_discovery_rules() -> None:
         "escaped_python",
         "escaped_markdown_wrapper",
     ]
+
+
+def test_diagnostic_filter_step_versions_cover_warning_facts() -> None:
+    versions = {
+        spec.instance_name: REGISTRY[spec.step].VERSION
+        for spec in _resolve().steps
+    }
+
+    assert versions["filter_plain_literal"] == "3"
+    assert versions["filter_code_repr"] == "3"
+    assert versions["filter_compilable"] == "3"
+    assert versions["filter_has_top_level_function"] == "2"

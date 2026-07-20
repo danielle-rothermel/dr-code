@@ -22,7 +22,7 @@ class FilterCompilable(Step):
     """Keep candidates that parse and compile as Python source."""
 
     NAME: ClassVar[StepName] = StepName.FILTER_COMPILABLE
-    VERSION: ClassVar[str] = "2"
+    VERSION: ClassVar[str] = "3"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
@@ -42,6 +42,7 @@ class FilterCompilable(Step):
                 "parse_error": validation.parse_error,
                 "compile_ok": validation.compile_ok,
                 "compile_error": validation.compile_error,
+                "compile_warnings": list(validation.compile_warnings),
             }
             candidate_id = value.lineage_at(index).candidate_id
             if candidate_id is not None:

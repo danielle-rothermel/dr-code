@@ -23,7 +23,7 @@ class FilterHasTopLevelFunction(Step):
     """Keep candidates with at least one top-level sync or async function."""
 
     NAME: ClassVar[StepName] = StepName.FILTER_HAS_TOP_LEVEL_FUNCTION
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "2"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
@@ -43,6 +43,7 @@ class FilterHasTopLevelFunction(Step):
                 "parse_error": validation.parse_error,
                 "compile_ok": validation.compile_ok,
                 "compile_error": validation.compile_error,
+                "compile_warnings": list(validation.compile_warnings),
             }
             candidate_id = value.lineage_at(index).candidate_id
             if candidate_id is not None:

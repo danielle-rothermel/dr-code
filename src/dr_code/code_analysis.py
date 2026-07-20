@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import io
 import tokenize
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -27,6 +28,7 @@ class PythonSourceValidation(BaseModel):
     parse_error: str | None
     compile_ok: bool
     compile_error: str | None
+    compile_warnings: tuple[str, ...] = ()
     parser_stack_overflow: bool = False
     parser_recursion_overflow: bool = False
 
@@ -110,52 +112,62 @@ def validate_python_source_with_ast(
     module for reuse (None when parsing failed)."""
     parser_stack_overflow = False
     parser_recursion_overflow = False
-    try:
-        parsed_module = ast.parse(source)
-    except (SyntaxError, ValueError) as exc:
-        parse_ok = False
-        parse_error = f"{type(exc).__name__}: {exc}"
-        parsed_module = None
-    except RecursionError as exc:
-        parse_ok = False
-        parse_error = f"{type(exc).__name__}: {exc}"
-        parsed_module = None
-        parser_recursion_overflow = True
-    except MemoryError as exc:
-        if not is_cpython_parser_stack_overflow(exc):
-            raise
-        parse_ok = False
-        parse_error = f"{type(exc).__name__}: {exc}"
-        parsed_module = None
-        parser_stack_overflow = True
-    else:
-        parse_ok = True
-        parse_error = None
+    with warnings.catch_warnings(record=True) as parse_warnings:
+        warnings.simplefilter("always", SyntaxWarning)
+        try:
+            parsed_module = ast.parse(source)
+        except (SyntaxError, ValueError) as exc:
+            parse_ok = False
+            parse_error = f"{type(exc).__name__}: {exc}"
+            parsed_module = None
+        except RecursionError as exc:
+            parse_ok = False
+            parse_error = f"{type(exc).__name__}: {exc}"
+            parsed_module = None
+            parser_recursion_overflow = True
+        except MemoryError as exc:
+            if not is_cpython_parser_stack_overflow(exc):
+                raise
+            parse_ok = False
+            parse_error = f"{type(exc).__name__}: {exc}"
+            parsed_module = None
+            parser_stack_overflow = True
+        else:
+            parse_ok = True
+            parse_error = None
 
+    compile_warnings: list[warnings.WarningMessage] = []
     if parser_stack_overflow or parser_recursion_overflow:
         # Retrying through ``compile(source, ...)`` would invoke the same
         # parser and can repeat the expensive recursion failure.
         compile_ok = False
         compile_error = parse_error
     else:
-        try:
-            compile(
-                parsed_module if parsed_module is not None else source,
-                "<candidate>",
-                "exec",
-            )
-        except (SyntaxError, ValueError, RecursionError) as exc:
-            compile_ok = False
-            compile_error = f"{type(exc).__name__}: {exc}"
-        except MemoryError as exc:
-            if not is_cpython_parser_stack_overflow(exc):
-                raise
-            compile_ok = False
-            compile_error = f"{type(exc).__name__}: {exc}"
-            parser_stack_overflow = True
-        else:
-            compile_ok = True
-            compile_error = None
+        with warnings.catch_warnings(record=True) as compile_warnings:
+            warnings.simplefilter("always", SyntaxWarning)
+            try:
+                compile(
+                    parsed_module if parsed_module is not None else source,
+                    "<candidate>",
+                    "exec",
+                )
+            except (SyntaxError, ValueError, RecursionError) as exc:
+                compile_ok = False
+                compile_error = f"{type(exc).__name__}: {exc}"
+            except MemoryError as exc:
+                if not is_cpython_parser_stack_overflow(exc):
+                    raise
+                compile_ok = False
+                compile_error = f"{type(exc).__name__}: {exc}"
+                parser_stack_overflow = True
+            else:
+                compile_ok = True
+                compile_error = None
+    warning_messages = tuple(
+        f"{warning.category.__name__}: {warning.message} "
+        f"(line {warning.lineno})"
+        for warning in (*parse_warnings, *compile_warnings)
+    )
 
     return SourceValidationWithTree(
         validation=PythonSourceValidation(
@@ -163,6 +175,7 @@ def validate_python_source_with_ast(
             parse_error=parse_error,
             compile_ok=compile_ok,
             compile_error=compile_error,
+            compile_warnings=warning_messages,
             parser_stack_overflow=parser_stack_overflow,
             parser_recursion_overflow=parser_recursion_overflow,
         ),
