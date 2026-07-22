@@ -331,6 +331,47 @@ def test_last_return_salvage_ignores_strings_docstrings_and_comments() -> None:
     )
 
 
+def test_last_return_salvage_ignores_return_inside_trailing_prose() -> None:
+    sources = (
+        (
+            "def find_value(mid):\n"
+            "    if mid < 0:\n"
+            "        return -1\n"
+            "If you want the binary string to include the '0b' prefix, "
+            "change the return line to: return bin(mid).\n"
+        ),
+        (
+            "def rotate(s, shifted):\n"
+            "    return shifted\n"
+            "If you want a strictly greater-than rule, change the condition "
+            "to if shift >= n: return s[::-1].\n"
+        ),
+        (
+            "def count(values):\n"
+            "    return len(values)\n"
+            "- If there are no values, return 0.\n"
+        ),
+        (
+            "def identity(value):\n"
+            "    return value\n"
+            "return the result as an integer.\n"
+        ),
+    )
+
+    output = ExpandLastReturnSalvage().apply(
+        CodeCandidateSetArtifact(candidates=sources)
+    )
+
+    assert isinstance(output.value, CodeCandidateSetArtifact)
+    assert output.value.candidates == (
+        *sources,
+        "def find_value(mid):\n    if mid < 0:\n        return -1\n",
+        "def rotate(s, shifted):\n    return shifted\n",
+        "def count(values):\n    return len(values)\n",
+        "def identity(value):\n    return value\n",
+    )
+
+
 def test_last_return_salvage_fails_closed_on_malformed_tokenization() -> None:
     source = "def f():\n    return (\n        1"
 

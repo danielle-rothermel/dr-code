@@ -4,6 +4,8 @@
   "annotation_export_checkpoint_sha256": "c9ebe01e398bfe589fe67b69260553dc37647a8d9a662463cda5c169eb75a441",
   "authoritative_corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
   "annotation_records_sha256": "0048761890b9e20af9016d15f7b4eacaeb2171bfd895579b89293650063437d5",
+  "post_holdout_transitions_sha256": "9a6e4e88f3b1f672616b14cf9490604beeff7413a3508984e2bd10b2ada3b7b6",
+  "post_holdout_baseline_candidates_sha256": "64d3effc33089e1fa36aa1db9ce0377e55cf3b324e1e8ab41105c0d99106e560",
   "cases": [
     {
       "id": "annotation-00410481b7208f39",
@@ -3821,6 +3823,1503 @@
             }
           }
         ]
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-3c9825e84c0ebe59",
+      "decoder_output": "Here's a Python function that follows your specification:\n\n- If n <= m, it computes the midpoint (average) of n and m, rounds it, and returns its binary string representation (without the '0b' prefix).\n- If n > m, it returns -1.\n\nCode:\n\ndef midpoint_binary(n, m):\n    if n <= m:\n        # Compute midpoint, round to nearest integer\n        mid = round((n + m) / 2)\n        # Return binary string without the '0b' prefix\n        return bin(mid)[2:]\n    else:\n        return -1\n\n# Examples\nprint(midpoint_binary(3, 7))   # \"101\"  -> midpoint is 5\nprint(midpoint_binary(10, 10)) # \"1010\" -> midpoint is 10\nprint(midpoint_binary(8, 5))   # -1\n\nIf you want the binary string to include the '0b' prefix, change the return line to: return bin(mid)",
+      "decoder_output_sha256": "0fc96f5f5cc0b5763f0508dbe722d3e94c1ed52b4e86c8ff345d10e70f94b962",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "3c9825e84c0ebe596a68f5766fda5f5487680f502a241fdd8816444cb5cd7f0e",
+          "decoder_output_sha256": "0fc96f5f5cc0b5763f0508dbe722d3e94c1ed52b4e86c8ff345d10e70f94b962",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def midpoint_binary(n, m):\n    if n <= m:\n        # Compute midpoint, round to nearest integer\n        mid = round((n + m) / 2)\n        # Return binary string without the '0b' prefix\n        return bin(mid)[2:]\n    else:\n        return -1"
+      ],
+      "expected_top_level_function_names": [
+        "midpoint_binary"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-3cfc053f46ec2dec",
+      "decoder_output": "Here's a Python implementation of Strongest_Extension that follows the specification:\n\n- Computes strength as number of uppercase letters minus number of lowercase letters in the extension name.\n- Selects the extension with the maximum strength; ties are broken by the earliest in the input list.\n- Returns \"ClassName.ExtensionName\" as a string.\n\nCode:\n\ndef Strongest_Extension(class_name, extensions):\n    \"\"\"\n    class_name: str, e.g., 'Slices'\n    extensions: list of strings\n    Returns: 'ClassName.ExtensionName' of the strongest extension\n    \"\"\"\n    def strength(ext):\n        cap = sum(1 for ch in ext if ch.isupper())\n        sm = sum(1 for ch in ext if ch.islower())\n        return cap - sm\n\n    best = None\n    best_strength = None\n\n    for ext in extensions:\n        s = strength(ext)\n        if best is None or s > best_strength:\n            best = ext\n            best_strength = s\n\n    return f\"{class_name}.{best}\" if best is not None else f\"{class_name}.\" \n\nIf you want to strictly handle empty extensions list by returning just class_name or raising an error, you can adjust the return accordingly.",
+      "decoder_output_sha256": "bc443b5a79df5e82e1f67e54eb4f3937e2e5a8b7cd7939ca1f4b1d4390376efa",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "3cfc053f46ec2dec72d6d9505ebb4e8abd9181e46aeabfd5902c9feb32e68fb8",
+          "decoder_output_sha256": "bc443b5a79df5e82e1f67e54eb4f3937e2e5a8b7cd7939ca1f4b1d4390376efa",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def Strongest_Extension(class_name, extensions):\n    \"\"\"\n    class_name: str, e.g., 'Slices'\n    extensions: list of strings\n    Returns: 'ClassName.ExtensionName' of the strongest extension\n    \"\"\"\n    def strength(ext):\n        cap = sum(1 for ch in ext if ch.isupper())\n        sm = sum(1 for ch in ext if ch.islower())\n        return cap - sm\n\n    best = None\n    best_strength = None\n\n    for ext in extensions:\n        s = strength(ext)\n        if best is None or s > best_strength:\n            best = ext\n            best_strength = s\n\n    return f\"{class_name}.{best}\" if best is not None else f\"{class_name}.\""
+      ],
+      "expected_top_level_function_names": [
+        "Strongest_Extension"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-472cd6fe402b9081",
+      "decoder_output": "Here's a concise O(n) solution using a Kadane-style approach for the minimum subarray sum.\n\ndef minSubArraySum(nums):\n    if not nums:\n        raise ValueError(\"nums must be a non-empty list\")\n    min_ending_here = nums[0]\n    min_so_far = nums[0]\n    for x in nums[1:]:\n        min_ending_here = min(x, min_ending_here + x)\n        min_so_far = min(min_so_far, min_ending_here)\n    return min_so_far\n\n# Examples\n# minSubArraySum([2, 3, 4, 1, 2, 4]) -> 1\n# minSubArraySum([-1, -2, -3]) -> -6\n\nIf you want to handle empty input gracefully, you can return 0 or raise an error as shown.",
+      "decoder_output_sha256": "1db24652ba00a1eaf2468b7b5961ebae4138d94859841e20d16ca2a862b06335",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "472cd6fe402b9081f562ce78b049389ba7f71fd8ff4c663cbbabaf31f6f45301",
+          "decoder_output_sha256": "1db24652ba00a1eaf2468b7b5961ebae4138d94859841e20d16ca2a862b06335",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def minSubArraySum(nums):\n    if not nums:\n        raise ValueError(\"nums must be a non-empty list\")\n    min_ending_here = nums[0]\n    min_so_far = nums[0]\n    for x in nums[1:]:\n        min_ending_here = min(x, min_ending_here + x)\n        min_so_far = min(min_so_far, min_ending_here)\n    return min_so_far"
+      ],
+      "expected_top_level_function_names": [
+        "minSubArraySum"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-4be19b6244fd58d0",
+      "decoder_output": "It looks like you’re defining a function to compute the area of a triangle, but the implementation is missing. The area formula is (base * height) / 2.\n\nHere’s a complete version with a proper docstring example:\n\ndef triangle_area(a, h):\n    \"\"\"Return the area of a triangle given base a and height h.\n\n    Examples:\n        >>> triangle_area(5, 3)\n        7.5\n    \"\"\"\n    return (a * h) / 2\n\nIf you want integer output when appropriate, you could also cast or use division that preserves float in Python 3:\n\n- Using / always returns float.\n- If you prefer exact rational results for integers, you could keep as a fraction: (a * h) / 2 remains float, or use a and h as ints and return a * h / 2.0 to emphasize float.",
+      "decoder_output_sha256": "50c83ef52a1f2e6e6059e15cf5a7708c07dd708226dffa8caace2bf9b75fa3bb",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "4be19b6244fd58d0157cd8da620279ecf942f78783613fb2d27e7071785d2bac",
+          "decoder_output_sha256": "50c83ef52a1f2e6e6059e15cf5a7708c07dd708226dffa8caace2bf9b75fa3bb",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def triangle_area(a, h):\n    \"\"\"Return the area of a triangle given base a and height h.\n\n    Examples:\n        >>> triangle_area(5, 3)\n        7.5\n    \"\"\"\n    return (a * h) / 2",
+        "def triangle_area(a, h):\n    \"\"\"Return the area of a triangle given base a and height h.\n\n    Examples:\ntriangle_area(5, 3)\n5\n    \"\"\"\n    return (a * h) / 2"
+      ],
+      "expected_top_level_function_names": [
+        "triangle_area"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-523a2ec1da7dc1cb",
+      "decoder_output": "Here's a Python implementation that follows the specification: it finds the largest prime value in the list and returns the sum of its digits.\n\n- It checks primality efficiently enough for typical inputs.\n- If there are no primes in the list, it returns 0 (adjust if you prefer another behavior).\n\nCode:\n\ndef skjkasdkd(lst):\n    \"\"\"You are given a list of integers.\n    You need to find the largest prime value and return the sum of its digits.\n\n    Examples:\n    For lst = [0,3,2,1,3,5,7,4,5,5,5,2,181,32,4,32,3,2,32,324,4,3] the output should be 10\n    For lst = [1,0,1,8,2,4597,2,1,3,40,1,2,1,2,4,2,5,1] the output should be 25\n    For lst = [1,3,1,32,5107,34,83278,109,163,23,2323,32,30,1,9,3] the output should be 13\n    For lst = [0,724,32,71,99,32,6,0,5,91,83,0,5,6] the output should be 11\n    For lst = [0,81,12,3,1,21] the output should be 3\n    For lst = [0,8,1,2,1,7] the output should be 7\n    \"\"\"\n    def is_prime(n: int) -> bool:\n        if n <= 1:\n            return False\n        if n <= 3:\n            return True\n        if n % 2 == 0 or n % 3 == 0:\n            return False\n        i = 5\n        w = 2\n        while i * i <= n:\n            if n % i == 0:\n                return False\n            i += w\n            w = 6 - w\n        return True\n\n    primes = [x for x in lst if isinstance(x, int) and is_prime(x)]\n    if not primes:\n        return 0  # or raise an exception / return None depending on desired behavior\n    largest = max(primes)\n\n    # sum of digits of largest prime\n    s = 0\n    if largest == 0:\n        return 0\n    for ch in str(abs(largest)):\n        s += ord(ch) - ord('0')\n    return s\n\nUsage example:\nprint(skjkasdkd([0,3,2,1,3,5,7,4,5,5,5,2,181,32,4,32,3,2,32,324,4,3]))  # 10\n\nIf you want different behavior when no primes exist (e.g., return None), let me know and I’ll adjust.",
+      "decoder_output_sha256": "93f16667783dbdca079c557bfd8a873364e6f1aefc48e815987bd8ba1e3151fb",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "523a2ec1da7dc1cbd76bc3ce656cde7bac8df2019e59dbe3264186952e09a88e",
+          "decoder_output_sha256": "93f16667783dbdca079c557bfd8a873364e6f1aefc48e815987bd8ba1e3151fb",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def skjkasdkd(lst):\n    \"\"\"You are given a list of integers.\n    You need to find the largest prime value and return the sum of its digits.\n\n    Examples:\n    For lst = [0,3,2,1,3,5,7,4,5,5,5,2,181,32,4,32,3,2,32,324,4,3] the output should be 10\n    For lst = [1,0,1,8,2,4597,2,1,3,40,1,2,1,2,4,2,5,1] the output should be 25\n    For lst = [1,3,1,32,5107,34,83278,109,163,23,2323,32,30,1,9,3] the output should be 13\n    For lst = [0,724,32,71,99,32,6,0,5,91,83,0,5,6] the output should be 11\n    For lst = [0,81,12,3,1,21] the output should be 3\n    For lst = [0,8,1,2,1,7] the output should be 7\n    \"\"\"\n    def is_prime(n: int) -> bool:\n        if n <= 1:\n            return False\n        if n <= 3:\n            return True\n        if n % 2 == 0 or n % 3 == 0:\n            return False\n        i = 5\n        w = 2\n        while i * i <= n:\n            if n % i == 0:\n                return False\n            i += w\n            w = 6 - w\n        return True\n\n    primes = [x for x in lst if isinstance(x, int) and is_prime(x)]\n    if not primes:\n        return 0  # or raise an exception / return None depending on desired behavior\n    largest = max(primes)\n\n    # sum of digits of largest prime\n    s = 0\n    if largest == 0:\n        return 0\n    for ch in str(abs(largest)):\n        s += ord(ch) - ord('0')\n    return s"
+      ],
+      "expected_top_level_function_names": [
+        "skjkasdkd"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-5a4a6240f1810bcd",
+      "decoder_output": "Here's a complete implementation based on your docstring and examples. It returns the circularly shifted digits as a string, and if the shift is greater than the number of digits it reverses the digits.\n\nKey points:\n- Convert x to a string of digits (handle negative numbers by taking absolute value, then prepend a minus sign if needed).\n- Normalize the shift modulo the number of digits.\n- If after normalization shift is 0, return the original digits.\n- If shift > digits, return reversed digits (per your specification). Since you already mention “If shift > number of digits, return digits reversed,” I interpret this as: if shift >= n, return reversed digits. If you truly mean strictly greater than, adjust accordingly.\n\nCode:\n\ndef circular_shift(x, shift):\n    s = str(abs(int(x)))  # digits of x\n    n = len(s)\n    if n == 0:\n        return \"\"\n    # If shift is greater than number of digits, return reversed\n    if shift > n:\n        return s[::-1]\n    # Normalize shift within range\n    k = shift % n\n    if k == 0:\n        return s\n    # Circular shift right by k: take last k digits + first n-k digits\n    shifted = s[-k:] + s[:-k]\n    return shifted\n\n# Examples\nprint(circular_shift(12, 1))  # \"21\"\nprint(circular_shift(12, 2))  # \"12\"\nprint(circular_shift(12345, 6))  # since 6 > 5, should return \"54321\" per rule\n\nIf you want a strictly greater-than rule (only when shift > n), change the condition to if shift >= n: return s[::-1].",
+      "decoder_output_sha256": "7d25329d91a9ef059c3426cf01eca2ea3567fa11a26862f9d047fce34bbc78b6",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "5a4a6240f1810bcdd19bab6e30f6c46f20691d2831666a63020877170745abb3",
+          "decoder_output_sha256": "7d25329d91a9ef059c3426cf01eca2ea3567fa11a26862f9d047fce34bbc78b6",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def circular_shift(x, shift):\n    s = str(abs(int(x)))  # digits of x\n    n = len(s)\n    if n == 0:\n        return \"\"\n    # If shift is greater than number of digits, return reversed\n    if shift > n:\n        return s[::-1]\n    # Normalize shift within range\n    k = shift % n\n    if k == 0:\n        return s\n    # Circular shift right by k: take last k digits + first n-k digits\n    shifted = s[-k:] + s[:-k]\n    return shifted"
+      ],
+      "expected_top_level_function_names": [
+        "circular_shift"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-6caf67db6002a88d",
+      "decoder_output": "Here is a complete implementation that matches the docstring and doctest:\n\ndef triangle_area(a, h):\n    \"\"\"Given length of a side and height, return the area of a triangle.\n\n    >>> triangle_area(5, 3)\n    7.5\n    \"\"\"\n    return (a * h) / 2\n\nIf you want to support integer inputs while returning a float, this already does so (5 * 3 / 2) -> 7.5. If you prefer to always return a float, you can keep as is; if you prefer integer division for integers, you could adjust, but the standard formula uses division by 2 which yields a float for non-multiples of 2.",
+      "decoder_output_sha256": "e17ac43c474a04639d8778afe10e3f0bce2026ca3198cffccd158997e685ca66",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "6caf67db6002a88d36238e220ad0f62ec2227f71df2b577738a5963398b7805f",
+          "decoder_output_sha256": "e17ac43c474a04639d8778afe10e3f0bce2026ca3198cffccd158997e685ca66",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def triangle_area(a, h):\n    \"\"\"Given length of a side and height, return the area of a triangle.\n\n    >>> triangle_area(5, 3)\n    7.5\n    \"\"\"\n    return (a * h) / 2",
+        "def triangle_area(a, h):\n    \"\"\"Given length of a side and height, return the area of a triangle.\n\ntriangle_area(5, 3)\n5\n    \"\"\"\n    return (a * h) / 2"
+      ],
+      "expected_top_level_function_names": [
+        "triangle_area"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-7ccbdabd030b6df7",
+      "decoder_output": "Here's a simple implementation that works with lists (and handles the empty list by raising an error):\n\ndef max_element(l: list):\n    \"\"\"Return maximum element in the list.\n    >>> max_element([1, 2, 3])\n    3\n    >>> max_element([5, 3, -5, 2, -3, 3, 9, 0, 123, 1, -10])\n    123\n    \"\"\"\n    if not l:\n        raise ValueError(\"max_element() arg is an empty sequence\")\n    m = l[0]\n    for x in l[1:]:\n        if x > m:\n            m = x\n    return m\n\nAlternatively, you could simply use return max(l) if you want a concise version (still raises a ValueError for empty input).",
+      "decoder_output_sha256": "7fec3a6e6845802398df5fb4a36d6df5cdede556c013b856a218420f1967d59a",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "7ccbdabd030b6df7594aa5e8ce2d06c8546433d509711c33959c131963192bc7",
+          "decoder_output_sha256": "7fec3a6e6845802398df5fb4a36d6df5cdede556c013b856a218420f1967d59a",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def max_element(l: list):\n    \"\"\"Return maximum element in the list.\n    >>> max_element([1, 2, 3])\n    3\n    >>> max_element([5, 3, -5, 2, -3, 3, 9, 0, 123, 1, -10])\n    123\n    \"\"\"\n    if not l:\n        raise ValueError(\"max_element() arg is an empty sequence\")\n    m = l[0]\n    for x in l[1:]:\n        if x > m:\n            m = x\n    return m",
+        "def max_element(l: list):\n    \"\"\"Return maximum element in the list.\nmax_element([1, 2, 3])\n    3\nmax_element([5, 3, -5, 2, -3, 3, 9, 0, 123, 1, -10])\n    123\n    \"\"\"\n    if not l:\n        raise ValueError(\"max_element() arg is an empty sequence\")\n    m = l[0]\n    for x in l[1:]:\n        if x > m:\n            m = x\n    return m"
+      ],
+      "expected_top_level_function_names": [
+        "max_element"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-841d8c45e431aa18",
+      "decoder_output": "Here's a possible implementation of the function skjkasdkd that matches the described behavior:\n\n- Find the largest prime value in the input list.\n- Return the sum of the digits of that prime.\n- If there are no primes in the list, return 0 (reasonable default).\n\nPython code:\n\ndef skjkasdkd(lst):\n    def is_prime(n):\n        if n <= 1:\n            return False\n        if n <= 3:\n            return True\n        if n % 2 == 0 or n % 3 == 0:\n            return False\n        i = 5\n        w = 2\n        while i * i <= n:\n            if n % i == 0:\n                return False\n            i += w\n            w = 6 - w\n        return True\n\n    primes = [x for x in lst if isinstance(x, int) and is_prime(x)]\n    if not primes:\n        return 0\n    largest = max(primes)\n    return sum(int(d) for d in str(abs(largest)))\n\nExplanation:\n- is_prime checks primality efficiently for integers.\n- We filter the list to integers (to be safe) and primes.\n- If none, return 0.\n- Otherwise, take the largest prime and sum its digits.",
+      "decoder_output_sha256": "734d621d51236daba5cad532f6222d21b5ff82d28c21e3ead20b0a52d10d3fc3",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "841d8c45e431aa18eb9a2171087cb956a299fea415fe768fed65f0365dff656b",
+          "decoder_output_sha256": "734d621d51236daba5cad532f6222d21b5ff82d28c21e3ead20b0a52d10d3fc3",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def skjkasdkd(lst):\n    def is_prime(n):\n        if n <= 1:\n            return False\n        if n <= 3:\n            return True\n        if n % 2 == 0 or n % 3 == 0:\n            return False\n        i = 5\n        w = 2\n        while i * i <= n:\n            if n % i == 0:\n                return False\n            i += w\n            w = 6 - w\n        return True\n\n    primes = [x for x in lst if isinstance(x, int) and is_prime(x)]\n    if not primes:\n        return 0\n    largest = max(primes)\n    return sum(int(d) for d in str(abs(largest)))"
+      ],
+      "expected_top_level_function_names": [
+        "skjkasdkd"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-912da4910e0b03c9",
+      "decoder_output": "Here's a Python implementation of skjkasdkd that follows the described behavior:\n\n- Find the largest prime value present in the list.\n- Return the sum of the digits of that largest prime.\n- If there are no primes in the list, return 0 (adjust as needed).\n\nCode:\n\ndef skjkasdkd(lst):\n    def is_prime(n):\n        if n <= 1:\n            return False\n        if n <= 3:\n            return True\n        if n % 2 == 0 or n % 3 == 0:\n            return False\n        i = 5\n        w = 2\n        while i * i <= n:\n            if n % i == 0:\n                return False\n            i += w\n            w = 6 - w\n        return True\n\n    # Filter primes from the list\n    primes = [x for x in lst if isinstance(x, int) and is_prime(x)]\n    if not primes:\n        return 0\n\n    largest_prime = max(primes)\n\n    # Sum digits of largest_prime\n    digit_sum = sum(int(d) for d in str(abs(largest_prime)))\n    return digit_sum\n\nExplanation:\n- is_prime implements a basic primality test suitable for typical integers in lists.\n- We collect all prime values from the list, pick the largest, and compute the sum of its decimal digit characters.\n- If no primes exist, we return 0 (you can change this to raise an exception or return None if preferred).",
+      "decoder_output_sha256": "8444b42de223c7f1846d9cf2e622c72f15c1ee2bd04e305acc53595f0a399e58",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "912da4910e0b03c9a673234244ce8f3c9b228aa99d377c2b1da200639a76f5d1",
+          "decoder_output_sha256": "8444b42de223c7f1846d9cf2e622c72f15c1ee2bd04e305acc53595f0a399e58",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def skjkasdkd(lst):\n    def is_prime(n):\n        if n <= 1:\n            return False\n        if n <= 3:\n            return True\n        if n % 2 == 0 or n % 3 == 0:\n            return False\n        i = 5\n        w = 2\n        while i * i <= n:\n            if n % i == 0:\n                return False\n            i += w\n            w = 6 - w\n        return True\n\n    # Filter primes from the list\n    primes = [x for x in lst if isinstance(x, int) and is_prime(x)]\n    if not primes:\n        return 0\n\n    largest_prime = max(primes)\n\n    # Sum digits of largest_prime\n    digit_sum = sum(int(d) for d in str(abs(largest_prime)))\n    return digit_sum"
+      ],
+      "expected_top_level_function_names": [
+        "skjkasdkd"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-9c20a300c9992eb3",
+      "decoder_output": "Here's a simple and correct implementation that returns the second smallest distinct element, or None if it doesn't exist:\n\ndef next_smallest(lst):\n    if not lst:\n        return None\n    distinct = set(lst)\n    if len(distinct) < 2:\n        return None\n    s = sorted(distinct)\n    return s[1]\n\nExplanation:\n- Use a set to keep distinct values.\n- If fewer than 2 distinct values, return None.\n- Otherwise sort the distinct values and return the second one.\n\nExample:\n- next_smallest([1, 2, 3, 4, 5]) -> 2\n- next_smallest([5, 1, 4, 3, 2]) -> 2\n- next_smallest([]) -> None\n- next_smallest([1, 1]) -> None\n\nIf you prefer a single-pass O(n) solution without sorting, you can implement a two-variable approach to track the smallest and second smallest distinct values.",
+      "decoder_output_sha256": "99724b4f2d741054e80d9c2a501ab0916d717cbf9d20373f9012528789080d85",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "9c20a300c9992eb3c246091242bc366a80eceff60e86cb5d7db03ef85a143dd5",
+          "decoder_output_sha256": "99724b4f2d741054e80d9c2a501ab0916d717cbf9d20373f9012528789080d85",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def next_smallest(lst):\n    if not lst:\n        return None\n    distinct = set(lst)\n    if len(distinct) < 2:\n        return None\n    s = sorted(distinct)\n    return s[1]"
+      ],
+      "expected_top_level_function_names": [
+        "next_smallest"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-b60847c205a6d35e",
+      "decoder_output": "Here’s a concise, functional approach in Python to determine if a string contains a substring with nested brackets of depth at least 2, i.e., a substring like \"[ ... [ ... ] ... ]\".\n\nKey idea:\n- Scan the string left to right, track current depth of brackets.\n- Depth increases on '[' and decreases on ']'.\n- We also track whether we are currently inside a bracketed substring (depth > 0) and whether we have seen at least one inner bracket at depth >= 2.\n- If we ever reach depth >= 2, we know that there exists a substring with nesting depth at least 2.\n\nCode:\n\ndef has_nested_brackets_at_least_depth_two(s: str) -> bool:\n    depth = 0\n    # We only care when depth >= 2 at some point\n    for ch in s:\n        if ch == '[':\n            depth += 1\n            if depth >= 2:\n                return True\n        elif ch == ']':\n            if depth > 0:\n                depth -= 1\n            # Ignore unmatched ']' beyond current depth\n        # ignore other characters\n    return False\n\n# Example usage\nprint(has_nested_brackets_at_least_depth_two(\"a[bc[de]f]g\"))  # True (depth 2 inside)\nprint(has_nested_brackets_at_least_depth_two(\"a[bc]d\"))       # False\nprint(has_nested_brackets_at_least_depth_two(\"[[]]\"))         # True\nprint(has_nested_brackets_at_least_depth_two(\"no brackets\"))  # False\n\nExplanation:\n- If an opening '[' increases depth to 2 or more, we immediately return True.\n- This ensures we detect any substring whose maximum nesting depth is at least 2.\n- Unmatched brackets are handled gracefully since the function only increments depth on '[' and decrements on ']'.",
+      "decoder_output_sha256": "6f9f832fd68d05775cf8c5ed387f9bf7de8deaec3e257b7fcfc7b070e023da4e",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "b60847c205a6d35eeb42fccaa0cfd188c2e36fb67df1638ab47dcc4efdf0fce4",
+          "decoder_output_sha256": "6f9f832fd68d05775cf8c5ed387f9bf7de8deaec3e257b7fcfc7b070e023da4e",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def has_nested_brackets_at_least_depth_two(s: str) -> bool:\n    depth = 0\n    # We only care when depth >= 2 at some point\n    for ch in s:\n        if ch == '[':\n            depth += 1\n            if depth >= 2:\n                return True\n        elif ch == ']':\n            if depth > 0:\n                depth -= 1\n            # Ignore unmatched ']' beyond current depth\n        # ignore other characters\n    return False"
+      ],
+      "expected_top_level_function_names": [
+        "has_nested_brackets_at_least_depth_two"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-bd42e2dd95d73efc",
+      "decoder_output": "Here's a complete implementation based on your specification and examples:\n\n- Circularly shifts the digits to the right by shift positions.\n- Returns the result as a string.\n- If shift is greater than the number of digits, returns the digits reversed.\n\nCode:\n\ndef circular_shift(x, shift):\n    s = str(abs(int(x)))  # ensure we’re working with digits of an integer\n    n = len(s)\n    if n == 0:\n        return \"\"\n    # normalize shift to the range [0, n-1]\n    if shift >= n:\n        # return digits reversed when shift > number of digits\n        return s[::-1]\n    # for shift within range, perform right circular shift\n    shift = shift % n\n    return s[-shift:] + s[:-shift]\n\nNotes:\n- Uses absolute value of x to ignore any minus sign; if you want to preserve sign, adjust accordingly.\n- If you want to treat shift exactly equal to n as returning original, you can adjust the condition (e.g., if shift % n == 0: return s).\n\nExamples:\n- circular_shift(12, 1) -> \"21\"\n- circular_shift(12, 2) -> \"12\"\n- circular_shift(12, 3) -> \"21\" (since 3 > 2 triggers reversal? If you want a different behavior, adjust the > vs >= logic.)",
+      "decoder_output_sha256": "0dfeb8e151e2f381fee99610d9a860fc97b47c97acdee6df05ee8a3ee4b1982d",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "bd42e2dd95d73efcfdad0829a2108c764a6d08089c10240d1f3accadba0257cf",
+          "decoder_output_sha256": "0dfeb8e151e2f381fee99610d9a860fc97b47c97acdee6df05ee8a3ee4b1982d",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def circular_shift(x, shift):\n    s = str(abs(int(x)))  # ensure we're working with digits of an integer\n    n = len(s)\n    if n == 0:\n        return \"\"\n    # normalize shift to the range [0, n-1]\n    if shift >= n:\n        # return digits reversed when shift > number of digits\n        return s[::-1]\n    # for shift within range, perform right circular shift\n    shift = shift % n\n    return s[-shift:] + s[:-shift]"
+      ],
+      "expected_top_level_function_names": [
+        "circular_shift"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-c2ae82fcf6f1bbbe",
+      "decoder_output": "It looks like you started a function but didn’t implement it. Here’s a complete and well-typed version with a proper return type and a simple doctest example:\n\ndef add(x: int, y: int) -> int:\n    \"\"\"Add two numbers x and y.\n\n    >>> add(2, 3)\n    5\n    >>> add(5, 7)\n    12\n    \"\"\"\n    return x + y\n\nNotes:\n- The function returns an int, matching the type hints.\n- The doctest examples match the return values.\n- If you want to allow non-integer inputs, you could relax the type hints or add validation.",
+      "decoder_output_sha256": "fdbded3204ecc3d4828c03c60b3a0aa60a7b2d10c832980e2fc3c983f407eb1b",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "c2ae82fcf6f1bbbe4a1e2c5d2124938efbfe46082b1b44a9cb4a9820de2acd6b",
+          "decoder_output_sha256": "fdbded3204ecc3d4828c03c60b3a0aa60a7b2d10c832980e2fc3c983f407eb1b",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def add(x: int, y: int) -> int:\n    \"\"\"Add two numbers x and y.\n\n    >>> add(2, 3)\n    5\n    >>> add(5, 7)\n    12\n    \"\"\"\n    return x + y",
+        "def add(x: int, y: int) -> int:\n    \"\"\"Add two numbers x and y.\n\nadd(2, 3)\n    5\nadd(5, 7)\n    12\n    \"\"\"\n    return x + y"
+      ],
+      "expected_top_level_function_names": [
+        "add"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-cd37b506149034d8",
+      "decoder_output": "Here's a small Python example that returns the between-planets tuple for two valid planets, in the given order. It assumes you have a set of valid planet names and a function that maps a planet name to its index or identifier. The “between-planets” tuple is interpreted as the pair of planets that lie directly between the two given planets in a circular order (e.g., the order of planets in the Solar System). If you instead meant something else by “between,” you can adjust the logic accordingly.\n\nAssumptions:\n- Planets are ordered in a circle as: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, (and Pluto if you include it).\n- The function returns the two planets that lie between the two given planets when traversing forward in the real order, exclusive of the endpoints.\n\nCode:\n\ndef between_planets(planet_a, planet_b, planets=None, wrap=True):\n    \"\"\"\n    Return the pair of planets that lie between planet_a and planet_b in the forward\n    circular order, exclusive of endpoints.\n\n    Parameters:\n    - planet_a: str, first planet name\n    - planet_b: str, second planet name\n    - planets: list[str], optional custom ordered list of planet names (default is the Solar System order)\n    - wrap: bool, whether to wrap around the end to the start (default True)\n\n    Returns:\n    - tuple[str, str]: the two planets between a and b in order\n    \"\"\"\n    if planets is None:\n        planets = [\"Mercury\", \"Venus\", \"Earth\", \"Mars\", \"Jupiter\", \"Saturn\", \"Uranus\", \"Neptune\"]\n\n    name_to_index = {p: i for i, p in enumerate(planets)}\n    if planet_a not in name_to_index or planet_b not in name_to_index:\n        raise ValueError(\"Both planets must be in the provided planets list.\")\n\n    idx_a = name_to_index[planet_a]\n    idx_b = name_to_index[planet_b]\n\n    if idx_a == idx_b:\n        # No between if same planet\n        return ()\n\n    n = len(planets)\n    # Move forward from a to b, collecting between (exclusive)\n    between = []\n    i = (idx_a + 1) % n\n    while i != idx_b:\n        between.append(planets[i])\n        i = (i + 1) % n\n        if not wrap and i == 0:\n            break\n\n    if not between:\n        return ()\n\n    if len(between) == 1:\n        return (between[0], between[0])\n    else:\n        return (between[0], between[-1])\n\n# Example usage:\nprint(between_planets(\"Mercury\", \"Earth\"))      # ('Venus', 'Earth') would be invalid due to exclusive; see note\nprint(between_planets(\"Earth\", \"Mercury\"))      # ('Mars', 'Jupiter') depending on order\n# These examples illustrate usage; adjust expectations as per the exact definition of \"between\" you want.\n\nExplanation:\n- The function defines a default solar system order.\n- It computes the indices of the two planets and walks forward from planet_a to planet_b, collecting the in-between planets (exclusive of endpoints).\n- It returns a tuple with the first and last in-between planets to satisfy the “between-planets tuple” notion. If there are zero in-between planets, it returns an empty tuple. If there is exactly one in-between planet, it returns it twice to form a two-element tuple. Adjust the return policy if you prefer a different representation.",
+      "decoder_output_sha256": "d95de03dbb06adf8d51411ca9a66302e0fc7c0444b810bc59e39fbd13cd023a5",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "cd37b506149034d854f4a65a03ed0b63f839dd6e08de4a7f738c02065c835757",
+          "decoder_output_sha256": "d95de03dbb06adf8d51411ca9a66302e0fc7c0444b810bc59e39fbd13cd023a5",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def between_planets(planet_a, planet_b, planets=None, wrap=True):\n    \"\"\"\n    Return the pair of planets that lie between planet_a and planet_b in the forward\n    circular order, exclusive of endpoints.\n\n    Parameters:\n    - planet_a: str, first planet name\n    - planet_b: str, second planet name\n    - planets: list[str], optional custom ordered list of planet names (default is the Solar System order)\n    - wrap: bool, whether to wrap around the end to the start (default True)\n\n    Returns:\n    - tuple[str, str]: the two planets between a and b in order\n    \"\"\"\n    if planets is None:\n        planets = [\"Mercury\", \"Venus\", \"Earth\", \"Mars\", \"Jupiter\", \"Saturn\", \"Uranus\", \"Neptune\"]\n\n    name_to_index = {p: i for i, p in enumerate(planets)}\n    if planet_a not in name_to_index or planet_b not in name_to_index:\n        raise ValueError(\"Both planets must be in the provided planets list.\")\n\n    idx_a = name_to_index[planet_a]\n    idx_b = name_to_index[planet_b]\n\n    if idx_a == idx_b:\n        # No between if same planet\n        return ()\n\n    n = len(planets)\n    # Move forward from a to b, collecting between (exclusive)\n    between = []\n    i = (idx_a + 1) % n\n    while i != idx_b:\n        between.append(planets[i])\n        i = (i + 1) % n\n        if not wrap and i == 0:\n            break\n\n    if not between:\n        return ()\n\n    if len(between) == 1:\n        return (between[0], between[0])\n    else:\n        return (between[0], between[-1])",
+        "def between_planets(planet_a, planet_b, planets=None, wrap=True):\n    \"\"\"\n    Return the pair of planets that lie between planet_a and planet_b in the forward\n    circular order, exclusive of endpoints.\n\n    Parameters:\nplanet_a: str, first planet name\nplanet_b: str, second planet name\nplanets: list[str], optional custom ordered list of planet names (default is the Solar System order)\nwrap: bool, whether to wrap around the end to the start (default True)\n\n    Returns:\ntuple[str, str]: the two planets between a and b in order\n    \"\"\"\n    if planets is None:\n        planets = [\"Mercury\", \"Venus\", \"Earth\", \"Mars\", \"Jupiter\", \"Saturn\", \"Uranus\", \"Neptune\"]\n\n    name_to_index = {p: i for i, p in enumerate(planets)}\n    if planet_a not in name_to_index or planet_b not in name_to_index:\n        raise ValueError(\"Both planets must be in the provided planets list.\")\n\n    idx_a = name_to_index[planet_a]\n    idx_b = name_to_index[planet_b]\n\n    if idx_a == idx_b:\n        # No between if same planet\n        return ()\n\n    n = len(planets)\n    # Move forward from a to b, collecting between (exclusive)\n    between = []\n    i = (idx_a + 1) % n\n    while i != idx_b:\n        between.append(planets[i])\n        i = (i + 1) % n\n        if not wrap and i == 0:\n            break\n\n    if not between:\n        return ()\n\n    if len(between) == 1:\n        return (between[0], between[0])\n    else:\n        return (between[0], between[-1])"
+      ],
+      "expected_top_level_function_names": [
+        "between_planets"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-d4f03da500a62e32",
+      "decoder_output": "Here’s a Python implementation of compare_one that follows the specifications:\n\n- Accepts int, float, or str that represents a real number.\n- Keeps the return type equal to the input type that held the larger value.\n- If the numeric values are equal, returns None.\n- Strings may use either a dot or a comma as the decimal separator.\n\nCode:\n\ndef compare_one(a, b):\n    def to_num_and_flip(x):\n        # Convert input to a numeric value; also preserve the original type\n        if isinstance(x, (int, float)):\n            return float(x), type(x)\n        if isinstance(x, str):\n            s = x.replace(',', '.')  # allow comma as decimal separator\n            try:\n                val = float(s)\n            except ValueError:\n                raise ValueError(\"String inputs must represent real numbers.\")\n            # If the original was an int-like string (no dot/comma after conversion),\n            # we still return as float for comparison, but keep original type for output\n            # We decide to return the original string type if the numeric value strictly\n            # corresponds to an integer and the original string didn't include a comma/point.\n            # However, per requirement, we should output in the same original variable's type.\n            return val, type(x)\n        raise TypeError(\"Inputs must be int, float, or numeric string.\")\n\n    val_a, type_a = to_num_and_flip(a)\n    val_b, type_b = to_num_and_flip(b)\n\n    if val_a == val_b:\n        return None\n\n    if val_a > val_b:\n        return a\n    else:\n        return b\n\n# Examples:\nprint(compare_one(1, 2.5))      # 2.5\nprint(compare_one(1, \"2,3\"))    # \"2,3\"\nprint(compare_one(\"5,1\", \"6\"))  # \"6\"\nprint(compare_one(\"1\", 1))      # None\n\nNotes:\n- The function compares the numeric values after normalizing comma to dot in strings.\n- The return value is the original input (a or b) corresponding to the larger numeric value, preserving its type (int, float, or str).\n- If the numeric values are equal, it returns None.",
+      "decoder_output_sha256": "747671062c6c98a3c0a42ba995163ab60df1070a8ccaecc18fad86f72496b901",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "d4f03da500a62e32d5d556c15bf0fdb010609347651b076e684705421262efd7",
+          "decoder_output_sha256": "747671062c6c98a3c0a42ba995163ab60df1070a8ccaecc18fad86f72496b901",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def compare_one(a, b):\n    def to_num_and_flip(x):\n        # Convert input to a numeric value; also preserve the original type\n        if isinstance(x, (int, float)):\n            return float(x), type(x)\n        if isinstance(x, str):\n            s = x.replace(',', '.')  # allow comma as decimal separator\n            try:\n                val = float(s)\n            except ValueError:\n                raise ValueError(\"String inputs must represent real numbers.\")\n            # If the original was an int-like string (no dot/comma after conversion),\n            # we still return as float for comparison, but keep original type for output\n            # We decide to return the original string type if the numeric value strictly\n            # corresponds to an integer and the original string didn't include a comma/point.\n            # However, per requirement, we should output in the same original variable's type.\n            return val, type(x)\n        raise TypeError(\"Inputs must be int, float, or numeric string.\")\n\n    val_a, type_a = to_num_and_flip(a)\n    val_b, type_b = to_num_and_flip(b)\n\n    if val_a == val_b:\n        return None\n\n    if val_a > val_b:\n        return a\n    else:\n        return b"
+      ],
+      "expected_top_level_function_names": [
+        "compare_one"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-e05eaa5f5c232171",
+      "decoder_output": "I’m not sure of the exact description, but here’s a concise, functional Python solution that counts even and odd digits in a number or numeric string. It ignores non-digits and a leading minus sign.\n\nCode:\n\ndef count_even_odd_digits(value):\n    \"\"\"\n    Count even and odd digits in value (int, str, or any convertible to digits).\n    Returns a dict: {'even': <count>, 'odd': <count>}\n    \"\"\"\n    digits = [c for c in str(value) if c.isdigit()]\n    evens = sum(1 for d in digits if int(d) % 2 == 0)\n    odds = len(digits) - evens\n    return {'even': evens, 'odd': odds}\n\n# Examples:\nprint(count_even_odd_digits(123456))      # {'even': 3, 'odd': 3}\nprint(count_even_odd_digits(\"-2040\"))      # {'even': 4, 'odd': 0}\nprint(count_even_odd_digits(\"a1b2c3\"))     # {'even': 1, 'odd': 2}\n\nIf you have a specific input format or output requirements (e.g., return a tuple, or integrate with a pipeline), tell me and I’ll tailor it.",
+      "decoder_output_sha256": "c02adbffa1acafab528f067efe380720c7080f5b837ab5dcf165307bce3805c5",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "e05eaa5f5c23217103f486e7e35acc0a0c403da34eafe76193b6189d51106b11",
+          "decoder_output_sha256": "c02adbffa1acafab528f067efe380720c7080f5b837ab5dcf165307bce3805c5",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def count_even_odd_digits(value):\n    \"\"\"\n    Count even and odd digits in value (int, str, or any convertible to digits).\n    Returns a dict: {'even': <count>, 'odd': <count>}\n    \"\"\"\n    digits = [c for c in str(value) if c.isdigit()]\n    evens = sum(1 for d in digits if int(d) % 2 == 0)\n    odds = len(digits) - evens\n    return {'even': evens, 'odd': odds}"
+      ],
+      "expected_top_level_function_names": [
+        "count_even_odd_digits"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
+      ]
+    },
+    {
+      "id": "post-holdout-return-salvage-eafeb0a0e810cb29",
+      "decoder_output": "Here's a simple implementation in Python that matches the specification:\n\n- It returns the largest index i such that arr[i] is not greater than or equal to arr[i-1]. In other words, arr[i] < arr[i-1].\n- If no such i exists, it returns -1.\n- The array has no duplicate values, as stated.\n\nPython code:\n\ndef can_arrange(arr):\n    \"\"\"\n    Returns the largest index i (1 <= i < len(arr)) such that arr[i] < arr[i-1].\n    If no such index exists, returns -1.\n    \"\"\"\n    if not arr or len(arr) < 2:\n        return -1\n\n    # Scan from the end to find the largest index where arr[i] < arr[i-1]\n    for i in range(len(arr) - 1, 0, -1):\n        if arr[i] < arr[i - 1]:\n            return i\n    return -1\n\n# Example usages:\n# can_arrange([1, 2, 4, 3, 5]) -> 3\n# can_arrange([1, 2, 3]) -> -1\n\nIf you want the index to be 0-based (as implemented) that matches typical Python conventions. If you intended 1-based indexing, just return i+1 instead of i.",
+      "decoder_output_sha256": "afedbc422b162dade58e119b5190188309a088e1382e027e0e564e7279d3f918",
+      "partition": "development",
+      "cohort": "post_holdout_full_corpus_regression",
+      "categories": [
+        "full_corpus_regression",
+        "post_holdout",
+        "return_salvage"
+      ],
+      "adjudication": "production_regression",
+      "expected_outcome": "candidates",
+      "sources": [
+        {
+          "kind": "full_corpus_regression",
+          "corpus_sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5",
+          "sample_id": "eafeb0a0e810cb29f31ca438258191451a00b34762d8cde1b76d694ddb271b43",
+          "decoder_output_sha256": "afedbc422b162dade58e119b5190188309a088e1382e027e0e564e7279d3f918",
+          "baseline_run_id": "generation-corpus-functions-v1-20260719"
+        }
+      ],
+      "exact_candidates": [
+        "def can_arrange(arr):\n    \"\"\"\n    Returns the largest index i (1 <= i < len(arr)) such that arr[i] < arr[i-1].\n    If no such index exists, returns -1.\n    \"\"\"\n    if not arr or len(arr) < 2:\n        return -1\n\n    # Scan from the end to find the largest index where arr[i] < arr[i-1]\n    for i in range(len(arr) - 1, 0, -1):\n        if arr[i] < arr[i - 1]:\n            return i\n    return -1"
+      ],
+      "expected_top_level_function_names": [
+        "can_arrange"
+      ],
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "unfenced_segment",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
+      ],
+      "required_origin_operation_kinds": [
+        "drop_after_last_return_salvage"
       ]
     }
   ]

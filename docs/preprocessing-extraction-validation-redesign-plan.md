@@ -619,13 +619,22 @@ Each slice should leave the repository green and reviewable.
 - Add all exact approved-recovery inputs, the intrinsic-invalid input, and the
   four annotation/definition contract conflicts as named regression fixtures.
 - Combine the 91 annotation-output cases with the 21 synthetic contract cases
-  into one 112-case hard fixture. Partition by decoder-output hash, never by
-  sample ID, using the recorded `sha256-prefix-mod-5-v1` rule: 90 development
+  into one sealed 112-case hard-suite cohort. Partition by decoder-output hash,
+  never by sample ID, using the recorded `sha256-prefix-mod-5-v1` rule: 90
+  development
   cases and 22 holdout cases. Persist the deterministic assignment in the
   manifest so duplicate outputs cannot appear in both partitions. The 62
   enforced-negative records remain a required subset across the two
   partitions. Do not inspect or tune rules against the holdout until the
   implementation and hard-suite rules are frozen.
+- Keep later full-corpus discoveries outside that sealed assignment. The
+  before/after transition artifact with SHA-256
+  `9a6e4e88f3b1f672616b14cf9490604beeff7413a3508984e2bd10b2ada3b7b6`
+  identifies 18 genuine extracted-to-no-compilable regressions. Promote them
+  into an explicit post-holdout, full-corpus development cohort using exact
+  candidates from the baseline candidate artifact with SHA-256
+  `64d3effc33089e1fa36aa1db9ce0377e55cf3b324e1e8ab41105c0d99106e560`;
+  do not relabel the three hash-assigned holdout members as unseen holdouts.
 - Capture a deterministic representative corpus subset for differential tests.
 
 ### Slice 2: Rich fence extraction
@@ -706,6 +715,9 @@ Each slice should leave the repository green and reviewable.
   policy.
 - Treat any unexpected result as a rule-design failure requiring a documented
   change, a new frozen assignment, and a complete hard-suite and holdout rerun.
+- After the sealed reconciliation is complete, keep post-holdout corpus
+  regressions in their separately labeled development cohort. They may drive a
+  repair, but cannot retroactively count as holdout evidence.
 
 ### Slice 9: Authoritative append-only regeneration and rescore
 
@@ -812,9 +824,10 @@ Each slice should leave the repository green and reviewable.
 
 - the immutable fixture hash, 101 record count, 91 output count, corpus hash,
   and every sample/output identity match its manifest;
-- the fixture contains 112 cases total, the recorded
-  `sha256-prefix-mod-5-v1` partition recomputes exactly 90 development and 22
-  holdout cases, and no decoder-output hash crosses partitions;
+- the centralized fixture contains 130 cases: the original sealed 112-case
+  cohort still recomputes exactly 90 development and 22 holdout cases under
+  `sha256-prefix-mod-5-v1`, while all 18 later full-corpus regressions are
+  explicitly post-holdout development cases; no decoder-output hash is reused;
 - dispositions reconcile to 34 approved recoveries over 32 outputs, one
   intrinsic invalid, 62 enforced negatives over 54 outputs, and four
   annotation/definition contract conflicts;
@@ -829,6 +842,9 @@ Each slice should leave the repository green and reviewable.
   the definition, with no class method promotion;
 - the hard suite passes before rule freeze and the sealed holdout passes after
   it without tuning; and
+- all 18 post-holdout regressions reproduce their baseline exact candidate
+  sources and names through provenance paths containing the repaired
+  `drop_after_last_return_salvage` operation; and
 - `007a142...` remains an attributed compiler rejection and is not inserted
   into candidate-evaluation membership.
 

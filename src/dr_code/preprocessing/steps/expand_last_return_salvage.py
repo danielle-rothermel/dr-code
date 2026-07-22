@@ -23,7 +23,7 @@ class ExpandLastReturnSalvage(Step):
     """Append changed legacy truncations without replacing original source."""
 
     NAME: ClassVar[StepName] = StepName.EXPAND_LAST_RETURN_SALVAGE
-    VERSION: ClassVar[str] = "2"
+    VERSION: ClassVar[str] = "3"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
@@ -93,16 +93,37 @@ def _salvage_after_last_return(source: str) -> str | None:
     boundary is trusted unless its own logical statement was completed first.
     """
     pending_return = False
+    at_statement_start = True
+    indent_level = 0
     boundary: tuple[int, int] | None = None
     try:
         for item in tokenize.generate_tokens(io.StringIO(source).readline):
             if item.type == token.ERRORTOKEN and not item.string.isspace():
                 break
-            if item.type == token.NAME and item.string == "return":
-                pending_return = True
-            elif pending_return and item.type == token.NEWLINE:
-                boundary = item.end
+            if item.type == token.INDENT:
+                indent_level += 1
+                continue
+            if item.type == token.DEDENT:
+                indent_level = max(0, indent_level - 1)
+                continue
+            if item.type in {token.COMMENT, token.NL}:
+                continue
+            if item.type == token.NEWLINE:
+                if pending_return:
+                    boundary = item.end
                 pending_return = False
+                at_statement_start = True
+                continue
+            if item.type == token.ENDMARKER:
+                continue
+            if (
+                at_statement_start
+                and indent_level > 0
+                and item.type == token.NAME
+                and item.string == "return"
+            ):
+                pending_return = True
+            at_statement_start = False
     except (IndentationError, tokenize.TokenError):
         pass
     if boundary is None or pending_return:

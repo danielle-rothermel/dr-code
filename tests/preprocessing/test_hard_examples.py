@@ -24,6 +24,7 @@ from dr_code.trace import (
 )
 from hard_examples import (
     AnnotationSource,
+    FullCorpusRegressionSource,
     HardExample,
     load_hard_examples,
     partition_for_digest,
@@ -31,11 +32,21 @@ from hard_examples import (
 
 FIXTURE = load_hard_examples()
 
-DEVELOPMENT_CASES = tuple(
-    case for case in FIXTURE.cases if case.partition == "development"
+SEALED_DEVELOPMENT_CASES = tuple(
+    case
+    for case in FIXTURE.cases
+    if case.partition == "development"
+    and case.cohort == "sealed_hard_suite"
 )
 HOLDOUT_CASES = tuple(
-    case for case in FIXTURE.cases if case.partition == "holdout"
+    case
+    for case in FIXTURE.cases
+    if case.partition == "holdout" and case.cohort == "sealed_hard_suite"
+)
+POST_HOLDOUT_REGRESSION_CASES = tuple(
+    case
+    for case in FIXTURE.cases
+    if case.cohort == "post_holdout_full_corpus_regression"
 )
 
 INTRINSIC_INVALID_SAMPLE_ID = (
@@ -46,6 +57,26 @@ CONTRACT_CONFLICT_SAMPLE_IDS = {
     "9476f3c1b91432ab782dc33aa0e818ae427148050717573e1d64c513c1454a7a",
     "960e6e2c777a759e3464e764e951956b0f7be92dc935b0863aa45e693c67be46",
     "967b8fe0ca2001e94110e5e4f8faafcebf87a9fb439992bf34bf447b56d6ff01",
+}
+POST_HOLDOUT_REGRESSION_SAMPLE_IDS = {
+    "3c9825e84c0ebe596a68f5766fda5f5487680f502a241fdd8816444cb5cd7f0e",
+    "3cfc053f46ec2dec72d6d9505ebb4e8abd9181e46aeabfd5902c9feb32e68fb8",
+    "472cd6fe402b9081f562ce78b049389ba7f71fd8ff4c663cbbabaf31f6f45301",
+    "4be19b6244fd58d0157cd8da620279ecf942f78783613fb2d27e7071785d2bac",
+    "523a2ec1da7dc1cbd76bc3ce656cde7bac8df2019e59dbe3264186952e09a88e",
+    "5a4a6240f1810bcdd19bab6e30f6c46f20691d2831666a63020877170745abb3",
+    "6caf67db6002a88d36238e220ad0f62ec2227f71df2b577738a5963398b7805f",
+    "7ccbdabd030b6df7594aa5e8ce2d06c8546433d509711c33959c131963192bc7",
+    "841d8c45e431aa18eb9a2171087cb956a299fea415fe768fed65f0365dff656b",
+    "912da4910e0b03c9a673234244ce8f3c9b228aa99d377c2b1da200639a76f5d1",
+    "9c20a300c9992eb3c246091242bc366a80eceff60e86cb5d7db03ef85a143dd5",
+    "b60847c205a6d35eeb42fccaa0cfd188c2e36fb67df1638ab47dcc4efdf0fce4",
+    "bd42e2dd95d73efcfdad0829a2108c764a6d08089c10240d1f3accadba0257cf",
+    "c2ae82fcf6f1bbbe4a1e2c5d2124938efbfe46082b1b44a9cb4a9820de2acd6b",
+    "cd37b506149034d854f4a65a03ed0b63f839dd6e08de4a7f738c02065c835757",
+    "d4f03da500a62e32d5d556c15bf0fdb010609347651b076e684705421262efd7",
+    "e05eaa5f5c23217103f486e7e35acc0a0c403da34eafe76193b6189d51106b11",
+    "eafeb0a0e810cb29f31ca438258191451a00b34762d8cde1b76d694ddb271b43",
 }
 
 
@@ -61,6 +92,15 @@ def test_hard_example_fixture_integrity() -> None:
         if isinstance(source, AnnotationSource)
     ]
     annotated_cases = [case for case in FIXTURE.cases if case.annotations]
+    regression_sources = [
+        source
+        for case in FIXTURE.cases
+        for source in case.sources
+        if isinstance(source, FullCorpusRegressionSource)
+    ]
+    sealed_cases = [
+        case for case in FIXTURE.cases if case.cohort == "sealed_hard_suite"
+    ]
 
     assert FIXTURE.schema_version == 1
     assert FIXTURE.partition_algorithm == "sha256-prefix-mod-5-v1"
@@ -73,7 +113,18 @@ def test_hard_example_fixture_integrity() -> None:
     assert FIXTURE.annotation_records_sha256 == (
         "0048761890b9e20af9016d15f7b4eacaeb2171bfd895579b89293650063437d5"
     )
-    assert len(FIXTURE.cases) == 112
+    assert FIXTURE.post_holdout_transitions_sha256 == (
+        "9a6e4e88f3b1f672616b14cf9490604beeff7413a3508984e2bd10b2ada3b7b6"
+    )
+    assert FIXTURE.post_holdout_baseline_candidates_sha256 == (
+        "64d3effc33089e1fa36aa1db9ce0377e55cf3b324e1e8ab41105c0d99106e560"
+    )
+    assert len(FIXTURE.cases) == 130
+    assert len(sealed_cases) == 112
+    assert len(regression_sources) == 18
+    assert {source.sample_id for source in regression_sources} == (
+        POST_HOLDOUT_REGRESSION_SAMPLE_IDS
+    )
     assert len(annotated_cases) == 91
     assert len(annotations) == 101
     assert Counter(source.verdict for source in annotations) == {
@@ -95,12 +146,31 @@ def test_hard_example_fixture_integrity() -> None:
         "absent": 55,
     }
     assert Counter(case.partition for case in FIXTURE.cases) == {
+        "development": 108,
+        "holdout": 22,
+    }
+    assert Counter(case.partition for case in sealed_cases) == {
         "development": 90,
         "holdout": 22,
     }
     assert all(
         case.partition == partition_for_digest(case.decoder_output_sha256)
-        for case in FIXTURE.cases
+        for case in sealed_cases
+    )
+    assert all(
+        case.partition == "development"
+        and case.adjudication == "production_regression"
+        and case.required_origin_operation_kinds
+        == ("drop_after_last_return_salvage",)
+        and case.required_origin_paths
+        and all(
+            any(
+                operation.kind == "drop_after_last_return_salvage"
+                for operation in path
+            )
+            for path in case.required_origin_paths
+        )
+        for case in POST_HOLDOUT_REGRESSION_CASES
     )
     intact = [
         case for case in annotated_cases if "intact_candidate" in case.categories
@@ -205,13 +275,18 @@ def test_forbidden_origin_oracle_rejects_mixed_origins() -> None:
         )
 
 
-@pytest.mark.parametrize("case", DEVELOPMENT_CASES, ids=_case_id)
+@pytest.mark.parametrize("case", SEALED_DEVELOPMENT_CASES, ids=_case_id)
 def test_development_hard_examples(case: HardExample) -> None:
     _assert_pipeline_contract(case)
 
 
 @pytest.mark.parametrize("case", HOLDOUT_CASES, ids=_case_id)
 def test_holdout_hard_examples(case: HardExample) -> None:
+    _assert_pipeline_contract(case)
+
+
+@pytest.mark.parametrize("case", POST_HOLDOUT_REGRESSION_CASES, ids=_case_id)
+def test_post_holdout_full_corpus_regressions(case: HardExample) -> None:
     _assert_pipeline_contract(case)
 
 
@@ -271,6 +346,13 @@ def _assert_pipeline_contract(case: HardExample) -> None:
             for operation in required_path
         )
         assert expected_path in actual_paths
+    required = set(case.required_origin_operation_kinds)
+    if required:
+        assert all(
+            required.issubset(operation.kind for operation in origin.path)
+            for lineage in output.lineage
+            for origin in lineage.origins
+        )
     forbidden = set(case.forbidden_origin_operation_kinds)
     if forbidden:
         _assert_no_forbidden_origin_operations(output, forbidden)
