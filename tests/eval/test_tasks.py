@@ -115,6 +115,24 @@ def test_repeat_plan_expands_deterministic_ordered_slots() -> None:
     assert repeats[1].repeat_id.rng_seed is None
 
 
+def test_repeat_plan_seeds_are_slot_data_not_identity() -> None:
+    without = RepeatPlan(
+        plan_id="p",
+        version="1",
+        task_identities=("h1",),
+        repeat_count=1,
+    )
+    with_seed = RepeatPlan(
+        plan_id="p",
+        version="1",
+        task_identities=("h1",),
+        repeat_count=1,
+        seeds=(("h1#0", 42),),
+    )
+    # Per-slot RNG seeds are slot data, excluded from plan identity.
+    assert without.identity_hash() == with_seed.identity_hash()
+
+
 def test_repeat_plan_rejects_zero_repeats() -> None:
     with pytest.raises(ValueError, match="at least 1"):
         RepeatPlan(

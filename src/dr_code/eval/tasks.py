@@ -213,12 +213,13 @@ class RepeatPlan(FrozenModel):
         return tuple(expanded)
 
     def identity_payload(self) -> dict[str, object]:
+        # seeds are deliberately excluded: per-slot RNG seeds are slot data
+        # (expanded via repeats()), not identity-bearing runtime data.
         return {
             "plan_id": self.plan_id,
             "version": self.version,
             "task_identities": list(self.task_identities),
             "repeat_count": self.repeat_count,
-            "seeds": [[key, seed] for key, seed in self.seeds],
         }
 
     def identity_hash(self) -> str:
