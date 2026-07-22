@@ -71,6 +71,10 @@ _MIGRATIONS: Final[tuple[tuple[int, tuple[str, ...]], ...]] = (
             """,
         ),
     ),
+    (
+        2,
+        ("ALTER TABLE annotations ALTER COLUMN verdict DROP NOT NULL",),
+    ),
 )
 
 
@@ -176,10 +180,87 @@ class ViewerDatabase:
             corpus_sha256=corpus_sha256,
             sample_id=sample_id,
             decoder_output_sha256=decoder_output_sha256,
-            verdict=Verdict(row[0]),
+            verdict=Verdict(row[0]) if row[0] is not None else None,
             note=row[1],
             tags=tags,
         )
+
+    def get_annotations(
+        self,
+        corpus_sha256: str,
+        identities: Iterable[tuple[str, str]],
+    ) -> dict[tuple[str, str], Annotation]:
+        """Load annotations and their tags for exact output identities."""
+        requested = tuple(
+            sorted(
+                {
+                    _annotation_key(corpus_sha256, sample_id, output_sha256)[
+                        1:
+                    ]
+                    for sample_id, output_sha256 in identities
+                }
+            )
+        )
+        if not requested:
+            return {}
+        values_sql = ", ".join("(?, ?)" for _ in requested)
+        params = [item for identity in requested for item in identity]
+        rows = self._connection.execute(
+            f"""
+            WITH requested(sample_id, decoder_output_sha256) AS (
+                VALUES {values_sql}
+            )
+            SELECT
+                a.sample_id,
+                a.decoder_output_sha256,
+                a.verdict,
+                a.note,
+                t.tag_id,
+                t.name
+            FROM requested AS requested
+            JOIN annotations AS a
+              ON a.corpus_sha256 = ?
+             AND a.sample_id = requested.sample_id
+             AND a.decoder_output_sha256 = requested.decoder_output_sha256
+            LEFT JOIN annotation_tags AS atag
+              ON atag.corpus_sha256 = a.corpus_sha256
+             AND atag.sample_id = a.sample_id
+             AND atag.decoder_output_sha256 = a.decoder_output_sha256
+            LEFT JOIN tags AS t ON t.tag_id = atag.tag_id
+            ORDER BY
+                a.sample_id,
+                a.decoder_output_sha256,
+                t.normalized_name,
+                t.tag_id
+            """,
+            [*params, corpus_sha256],
+        ).fetchall()
+        grouped: dict[
+            tuple[str, str], tuple[Verdict | None, str | None, list[Tag]]
+        ] = {}
+        for row in rows:
+            key = (row[0], row[1])
+            state = grouped.setdefault(
+                key,
+                (
+                    Verdict(row[2]) if row[2] is not None else None,
+                    row[3],
+                    [],
+                ),
+            )
+            if row[4] is not None:
+                state[2].append(Tag(tag_id=row[4], name=row[5]))
+        return {
+            key: Annotation(
+                corpus_sha256=corpus_sha256,
+                sample_id=key[0],
+                decoder_output_sha256=key[1],
+                verdict=state[0],
+                note=state[1],
+                tags=tuple(state[2]),
+            )
+            for key, state in grouped.items()
+        }
 
     def put_annotation(
         self,
@@ -187,19 +268,22 @@ class ViewerDatabase:
         sample_id: str,
         decoder_output_sha256: str,
         *,
-        verdict: Verdict | str,
+        verdict: Verdict | str | None,
         note: str | None,
         tag_ids: Iterable[str] = (),
     ) -> Annotation:
         corpus_sha256, sample_id, decoder_output_sha256 = _annotation_key(
             corpus_sha256, sample_id, decoder_output_sha256
         )
-        try:
-            parsed_verdict = Verdict(verdict)
-        except ValueError as exc:
-            raise InvalidQueryError(
-                f"unsupported annotation verdict: {verdict}"
-            ) from exc
+        if verdict is None:
+            parsed_verdict = None
+        else:
+            try:
+                parsed_verdict = Verdict(verdict)
+            except ValueError as exc:
+                raise InvalidQueryError(
+                    f"unsupported annotation verdict: {verdict}"
+                ) from exc
         normalized_note = _normalize_note(note)
         selected_tag_ids = tuple(sorted(set(tag_ids)))
         if any(
@@ -240,7 +324,9 @@ class ViewerDatabase:
                     corpus_sha256,
                     sample_id,
                     decoder_output_sha256,
-                    parsed_verdict.value,
+                    parsed_verdict.value
+                    if parsed_verdict is not None
+                    else None,
                     normalized_note,
                 ],
             )

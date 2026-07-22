@@ -26,6 +26,7 @@ from dr_code.viewer.domain import (
     IncompatibleRunsError,
     InvalidQueryError,
     Page as DomainPage,
+    ReviewPage as DomainReviewPage,
     RunComparison as DomainRunComparison,
     RunNotFoundError,
     RunSummary as DomainRunSummary,
@@ -137,7 +138,7 @@ class Tag(ResponseModel):
 
 
 class Annotation(ResponseModel):
-    verdict: Verdict
+    verdict: Verdict | None
     note: str | None
     tags: list[Tag]
 
@@ -147,12 +148,22 @@ class ExampleDetail(ResponseModel):
     sample_id: str
     decoder_output_sha256: str | None
     outcome: str
+    failure_code: str | None
+    failed_step: str | None
+    cause: str | None
     raw_decoder_output: str | None
     context: dict[str, Scalar]
     candidates: list[Candidate]
     facts: list[DiagnosticFact]
     rejections: list[Rejection]
     annotation: Annotation | None
+
+
+class ReviewExamplesResponse(ResponseModel):
+    items: list[ExampleDetail]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
 
 
 class ComparisonStage(ResponseModel):
@@ -189,7 +200,7 @@ class AnnotationExport(ResponseModel):
     corpus_sha256: str
     sample_id: str
     decoder_output_sha256: str
-    verdict: Verdict
+    verdict: Verdict | None
     note: str | None
     tags: list[str]
 
@@ -211,7 +222,7 @@ class CreateTagRequest(BaseModel):
 class PutAnnotationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    verdict: Verdict
+    verdict: Verdict | None
     note: str | None = Field(default=None, max_length=10_000)
     tag_ids: list[str] = Field(default_factory=list, max_length=100)
 
@@ -244,6 +255,19 @@ class ViewerService(Protocol):
 
     def example(self, run_id: str, sample_id: str) -> DomainExampleDetail: ...
 
+    def review_examples(
+        self,
+        run_id: str,
+        *,
+        failure_code: str,
+        failed_step: str,
+        cause: str | None = None,
+        cause_is_null: bool = False,
+        search: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> DomainReviewPage: ...
+
     def compare(
         self, baseline_run_id: str, candidate_run_id: str
     ) -> DomainRunComparison: ...
@@ -258,7 +282,7 @@ class ViewerService(Protocol):
         sample_id: str,
         decoder_output_sha256: str,
         *,
-        verdict: DomainVerdict | str,
+        verdict: DomainVerdict | str | None,
         note: str | None = None,
         tag_ids: Sequence[str] = (),
     ) -> DomainAnnotation: ...
@@ -375,7 +399,7 @@ def _tag(value: DomainTag) -> Tag:
 
 def _annotation(value: DomainAnnotation) -> Annotation:
     return Annotation(
-        verdict=value.verdict.value,
+        verdict=value.verdict.value if value.verdict is not None else None,
         note=value.note,
         tags=[_tag(tag) for tag in value.tags],
     )
@@ -401,6 +425,9 @@ def _detail(value: DomainExampleDetail) -> ExampleDetail:
         sample_id=value.sample_id,
         decoder_output_sha256=value.decoder_output_sha256,
         outcome=value.outcome,
+        failure_code=value.failure_code,
+        failed_step=value.failed_step,
+        cause=value.cause,
         raw_decoder_output=value.raw_decoder_output,
         context=context,
         candidates=candidates,
@@ -414,6 +441,15 @@ def _detail(value: DomainExampleDetail) -> ExampleDetail:
             if value.annotation is not None
             else None
         ),
+    )
+
+
+def _review_page(value: DomainReviewPage) -> ReviewExamplesResponse:
+    return ReviewExamplesResponse(
+        items=[_detail(item) for item in value.items],
+        total=value.total,
+        limit=value.limit,
+        offset=value.offset,
     )
 
 
@@ -589,6 +625,40 @@ def create_app(
     )
     async def example(run_id: str, sample_id: str) -> ExampleDetail:
         return _detail(service.example(run_id, sample_id))
+
+    @application.get(
+        "/api/runs/{run_id}/review-examples",
+        response_model=ReviewExamplesResponse,
+    )
+    async def review_examples(
+        run_id: str,
+        failure_code: Annotated[str, Query(max_length=256)],
+        failed_step: Annotated[str, Query(max_length=256)],
+        cause: Annotated[str | None, Query()] = None,
+        cause_is_null: Annotated[bool, Query()] = False,
+        search: Annotated[str | None, Query(max_length=1_000)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> ReviewExamplesResponse:
+        if (cause is None and not cause_is_null) or (
+            cause is not None and cause_is_null
+        ):
+            raise InvalidQueryError(
+                "review examples require exactly one of cause or "
+                "cause_is_null=true"
+            )
+        return _review_page(
+            service.review_examples(
+                run_id,
+                failure_code=failure_code,
+                failed_step=failed_step,
+                cause=cause,
+                cause_is_null=cause_is_null,
+                search=search,
+                limit=limit,
+                offset=offset,
+            )
+        )
 
     @application.get("/api/compare", response_model=CompareResponse)
     async def compare(

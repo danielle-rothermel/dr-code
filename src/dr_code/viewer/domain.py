@@ -355,7 +355,7 @@ class Annotation:
     corpus_sha256: str
     sample_id: str
     decoder_output_sha256: str
-    verdict: Verdict
+    verdict: Verdict | None
     note: str | None
     tags: tuple[Tag, ...]
 
@@ -367,11 +367,22 @@ class ExampleDetail:
     decoder_output_sha256: str | None
     context: dict[str, object]
     outcome: str
+    failure_code: str | None
+    failed_step: str | None
+    cause: str | None
     raw_decoder_output: str | None
     candidates: tuple[dict[str, object], ...]
     facts: tuple[dict[str, object], ...]
     rejections: tuple[dict[str, object], ...]
     annotation: Annotation | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewPage:
+    items: tuple[ExampleDetail, ...]
+    total: int
+    limit: int
+    offset: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -844,6 +855,7 @@ __all__ = (
     "RunDescriptor",
     "RunNotFoundError",
     "RunSummary",
+    "ReviewPage",
     "RunValidationError",
     "Tag",
     "Verdict",

@@ -160,6 +160,158 @@ def test_examples_are_stably_paginated_searchable_and_detailed(
     assert detail.rejections[0]["reason_code"] == "not_compilable"
 
 
+def test_review_examples_batch_preserves_exact_selection_and_page_order(
+    tmp_path, monkeypatch
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        no_code_causes=("shared", "shared", None),
+    )
+    with ViewerDatabase(":memory:") as database:
+        analytics = ViewerAnalytics(database, [descriptor])
+        selected = analytics.examples(
+            descriptor.run_id,
+            failure_code="no_code_candidates",
+            failed_step="extract_candidates",
+            cause="shared",
+            limit=2,
+        )
+        annotated = analytics.example(descriptor.run_id, "no-code-alt")
+        assert annotated.decoder_output_sha256 is not None
+        tag = analytics.create_tag("batch annotation")
+        analytics.put_annotation(
+            descriptor.corpus_sha256,
+            annotated.sample_id,
+            annotated.decoder_output_sha256,
+            verdict=None,
+            note="loaded in batch",
+            tag_ids=[tag.tag_id],
+        )
+        expected = tuple(
+            analytics.example(descriptor.run_id, item.sample_id)
+            for item in selected.items
+        )
+
+        joined_calls: list[tuple[str, ...]] = []
+        relation_calls: list[tuple[str, ...]] = []
+        annotation_calls: list[tuple[tuple[str, str], ...]] = []
+        original_joined = analytics._joined_rows
+        original_relations = analytics._relation_rows_by_sample
+        original_annotations = database.get_annotations
+
+        def counted_joined(descriptor, sample_ids):
+            joined_calls.append(sample_ids)
+            return original_joined(descriptor, sample_ids)
+
+        def counted_relations(path, sample_ids, columns, order_by):
+            relation_calls.append(sample_ids)
+            return original_relations(path, sample_ids, columns, order_by)
+
+        def counted_annotations(corpus_sha256, identities):
+            values = tuple(identities)
+            annotation_calls.append(values)
+            return original_annotations(corpus_sha256, values)
+
+        def reject_single_detail_load(*_args, **_kwargs):
+            pytest.fail("review page must not call example() per item")
+
+        monkeypatch.setattr(analytics, "_joined_rows", counted_joined)
+        monkeypatch.setattr(
+            analytics, "_relation_rows_by_sample", counted_relations
+        )
+        monkeypatch.setattr(database, "get_annotations", counted_annotations)
+        monkeypatch.setattr(analytics, "example", reject_single_detail_load)
+
+        actual = analytics.review_examples(
+            descriptor.run_id,
+            failure_code="no_code_candidates",
+            failed_step="extract_candidates",
+            cause="shared",
+            limit=2,
+        )
+        actual_joined_calls = list(joined_calls)
+        actual_relation_calls = list(relation_calls)
+        actual_annotation_calls = list(annotation_calls)
+        second_page = analytics.review_examples(
+            descriptor.run_id,
+            failure_code="no_code_candidates",
+            failed_step="extract_candidates",
+            cause="shared",
+            limit=1,
+            offset=1,
+        )
+        searched = analytics.review_examples(
+            descriptor.run_id,
+            failure_code="no_code_candidates",
+            failed_step="extract_candidates",
+            cause="shared",
+            search="Alternate prose",
+        )
+        null_cause = analytics.review_examples(
+            descriptor.run_id,
+            failure_code="no_code_candidates",
+            failed_step="extract_candidates",
+            cause_is_null=True,
+        )
+        empty_cause = analytics.review_examples(
+            descriptor.run_id,
+            failure_code="no_code_candidates",
+            failed_step="extract_candidates",
+            cause="",
+        )
+
+    assert actual.items == expected
+    assert actual.total == second_page.total == 2
+    assert [item.sample_id for item in actual.items] == [
+        "no-code",
+        "no-code-alt",
+    ]
+    assert [item.sample_id for item in second_page.items] == ["no-code-alt"]
+    assert [item.sample_id for item in searched.items] == ["no-code-alt"]
+    assert [item.sample_id for item in null_cause.items] == ["no-code-null"]
+    assert empty_cause.total == 0
+    assert actual_joined_calls == [("no-code", "no-code-alt")]
+    assert actual_relation_calls == [
+        ("no-code", "no-code-alt"),
+        ("no-code", "no-code-alt"),
+        ("no-code", "no-code-alt"),
+    ]
+    assert len(actual_annotation_calls) == 1
+    assert len(actual_annotation_calls[0]) == 2
+    detail = actual.items[0]
+    assert (
+        detail.failure_code,
+        detail.failed_step,
+        detail.cause,
+    ) == ("no_code_candidates", "extract_candidates", "shared")
+    assert detail.raw_decoder_output == "This is prose."
+    assert detail.context["task_id"] == "Task/2"
+    assert detail.facts
+
+
+def test_review_examples_requires_one_exact_cause_representation(
+    tmp_path,
+) -> None:
+    descriptor = write_bundle(tmp_path / "bundle")
+    with ViewerDatabase(":memory:") as database:
+        analytics = ViewerAnalytics(database, [descriptor])
+
+        with pytest.raises(InvalidQueryError, match="exactly one"):
+            analytics.review_examples(
+                descriptor.run_id,
+                failure_code="no_code_candidates",
+                failed_step="extract_candidates",
+            )
+        with pytest.raises(InvalidQueryError, match="exactly one"):
+            analytics.review_examples(
+                descriptor.run_id,
+                failure_code="no_code_candidates",
+                failed_step="extract_candidates",
+                cause="primary",
+                cause_is_null=True,
+            )
+
+
 def test_compatible_comparison_allows_different_definition_hashes(
     tmp_path,
 ) -> None:

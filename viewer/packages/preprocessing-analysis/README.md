@@ -9,8 +9,9 @@ The application provides three views:
 - **Waterfall** traces sample counts through preprocessing and opens the exact
   examples behind a stage.
 - **Compare** shows compatible run deltas and inspectable terminal transitions.
-- **Review** groups terminal failures and saves verdicts, notes, and tags to the
-  local annotation database.
+- **Review** pages through complete terminal-failure examples as stacked cards
+  and immediately saves verdicts, comments, and tags to the local annotation
+  database.
 
 ## Run the complete local application
 

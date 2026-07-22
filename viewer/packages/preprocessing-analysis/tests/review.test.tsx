@@ -1,13 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@dr-code/viewer", () => ({
   CodeBlock: ({ code }: { code: string }) => <pre>{code}</pre>,
-  CodeDiff: () => <div>code diff</div>,
   StatusBadge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 
+import type { Annotation, ExampleDetail, ReviewExamplesQuery } from "../src/api";
 import { Review } from "../src/review";
 import { detail, fakeApi } from "./fixtures";
 
@@ -15,212 +15,377 @@ afterEach(cleanup);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve; });
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
+}
+
+function example(sampleId: string, overrides: Partial<ExampleDetail> = {}): ExampleDetail {
+  return {
+    ...detail,
+    decoder_output_sha256: `output-${sampleId}`,
+    sample_id: sampleId,
+    ...overrides,
+  };
 }
 
 describe("Review", () => {
-  it("uses the full failure tuple and saves verdict, note, tags, and clear actions", async () => {
-    const api = fakeApi();
-    const onTagCreated = vi.fn();
-    render(<Review api={api} onTagCreated={onTagCreated} runId="baseline" tags={[]} />);
+  it("requests complete page items, renders every card, and uses semantic review layout classes", async () => {
+    const items = [
+      example("sample-1", {
+        context: {
+          content_sha256: "content-sha",
+          has_prompt: true,
+          source_record_id: "source-record-1",
+          warnings: "truncated source",
+        },
+      }),
+      example("sample-2"),
+    ];
+    const api = fakeApi({
+      getReviewExamples: vi.fn().mockResolvedValue({ items, limit: 10, offset: 0, total: 2 }),
+    });
+
+    const { container } = render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
 
     expect(await screen.findByRole("heading", { name: "sample-1" })).toBeTruthy();
-    expect(screen.getByText("unreviewed")).toBeTruthy();
-    expect(api.getExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({
+    expect(screen.getByRole("heading", { name: "sample-2" })).toBeTruthy();
+    expect(api.getReviewExamples).toHaveBeenCalledWith("baseline", {
       cause: "syntax error",
       failed_step: "compile",
       failure_code: "syntax_error",
-      limit: 30,
-      offset: 0,
-    }));
-    fireEvent.click(screen.getByRole("radio", { name: /Should be parseable/ }));
-    await waitFor(() => expect(api.putAnnotation).toHaveBeenCalledWith(
-      expect.objectContaining({ decoder_output_sha256: "output-sha", sample_id: "sample-1" }),
-      { note: "", tag_ids: [], verdict: "should_be_parseable" },
-    ));
-    expect(await screen.findByText("Saved")).toBeTruthy();
-    expect(screen.getByText("should be parseable")).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "Recover the fenced function" } });
-    expect(screen.getByText("Unsaved changes")).toBeTruthy();
-    await waitFor(() => expect(api.putAnnotation).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ note: "Recover the fenced function" }),
-    ));
-    expect(await screen.findByText("Saved")).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText("Create tag"), { target: { value: "markdown fence" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create and select" }));
-    await waitFor(() => expect(api.createTag).toHaveBeenCalledWith("markdown fence"));
-    expect(onTagCreated).toHaveBeenCalledWith({ name: "markdown fence", tag_id: "tag-1" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear annotation" }));
-    await waitFor(() => expect(api.deleteAnnotation).toHaveBeenCalledWith(expect.objectContaining({ sample_id: detail.sample_id })));
-  });
-
-  it("distinguishes nonempty, null, and empty failure causes", async () => {
-    const api = fakeApi();
-    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
-    await screen.findByRole("heading", { name: "sample-1" });
-
-    fireEvent.click(screen.getByRole("button", { name: /Literal response/ }));
-    await waitFor(() => expect(api.getExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({
-      cause_is_null: true,
-      failed_step: "compile",
-      failure_code: "syntax_error",
-    })));
-    fireEvent.click(screen.getByRole("button", { name: /Empty cause/ }));
-    await waitFor(() => expect(api.getExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({
-      cause: "",
-      failed_step: "compile",
-      failure_code: "syntax_error",
-    })));
-  });
-
-  it("does not expose annotation controls for an output without a digest", async () => {
-    const api = fakeApi({ getExample: vi.fn().mockResolvedValue({ ...detail, decoder_output_sha256: null }) });
-    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
-
-    const verdict = await screen.findByRole("radio", { name: /Should be parseable/ });
-    expect((verdict as HTMLInputElement).disabled).toBe(true);
-  });
-
-  it("keeps failed annotation saves visible", async () => {
-    const api = fakeApi({ putAnnotation: vi.fn().mockRejectedValue(new Error("database is locked")) });
-    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
-
-    fireEvent.click(await screen.findByRole("radio", { name: /Expected no code/ }));
-    expect(await screen.findByText("Save failed")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain("database is locked");
-  });
-
-  it("serializes rapid full-state saves and coalesces them to the latest draft", async () => {
-    const first = deferred<NonNullable<typeof detail.annotation>>();
-    const second = deferred<NonNullable<typeof detail.annotation>>();
-    const putAnnotation = vi.fn()
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    const tag = { name: "markdown fence", tag_id: "tag-1" };
-    const api = fakeApi({ putAnnotation });
-    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[tag]} />);
-
-    fireEvent.click(await screen.findByRole("radio", { name: /Should be parseable/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /Expected no code/ }));
-    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "latest note" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "markdown fence" }));
-    expect(putAnnotation).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      first.resolve({ note: null, tags: [], verdict: "should_be_parseable" });
-      await first.promise;
-    });
-    await waitFor(() => expect(putAnnotation).toHaveBeenCalledTimes(2));
-    expect(putAnnotation).toHaveBeenLastCalledWith(expect.anything(), {
-      note: "latest note",
-      tag_ids: ["tag-1"],
-      verdict: "expected_no_code",
-    });
-
-    await act(async () => {
-      second.resolve({ note: "latest note", tags: [tag], verdict: "expected_no_code" });
-      await second.promise;
-    });
-    expect(await screen.findByText("Saved")).toBeTruthy();
-  });
-
-  it("flushes a dirty note on navigation without applying its completion to the new example", async () => {
-    const pending = deferred<NonNullable<typeof detail.annotation>>();
-    const firstDetail = {
-      ...detail,
-      annotation: { note: null, tags: [], verdict: "should_be_parseable" as const },
-    };
-    const secondDetail = { ...detail, decoder_output_sha256: "second-output", sample_id: "sample-2" };
-    const api = fakeApi({
-      getExample: vi.fn(async (_runId: string, sampleId: string) => sampleId === "sample-2" ? secondDetail : firstDetail),
-      getExamples: vi.fn().mockResolvedValue({
-        items: [
-          { annotation_verdict: null, context: {}, outcome: detail.outcome, raw_preview: "first", sample_id: "sample-1" },
-          { annotation_verdict: null, context: {}, outcome: detail.outcome, raw_preview: "second", sample_id: "sample-2" },
-        ],
-        limit: 30,
-        offset: 0,
-        total: 2,
-      }),
-      putAnnotation: vi.fn().mockReturnValue(pending.promise),
-    });
-    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
-
-    await screen.findByRole("heading", { name: "sample-1" });
-    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "flush before navigation" } });
-    expect(screen.getByText("Unsaved changes")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /sample-2/ }));
-    await waitFor(() => expect(api.putAnnotation).toHaveBeenCalledWith(
-      expect.objectContaining({ sample_id: "sample-1" }),
-      { note: "flush before navigation", tag_ids: [], verdict: "should_be_parseable" },
-    ));
-    expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
-    await act(async () => {
-      pending.resolve({ note: null, tags: [], verdict: "should_be_parseable" });
-      await pending.promise;
-    });
-
-    await screen.findByRole("heading", { name: "sample-2" });
-    expect((screen.getByRole("radio", { name: /Should be parseable/ }) as HTMLInputElement).checked).toBe(false);
-    expect(screen.getByText("should be parseable")).toBeTruthy();
-  });
-
-  it("holds navigation when a dirty-note flush fails and keeps the draft recoverable", async () => {
-    const firstDetail = {
-      ...detail,
-      annotation: { note: null, tags: [], verdict: "should_be_parseable" as const },
-    };
-    const secondDetail = { ...detail, decoder_output_sha256: "second-output", sample_id: "sample-2" };
-    const api = fakeApi({
-      getExample: vi.fn(async (_runId: string, sampleId: string) => sampleId === "sample-2" ? secondDetail : firstDetail),
-      getExamples: vi.fn().mockResolvedValue({
-        items: [
-          { annotation_verdict: "should_be_parseable", context: {}, outcome: detail.outcome, raw_preview: "first", sample_id: "sample-1" },
-          { annotation_verdict: null, context: {}, outcome: detail.outcome, raw_preview: "second", sample_id: "sample-2" },
-        ],
-        limit: 30,
-        offset: 0,
-        total: 2,
-      }),
-      putAnnotation: vi.fn().mockRejectedValue(new Error("database is locked")),
-    });
-    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
-
-    await screen.findByRole("heading", { name: "sample-1" });
-    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "recoverable draft" } });
-    fireEvent.click(screen.getByRole("button", { name: /sample-2/ }));
-
-    expect(await screen.findByText("Save failed")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
-    expect((screen.getByLabelText("Note") as HTMLTextAreaElement).value).toBe("recoverable draft");
-  });
-
-  it("resets pagination and search when the active run changes", async () => {
-    const getExamples = vi.fn().mockResolvedValue({
-      items: [{ annotation_verdict: null, context: {}, outcome: detail.outcome, raw_preview: "first", sample_id: "sample-1" }],
-      limit: 30,
-      offset: 0,
-      total: 60,
-    });
-    const api = fakeApi({ getExamples });
-    const view = render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
-    await screen.findByRole("heading", { name: "sample-1" });
-
-    fireEvent.change(screen.getByLabelText("Search this group"), { target: { value: "needle" } });
-    await waitFor(() => expect(getExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ search: "needle" })));
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect(getExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 30 })));
-
-    view.rerender(<Review api={api} onTagCreated={vi.fn()} runId="candidate" tags={[]} />);
-    await waitFor(() => expect(getExamples).toHaveBeenCalledWith("candidate", expect.objectContaining({
+      limit: 10,
       offset: 0,
       search: "",
+    });
+    expect(container.querySelectorAll(".review-example-card")).toHaveLength(2);
+    expect(container.querySelector(".example-browser")).toBeNull();
+    expect(container.querySelector(".example-list")).toBeNull();
+    expect(screen.queryByText("unreviewed")).toBeNull();
+    expect(container.querySelector(".review-example-card")?.className).toContain("review-example-card--three-one");
+    expect(container.querySelector(".review-example-main")).toBeTruthy();
+    expect(container.querySelector(".annotation-rail")).toBeTruthy();
+
+    const metadata = (label: string) => screen.getByText(label).closest("div");
+    expect(metadata("source record id")?.className).toContain("metadata-field--half");
+    expect(metadata("content sha256")?.className).toContain("metadata-field--half");
+    expect(metadata("warnings")?.className).toContain("metadata-field--full");
+    expect(metadata("has prompt")?.className).toContain("metadata-field--compact");
+
+    const firstCard = screen.getByRole("heading", { name: "sample-1" }).closest("article")!;
+    const decoder = within(firstCard).getByRole("region", { name: "Decoder output for sample-1" });
+    expect(decoder.previousElementSibling?.className).toBe("failure-reason");
+  });
+
+  it("provides page selectors, page buttons, page sizes, and resets page on each filter boundary", async () => {
+    const getReviewExamples = vi.fn(async (_runId: string, query: ReviewExamplesQuery) => ({
+      items: [example(`sample-${query.offset + 1}`)],
+      limit: query.limit,
+      offset: query.offset,
+      total: 60,
+    }));
+    const api = fakeApi({ getReviewExamples });
+    const view = render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+    await screen.findByRole("heading", { name: "sample-1" });
+    expect((screen.getByLabelText("Page size") as HTMLSelectElement).value).toBe("10");
+    expect((screen.getByLabelText("Page number") as HTMLSelectElement).selectedOptions[0]?.textContent).toBe("Page 1 of 6");
+    expect((screen.getByRole("button", { name: "Previous page" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Page number"), { target: { value: "3" } });
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 20 })));
+    expect(await screen.findByRole("heading", { name: "sample-21" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ limit: 10, offset: 10 })));
+    expect(await screen.findByRole("heading", { name: "sample-11" })).toBeTruthy();
+
+    const callsBeforeTyping = getReviewExamples.mock.calls.length;
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "n" } });
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "needle" } });
+    expect(getReviewExamples).toHaveBeenCalledTimes(callsBeforeTyping);
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 0, search: "needle" })));
+    expect(getReviewExamples).toHaveBeenCalledTimes(callsBeforeTyping + 1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 10, search: "needle" })));
+    fireEvent.change(screen.getByLabelText("Page size"), { target: { value: "25" } });
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ limit: 25, offset: 0 })));
+    expect((screen.getByLabelText("Page number") as HTMLSelectElement).selectedOptions[0]?.textContent).toBe("Page 1 of 3");
+
+    const nullCauseOption = screen.getByRole("option", { name: /Literal response/ }) as HTMLOptionElement;
+    fireEvent.change(screen.getByLabelText("Failure group"), { target: { value: nullCauseOption.value } });
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({
+      cause_is_null: true,
+      offset: 0,
     })));
-    expect((screen.getByLabelText("Search this group") as HTMLInputElement).value).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 25 })));
+    view.rerender(<Review api={api} onTagCreated={vi.fn()} runId="candidate" tags={[]} />);
+    await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("candidate", expect.objectContaining({ offset: 0 })));
+  });
+
+  it("maps verdict labels and saves comments and tags while the verdict is null", async () => {
+    const tag = { name: "markdown fence", tag_id: "tag-1" };
+    const api = fakeApi({
+      putAnnotation: vi.fn(async (_identity, input) => ({ note: input.note, tags: input.tag_ids.includes(tag.tag_id) ? [tag] : [], verdict: input.verdict })),
+    });
+    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[tag]} />);
+
+    const card = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    const radios = within(card).getAllByRole("radio");
+    expect(radios.map((radio) => radio.parentElement?.textContent)).toEqual(["Unlabeled", "Flag", "Verify"]);
+    expect((within(card).getByRole("radio", { name: "Unlabeled" }) as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.change(within(card).getByLabelText("Comment"), { target: { value: "keep while unlabeled" } });
+    fireEvent.blur(within(card).getByLabelText("Comment"));
+    await waitFor(() => expect(api.putAnnotation).toHaveBeenLastCalledWith(expect.anything(), {
+      note: "keep while unlabeled",
+      tag_ids: [],
+      verdict: null,
+    }));
+
+    fireEvent.click(within(card).getByRole("checkbox", { name: "markdown fence" }));
+    await waitFor(() => expect(api.putAnnotation).toHaveBeenLastCalledWith(expect.anything(), {
+      note: "keep while unlabeled",
+      tag_ids: ["tag-1"],
+      verdict: null,
+    }));
+
+    fireEvent.click(within(card).getByRole("radio", { name: "Flag" }));
+    await waitFor(() => expect(api.putAnnotation).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ verdict: "should_be_parseable" })));
+    fireEvent.click(within(card).getByRole("radio", { name: "Verify" }));
+    await waitFor(() => expect(api.putAnnotation).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ verdict: "expected_no_code" })));
+    fireEvent.click(within(card).getByRole("radio", { name: "Unlabeled" }));
+    await waitFor(() => expect(api.putAnnotation).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ verdict: null })));
+  });
+
+  it("creates a shared tag, selects it for an unlabeled card, and persists it", async () => {
+    const created = { name: "new tag", tag_id: "created-tag" };
+    const onTagCreated = vi.fn();
+    const api = fakeApi({ createTag: vi.fn().mockResolvedValue(created) });
+    render(<Review api={api} onTagCreated={onTagCreated} runId="baseline" tags={[]} />);
+
+    const card = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    fireEvent.change(within(card).getByLabelText("Create tag"), { target: { value: "new tag" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Create and select" }));
+
+    await waitFor(() => expect(onTagCreated).toHaveBeenCalledWith(created));
+    await waitFor(() => expect(api.putAnnotation).toHaveBeenCalledWith(expect.anything(), {
+      note: "",
+      tag_ids: ["created-tag"],
+      verdict: null,
+    }));
+  });
+
+  it("keeps failed tag creation protected through unrelated saves and retries it through navigation", async () => {
+    const created = { name: "retry tag", tag_id: "retry-tag" };
+    const createTag = vi.fn()
+      .mockRejectedValueOnce(new Error("tag database is locked"))
+      .mockRejectedValueOnce(new Error("tag database is still locked"))
+      .mockResolvedValue(created);
+    const putAnnotation = vi.fn(async (_identity, input) => ({
+      note: input.note,
+      tags: input.tag_ids.includes(created.tag_id) ? [created] : [],
+      verdict: input.verdict,
+    }));
+    const getReviewExamples = vi.fn(async (_runId: string, query: ReviewExamplesQuery) => ({
+      items: [query.offset === 0 ? example("sample-1") : example("sample-11")],
+      limit: query.limit,
+      offset: query.offset,
+      total: 11,
+    }));
+    const onTagCreated = vi.fn();
+    const api = fakeApi({ createTag, getReviewExamples, putAnnotation });
+    render(<Review api={api} onTagCreated={onTagCreated} runId="baseline" tags={[]} />);
+
+    const card = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    const tagInput = within(card).getByLabelText("Create tag") as HTMLInputElement;
+    fireEvent.change(tagInput, { target: { value: "retry tag" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Create and select" }));
+
+    expect(await within(card).findByText("Tag save failed")).toBeTruthy();
+    expect(within(card).getByRole("alert").textContent).toContain("tag database is locked");
+    expect(tagInput.value).toBe("retry tag");
+    expect(within(card).getByRole("button", { name: "Retry create and select" })).toBeTruthy();
+
+    fireEvent.click(within(card).getByRole("radio", { name: "Flag" }));
+    await waitFor(() => expect(putAnnotation).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      tag_ids: [],
+      verdict: "should_be_parseable",
+    })));
+    expect(within(card).getByText("Tag save failed")).toBeTruthy();
+    expect(within(card).getByRole("alert").textContent).toContain("tag database is locked");
+    const unsafeEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unsafeEvent);
+    expect(unsafeEvent.defaultPrevented).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(await screen.findByText("Navigation blocked")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
+    expect(createTag).toHaveBeenCalledTimes(2);
+    expect(tagInput.value).toBe("retry tag");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry pending saves" }));
+    await waitFor(() => expect(createTag).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(putAnnotation).toHaveBeenCalledWith(expect.anything(), {
+      note: "",
+      tag_ids: ["retry-tag"],
+      verdict: "should_be_parseable",
+    }));
+    await waitFor(() => expect(screen.queryByText("Navigation blocked")).toBeNull());
+    expect(onTagCreated).toHaveBeenCalledWith(created);
+    expect(tagInput.value).toBe("");
+
+    const cleanEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(cleanEvent);
+    expect(cleanEvent.defaultPrevented).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("heading", { name: "sample-11" });
+  });
+
+  it("applies a submitted search after guarded saves without racing later draft text", async () => {
+    const pendingSave = deferred<Annotation>();
+    const getReviewExamples = vi.fn(async (_runId: string, query: ReviewExamplesQuery) => ({
+      items: [example(query.search === "applied" ? "applied-result" : "sample-1")],
+      limit: query.limit,
+      offset: query.offset,
+      total: 1,
+    }));
+    const api = fakeApi({ getReviewExamples, putAnnotation: vi.fn().mockReturnValue(pendingSave.promise) });
+    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Flag" }));
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "applied" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "still drafting" } });
+    expect(getReviewExamples).not.toHaveBeenCalledWith("baseline", expect.objectContaining({ search: "applied" }));
+    expect(getReviewExamples).not.toHaveBeenCalledWith("baseline", expect.objectContaining({ search: "still drafting" }));
+
+    await act(async () => {
+      pendingSave.resolve({ note: "", tags: [], verdict: "should_be_parseable" });
+      await pendingSave.promise;
+    });
+    await screen.findByRole("heading", { name: "applied-result" });
+    expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ search: "applied" }));
+    expect(getReviewExamples).not.toHaveBeenCalledWith("baseline", expect.objectContaining({ search: "still drafting" }));
+    expect((screen.getByLabelText("Search") as HTMLInputElement).value).toBe("still drafting");
+  });
+
+  it("refetches saved annotation state when navigating away from and back to a page", async () => {
+    const annotations = new Map<string, Annotation>();
+    const first = example("sample-1");
+    const second = example("sample-11");
+    const api = fakeApi({
+      getReviewExamples: vi.fn(async (_runId: string, query: ReviewExamplesQuery) => ({
+        items: [(query.offset === 0 ? first : second)].map((item) => ({ ...item, annotation: annotations.get(item.sample_id) ?? null })),
+        limit: query.limit,
+        offset: query.offset,
+        total: 11,
+      })),
+      putAnnotation: vi.fn(async (identity, input) => {
+        const annotation = { note: input.note, tags: [], verdict: input.verdict };
+        annotations.set(identity.sample_id, annotation);
+        return annotation;
+      }),
+    });
+    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Flag" }));
+    await screen.findByText("Saved");
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("heading", { name: "sample-11" });
+    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
+    await screen.findByRole("heading", { name: "sample-1" });
+    expect((screen.getByRole("radio", { name: "Flag" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("saves multiple cards independently and concurrently", async () => {
+    const firstSave = deferred<Annotation>();
+    const secondSave = deferred<Annotation>();
+    const putAnnotation = vi.fn()
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise);
+    const api = fakeApi({
+      getReviewExamples: vi.fn().mockResolvedValue({ items: [example("sample-1"), example("sample-2")], limit: 10, offset: 0, total: 2 }),
+      putAnnotation,
+    });
+    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+    const firstCard = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    const secondCard = screen.getByRole("heading", { name: "sample-2" }).closest("article")!;
+    fireEvent.click(within(firstCard).getByRole("radio", { name: "Flag" }));
+    fireEvent.click(within(secondCard).getByRole("radio", { name: "Verify" }));
+    expect(putAnnotation).toHaveBeenCalledTimes(2);
+    expect(putAnnotation.mock.calls.map(([identity]) => identity.sample_id)).toEqual(["sample-1", "sample-2"]);
+
+    await act(async () => {
+      firstSave.resolve({ note: "", tags: [], verdict: "should_be_parseable" });
+      secondSave.resolve({ note: "", tags: [], verdict: "expected_no_code" });
+      await Promise.all([firstSave.promise, secondSave.promise]);
+    });
+    expect(screen.getAllByText("Saved")).toHaveLength(2);
+  });
+
+  it("composes every card guard, blocks page navigation on one failure, and can recover", async () => {
+    const first = example("sample-1", { annotation: { note: null, tags: [], verdict: null } });
+    const failing = example("sample-2", { annotation: { note: null, tags: [], verdict: null } });
+    const secondPage = example("sample-11");
+    let hasFailed = false;
+    const putAnnotation = vi.fn(async (identity, input) => {
+      if (identity.sample_id === "sample-2" && !hasFailed) {
+        hasFailed = true;
+        throw new Error("database is locked");
+      }
+      return { note: input.note, tags: [], verdict: input.verdict };
+    });
+    const getReviewExamples = vi.fn(async (_runId: string, query: ReviewExamplesQuery) => ({
+      items: query.offset === 0 ? [first, failing] : [secondPage],
+      limit: query.limit,
+      offset: query.offset,
+      total: 11,
+    }));
+    const api = fakeApi({ getReviewExamples, putAnnotation });
+    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+    const firstCard = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    const failingCard = screen.getByRole("heading", { name: "sample-2" }).closest("article")!;
+    fireEvent.change(within(firstCard).getByLabelText("Comment"), { target: { value: "first draft" } });
+    fireEvent.change(within(failingCard).getByLabelText("Comment"), { target: { value: "recoverable draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    expect(await screen.findByText("Navigation blocked")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
+    expect((within(firstCard).getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("first draft");
+    expect((within(failingCard).getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("recoverable draft");
+    expect(putAnnotation.mock.calls.map(([identity]) => identity.sample_id).sort()).toEqual(["sample-1", "sample-2"]);
+    expect(getReviewExamples).not.toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 10 }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("heading", { name: "sample-11" });
+    expect(putAnnotation).toHaveBeenCalledTimes(3);
+  });
+
+  it("guards beforeunload while any card is saving", async () => {
+    const pending = deferred<Annotation>();
+    const api = fakeApi({ putAnnotation: vi.fn().mockReturnValue(pending.promise) });
+    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Flag" }));
+    const unsafeEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unsafeEvent);
+    expect(unsafeEvent.defaultPrevented).toBe(true);
+
+    await act(async () => {
+      pending.resolve({ note: "", tags: [], verdict: "should_be_parseable" });
+      await pending.promise;
+    });
+    const cleanEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(cleanEvent);
+    expect(cleanEvent.defaultPrevented).toBe(false);
   });
 });

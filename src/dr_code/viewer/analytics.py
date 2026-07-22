@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import duckdb
 import pyarrow as pa
@@ -25,6 +25,7 @@ from dr_code.viewer.domain import (
     InvalidQueryError,
     OutcomeTransition,
     Page,
+    ReviewPage,
     RunComparison,
     RunDescriptor,
     RunNotFoundError,
@@ -531,11 +532,108 @@ class ViewerAnalytics:
             decoder_output_sha256=decoder_output_sha256,
             context=context,
             outcome=outcome,
+            failure_code=joined["failure_code"],
+            failed_step=joined["failed_step"],
+            cause=joined["cause"],
             raw_decoder_output=decoder_output,
             candidates=candidates,
             facts=facts,
             rejections=rejections,
             annotation=annotation,
+        )
+
+    def review_examples(
+        self,
+        run_id: str,
+        *,
+        failure_code: str,
+        failed_step: str,
+        cause: str | None = None,
+        cause_is_null: bool = False,
+        search: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ReviewPage:
+        """Return complete details for one stable failure-group page."""
+        if (cause is None and not cause_is_null) or (
+            cause is not None and cause_is_null
+        ):
+            raise InvalidQueryError(
+                "review examples require exactly one of cause or "
+                "cause_is_null=true"
+            )
+        page = self.examples(
+            run_id,
+            failure_code=failure_code,
+            failed_step=failed_step,
+            cause=cause,
+            cause_is_null=cause_is_null,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+        sample_ids = tuple(item.sample_id for item in page.items)
+        if not sample_ids:
+            return ReviewPage(
+                items=(),
+                total=page.total,
+                limit=page.limit,
+                offset=page.offset,
+            )
+        descriptor = self._run(run_id)
+        joined_by_sample = self._joined_rows(descriptor, sample_ids)
+        candidates_by_sample = self._relation_rows_by_sample(
+            descriptor.candidates_path,
+            sample_ids,
+            (
+                "candidate_index",
+                "candidate_id",
+                "cleaned_source",
+                "origins",
+                "compile_warnings",
+                "top_level_function_names",
+            ),
+            "candidate_index, candidate_id",
+        )
+        facts_by_sample = self._relation_rows_by_sample(
+            descriptor.step_facts_path,
+            sample_ids,
+            ("step_name", "facts_json"),
+            "step_name",
+        )
+        rejections_by_sample = self._relation_rows_by_sample(
+            descriptor.rejections_path,
+            sample_ids,
+            ("step_name", "reason_code", "details_json"),
+            "step_name, input_index, candidate_id",
+        )
+        output_by_sample = {
+            item.sample_id: item.decoder_output_sha256 for item in page.items
+        }
+        annotation_identities = tuple(
+            (sample_id, output_sha256)
+            for sample_id, output_sha256 in output_by_sample.items()
+            if output_sha256 is not None
+        )
+        annotations = self._database.get_annotations(
+            descriptor.corpus_sha256, annotation_identities
+        )
+        return ReviewPage(
+            items=tuple(
+                self._example_detail(
+                    descriptor,
+                    sample_id,
+                    joined_by_sample[sample_id],
+                    candidates_by_sample[sample_id],
+                    facts_by_sample[sample_id],
+                    rejections_by_sample[sample_id],
+                    annotations.get((sample_id, output_by_sample[sample_id])),
+                )
+                for sample_id in sample_ids
+            ),
+            total=page.total,
+            limit=page.limit,
+            offset=page.offset,
         )
 
     def compare(
@@ -608,7 +706,7 @@ class ViewerAnalytics:
         sample_id: str,
         decoder_output_sha256: str,
         *,
-        verdict: Verdict | str,
+        verdict: Verdict | str | None,
         note: str | None = None,
         tag_ids: Iterable[str] = (),
     ) -> Annotation:
@@ -769,22 +867,109 @@ class ViewerAnalytics:
         columns: tuple[str, ...],
         order_by: str,
     ) -> tuple[dict[str, object], ...]:
+        return self._relation_rows_by_sample(
+            path, (sample_id,), columns, order_by
+        )[sample_id]
+
+    def _joined_rows(
+        self,
+        descriptor: RunDescriptor,
+        sample_ids: tuple[str, ...],
+    ) -> dict[str, dict[str, object]]:
+        cursor = self._connection.execute(
+            f"""
+            SELECT {self._corpus_projection(descriptor)},
+                   r.* EXCLUDE (sample_id)
+            FROM read_parquet(?) AS c
+            JOIN read_parquet(?) AS r USING (sample_id)
+            WHERE c.sample_id IN (SELECT unnest(?))
+            ORDER BY c.sample_id
+            """,
+            [
+                str(descriptor.corpus_path),
+                str(descriptor.results_path),
+                list(sample_ids),
+            ],
+        )
+        columns = [item[0] for item in cursor.description]
+        sample_id_index = columns.index("sample_id")
+        return {
+            row[sample_id_index]: dict(zip(columns, row, strict=True))
+            for row in cursor.fetchall()
+        }
+
+    def _relation_rows_by_sample(
+        self,
+        path: Path,
+        sample_ids: tuple[str, ...],
+        columns: tuple[str, ...],
+        order_by: str,
+    ) -> dict[str, tuple[dict[str, object], ...]]:
         projection = ", ".join(columns)
         cursor = self._connection.execute(
             f"""
-            SELECT {projection}
+            SELECT sample_id, {projection}
             FROM read_parquet(?)
-            WHERE sample_id = ?
-            ORDER BY {order_by}
+            WHERE sample_id IN (SELECT unnest(?))
+            ORDER BY sample_id, {order_by}
             """,
-            [str(path), sample_id],
+            [str(path), list(sample_ids)],
         )
-        return tuple(
-            {
-                key: _json_ready(value)
-                for key, value in zip(columns, row, strict=True)
-            }
-            for row in cursor.fetchall()
+        grouped: dict[str, list[dict[str, object]]] = {
+            sample_id: [] for sample_id in sample_ids
+        }
+        for row in cursor.fetchall():
+            grouped[row[0]].append(
+                {
+                    key: _json_ready(value)
+                    for key, value in zip(columns, row[1:], strict=True)
+                }
+            )
+        return {key: tuple(rows) for key, rows in grouped.items()}
+
+    def _example_detail(
+        self,
+        descriptor: RunDescriptor,
+        sample_id: str,
+        joined: dict[str, object],
+        candidates: tuple[dict[str, object], ...],
+        facts: tuple[dict[str, object], ...],
+        rejections: tuple[dict[str, object], ...],
+        annotation: Annotation | None,
+    ) -> ExampleDetail:
+        decoder_output = cast(str | None, joined["decoder_output"])
+        decoder_output_sha256 = cast(str | None, joined["raw_output_sha256"])
+        result_columns = {
+            "decoder_output_presence",
+            "raw_output_sha256",
+            "outcome",
+            "outcome_code",
+            "failure_code",
+            "failed_step",
+            "cause",
+            "propagated_through",
+            "final_candidate_count",
+        }
+        context = {
+            key: _json_ready(value)
+            for key, value in joined.items()
+            if key not in result_columns
+            and key not in {"sample_id", "decoder_output"}
+        }
+        return ExampleDetail(
+            sample_id=sample_id,
+            corpus_sha256=descriptor.corpus_sha256,
+            decoder_output_sha256=decoder_output_sha256,
+            context=context,
+            outcome=cast(str, joined["outcome"]),
+            failure_code=cast(str | None, joined["failure_code"]),
+            failed_step=cast(str | None, joined["failed_step"]),
+            cause=cast(str | None, joined["cause"]),
+            raw_decoder_output=decoder_output,
+            candidates=candidates,
+            facts=facts,
+            rejections=rejections,
+            annotation=annotation,
         )
 
     def _corpus_projection(self, descriptor: RunDescriptor) -> str:

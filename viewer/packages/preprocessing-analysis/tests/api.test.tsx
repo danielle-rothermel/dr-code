@@ -58,6 +58,19 @@ describe("HttpPreprocessingApi", () => {
       "/viewer/api/runs/run%2Fid/examples?cause=&failure_code=syntax%2Ferror",
       undefined,
     );
+
+    await api.getReviewExamples("run/id", {
+      cause_is_null: true,
+      failed_step: "compile candidates",
+      failure_code: "syntax/error",
+      limit: 25,
+      offset: 50,
+      search: "task/id",
+    });
+    expect(transport).toHaveBeenLastCalledWith(
+      "/viewer/api/runs/run%2Fid/review-examples?cause_is_null=true&failed_step=compile+candidates&failure_code=syntax%2Ferror&limit=25&offset=50&search=task%2Fid",
+      undefined,
+    );
   });
 
   it("uses FastAPI detail messages for rejected comparisons", async () => {

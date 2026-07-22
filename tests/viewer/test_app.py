@@ -16,6 +16,7 @@ from dr_code.viewer.domain import (
     IncompatibleRunsError,
     OutcomeTransition,
     Page,
+    ReviewPage,
     RunComparison,
     RunSummary,
     Tag,
@@ -44,6 +45,7 @@ def _run(run_id: str = "baseline") -> RunSummary:
 class FakeService:
     def __init__(self) -> None:
         self.example_kwargs: dict[str, object] | None = None
+        self.review_kwargs: dict[str, object] | None = None
         self.put_kwargs: dict[str, object] | None = None
         self.created_tag_names: list[str] = []
 
@@ -120,6 +122,9 @@ class FakeService:
             decoder_output_sha256=_OUTPUT_DIGEST,
             context={"task_id": "HumanEval/1", "nested": {"ignored": True}},
             outcome="function_candidate",
+            failure_code="no_candidate",
+            failed_step="extract_candidates",
+            cause="no code block",
             raw_decoder_output="def f(): pass",
             candidates=(
                 {
@@ -134,6 +139,15 @@ class FakeService:
             facts=({"step_name": "extract", "facts_json": "{}"},),
             rejections=(),
             annotation=None,
+        )
+
+    def review_examples(self, run_id: str, **kwargs: object):
+        self.review_kwargs = {"run_id": run_id, **kwargs}
+        return ReviewPage(
+            items=(self.example(run_id, "sample-1"),),
+            total=1,
+            limit=int(kwargs["limit"]),
+            offset=int(kwargs["offset"]),
         )
 
     def compare(self, baseline_run_id: str, candidate_run_id: str):
@@ -184,12 +198,13 @@ class FakeService:
             "decoder_output_sha256": decoder_output_sha256,
             **kwargs,
         }
+        verdict = kwargs["verdict"]
         return Annotation(
             corpus_sha256=corpus_sha256,
             sample_id=sample_id,
             decoder_output_sha256=decoder_output_sha256,
-            verdict=Verdict.SHOULD_BE_PARSEABLE,
-            note="reviewed",
+            verdict=Verdict(verdict) if verdict is not None else None,
+            note=kwargs.get("note"),
             tags=(Tag(tag_id="tag-1", name="Needs fence repair"),),
         )
 
@@ -202,7 +217,7 @@ class FakeService:
                 "corpus_sha256": _DIGEST,
                 "sample_id": "sample-1",
                 "decoder_output_sha256": _OUTPUT_DIGEST,
-                "verdict": "should_be_parseable",
+                "verdict": None,
                 "note": "reviewed",
                 "tags": ["Needs fence repair"],
             }
@@ -311,6 +326,64 @@ def test_read_endpoints_adapt_domain_models_and_forward_exact_filters() -> (
     assert detail["candidates"][0]["compile_warnings"] == []
     assert detail["context"] == {"task_id": "HumanEval/1"}
 
+    review = client.get(
+        "/api/runs/baseline/review-examples",
+        params={
+            "failure_code": "no_candidate",
+            "failed_step": "extract_candidates",
+            "cause": "",
+            "search": "fence",
+            "limit": 25,
+            "offset": 50,
+        },
+    )
+    assert review.status_code == 200
+    assert review.json()["total"] == 1
+    assert review.json()["items"][0]["failure_code"] == "no_candidate"
+    assert review.json()["items"][0]["raw_decoder_output"] == "def f(): pass"
+    assert service.review_kwargs == {
+        "run_id": "baseline",
+        "failure_code": "no_candidate",
+        "failed_step": "extract_candidates",
+        "cause": "",
+        "cause_is_null": False,
+        "search": "fence",
+        "limit": 25,
+        "offset": 50,
+    }
+
+    null_cause_review = client.get(
+        "/api/runs/baseline/review-examples",
+        params={
+            "failure_code": "no_candidate",
+            "failed_step": "extract_candidates",
+            "cause_is_null": "true",
+        },
+    )
+    assert null_cause_review.status_code == 200
+    assert service.review_kwargs is not None
+    assert service.review_kwargs["cause"] is None
+    assert service.review_kwargs["cause_is_null"] is True
+
+    missing_cause = client.get(
+        "/api/runs/baseline/review-examples",
+        params={
+            "failure_code": "no_candidate",
+            "failed_step": "extract_candidates",
+        },
+    )
+    conflicting_cause = client.get(
+        "/api/runs/baseline/review-examples",
+        params={
+            "failure_code": "no_candidate",
+            "failed_step": "extract_candidates",
+            "cause": "no code block",
+            "cause_is_null": "true",
+        },
+    )
+    assert missing_cause.status_code == 400
+    assert conflicting_cause.status_code == 400
+
     comparison = client.get(
         "/api/compare", params={"baseline": "baseline", "candidate": "new"}
     ).json()
@@ -340,10 +413,24 @@ def test_annotation_and_tag_endpoints_are_typed() -> None:
     assert service.put_kwargs is not None
     assert service.put_kwargs["tag_ids"] == ["tag-1"]
 
+    unlabeled = client.put(
+        annotation_path,
+        json={
+            "verdict": None,
+            "note": "save without verdict",
+            "tag_ids": ["tag-1"],
+        },
+    )
+    assert unlabeled.status_code == 200
+    assert unlabeled.json()["verdict"] is None
+    assert unlabeled.json()["note"] == "save without verdict"
+    assert service.put_kwargs is not None
+    assert service.put_kwargs["verdict"] is None
+
     assert client.delete(annotation_path).status_code == 204
-    assert client.get("/api/annotations/export").json()[0]["tags"] == [
-        "Needs fence repair"
-    ]
+    exported = client.get("/api/annotations/export").json()[0]
+    assert exported["verdict"] is None
+    assert exported["tags"] == ["Needs fence repair"]
 
     invalid = client.put(
         "/api/annotations/not-a-digest/sample-1/not-a-digest",
@@ -382,6 +469,14 @@ def test_untrusted_host_is_rejected_before_reads_or_mutations() -> None:
     client = TestClient(create_app(service), base_url="http://127.0.0.1")
 
     read = client.get("/api/runs", headers={"host": "attacker.example"})
+    review = client.get(
+        "/api/runs/baseline/review-examples",
+        headers={"host": "attacker.example"},
+        params={
+            "failure_code": "no_candidate",
+            "failed_step": "extract_candidates",
+        },
+    )
     mutation = client.post(
         "/api/tags",
         headers={"host": "attacker.example"},
@@ -389,8 +484,10 @@ def test_untrusted_host_is_rejected_before_reads_or_mutations() -> None:
     )
 
     assert read.status_code == 400
+    assert review.status_code == 400
     assert mutation.status_code == 400
     assert service.created_tag_names == []
+    assert service.review_kwargs is None
     assert client.get("/api/runs").status_code == 200
     assert (
         client.get("/api/runs", headers={"host": "[::1]"}).status_code == 200

@@ -106,7 +106,7 @@ describe("PreprocessingViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     await screen.findByRole("heading", { name: "sample-1" });
 
-    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "keep this draft" } });
+    fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "keep this draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Waterfall" }));
     expect(await screen.findByText("Save failed")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Triage terminal preprocessing failures" })).toBeTruthy();
@@ -114,26 +114,22 @@ describe("PreprocessingViewer", () => {
     const runSelect = screen.getByLabelText("Active run") as HTMLSelectElement;
     fireEvent.change(runSelect, { target: { value: "candidate" } });
     await waitFor(() => expect(runSelect.value).toBe("baseline"));
-    expect((screen.getByLabelText("Note") as HTMLTextAreaElement).value).toBe("keep this draft");
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("keep this draft");
   });
 
-  it("holds App-mounted internal example navigation when a review flush fails", async () => {
+  it("holds App-mounted review page navigation when a card flush fails", async () => {
     const firstDetail = {
       ...detail,
       annotation: { note: null, tags: [], verdict: "should_be_parseable" as const },
     };
     const secondDetail = { ...detail, decoder_output_sha256: "second-output", sample_id: "sample-2" };
     const api = fakeApi({
-      getExample: vi.fn(async (_runId: string, sampleId: string) => sampleId === "sample-2" ? secondDetail : firstDetail),
-      getExamples: vi.fn().mockResolvedValue({
-        items: [
-          { annotation_verdict: "should_be_parseable", context: {}, outcome: detail.outcome, raw_preview: "first", sample_id: "sample-1" },
-          { annotation_verdict: null, context: {}, outcome: detail.outcome, raw_preview: "second", sample_id: "sample-2" },
-        ],
-        limit: 30,
-        offset: 0,
-        total: 2,
-      }),
+      getReviewExamples: vi.fn(async (_runId, query) => ({
+        items: [query.offset === 0 ? firstDetail : secondDetail],
+        limit: query.limit,
+        offset: query.offset,
+        total: 11,
+      })),
       putAnnotation: vi.fn().mockRejectedValue(new Error("database is locked")),
     });
     render(<PreprocessingViewer api={api} />);
@@ -141,11 +137,11 @@ describe("PreprocessingViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     await screen.findByRole("heading", { name: "sample-1" });
 
-    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "keep internal draft" } });
-    fireEvent.click(screen.getByRole("button", { name: /sample-2/ }));
+    fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "keep internal draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
 
     expect(await screen.findByText("Save failed")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
-    expect((screen.getByLabelText("Note") as HTMLTextAreaElement).value).toBe("keep internal draft");
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("keep internal draft");
   });
 });

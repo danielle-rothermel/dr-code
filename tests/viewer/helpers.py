@@ -46,6 +46,11 @@ def write_bundle(
     corpus_path: Path | None = None,
     definition_hash: str = "a" * 128,
     with_evaluation: bool = True,
+    no_code_causes: tuple[str | None, str | None, str | None] = (
+        "primary",
+        "alternate",
+        None,
+    ),
 ) -> RunDescriptor:
     root.mkdir()
     corpus = corpus_path or root / "corpus.parquet"
@@ -73,7 +78,7 @@ def write_bundle(
             "no_code_candidates",
             "no_code_candidates",
             "extract_candidates",
-            "primary",
+            no_code_causes[0],
             0,
         ),
         _result(
@@ -82,7 +87,7 @@ def write_bundle(
             "no_code_candidates",
             "no_code_candidates",
             "extract_candidates",
-            "alternate",
+            no_code_causes[1],
             0,
         ),
         _result(
@@ -91,7 +96,7 @@ def write_bundle(
             "no_code_candidates",
             "no_code_candidates",
             "extract_candidates",
-            None,
+            no_code_causes[2],
             0,
         ),
         _result(

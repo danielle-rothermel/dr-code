@@ -87,15 +87,18 @@ export interface Tag {
 export interface Annotation {
   note: string | null;
   tags: Tag[];
-  verdict: Verdict;
+  verdict: Verdict | null;
 }
 
 export interface ExampleDetail {
   annotation: Annotation | null;
   candidates: Candidate[];
+  cause: string | null;
   context: Record<string, string | number | boolean | null>;
   corpus_sha256: string;
   decoder_output_sha256: string | null;
+  failed_step: string;
+  failure_code: string;
   facts: DiagnosticFact[];
   outcome: string;
   raw_decoder_output: string | null;
@@ -150,7 +153,24 @@ export interface ExampleQuery {
 export interface AnnotationInput {
   note: string;
   tag_ids: string[];
-  verdict: Verdict;
+  verdict: Verdict | null;
+}
+
+export interface ReviewExamplesQuery {
+  cause?: string;
+  cause_is_null?: boolean;
+  failed_step: string;
+  failure_code: string;
+  limit: number;
+  offset: number;
+  search?: string;
+}
+
+export interface ReviewExamplesResponse {
+  items: ExampleDetail[];
+  limit: number;
+  offset: number;
+  total: number;
 }
 
 export interface AnnotationIdentity {
@@ -166,6 +186,7 @@ export interface PreprocessingApi {
   getExample(runId: string, sampleId: string): Promise<ExampleDetail>;
   getExamples(runId: string, query: ExampleQuery): Promise<ExamplesResponse>;
   getFailures(runId: string): Promise<FailuresResponse>;
+  getReviewExamples(runId: string, query: ReviewExamplesQuery): Promise<ReviewExamplesResponse>;
   getRuns(): Promise<RunSummary[]>;
   getTags(): Promise<Tag[]>;
   getWaterfall(runId: string): Promise<WaterfallResponse>;
@@ -256,6 +277,10 @@ export class HttpPreprocessingApi implements PreprocessingApi {
 
   getExample(runId: string, sampleId: string): Promise<ExampleDetail> {
     return this.request(`/api/runs/${segment(runId)}/examples/${segment(sampleId)}`);
+  }
+
+  getReviewExamples(runId: string, query: ReviewExamplesQuery): Promise<ReviewExamplesResponse> {
+    return this.request(`/api/runs/${segment(runId)}/review-examples${queryString(query)}`);
   }
 
   compare(baselineRunId: string, candidateRunId: string): Promise<CompareResponse> {
