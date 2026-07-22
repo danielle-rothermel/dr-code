@@ -5,11 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-viewer-data.mjs && tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit --pretty false",
-    "test": "vitest run",
-    "data:sync": "node scripts/sync-viewer-data.mjs",
-    "data:check": "node scripts/check-viewer-data.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
     "@dr-code/viewer": "workspace:*",

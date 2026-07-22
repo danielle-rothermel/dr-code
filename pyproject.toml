@@ -9,11 +9,17 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "datasets>=3.0,<4",
+    "duckdb>=1.5.5",
+    "fastapi>=0.139.2",
     "pyarrow>=20",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
+    "uvicorn[standard]>=0.51.0",
     "zstandard>=0.25.0",
 ]
+
+[project.scripts]
+dr-code = "dr_code.viewer.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -24,6 +30,7 @@ packages = ["src/dr_code"]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-timeout>=2.4.0",
     "ruff>=0.15.18",

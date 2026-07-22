@@ -3,6 +3,11 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  server: {
+    proxy: {
+      "/api": process.env.DR_CODE_VIEWER_API_URL ?? "http://127.0.0.1:8000",
+    },
+  },
   resolve: {
     alias: [
       {

@@ -71,8 +71,9 @@ DR_CODE_SANDBOX_IMAGE='sha256:<locally-built-image-id>' \
   --max-workers 14
 ```
 
-Then produce deterministic compact Parquet tables, JSON, Markdown, and viewer
-data with the evaluation manifest and its paired relations:
+Then produce deterministic compact Parquet tables, JSON, Markdown, and a
+`viewer-data.json` analysis snapshot with the evaluation manifest and its paired
+relations:
 
 ```bash
 uv run python scripts/analyze_preprocessing_corpus.py \
@@ -86,3 +87,67 @@ uv run python scripts/analyze_preprocessing_corpus.py \
 
 Both CLIs fail closed on incompatible or partial artifacts. The analysis API
 is also available as `dr_code.corpus.analyze_preprocessing_corpus`.
+
+## Local corpus viewer
+
+The interactive viewer is a local FastAPI application backed by DuckDB. It
+queries registered corpus, preprocessing, and optional candidate-evaluation
+Parquets dynamically; it does not use the analyzer's `viewer-data.json`
+snapshot as its data source.
+
+Build the React frontend before starting the Python service:
+
+```bash
+cd viewer
+pnpm install --frozen-lockfile
+pnpm --filter @dr-code/preprocessing-analysis build
+cd ..
+```
+
+Each run is registered with a JSON descriptor. This canonical descriptor uses
+paths relative to the descriptor file, although absolute paths are also
+accepted:
+
+```json
+{
+  "label": "baseline",
+  "corpus": "../data/generation-corpus.parquet",
+  "preprocessing": "../data/preprocessing-runs/<run-id>",
+  "candidate_evaluation": "../data/candidate-evaluations/<run-id>"
+}
+```
+
+The descriptor must be a JSON object, and its accepted fields are exact:
+`label` is optional, but must be a string when no external label is supplied;
+exactly one string path named `corpus` or `corpus_path` is required; exactly one
+string path named `preprocessing`, `preprocessing_manifest`, or
+`preprocessing_manifest_path` is required; and at most one string path named
+`candidate_evaluation`, `candidate_evaluation_manifest`, or
+`candidate_evaluation_manifest_path` may be supplied. The candidate evaluation
+is optional. A preprocessing or candidate-evaluation path may identify either
+its artifact directory or its manifest file. Unknown fields and multiple
+aliases for the same path are rejected. The CLI's `LABEL=` prefix supplies the
+external label and overrides `label` in the descriptor.
+
+Start one or more named runs and choose where the persistent DuckDB database
+lives:
+
+```bash
+uv run dr-code viewer \
+  --run label=descriptor.json \
+  --database .runs/dr-code-viewer.duckdb
+```
+
+Repeat `--run LABEL=descriptor.json` to load additional runs.
+
+Open `http://127.0.0.1:8000`. This unauthenticated development tool binds only
+to loopback addresses (or `localhost`) and rejects non-loopback `--host`
+values. The Waterfall view traces stage counts to examples, Compare shows
+compatible run deltas and terminal transitions, and Review groups terminal
+failures for verdicts, notes, and tags.
+
+Review annotations persist in the selected DuckDB database across restarts and
+can be downloaded as deterministic JSON from `GET /api/annotations/export`.
+The database stores run provenance and annotations, not copies of the source
+relations: all registered Parquet files remain external and must stay available
+at their descriptor-resolved paths while the viewer is running.

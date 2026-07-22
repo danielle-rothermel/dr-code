@@ -1,42 +1,48 @@
-# Preprocessing analysis viewer
+# Preprocessing viewer frontend
 
-Static Vite/React viewer for the checked preprocessing artifact. The app imports
-its summary snapshot at build time and never reads the repository filesystem at
-runtime. The all-failures explorer lazily fetches only packaged local static
-indexes and detail shards under `public/data/failure-examples`; it does not call
-an analysis service or fetch repository files.
+React/Vite frontend for the local preprocessing viewer service. Runtime data is
+loaded from the service's typed `/api` endpoints; this package does not contain
+or synchronize corpus snapshots.
 
-Schema-v2 artifacts may include a joined `candidate_evaluation` block. When it
-is present, the app also shows candidate execution outcomes, sample best-of
-outcomes, preprocessing/evaluation comparisons, test-result examples, and the
-manifest-backed execution profile and limitations. Older preprocessing-only
-snapshots and early evaluation payloads without provenance remain supported.
+The application provides three views:
 
-## Refresh the snapshot
+- **Waterfall** traces sample counts through preprocessing and opens the exact
+  examples behind a stage.
+- **Compare** shows compatible run deltas and inspectable terminal transitions.
+- **Review** groups terminal failures and saves verdicts, notes, and tags to the
+  local annotation database.
 
-The source artifacts are
-`analysis/preprocessing/generation-corpus-functions-v1-20260719/viewer-data.json`
-and its sibling `failure-examples/` directory. After regenerating them, copy the
-summary and a clean replacement of the packaged failure shards into this package
-with:
+## Run the complete local application
+
+From the repository root, register one or more explicit run descriptors with the
+viewer command:
 
 ```bash
-cd viewer
-pnpm --filter @dr-code/preprocessing-analysis data:sync
+uv run dr-code viewer \
+  --run baseline=/path/to/baseline/run.json \
+  --run candidate=/path/to/candidate/run.json \
+  --database .runs/dr-code-viewer.duckdb
 ```
 
-## Develop and verify
+The command binds to loopback and serves both the API and built frontend. Run
+paths are registered at startup; they are never supplied by the browser.
+
+## Frontend development
+
+Run Vite separately when iterating on the UI. The development server proxies
+`/api` to the local service (default `http://127.0.0.1:8000`):
 
 ```bash
 cd viewer
 pnpm install --frozen-lockfile
-pnpm --filter @dr-code/preprocessing-analysis dev
-pnpm --filter @dr-code/preprocessing-analysis data:check
-pnpm --filter @dr-code/preprocessing-analysis build
-pnpm --filter @dr-code/preprocessing-analysis test
+DR_CODE_VIEWER_API_URL=http://127.0.0.1:8000 \
+  pnpm --filter @dr-code/preprocessing-analysis dev
 ```
 
-`data:check` and the package build compare the canonical and packaged summary
-plus the complete failure-shard file tree byte-for-byte, catching missing, stale,
-or changed snapshot files. The workspace-wide checks remain `pnpm typecheck`,
-`pnpm build`, and `pnpm test`.
+Verify the package with:
+
+```bash
+pnpm --filter @dr-code/preprocessing-analysis typecheck
+pnpm --filter @dr-code/preprocessing-analysis test
+pnpm --filter @dr-code/preprocessing-analysis build
+```
