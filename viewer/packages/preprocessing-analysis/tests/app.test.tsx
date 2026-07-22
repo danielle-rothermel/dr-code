@@ -65,6 +65,14 @@ describe("PreprocessingViewer", () => {
     await screen.findByRole("heading", { name: "Trace every stage back to examples" });
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
 
+    const comparisonTable = await screen.findByRole("table");
+    expect(within(comparisonTable).getByRole("columnheader", {
+      name: "Before Baseline · preprocessing@1",
+    })).toBeTruthy();
+    expect(within(comparisonTable).getByRole("columnheader", {
+      name: "After Candidate · preprocessing@2",
+    })).toBeTruthy();
+
     fireEvent.click(await screen.findByRole("button", {
       name: "Inspect 8 candidate examples at Nonblank output",
     }));

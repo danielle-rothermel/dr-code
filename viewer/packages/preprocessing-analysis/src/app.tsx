@@ -65,6 +65,10 @@ export function PreprocessingViewer({ api = defaultApi }: { api?: PreprocessingA
     () => runs?.find(({ run_id }) => run_id === selectedRunId),
     [runs, selectedRunId],
   );
+  const compareRun = useMemo(
+    () => runs?.find(({ run_id }) => run_id === compareRunId),
+    [compareRunId, runs],
+  );
   const canCompare = (runs?.length ?? 0) >= 2;
 
   function addTag(tag: Tag) {
@@ -140,8 +144,8 @@ export function PreprocessingViewer({ api = defaultApi }: { api?: PreprocessingA
 
           {tagsError !== "" && surface === "review" && <p className="inline-error" role="alert">Tags unavailable: {tagsError}</p>}
           {surface === "waterfall" && <Waterfall api={api} runId={selectedRunId} />}
-          {surface === "compare" && canCompare && compareRunId !== selectedRunId && (
-            <Compare api={api} baselineRunId={selectedRunId} candidateRunId={compareRunId} />
+          {surface === "compare" && canCompare && compareRun !== undefined && compareRunId !== selectedRunId && (
+            <Compare api={api} baselineRun={selectedRun} candidateRun={compareRun} />
           )}
           {surface === "review" && <Review api={api} onTagCreated={addTag} registerBeforeLeave={registerBeforeLeave} runId={selectedRunId} tags={tags} />}
         </>

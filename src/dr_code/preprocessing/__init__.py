@@ -43,14 +43,8 @@ from dr_code.preprocessing.steps.base import (
     StepOutput,
     StepSettings,
 )
-from dr_code.preprocessing.steps.extract_candidates import (
-    DEFAULT_STRATEGIES,
-    STRATEGY_REGISTRY,
-    ExtractionStrategy,
-)
 
 __all__ = [
-    "DEFAULT_STRATEGIES",
     "DEFINITION_VERSION",
     "HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID",
     "HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION",
@@ -60,11 +54,9 @@ __all__ = [
     "BoundPreprocessingRunner",
     "BoundStep",
     "CandidateMapStep",
-    "ExtractionStrategy",
     "PreprocessingFailureCode",
     "PreprocessingDefinition",
     "REGISTRY",
-    "STRATEGY_REGISTRY",
     "Step",
     "StepFailedError",
     "StepName",

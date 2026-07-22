@@ -22,13 +22,15 @@ from dr_code.corpus.candidate_evaluation import (
     RESULTS_SCHEMA as EVALUATION_RESULTS_SCHEMA,
 )
 from dr_code.corpus.preprocessing_artifacts import (
-    PROJECTED_ARTIFACT_SCHEMAS,
+    normalize_persisted_origins,
+    projected_artifact_schemas,
 )
 
 
 PREPROCESSING_MANIFEST_FILENAME: Final = "manifest.json"
+_PREPROCESSING_SCHEMA_VERSIONS: Final = frozenset({1, 2})
 _PREPROCESSING_ARTIFACT_NAMES: Final = tuple(
-    f"{name}.parquet" for name in PROJECTED_ARTIFACT_SCHEMAS
+    f"{name}.parquet" for name in projected_artifact_schemas(2)
 )
 _SHA256_LENGTH: Final = 64
 _INT64_MAX: Final = 2**63 - 1
@@ -80,6 +82,7 @@ class RunDescriptor:
     step_facts_path: Path
     rejections_path: Path
     artifact_sha256: dict[str, str]
+    preprocessing_schema_version: int
     definition_id: str
     definition_version: str
     definition_hash: str
@@ -112,7 +115,9 @@ class RunDescriptor:
         manifest = _read_json_object(
             preprocessing_manifest, "preprocessing manifest"
         )
-        _validate_preprocessing_manifest(manifest, corpus)
+        preprocessing_schema_version = _validate_preprocessing_manifest(
+            manifest, corpus
+        )
 
         paths = {
             name.removesuffix(".parquet"): _required_file(
@@ -120,7 +125,11 @@ class RunDescriptor:
             )
             for name in _PREPROCESSING_ARTIFACT_NAMES
         }
-        _validate_preprocessing_artifacts(paths, manifest)
+        _validate_preprocessing_artifacts(
+            paths,
+            manifest,
+            schema_version=preprocessing_schema_version,
+        )
         _validate_stage_facts(
             paths["step_facts"],
             results_path=paths["results"],
@@ -195,6 +204,7 @@ class RunDescriptor:
             step_facts_path=paths["step_facts"],
             rejections_path=paths["rejections"],
             artifact_sha256=artifact_sha256,
+            preprocessing_schema_version=preprocessing_schema_version,
             definition_id=cast(str, definition["definition_id"]),
             definition_version=cast(str, definition["version"]),
             definition_hash=cast(str, manifest["definition_hash"]),
@@ -454,8 +464,13 @@ def _read_json_object(path: Path, label: str) -> dict[str, object]:
 
 def _validate_preprocessing_manifest(
     manifest: dict[str, object], corpus: Path
-) -> None:
-    if manifest.get("schema_version") != 1:
+) -> int:
+    schema_version = manifest.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version not in _PREPROCESSING_SCHEMA_VERSIONS
+    ):
         raise RunValidationError(
             "unsupported preprocessing manifest schema_version"
         )
@@ -498,17 +513,23 @@ def _validate_preprocessing_manifest(
             "preprocessing manifest corpus schema fingerprint does not match corpus"
         )
     _require_corpus_schema(parquet.schema_arrow)
+    return schema_version
 
 
 def _validate_preprocessing_artifacts(
-    paths: dict[str, Path], manifest: dict[str, object]
+    paths: dict[str, Path],
+    manifest: dict[str, object],
+    *,
+    schema_version: int,
 ) -> None:
     totals = manifest.get("relation_totals")
     if not isinstance(totals, dict):
         raise RunValidationError(
             "preprocessing manifest relation_totals must be an object"
         )
-    for name, expected_schema in PROJECTED_ARTIFACT_SCHEMAS.items():
+    for name, expected_schema in projected_artifact_schemas(
+        schema_version
+    ).items():
         parquet = _parquet_file(paths[name], name)
         if not parquet.schema_arrow.equals(expected_schema):
             raise RunValidationError(
@@ -518,11 +539,28 @@ def _validate_preprocessing_artifacts(
             raise RunValidationError(
                 f"preprocessing manifest row count does not match {name}.parquet"
             )
+    _validate_candidate_origins(paths["candidates"], schema_version)
     input_value = cast(dict[str, object], manifest["input"])
     if totals.get("results") != input_value.get("expected_rows"):
         raise RunValidationError(
             "preprocessing results do not cover every corpus row"
         )
+
+
+def _validate_candidate_origins(path: Path, schema_version: int) -> None:
+    parquet = _parquet_file(path, "candidates")
+    for batch in parquet.iter_batches(
+        batch_size=65_536,
+        columns=["sample_id", "candidate_id", "origins"],
+    ):
+        for row in batch.to_pylist():
+            try:
+                normalize_persisted_origins(row["origins"], schema_version)
+            except ValueError as exc:
+                raise RunValidationError(
+                    "candidate origins are invalid for "
+                    f"{row['sample_id']!r}/{row['candidate_id']!r}: {exc}"
+                ) from exc
 
 
 def _validate_evaluation_bundle(

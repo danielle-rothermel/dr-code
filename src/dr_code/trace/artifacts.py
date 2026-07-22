@@ -15,6 +15,7 @@ class ArtifactKind(StrEnum):
     TEXT = "text"
     CODE = "code"
     CODE_CANDIDATE_SET = "code_candidate_set"
+    IDENTIFIED_CANDIDATE_SET = "identified_candidate_set"
     JSON = "json"
 
 
@@ -34,11 +35,17 @@ class CodeArtifact(FrozenModel):
     source: str
 
 
-class CandidateOrigin(FrozenModel):
-    """One decoder-text variant and discovery rule that yielded a candidate."""
+class ExtractionOperation(FrozenModel):
+    """One ordered operation that contributed to a candidate source."""
 
-    variant: str
-    strategy: str
+    kind: str
+    details: dict[str, JsonValue] = {}
+
+
+class CandidateOrigin(FrozenModel):
+    """One complete ordered path that yielded a candidate source."""
+
+    path: tuple[ExtractionOperation, ...]
 
 
 class CandidateLineage(FrozenModel):
@@ -73,6 +80,39 @@ class CodeCandidateSetArtifact(FrozenModel):
         return self.lineage[index]
 
 
+class CandidateInspection(FrozenModel):
+    """Serializable Python facts derived by one parse/compile inspection."""
+
+    parse_ok: bool
+    parse_error: str | None
+    compile_ok: bool
+    compile_error: str | None
+    compile_warnings: tuple[str, ...] = ()
+    parser_stack_overflow: bool = False
+    parser_recursion_overflow: bool = False
+    is_plain_literal_module: bool = False
+    is_code_repr_assignment: bool = False
+    top_level_function_names: tuple[str, ...] = ()
+    top_level_async_function_names: tuple[str, ...] = ()
+
+
+class IdentifiedCandidate(FrozenModel):
+    """One final cleaned source with identity, provenance, and inspection."""
+
+    source: str
+    lineage: CandidateLineage
+    inspection: CandidateInspection
+
+
+class IdentifiedCandidateSetArtifact(FrozenModel):
+    """Internal parse-once candidate representation used by policy steps."""
+
+    kind: Literal[ArtifactKind.IDENTIFIED_CANDIDATE_SET] = (
+        ArtifactKind.IDENTIFIED_CANDIDATE_SET
+    )
+    candidates: tuple[IdentifiedCandidate, ...]
+
+
 class JsonArtifact(FrozenModel):
     """Escape hatch for externally built traces (X-S2), e.g. a HumanEval
     task payload for code_test. Consumers revalidate `payload` into their
@@ -85,7 +125,11 @@ class JsonArtifact(FrozenModel):
 
 
 Artifact = Annotated[
-    TextArtifact | CodeArtifact | CodeCandidateSetArtifact | JsonArtifact,
+    TextArtifact
+    | CodeArtifact
+    | CodeCandidateSetArtifact
+    | IdentifiedCandidateSetArtifact
+    | JsonArtifact,
     Field(discriminator="kind"),
 ]
 

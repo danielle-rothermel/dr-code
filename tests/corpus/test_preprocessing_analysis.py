@@ -406,6 +406,7 @@ def test_analysis_writes_reconciled_compact_deliverables(
         "headline",
         "failure_modes",
         "origin_contribution",
+        "operation_contribution",
         "outcome_by_dimension",
         "examples",
     }.issubset(viewer)
@@ -431,7 +432,8 @@ def test_analysis_rejects_candidate_count_mismatch(tmp_path: Path) -> None:
     pq.write_table(candidates.slice(0, 0), candidates_path)
 
     with pytest.raises(
-        PreprocessingAnalysisError, match="candidate count mismatch"
+        PreprocessingAnalysisError,
+        match="manifest row count does not match candidates",
     ):
         analyze_preprocessing_corpus(
             corpus_path=corpus, run_dir=run, output_dir=tmp_path / "analysis"
@@ -653,6 +655,11 @@ def test_analysis_joins_candidate_evaluation_and_is_deterministic(
     assert alpha["pass_rate_of_evaluated_samples"] == 0.5
     viewer = json.loads(first.viewer_data_path.read_text())
     evaluation_viewer = viewer["candidate_evaluation"]
+    assert evaluation_viewer["test_success_by_operation"]
+    assert all(
+        set(row["operation"]) == {"kind", "details"}
+        for row in evaluation_viewer["test_success_by_operation"]
+    )
     assert {
         example["test_outcome"] for example in evaluation_viewer["examples"]
     } == {"passed", "failed", "timed_out", "infrastructure_failure"}

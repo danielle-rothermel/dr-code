@@ -1,5 +1,12 @@
 export type Unit = "sample" | "candidate";
 export type Verdict = "should_be_parseable" | "expected_no_code";
+export type JsonValue =
+  | boolean
+  | number
+  | string
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
 
 export interface RunSummary {
   corpus_sha256: string;
@@ -64,8 +71,17 @@ export interface Candidate {
   candidate_index: number;
   cleaned_source: string;
   compile_warnings: string[];
-  origins: Array<{ strategy: string; variant: string }>;
+  origins: CandidateOrigin[];
   top_level_function_names: string[];
+}
+
+export interface CandidateOrigin {
+  path: ExtractionOperation[];
+}
+
+export interface ExtractionOperation {
+  details: Record<string, JsonValue>;
+  kind: string;
 }
 
 export interface DiagnosticFact {

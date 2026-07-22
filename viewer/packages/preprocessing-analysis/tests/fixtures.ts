@@ -27,6 +27,7 @@ export const candidateRun: RunSummary = {
   label: "Candidate",
   manifest_sha256: "manifest-candidate",
   run_id: "candidate",
+  semantic_coordinates: { definition_version: "2" },
 };
 
 export const detail: ExampleDetail = {

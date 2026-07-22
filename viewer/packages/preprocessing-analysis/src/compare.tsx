@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 
-import type { CompareResponse, PreprocessingApi } from "./api";
+import type { CompareResponse, PreprocessingApi, RunSummary } from "./api";
 import { ExamplesPanel, type ExampleSelection } from "./examples-panel";
 import { errorMessage, formatDelta, formatNumber, formatPercent, formatRateDelta, humanize } from "./format";
 
 export function Compare({
   api,
-  baselineRunId,
-  candidateRunId,
+  baselineRun,
+  candidateRun,
 }: {
   api: PreprocessingApi;
-  baselineRunId: string;
-  candidateRunId: string;
+  baselineRun: RunSummary;
+  candidateRun: RunSummary;
 }) {
+  const baselineRunId = baselineRun.run_id;
+  const candidateRunId = candidateRun.run_id;
   const [comparison, setComparison] = useState<CompareResponse | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -46,7 +48,21 @@ export function Compare({
         <>
           <div className="table-scroll">
             <table className="comparison-table">
-              <thead><tr><th>Stage</th><th>Baseline</th><th>Candidate</th><th>Count Δ</th><th>Rate Δ</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Stage</th>
+                  <th>
+                    Before
+                    <small>{baselineRun.label} · {baselineRun.definition_id}@{String(baselineRun.semantic_coordinates.definition_version ?? "unknown")}</small>
+                  </th>
+                  <th>
+                    After
+                    <small>{candidateRun.label} · {candidateRun.definition_id}@{String(candidateRun.semantic_coordinates.definition_version ?? "unknown")}</small>
+                  </th>
+                  <th>Count Δ</th>
+                  <th>Rate Δ</th>
+                </tr>
+              </thead>
               <tbody>
                 {comparison.stages.map((stage) => (
                   <tr key={stage.id}>

@@ -65,6 +65,12 @@ def infer_missing_imports(source: str) -> str:
     if tree is None:
         return source
 
+    return infer_missing_imports_from_tree(source, tree)
+
+
+def infer_missing_imports_from_tree(source: str, tree: ast.AST) -> str:
+    """Prepend inferred imports using an already parsed source tree."""
+
     referenced = _collect_referenced_names(tree)
     bound = _collect_bound_names(tree)
     imports = [
@@ -205,6 +211,7 @@ __all__ = [
     "TRAILING_JUNK_RE",
     "dedupe_import_lines",
     "infer_missing_imports",
+    "infer_missing_imports_from_tree",
     "infer_necessary_imports",
     "repair_import_lines",
 ]

@@ -84,31 +84,27 @@ def test_definition_orders_exhaustion_cleaning_and_structural_filters() -> (
         "filter_nonblank_candidates"
     )
     assert names.index("filter_nonblank_candidates") < names.index(
-        "dedupe_candidates"
+        "identify_candidates"
     )
-    assert names[-5:] == [
+    assert names[-6:] == [
         "filter_plain_literal",
         "filter_code_repr",
         "filter_compilable",
         "filter_has_top_level_function",
+        "materialize_candidates",
         "return_all",
     ]
     assert "select_first" not in names
     assert "field_marker_extract" not in names
 
 
-def test_definition_runs_all_four_discovery_rules() -> None:
+def test_definition_uses_versioned_modular_extraction() -> None:
     extract = next(
         step
         for step in _resolve().steps
         if step.instance_name == "extract_candidates"
     )
-    assert extract.settings["alternatives"] == [
-        "fenced_blocks",
-        "markdown_wrapper",
-        "escaped_python",
-        "escaped_markdown_wrapper",
-    ]
+    assert extract.settings == {}
 
 
 def test_diagnostic_filter_step_versions_cover_warning_facts() -> None:
@@ -117,7 +113,7 @@ def test_diagnostic_filter_step_versions_cover_warning_facts() -> None:
         for spec in _resolve().steps
     }
 
-    assert versions["filter_plain_literal"] == "3"
-    assert versions["filter_code_repr"] == "3"
-    assert versions["filter_compilable"] == "3"
-    assert versions["filter_has_top_level_function"] == "2"
+    assert versions["filter_plain_literal"] == "4"
+    assert versions["filter_code_repr"] == "4"
+    assert versions["filter_compilable"] == "4"
+    assert versions["filter_has_top_level_function"] == "3"

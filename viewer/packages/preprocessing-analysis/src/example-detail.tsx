@@ -1,6 +1,7 @@
 import { CodeBlock, CodeDiff, StatusBadge, type StatusBadgeStatus } from "@dr-code/viewer";
 
 import type { ExampleDetail as ExampleDetailModel } from "./api";
+import { CandidateOrigins } from "./candidate-origins";
 import { humanize } from "./format";
 
 function outcomeStatus(outcome: string): StatusBadgeStatus {
@@ -95,11 +96,7 @@ export function ExampleDetail({
                 <span>{candidate.top_level_function_names.join(", ") || "no named function"}</span>
               </div>
               <CodeBlock code={candidate.cleaned_source} lang="python" />
-              {candidate.origins.length > 0 && (
-                <small>
-                  {candidate.origins.map(({ strategy, variant }) => `${humanize(strategy)} / ${humanize(variant)}`).join(" · ")}
-                </small>
-              )}
+              <CandidateOrigins origins={candidate.origins} />
               {candidate.compile_warnings.length > 0 && (
                 <p className="warning-copy">Warnings: {candidate.compile_warnings.join("; ")}</p>
               )}

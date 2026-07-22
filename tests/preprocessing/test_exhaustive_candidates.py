@@ -23,13 +23,22 @@ from dr_code.trace import (
     CandidateLineage,
     CandidateOrigin,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
+    IdentifiedCandidateSetArtifact,
     TextArtifact,
     is_absent,
 )
 
 
 def _origin(variant: str, strategy: str) -> CandidateOrigin:
-    return CandidateOrigin(variant=variant, strategy=strategy)
+    return CandidateOrigin(
+        path=(
+            ExtractionOperation(
+                kind="test_origin",
+                details={"variant": variant, "strategy": strategy},
+            ),
+        )
+    )
 
 
 def _candidate_set(output: StepOutput) -> CodeCandidateSetArtifact:
@@ -37,42 +46,23 @@ def _candidate_set(output: StepOutput) -> CodeCandidateSetArtifact:
     return output.value
 
 
-def test_extraction_collects_every_strategy_in_order_with_lineage() -> None:
+def test_extraction_records_complete_ordered_lineage() -> None:
     output = ExtractCandidates().apply(
         TextArtifact(text="def f():\n    return 1")
     )
 
     candidates = _candidate_set(output)
-    assert candidates.candidates == (
-        "def f():\n    return 1",
-        "def f():\n    return 1",
-    )
-    assert [item.origins[0].strategy for item in candidates.lineage] == [
-        "fenced_blocks",
-        "markdown_wrapper",
+    assert candidates.candidates == ("def f():\n    return 1",)
+    assert [
+        operation.kind for operation in candidates.lineage[0].origins[0].path
+    ] == [
+        "response_representation",
+        "unfenced_segment",
+        "anchored_python_block",
     ]
-    assert output.facts["candidate_count"] == 2
-    assert output.facts["origins"] == [
-        {
-            "variant": "normalized_raw_response",
-            "strategy": "fenced_blocks",
-            "candidate_count": 1,
-        },
-        {
-            "variant": "normalized_raw_response",
-            "strategy": "markdown_wrapper",
-            "candidate_count": 1,
-        },
-        {
-            "variant": "normalized_raw_response",
-            "strategy": "escaped_python",
-            "candidate_count": 0,
-        },
-        {
-            "variant": "normalized_raw_response",
-            "strategy": "escaped_markdown_wrapper",
-            "candidate_count": 0,
-        },
+    assert output.facts["candidate_count"] == 1
+    assert output.facts["paths"] == [
+        candidates.lineage[0].origins[0].model_dump(mode="json")
     ]
 
 
@@ -89,14 +79,18 @@ def test_extraction_reads_json_string_and_top_level_code_object() -> None:
     string_candidates = _candidate_set(string_output)
     object_candidates = _candidate_set(object_output)
     assert "decoded_whole_response_json_string" in {
-        origin.variant
+        str(operation.details.get("name"))
         for item in string_candidates.lineage
         for origin in item.origins
+        for operation in origin.path
+        if operation.kind == "response_representation"
     }
     assert "top_level_json_code" in {
-        origin.variant
+        str(operation.details.get("name"))
         for item in object_candidates.lineage
         for origin in item.origins
+        for operation in origin.path
+        if operation.kind == "response_representation"
     }
 
 
@@ -150,7 +144,11 @@ def test_extraction_reads_marker_payload_without_consuming_next_marker() -> (
         for candidate, lineage in zip(
             candidates.candidates, candidates.lineage, strict=True
         )
-        if lineage.origins[0].variant == "field_marker_code"
+        if any(
+            operation.kind == "response_representation"
+            and operation.details.get("name") == "field_marker_code"
+            for operation in lineage.origins[0].path
+        )
     ]
     assert marker_candidates
     assert all(
@@ -188,7 +186,7 @@ def test_extraction_failure_has_code_and_structured_facts() -> None:
 
     assert raised.value.failure_code == "no_code_candidates"
     assert raised.value.facts["candidate_count"] == 0
-    assert raised.value.facts["origins"]
+    assert raised.value.facts["paths"] == []
 
 
 def test_require_nonblank_text_fails_blank_decoder_output() -> None:
@@ -285,15 +283,21 @@ def test_pipeline_dedupes_after_cleaning_and_retains_all_origins() -> None:
         HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
         TextArtifact(text="def f():\n    return 1"),
     )
-    deduped = trace.value("dedupe_candidates")
+    deduped = trace.value("identify_candidates")
 
-    assert isinstance(deduped, CodeCandidateSetArtifact)
-    assert deduped.candidates == ("def f():\n    return 1",)
-    assert deduped.lineage[0].candidate_id
-    assert deduped.lineage[0].origins == (
-        _origin("normalized_raw_response", "fenced_blocks"),
-        _origin("normalized_raw_response", "markdown_wrapper"),
+    assert isinstance(deduped, IdentifiedCandidateSetArtifact)
+    assert tuple(item.source for item in deduped.candidates) == (
+        "def f():\n    return 1",
     )
+    assert deduped.candidates[0].lineage.candidate_id
+    assert [
+        operation.kind
+        for operation in deduped.candidates[0].lineage.origins[0].path
+    ] == [
+        "response_representation",
+        "unfenced_segment",
+        "anchored_python_block",
+    ]
 
 
 def test_pipeline_supports_tilde_fences() -> None:

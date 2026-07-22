@@ -19,7 +19,11 @@ from dr_code.preprocessing.runner import (
     bind_preprocessing,
     run_preprocessing,
 )
-from dr_code.preprocessing.steps.base import Step, StepFailedError, StepSettings
+from dr_code.preprocessing.steps.base import (
+    Step,
+    StepFailedError,
+    StepSettings,
+)
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
@@ -62,9 +66,7 @@ def _def(
 
 def test_bind_resolves_steps() -> None:
     definition = _def(
-        (
-            StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),
-        )
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
     bound = bind_definition(definition)
     assert len(bound) == 1
@@ -131,7 +133,9 @@ def test_bind_accepts_valid_kind_chain() -> None:
     assert len(bound) == 3
 
 
-def test_bound_runner_is_immutable_and_does_not_retain_live_definition() -> None:
+def test_bound_runner_is_immutable_and_does_not_retain_live_definition() -> (
+    None
+):
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
@@ -151,12 +155,14 @@ def test_bound_runner_matches_one_shot_execution() -> None:
     )
     input_value = TextArtifact(text="ｄｅｆ")
 
-    assert bind_preprocessing(definition).run(input_value) == run_preprocessing(
-        definition, input_value
-    )
+    assert bind_preprocessing(definition).run(
+        input_value
+    ) == run_preprocessing(definition, input_value)
 
 
-def test_bound_runner_binds_steps_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bound_runner_binds_steps_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
@@ -165,7 +171,9 @@ def test_bound_runner_binds_steps_once(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = 0
     original = runner_mod.bind_definition
 
-    def count_bind(definition: PreprocessingDefinition) -> tuple[BoundStep, ...]:
+    def count_bind(
+        definition: PreprocessingDefinition,
+    ) -> tuple[BoundStep, ...]:
         nonlocal calls
         calls += 1
         return original(definition)
@@ -173,9 +181,9 @@ def test_bound_runner_binds_steps_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner_mod, "bind_definition", count_bind)
     runner = runner_mod.bind_preprocessing(definition)
 
-    assert runner.run(TextArtifact(text="ｄｅｆ")).value("output") == TextArtifact(
-        text="def"
-    )
+    assert runner.run(TextArtifact(text="ｄｅｆ")).value(
+        "output"
+    ) == TextArtifact(text="def")
     assert runner.run(TextArtifact(text="ｇ")).value("output") == TextArtifact(
         text="g"
     )
@@ -189,9 +197,7 @@ def test_run_single_text_step() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
-    trace = run_preprocessing(
-        definition, TextArtifact(text="ｄｅｆ")
-    )
+    trace = run_preprocessing(definition, TextArtifact(text="ｄｅｆ"))
     assert trace.value("output") == TextArtifact(text="def")
     assert trace.value("input") == TextArtifact(text="ｄｅｆ")
     assert trace.value("n") == TextArtifact(text="def")
@@ -299,7 +305,12 @@ def test_filter_exhaustion_yields_absent_before_select_first() -> None:
     definition = _def(
         (
             StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
+            StepSpec(instance_name="id", step=StepName.IDENTIFY_CANDIDATES),
             StepSpec(instance_name="flt", step=StepName.FILTER_COMPILABLE),
+            StepSpec(
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
@@ -324,7 +335,6 @@ def test_run_step_facts_merged() -> None:
         definition,
         TextArtifact(text="```python\ndef f():\n    return 1\n```"),
     )
-    assert trace.step_facts["e"]["alternative"] == "fenced_blocks"
     assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
@@ -356,7 +366,12 @@ def test_run_full_fenced_pipeline() -> None:
             StepSpec(instance_name="ri", step=StepName.REPAIR_IMPORT_LINES),
             StepSpec(instance_name="ii", step=StepName.INFER_MISSING_IMPORTS),
             StepSpec(instance_name="dd", step=StepName.DEDUPE_IMPORTS),
+            StepSpec(instance_name="id", step=StepName.IDENTIFY_CANDIDATES),
             StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
+            StepSpec(
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
@@ -370,7 +385,6 @@ def test_run_full_fenced_pipeline() -> None:
     assert isinstance(out, CodeArtifact)
     assert "import numpy as np" in out.source
     assert "def f(x):" in out.source
-    assert trace.step_facts["e"]["alternative"] == "fenced_blocks"
     assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
@@ -394,7 +408,12 @@ def test_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
         (
             StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
             StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
+            StepSpec(instance_name="id", step=StepName.IDENTIFY_CANDIDATES),
             StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
+            StepSpec(
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
@@ -413,12 +432,17 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
         (
             StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
             StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
+            StepSpec(instance_name="id", step=StepName.IDENTIFY_CANDIDATES),
             StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
+            StepSpec(
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
     source = (
-        r'Intro\n```python\ndef join_lines(lines):\n'
+        r"Intro\n```python\ndef join_lines(lines):\n"
         r'    return "\n".join(lines)\n```'
     )
     expected = 'def join_lines(lines):\n    return "\\n".join(lines)'

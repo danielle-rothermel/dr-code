@@ -341,6 +341,78 @@ def test_compatible_comparison_allows_different_definition_hashes(
     assert transition.total == 2
 
 
+def test_comparison_normalizes_legacy_and_current_origin_schemas(
+    tmp_path,
+) -> None:
+    baseline = write_bundle(
+        tmp_path / "baseline",
+        run_id="baseline",
+        preprocessing_schema_version=1,
+    )
+    candidate = write_bundle(
+        tmp_path / "candidate",
+        run_id="candidate",
+        corpus_path=baseline.corpus_path,
+        preprocessing_schema_version=2,
+    )
+    with ViewerDatabase(":memory:") as database:
+        analytics = ViewerAnalytics(database, [baseline, candidate])
+
+        comparison = analytics.compare("baseline", "candidate")
+        baseline_detail = analytics.example("baseline", "pass")
+        candidate_detail = analytics.example("candidate", "pass")
+
+    assert sum(item.count for item in comparison.transitions) == 9
+    for detail in (baseline_detail, candidate_detail):
+        origin = detail.candidates[0]["origins"][0]
+        assert set(origin) == {"path"}
+        assert all(
+            set(operation) == {"kind", "details"}
+            for operation in origin["path"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "expected"),
+    [
+        (
+            1,
+            [
+                {
+                    "path": [
+                        {"kind": "raw", "details": {}},
+                        {"kind": "fixture", "details": {}},
+                    ]
+                }
+            ],
+        ),
+        (
+            2,
+            [
+                {
+                    "path": [
+                        {"kind": "raw", "details": {}},
+                        {"kind": "fixture", "details": {"fixture": True}},
+                    ]
+                }
+            ],
+        ),
+    ],
+)
+def test_candidate_origins_normalize_across_schema_versions(
+    tmp_path, schema_version: int, expected: list[dict[str, object]]
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / f"bundle-{schema_version}",
+        preprocessing_schema_version=schema_version,
+    )
+    with ViewerDatabase(":memory:") as database:
+        analytics = ViewerAnalytics(database, [descriptor])
+        detail = analytics.example(descriptor.run_id, "pass")
+
+    assert detail.candidates[0]["origins"] == expected
+
+
 def test_comparison_rejects_different_evaluation_semantics(tmp_path) -> None:
     baseline = write_bundle(tmp_path / "baseline", run_id="baseline")
     candidate = write_bundle(

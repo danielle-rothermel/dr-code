@@ -39,7 +39,7 @@ from dr_code.preprocessing.runner import (
 from dr_code.trace import TextArtifact
 
 
-MANIFEST_SCHEMA_VERSION: Final = 1
+MANIFEST_SCHEMA_VERSION: Final = 2
 RELATION_NAMES: Final = tuple(PROJECTED_ARTIFACT_SCHEMAS)
 REQUIRED_INPUT_COLUMNS: Final = ("sample_id", "decoder_output")
 

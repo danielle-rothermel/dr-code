@@ -7,7 +7,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from dr_code.corpus.preprocessing_artifacts import STEP_FACTS_SCHEMA
+from dr_code.corpus.preprocessing_artifacts import (
+    CANDIDATES_SCHEMA,
+    STEP_FACTS_SCHEMA,
+)
 from dr_code.viewer.domain import RunDescriptor, RunValidationError
 from viewer.helpers import write_bundle
 
@@ -18,6 +21,7 @@ def test_descriptor_validates_complete_manifest_backed_bundle(
     descriptor = write_bundle(tmp_path / "bundle")
 
     assert descriptor.run_id == "fixture-run"
+    assert descriptor.preprocessing_schema_version == 2
     assert descriptor.has_evaluation
     assert descriptor.corpus_path.is_absolute()
     assert set(descriptor.artifact_sha256) == {
@@ -28,6 +32,15 @@ def test_descriptor_validates_complete_manifest_backed_bundle(
         "candidate_membership",
         "candidate_results",
     }
+
+
+def test_descriptor_accepts_legacy_preprocessing_artifacts(tmp_path) -> None:
+    descriptor = write_bundle(
+        tmp_path / "legacy",
+        preprocessing_schema_version=1,
+    )
+
+    assert descriptor.preprocessing_schema_version == 1
 
 
 def test_descriptor_file_resolves_relative_paths(tmp_path) -> None:
@@ -61,6 +74,24 @@ def test_descriptor_rejects_artifact_schema_drift(tmp_path) -> None:
     pq.write_table(table, results_path)
 
     with pytest.raises(RunValidationError, match="unexpected schema"):
+        RunDescriptor.from_paths(
+            label="bad",
+            corpus_path=bundle / "corpus.parquet",
+            preprocessing=bundle / "run",
+        )
+
+
+def test_descriptor_rejects_invalid_origin_details_json(tmp_path) -> None:
+    bundle = tmp_path / "bundle"
+    write_bundle(bundle, with_evaluation=False)
+    candidates_path = bundle / "run" / "candidates.parquet"
+    rows = pq.read_table(candidates_path).to_pylist()
+    rows[0]["origins"][0]["path"][0]["details_json"] = "not-json"
+    pq.write_table(
+        pa.Table.from_pylist(rows, schema=CANDIDATES_SCHEMA), candidates_path
+    )
+
+    with pytest.raises(RunValidationError, match="details_json is invalid"):
         RunDescriptor.from_paths(
             label="bad",
             corpus_path=bundle / "corpus.parquet",

@@ -13,10 +13,14 @@ from dr_code.trace import (
     OUTPUT_KEY,
     TRACE_SCHEMA_VERSION,
     Absent,
+    CandidateInspection,
     CandidateLineage,
     CandidateOrigin,
     CodeArtifact,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
+    IdentifiedCandidate,
+    IdentifiedCandidateSetArtifact,
     JsonArtifact,
     SerializedTrace,
     TextArtifact,
@@ -37,8 +41,13 @@ _FULL_VALUES = {
                 candidate_id="candidate-a",
                 origins=(
                     CandidateOrigin(
-                        variant="normalized_raw_response",
-                        strategy="fenced_blocks",
+                        path=(
+                            ExtractionOperation(
+                                kind="response_representation",
+                                details={"name": "normalized_raw_response"},
+                            ),
+                            ExtractionOperation(kind="fenced_block"),
+                        )
                     ),
                 ),
             ),
@@ -46,6 +55,21 @@ _FULL_VALUES = {
         ),
     ),
     "payload": JsonArtifact(payload={"task": "HumanEval/0"}),
+    "identified": IdentifiedCandidateSetArtifact(
+        candidates=(
+            IdentifiedCandidate(
+                source="def f():\n    return 1",
+                lineage=CandidateLineage(candidate_id="candidate-f"),
+                inspection=CandidateInspection(
+                    parse_ok=True,
+                    parse_error=None,
+                    compile_ok=True,
+                    compile_error=None,
+                    top_level_function_names=("f",),
+                ),
+            ),
+        )
+    ),
     "missing": Absent(
         failed_step="parse",
         cause="syntax error",
@@ -171,9 +195,10 @@ def test_schema_version_is_required() -> None:
         SerializedTrace.model_validate(payload)
 
 
-def test_schema_v1_is_rejected() -> None:
+@pytest.mark.parametrize("schema_version", [1, 2])
+def test_older_schema_versions_are_rejected(schema_version: int) -> None:
     payload = {
-        "schema_version": 1,
+        "schema_version": schema_version,
         "producer": {"producer_id": "preproc-1", "version": "1.0"},
         "values": {
             INPUT_KEY: {"kind": "text", "text": "prompt"},
@@ -185,9 +210,9 @@ def test_schema_v1_is_rejected() -> None:
         SerializedTrace.model_validate(payload)
 
 
-def test_schema_v2_absent_requires_failure_code() -> None:
+def test_schema_v3_absent_requires_failure_code() -> None:
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "producer": {"producer_id": "preproc-1", "version": "1.0"},
         "values": {
             INPUT_KEY: {"kind": "text", "text": "prompt"},

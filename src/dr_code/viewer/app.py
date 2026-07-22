@@ -14,6 +14,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    JsonValue,
     field_validator,
 )
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -107,9 +108,13 @@ class ExamplesResponse(ResponseModel):
     offset: int = Field(ge=0)
 
 
+class ExtractionOperation(ResponseModel):
+    kind: str
+    details: dict[str, JsonValue]
+
+
 class CandidateOrigin(ResponseModel):
-    strategy: str
-    variant: str
+    path: list[ExtractionOperation]
 
 
 class Candidate(ResponseModel):

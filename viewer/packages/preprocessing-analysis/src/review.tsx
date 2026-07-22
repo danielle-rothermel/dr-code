@@ -10,6 +10,7 @@ import type {
   Tag,
   Verdict,
 } from "./api";
+import { CandidateOrigins } from "./candidate-origins";
 import { errorMessage, formatNumber, humanize } from "./format";
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -109,11 +110,7 @@ function Candidates({ example }: { example: ExampleDetail }) {
             <span>{candidate.top_level_function_names.join(", ") || "no named function"}</span>
           </div>
           <CodeBlock code={candidate.cleaned_source} lang="python" />
-          {candidate.origins.length > 0 && (
-            <small>
-              {candidate.origins.map(({ strategy, variant }) => `${humanize(strategy)} / ${humanize(variant)}`).join(" · ")}
-            </small>
-          )}
+          <CandidateOrigins origins={candidate.origins} />
           {candidate.compile_warnings.length > 0 && (
             <p className="warning-copy">Warnings: {candidate.compile_warnings.join("; ")}</p>
           )}

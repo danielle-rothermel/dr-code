@@ -31,6 +31,7 @@ class StepName(StrEnum):
     DEDENT_CANDIDATES = "dedent_candidates"  # in every best-effort def
     SPLIT_ON_NAME_GUARD = "split_on_name_guard"  # drop_if_name
     DROP_AFTER_LAST_RETURN = "drop_after_last_return"
+    EXPAND_LAST_RETURN_SALVAGE = "expand_last_return_salvage"
     # import handling — infer_necessary_imports unbundled
     REPAIR_IMPORT_LINES = "repair_import_lines"
     INFER_MISSING_IMPORTS = "infer_missing_imports"
@@ -38,10 +39,12 @@ class StepName(StrEnum):
     # filters and cardinality knobs
     FILTER_NONBLANK_CANDIDATES = "filter_nonblank_candidates"
     DEDUPE_CANDIDATES = "dedupe_candidates"
+    IDENTIFY_CANDIDATES = "identify_candidates"
     FILTER_COMPILABLE = "filter_compilable"
     FILTER_PLAIN_LITERAL = "filter_plain_literal"
     FILTER_CODE_REPR = "filter_code_repr"
     FILTER_HAS_TOP_LEVEL_FUNCTION = "filter_has_top_level_function"
+    MATERIALIZE_CANDIDATES = "materialize_candidates"
     SELECT_FIRST = "select_first"
     RETURN_ALL = "return_all"
 

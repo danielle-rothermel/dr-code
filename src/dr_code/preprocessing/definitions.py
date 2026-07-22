@@ -22,13 +22,6 @@ SUPPORTED_DEFINITION_VERSIONS: Final[frozenset[str]] = frozenset(
     {DEFINITION_VERSION}
 )
 
-_DEFAULT_EXTRACT_ALTERNATIVES: Final[tuple[str, ...]] = (
-    "fenced_blocks",
-    "markdown_wrapper",
-    "escaped_python",
-    "escaped_markdown_wrapper",
-)
-
 
 def _spec(
     instance_name: str,
@@ -57,9 +50,11 @@ _CANDIDATE_CLEANING: Final[tuple[StepSpec, ...]] = (
     _spec("dedent", StepName.DEDENT_CANDIDATES),
     _spec("normalize_smart_quotes", StepName.NORMALIZE_SMART_QUOTES),
     _spec("split_on_name_guard", StepName.SPLIT_ON_NAME_GUARD),
-    _spec("drop_after_last_return", StepName.DROP_AFTER_LAST_RETURN),
+    _spec(
+        "expand_last_return_salvage",
+        StepName.EXPAND_LAST_RETURN_SALVAGE,
+    ),
     _spec("repair_import_lines", StepName.REPAIR_IMPORT_LINES),
-    _spec("infer_missing_imports", StepName.INFER_MISSING_IMPORTS),
     _spec("dedupe_imports", StepName.DEDUPE_IMPORTS),
 )
 
@@ -68,17 +63,13 @@ HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION: Final = PreprocessingDefinition(
     version=DEFINITION_VERSION,
     steps=(
         *_TEXT_NORMALIZATION,
-        _spec(
-            "extract_candidates",
-            StepName.EXTRACT_CANDIDATES,
-            alternatives=list(_DEFAULT_EXTRACT_ALTERNATIVES),
-        ),
+        _spec("extract_candidates", StepName.EXTRACT_CANDIDATES),
         *_CANDIDATE_CLEANING,
         _spec(
             "filter_nonblank_candidates",
             StepName.FILTER_NONBLANK_CANDIDATES,
         ),
-        _spec("dedupe_candidates", StepName.DEDUPE_CANDIDATES),
+        _spec("identify_candidates", StepName.IDENTIFY_CANDIDATES),
         _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),
         _spec("filter_code_repr", StepName.FILTER_CODE_REPR),
         _spec("filter_compilable", StepName.FILTER_COMPILABLE),
@@ -86,6 +77,7 @@ HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION: Final = PreprocessingDefinition(
             "filter_has_top_level_function",
             StepName.FILTER_HAS_TOP_LEVEL_FUNCTION,
         ),
+        _spec("materialize_candidates", StepName.MATERIALIZE_CANDIDATES),
         _spec("return_all", StepName.RETURN_ALL),
     ),
 )

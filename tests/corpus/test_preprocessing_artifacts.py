@@ -22,6 +22,7 @@ from dr_code.trace import (
     CandidateLineage,
     CandidateOrigin,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
     TextArtifact,
     Trace,
     external_trace,
@@ -45,12 +46,23 @@ def _success_trace():
                         candidate_id="candidate-first",
                         origins=(
                             CandidateOrigin(
-                                variant="normalized_raw_response",
-                                strategy="fenced_blocks",
+                                path=(
+                                    ExtractionOperation(
+                                        kind="normalized_raw_response"
+                                    ),
+                                    ExtractionOperation(kind="fenced_blocks"),
+                                )
                             ),
                             CandidateOrigin(
-                                variant="top_level_json_code",
-                                strategy="markdown_wrapper",
+                                path=(
+                                    ExtractionOperation(
+                                        kind="top_level_json_code",
+                                        details={"field": "code"},
+                                    ),
+                                    ExtractionOperation(
+                                        kind="markdown_wrapper"
+                                    ),
+                                )
                             ),
                         ),
                     ),
@@ -58,8 +70,12 @@ def _success_trace():
                         candidate_id="candidate-second",
                         origins=(
                             CandidateOrigin(
-                                variant="field_marker_code",
-                                strategy="fenced_blocks",
+                                path=(
+                                    ExtractionOperation(
+                                        kind="field_marker_code"
+                                    ),
+                                    ExtractionOperation(kind="fenced_blocks"),
+                                )
                             ),
                         ),
                     ),
@@ -200,12 +216,25 @@ def test_success_projects_multiple_candidates_origins_and_diagnostics() -> (
             ).hexdigest(),
             "origins": [
                 {
-                    "variant": "normalized_raw_response",
-                    "strategy": "fenced_blocks",
+                    "path": [
+                        {
+                            "kind": "normalized_raw_response",
+                            "details_json": "{}",
+                        },
+                        {"kind": "fenced_blocks", "details_json": "{}"},
+                    ]
                 },
                 {
-                    "variant": "top_level_json_code",
-                    "strategy": "markdown_wrapper",
+                    "path": [
+                        {
+                            "kind": "top_level_json_code",
+                            "details_json": '{"field":"code"}',
+                        },
+                        {
+                            "kind": "markdown_wrapper",
+                            "details_json": "{}",
+                        },
+                    ]
                 },
             ],
             "parse_ok": True,
@@ -227,8 +256,10 @@ def test_success_projects_multiple_candidates_origins_and_diagnostics() -> (
             ).hexdigest(),
             "origins": [
                 {
-                    "variant": "field_marker_code",
-                    "strategy": "fenced_blocks",
+                    "path": [
+                        {"kind": "field_marker_code", "details_json": "{}"},
+                        {"kind": "fenced_blocks", "details_json": "{}"},
+                    ]
                 }
             ],
             "parse_ok": True,

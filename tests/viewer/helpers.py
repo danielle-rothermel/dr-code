@@ -12,7 +12,7 @@ from dr_code.corpus.candidate_evaluation import (
     RESULTS_SCHEMA as EVALUATION_RESULTS_SCHEMA,
 )
 from dr_code.corpus.preprocessing_artifacts import (
-    PROJECTED_ARTIFACT_SCHEMAS,
+    projected_artifact_schemas,
 )
 from dr_code.viewer.domain import RunDescriptor
 
@@ -46,6 +46,7 @@ def write_bundle(
     corpus_path: Path | None = None,
     definition_hash: str = "a" * 128,
     with_evaluation: bool = True,
+    preprocessing_schema_version: int = 2,
     no_code_causes: tuple[str | None, str | None, str | None] = (
         "primary",
         "alternate",
@@ -137,8 +138,18 @@ def write_bundle(
         ),
     ]
     candidate_rows = [
-        _candidate("pass", "candidate-pass", "def pass_me():\n    return 1"),
-        _candidate("fail", "candidate-fail", "def fail_me():\n    return 0"),
+        _candidate(
+            "pass",
+            "candidate-pass",
+            "def pass_me():\n    return 1",
+            schema_version=preprocessing_schema_version,
+        ),
+        _candidate(
+            "fail",
+            "candidate-fail",
+            "def fail_me():\n    return 0",
+            schema_version=preprocessing_schema_version,
+        ),
     ]
     fact_rows = [
         _fact("blank", "require_nonblank_text", {"is_nonblank": False}),
@@ -181,11 +192,12 @@ def write_bundle(
         "step_facts": fact_rows,
         "rejections": rejection_rows,
     }
+    schemas = projected_artifact_schemas(preprocessing_schema_version)
     for name, rows in relations.items():
-        _write(run / f"{name}.parquet", PROJECTED_ARTIFACT_SCHEMAS[name], rows)
+        _write(run / f"{name}.parquet", schemas[name], rows)
     corpus_file = pq.ParquetFile(corpus)
     manifest = {
-        "schema_version": 1,
+        "schema_version": preprocessing_schema_version,
         "run_id": run_id,
         "input": {
             "sha256": sha256_file(corpus),
@@ -314,15 +326,34 @@ def _result(
 
 
 def _candidate(
-    sample_id: str, candidate_id: str, source: str
+    sample_id: str,
+    candidate_id: str,
+    source: str,
+    *,
+    schema_version: int,
 ) -> dict[str, object]:
+    origins = (
+        [{"variant": "raw", "strategy": "fixture"}]
+        if schema_version == 1
+        else [
+            {
+                "path": [
+                    {"kind": "raw", "details_json": "{}"},
+                    {
+                        "kind": "fixture",
+                        "details_json": '{"fixture":true}',
+                    },
+                ]
+            }
+        ]
+    )
     return {
         "sample_id": sample_id,
         "candidate_index": 0,
         "candidate_id": candidate_id,
         "cleaned_source": source,
         "source_sha256": _text_sha256(source),
-        "origins": [{"variant": "raw", "strategy": "fixture"}],
+        "origins": origins,
         "parse_ok": True,
         "parse_error": None,
         "compile_ok": True,

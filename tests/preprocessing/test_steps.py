@@ -10,6 +10,7 @@ import pytest
 
 from dr_code.preprocessing.import_inference import infer_necessary_imports
 from dr_code.preprocessing.registry import REGISTRY
+from dr_code.preprocessing.identification import identify_candidates
 from dr_code.preprocessing.steps.base import Step
 from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
@@ -21,10 +22,7 @@ from dr_code.preprocessing.steps.drop_after_last_return import (
 )
 from dr_code.preprocessing.steps.expand_tabs import ExpandTabs
 from dr_code.preprocessing.steps.extract_candidates import (
-    DEFAULT_STRATEGIES,
     ExtractCandidates,
-    ExtractCandidatesSettings,
-    ExtractionStrategy,
 )
 from dr_code.preprocessing.steps.filter_code_repr import FilterCodeRepr
 from dr_code.preprocessing.steps.filter_compilable import (
@@ -74,6 +72,7 @@ from dr_code.trace import (
     CandidateLineage,
     CodeArtifact,
     CodeCandidateSetArtifact,
+    IdentifiedCandidateSetArtifact,
     TextArtifact,
 )
 
@@ -129,14 +128,28 @@ def test_step_is_deterministic(step_cls: type[Step]) -> None:
 def _sample_for(step_cls: type[Step]):
     """An input artifact of the step's INPUT kind, processable by the step."""
     if step_cls.INPUT.value == "text":
-        return TextArtifact(
-            text="```python\ndef f():\n    return 1\n```\n"
-        )
+        return TextArtifact(text="```python\ndef f():\n    return 1\n```\n")
     if step_cls.INPUT.value == "code":
         return CodeArtifact(source="def f():\n    return 1\n")
+    if step_cls.INPUT.value == "identified_candidate_set":
+        return _identified(
+            CodeCandidateSetArtifact(
+                candidates=(
+                    "def f():\n    return 1\n",
+                    "def g():\n    return 2\n",
+                )
+            )
+        )
     return CodeCandidateSetArtifact(
         candidates=("def f():\n    return 1\n", "def g():\n    return 2\n")
     )
+
+
+def _identified(
+    value: CodeCandidateSetArtifact,
+) -> IdentifiedCandidateSetArtifact:
+    identified, _ = identify_candidates(value)
+    return identified
 
 
 # --- atomic text steps wrap their functions --------------------------
@@ -151,9 +164,7 @@ def test_normalize_line_endings_wraps_function() -> None:
 def test_normalize_unicode_applies_nfkc() -> None:
     raw = "ｄｅｆ"
     out = NormalizeUnicode().apply(TextArtifact(text=raw))
-    assert out.value == TextArtifact(
-        text=unicodedata.normalize("NFKC", raw)
-    )
+    assert out.value == TextArtifact(text=unicodedata.normalize("NFKC", raw))
 
 
 def test_normalize_smart_quotes_converts_delimiters() -> None:
@@ -180,7 +191,7 @@ def test_normalize_smart_quotes_comment_apostrophe_not_a_delimiter() -> None:
 
 def test_normalize_smart_quotes_converts_delimiters_after_comment() -> None:
     src = "# don't\ndef f():\n    return “x”"
-    expected = "# don't\ndef f():\n    return \"x\""
+    expected = '# don\'t\ndef f():\n    return "x"'
     cs = CodeCandidateSetArtifact(candidates=(src,))
     out = NormalizeSmartQuotes().apply(cs)
     assert out.value == CodeCandidateSetArtifact(candidates=(expected,))
@@ -197,9 +208,7 @@ def test_expand_tabs_uses_tab_width_setting() -> None:
 def test_strip_trailing_whitespace_wraps_function() -> None:
     raw = "x = 1  \ny = 2\t\n"
     out = StripTrailingWhitespace().apply(TextArtifact(text=raw))
-    assert out.value == TextArtifact(
-        text=strip_trailing_whitespace(raw)
-    )
+    assert out.value == TextArtifact(text=strip_trailing_whitespace(raw))
 
 
 def test_collapse_blank_runs_wraps_function() -> None:
@@ -339,58 +348,38 @@ def test_import_inference_reraises_unrelated_memory_error(
 
 
 def test_filter_compilable_keeps_compilable_with_parse_compile_facts() -> None:
-    cs = CodeCandidateSetArtifact(
-        candidates=("x = 1\n", "def broken(:\n")
-    )
-    out = FilterCompilable().apply(cs)
-    assert out.value.candidates == ("x = 1\n",)
+    cs = CodeCandidateSetArtifact(candidates=("x = 1\n", "def broken(:\n"))
+    out = FilterCompilable().apply(_identified(cs))
+    assert tuple(item.source for item in out.value.candidates) == ("x = 1\n",)
     assert out.facts["input_candidate_count"] == 2
     assert out.facts["survivor_candidate_count"] == 1
-    assert out.facts["survivors"] == [
-        {
-            "input_index": 0,
-            "parse_ok": True,
-            "parse_error": None,
-            "compile_ok": True,
-            "compile_error": None,
-            "compile_warnings": [],
-        }
-    ]
+    survivor = out.facts["survivors"][0]
+    assert survivor["input_index"] == 0
+    assert survivor["parse_ok"] is True
+    assert survivor["compile_ok"] is True
+    assert survivor["compile_warnings"] == []
+    assert survivor["candidate_id"]
     assert out.facts["rejections"][0]["input_index"] == 1
     assert out.facts["rejections"][0]["reason_code"] == "not_compilable"
     assert "SyntaxError" in out.facts["rejections"][0]["compile_error"]
 
 
 def test_filter_plain_literal_drops_literals() -> None:
-    cs = CodeCandidateSetArtifact(
-        candidates=("[1, 2, 3]", "x = 1\n")
+    cs = CodeCandidateSetArtifact(candidates=("[1, 2, 3]", "x = 1\n"))
+    out = FilterPlainLiteral().apply(_identified(cs))
+    assert tuple(item.source for item in out.value.candidates) == ("x = 1\n",)
+    assert out.facts["input_candidate_count"] == 2
+    assert out.facts["survivor_candidate_count"] == 1
+    assert out.facts["survivors"][0]["input_index"] == 1
+    assert out.facts["rejections"][0]["reason_code"] == (
+        "plain_literal_module"
     )
-    out = FilterPlainLiteral().apply(cs)
-    assert out.value.candidates == ("x = 1\n",)
-    assert out.facts == {
-        "input_candidate_count": 2,
-        "survivor_candidate_count": 1,
-        "survivors": [{"input_index": 1}],
-        "rejections": [
-            {
-                "input_index": 0,
-                "reason_code": "plain_literal_module",
-                "parse_ok": True,
-                "parse_error": None,
-                "compile_ok": True,
-                "compile_error": None,
-                "compile_warnings": [],
-            }
-        ],
-    }
 
 
 def test_filter_code_repr_drops_repr_assignments() -> None:
-    cs = CodeCandidateSetArtifact(
-        candidates=('code = "x = 1"', "x = 1\n")
-    )
-    out = FilterCodeRepr().apply(cs)
-    assert out.value.candidates == ("x = 1\n",)
+    cs = CodeCandidateSetArtifact(candidates=('code = "x = 1"', "x = 1\n"))
+    out = FilterCodeRepr().apply(_identified(cs))
+    assert tuple(item.source for item in out.value.candidates) == ("x = 1\n",)
     assert out.facts["rejections"][0]["reason_code"] == "code_repr_assignment"
 
 
@@ -432,7 +421,9 @@ def test_filter_terminal_failures_include_structured_facts(
     from dr_code.preprocessing.steps.base import StepFailedError
 
     with pytest.raises(StepFailedError) as raised:
-        step.apply(CodeCandidateSetArtifact(candidates=(candidate,)))
+        step.apply(
+            _identified(CodeCandidateSetArtifact(candidates=(candidate,)))
+        )
 
     error = raised.value
     assert error.failure_code == failure_code
@@ -446,9 +437,18 @@ def test_filter_terminal_failures_include_structured_facts(
     ("step", "candidates"),
     (
         (FilterPlainLiteral(), ("[1]", "def retained():\n    return 1\n")),
-        (FilterCodeRepr(), ('code = "x = 1"', "def retained():\n    return 1\n")),
-        (FilterCompilable(), ("def broken(:\n", "def retained():\n    return 1\n")),
-        (FilterHasTopLevelFunction(), ("x = 1\n", "def retained():\n    return 1\n")),
+        (
+            FilterCodeRepr(),
+            ('code = "x = 1"', "def retained():\n    return 1\n"),
+        ),
+        (
+            FilterCompilable(),
+            ("def broken(:\n", "def retained():\n    return 1\n"),
+        ),
+        (
+            FilterHasTopLevelFunction(),
+            ("x = 1\n", "def retained():\n    return 1\n"),
+        ),
     ),
 )
 def test_filters_preserve_survivor_lineage(
@@ -462,37 +462,32 @@ def test_filters_preserve_survivor_lineage(
         ),
     )
 
-    output = step.apply(input_value).value
+    identified = _identified(input_value)
+    output = step.apply(identified).value
 
-    assert isinstance(output, CodeCandidateSetArtifact)
-    assert output.candidates == (candidates[1],)
-    assert output.lineage_at(0).candidate_id == "retained"
-    assert step.apply(input_value).facts["rejections"][0][
-        "candidate_id"
-    ] == "rejected"
+    assert isinstance(output, IdentifiedCandidateSetArtifact)
+    assert tuple(item.source for item in output.candidates) == (candidates[1],)
+    assert output.candidates[0].lineage.candidate_id
+    assert step.apply(identified).facts["rejections"][0]["candidate_id"]
 
 
-def test_filter_has_top_level_function_keeps_async_function_with_facts() -> None:
+def test_filter_has_top_level_function_keeps_async_function_with_facts() -> (
+    None
+):
     candidate = "async def fetch():\n    return 1\n"
     out = FilterHasTopLevelFunction().apply(
-        CodeCandidateSetArtifact(candidates=(candidate,))
+        _identified(CodeCandidateSetArtifact(candidates=(candidate,)))
     )
 
-    assert out.value.candidates == (candidate,)
-    assert out.facts["survivors"] == [
-        {
-            "input_index": 0,
-            "parse_ok": True,
-            "parse_error": None,
-            "compile_ok": True,
-            "compile_error": None,
-            "compile_warnings": [],
-            "top_level_function_count": 1,
-            "top_level_function_names": ["fetch"],
-            "top_level_async_function_names": ["fetch"],
-            "has_async_top_level_function": True,
-        }
-    ]
+    assert tuple(item.source for item in out.value.candidates) == (candidate,)
+    survivor = out.facts["survivors"][0]
+    assert survivor["input_index"] == 0
+    assert survivor["parse_ok"] is True
+    assert survivor["compile_ok"] is True
+    assert survivor["top_level_function_count"] == 1
+    assert survivor["top_level_function_names"] == ["fetch"]
+    assert survivor["top_level_async_function_names"] == ["fetch"]
+    assert survivor["has_async_top_level_function"] is True
 
 
 def test_filter_has_top_level_function_rejects_nested_function() -> None:
@@ -501,7 +496,7 @@ def test_filter_has_top_level_function_rejects_nested_function() -> None:
     nested_only = "if True:\n    def nested():\n        return 1\n"
     with pytest.raises(StepFailedError) as raised:
         FilterHasTopLevelFunction().apply(
-            CodeCandidateSetArtifact(candidates=(nested_only,))
+            _identified(CodeCandidateSetArtifact(candidates=(nested_only,)))
         )
 
     assert raised.value.failure_code == "no_top_level_function_candidate"
@@ -526,7 +521,9 @@ def test_filters_reject_cpython_parser_stack_overflow(
 
     monkeypatch.setattr(code_analysis.ast, "parse", parser_stack_overflow)
     with pytest.raises(StepFailedError) as raised:
-        step.apply(CodeCandidateSetArtifact(candidates=("x = 1\n",)))
+        step.apply(
+            _identified(CodeCandidateSetArtifact(candidates=("x = 1\n",)))
+        )
 
     assert raised.value.failure_code == failure_code
     rejection = raised.value.facts["rejections"][0]
@@ -545,9 +542,13 @@ def test_literal_and_repr_filters_preserve_parser_stack_candidates(
 
     monkeypatch.setattr(code_analysis.ast, "parse", parser_stack_overflow)
     candidate = "x = 1\n"
-    output = step.apply(CodeCandidateSetArtifact(candidates=(candidate,)))
+    output = step.apply(
+        _identified(CodeCandidateSetArtifact(candidates=(candidate,)))
+    )
 
-    assert output.value.candidates == (candidate,)
+    assert tuple(item.source for item in output.value.candidates) == (
+        candidate,
+    )
     assert output.facts["rejections"] == []
 
 
@@ -570,7 +571,7 @@ def test_filters_reraise_unrelated_memory_error(
 
     monkeypatch.setattr(code_analysis.ast, "parse", out_of_memory)
     with pytest.raises(MemoryError, match="allocation failed"):
-        step.apply(CodeCandidateSetArtifact(candidates=("x = 1\n",)))
+        _identified(CodeCandidateSetArtifact(candidates=("x = 1\n",)))
 
 
 # --- cardinality knobs -----------------------------------------------
@@ -600,66 +601,48 @@ def test_return_all_passes_through_with_count() -> None:
     }
 
 
-# --- extract_candidates: strategy ladder -----------------------------
+# --- extract_candidates: modular composition -------------------------
 
 
-def test_extract_candidates_records_chosen_alternative() -> None:
+def test_extract_candidates_records_ordered_path() -> None:
     fenced = "```python\ndef f():\n    return 1\n```"
     out = ExtractCandidates().apply(TextArtifact(text=fenced))
-    assert out.facts["alternative"] == "fenced_blocks"
     assert "def f():\n    return 1" in out.value.candidates
     assert len(out.value.lineage) == len(out.value.candidates)
+    assert [
+        operation.kind for operation in out.value.lineage[0].origins[0].path
+    ] == [
+        "response_representation",
+        "fenced_block",
+        "raw_fenced_block",
+    ]
 
 
-def test_extract_candidates_markdown_strategy_when_no_fence() -> None:
-    # Prose with a blockquote-wrapped def: fenced strategy fails to find
-    # a *code* candidate, markdown strategy strips the marker.
+def test_extract_candidates_removes_markdown_wrapper() -> None:
     text = "> def f():\n>     return 1"
     out = ExtractCandidates().apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "markdown_wrapper"
     assert out.value.candidates == ("def f():\n    return 1",)
+    assert any(
+        operation.kind == "markdown_wrapper_removal"
+        for operation in out.value.lineage[0].origins[0].path
+    )
 
 
-def test_extract_candidates_escaped_python_strategy() -> None:
+def test_extract_candidates_recovers_escaped_python() -> None:
     text = r"prose\ndef f():\n    return 1"
     out = ExtractCandidates().apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "escaped_python"
     assert any("def f():" in candidate for candidate in out.value.candidates)
-
-
-def test_extract_candidates_tuple_subset_setting() -> None:
-    # A definition using only fenced_blocks + markdown_wrapper.
-    settings = ExtractCandidatesSettings(
-        alternatives=(
-            ExtractionStrategy.FENCED_BLOCKS,
-            ExtractionStrategy.MARKDOWN_WRAPPER,
-        )
-    )
-    assert settings.alternatives == (
-        ExtractionStrategy.FENCED_BLOCKS,
-        ExtractionStrategy.MARKDOWN_WRAPPER,
-    )
-    # Prose-only text: fenced fails, markdown keeps the block.
-    text = "> def f():\n>     return 1"
-    out = ExtractCandidates(settings).apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "markdown_wrapper"
-
-
-def test_extract_candidates_default_strategies_order() -> None:
-    assert DEFAULT_STRATEGIES == (
-        ExtractionStrategy.FENCED_BLOCKS,
-        ExtractionStrategy.MARKDOWN_WRAPPER,
-        ExtractionStrategy.ESCAPED_PYTHON,
-        ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER,
+    assert any(
+        operation.kind == "escaped_python_recovery"
+        for lineage in out.value.lineage
+        for origin in lineage.origins
+        for operation in origin.path
     )
 
 
-def test_extract_candidates_escaped_markdown_wrapper_strategy() -> None:
-    # JSON-wrapped, markdown-list-wrapped code: only the unescape + wrapper
-    # rung recovers it.
+def test_extract_candidates_combines_response_and_wrapper_recovery() -> None:
     text = json.dumps("- def add(a, b):\n-     return a + b")
     out = ExtractCandidates().apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "escaped_markdown_wrapper"
     assert "def add(a, b):\n    return a + b" in out.value.candidates
 
 

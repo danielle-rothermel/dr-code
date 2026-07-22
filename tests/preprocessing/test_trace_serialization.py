@@ -22,7 +22,6 @@ from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.steps.base import StepFailedError, StepOutput
 from dr_code.trace import (
     Absent,
-    CodeArtifact,
     CodeCandidateSetArtifact,
     SerializedTrace,
     TextArtifact,
@@ -44,9 +43,7 @@ def _function_candidates_v1():
 
 
 def _trace(raw: str) -> Trace:
-    return run_preprocessing(
-        _function_candidates_v1(), TextArtifact(text=raw)
-    )
+    return run_preprocessing(_function_candidates_v1(), TextArtifact(text=raw))
 
 
 def _assert_round_trip(trace: Trace) -> Trace:
@@ -83,9 +80,7 @@ def test_round_trip_preserves_code_output_and_facts() -> None:
     out = restored.value("output")
     assert isinstance(out, CodeCandidateSetArtifact)
     assert out == trace.value("output")
-    assert restored.step_facts["extract_candidates"]["alternative"] == (
-        "fenced_blocks"
-    )
+    assert restored.step_facts["extract_candidates"]["candidate_count"] >= 1
 
 
 def test_round_trip_preserves_producer_id_and_version() -> None:

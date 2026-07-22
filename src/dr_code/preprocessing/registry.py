@@ -20,6 +20,9 @@ from dr_code.preprocessing.steps.drop_after_last_return import (
     DropAfterLastReturn,
 )
 from dr_code.preprocessing.steps.expand_tabs import ExpandTabs
+from dr_code.preprocessing.steps.expand_last_return_salvage import (
+    ExpandLastReturnSalvage,
+)
 from dr_code.preprocessing.steps.extract_candidates import (
     ExtractCandidates,
 )
@@ -38,6 +41,10 @@ from dr_code.preprocessing.steps.filter_nonblank_candidates import (
 )
 from dr_code.preprocessing.steps.infer_missing_imports import (
     InferMissingImports,
+)
+from dr_code.preprocessing.steps.identify_candidates import IdentifyCandidates
+from dr_code.preprocessing.steps.materialize_candidates import (
+    MaterializeCandidates,
 )
 from dr_code.preprocessing.steps.normalize_line_endings import (
     NormalizeLineEndings,
@@ -79,15 +86,18 @@ REGISTRY: dict[str, type[Step]] = {
     Dedent.NAME: Dedent,
     SplitOnNameGuard.NAME: SplitOnNameGuard,
     DropAfterLastReturn.NAME: DropAfterLastReturn,
+    ExpandLastReturnSalvage.NAME: ExpandLastReturnSalvage,
     RepairImportLines.NAME: RepairImportLines,
     InferMissingImports.NAME: InferMissingImports,
     DedupeImports.NAME: DedupeImports,
     FilterNonblankCandidates.NAME: FilterNonblankCandidates,
     DedupeCandidates.NAME: DedupeCandidates,
+    IdentifyCandidates.NAME: IdentifyCandidates,
     FilterCompilable.NAME: FilterCompilable,
     FilterPlainLiteral.NAME: FilterPlainLiteral,
     FilterCodeRepr.NAME: FilterCodeRepr,
     FilterHasTopLevelFunction.NAME: FilterHasTopLevelFunction,
+    MaterializeCandidates.NAME: MaterializeCandidates,
     SelectFirst.NAME: SelectFirst,
     ReturnAll.NAME: ReturnAll,
 }

@@ -22,6 +22,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pydantic import ValidationError
 
+from dr_code.corpus.preprocessing_artifacts import (
+    normalize_persisted_origins,
+    projected_artifact_schemas,
+)
 from dr_code.metrics.definition import (
     MetricsDefinition,
     metrics_definition_hash,
@@ -31,7 +35,7 @@ from dr_code.metrics.policy_example import derive_outcome
 from dr_code.metrics.records import MetricRecord, RecordStatus
 
 
-ANALYSIS_SCHEMA_VERSION: Final = 2
+ANALYSIS_SCHEMA_VERSION: Final = 3
 _MISSING: Final = "<null>"
 _BLANK: Final = "<blank>"
 _OTHER: Final = "<other>"
@@ -53,12 +57,14 @@ _COMPACT_TABLES: Final = (
     "outcome_by_dimension",
     "candidate_multiplicity",
     "origin_contribution",
+    "operation_contribution",
     "failure_modes",
     "compile_warnings",
     "evaluation_funnel",
     "candidate_test_outcomes",
     "sample_best_test_outcomes",
     "test_success_by_origin",
+    "test_success_by_operation",
     "test_success_by_multiplicity",
     "test_success_by_preprocessing_outcome",
     "test_success_by_dimension",
@@ -127,6 +133,8 @@ class Sample:
 
 
 CandidateKey = tuple[str, int, str]
+OriginOperation = tuple[str, str]
+OriginPath = tuple[OriginOperation, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,7 +180,7 @@ class CandidateEvaluation:
     memberships: dict[CandidateKey, CandidateMembership]
     results: dict[str, CandidateTestResult]
     seen_candidates: set[CandidateKey]
-    candidate_origins: dict[CandidateKey, tuple[tuple[str, str], ...]]
+    candidate_origins: dict[CandidateKey, tuple[OriginPath, ...]]
     provenance: Mapping[str, object]
     limitations: tuple[str, ...]
 
@@ -212,7 +220,7 @@ def analyze_preprocessing_corpus(
     destination = Path(output_dir).expanduser().resolve()
     if destination.exists():
         raise FileExistsError(f"analysis output already exists: {destination}")
-    _validate_run(run_root)
+    preprocessing_schema_version = _validate_run(run_root)
 
     results = _read_results(run_root / "results.parquet")
     samples, _dimension_counts = _read_and_join_corpus(corpus_file, results)
@@ -228,10 +236,16 @@ def analyze_preprocessing_corpus(
     )
     candidate_stats, origin_final, origin_converged, warning_stats = (
         _read_candidates(
-            run_root / "candidates.parquet", results, evaluation=evaluation
+            run_root / "candidates.parquet",
+            results,
+            evaluation=evaluation,
+            schema_version=preprocessing_schema_version,
         )
     )
-    initial_origins = _read_initial_origins(run_root / "step_facts.parquet")
+    initial_origins = _read_initial_origins(
+        run_root / "step_facts.parquet",
+        schema_version=preprocessing_schema_version,
+    )
     rejections, rejected_sample_ids = _read_rejections(
         run_root / "rejections.parquet", results
     )
@@ -265,12 +279,14 @@ def analyze_preprocessing_corpus(
         samples=samples,
         candidate_stats=candidate_stats,
         rejected_sample_ids=rejected_sample_ids,
+        schema_version=preprocessing_schema_version,
     )
     failure_examples = _build_failure_examples(
         corpus_file=corpus_file,
         run_root=run_root,
         results=results,
         samples=samples,
+        schema_version=preprocessing_schema_version,
     )
     evaluation_examples = _build_evaluation_examples(evaluation, samples)
     return _write_deliverables(
@@ -282,7 +298,7 @@ def analyze_preprocessing_corpus(
     )
 
 
-def _validate_run(run_root: Path) -> None:
+def _validate_run(run_root: Path) -> int:
     required = (
         "manifest.json",
         "results.parquet",
@@ -296,10 +312,37 @@ def _validate_run(run_root: Path) -> None:
             "preprocessing run is missing: " + ", ".join(missing)
         )
     manifest = _read_json(run_root / "manifest.json")
+    schema_version = manifest.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version not in {1, 2}
+    ):
+        raise PreprocessingAnalysisError(
+            "unsupported preprocessing manifest schema_version"
+        )
     if manifest.get("complete") is not True:
         raise PreprocessingAnalysisError(
             "preprocessing run manifest is incomplete"
         )
+    schemas = projected_artifact_schemas(schema_version)
+    totals = manifest.get("relation_totals")
+    if not isinstance(totals, dict):
+        raise PreprocessingAnalysisError(
+            "preprocessing manifest relation_totals must be an object"
+        )
+    for relation_name, expected_schema in schemas.items():
+        parquet = pq.ParquetFile(run_root / f"{relation_name}.parquet")
+        if not parquet.schema_arrow.equals(expected_schema):
+            raise PreprocessingAnalysisError(
+                f"{relation_name}.parquet has an unexpected schema"
+            )
+        if totals.get(relation_name) != parquet.metadata.num_rows:
+            raise PreprocessingAnalysisError(
+                "preprocessing manifest row count does not match "
+                f"{relation_name}.parquet"
+            )
+    return schema_version
 
 
 def _read_results(path: Path) -> dict[str, Result]:
@@ -964,10 +1007,11 @@ def _read_candidates(
     results: Mapping[str, Result],
     *,
     evaluation: CandidateEvaluation | None,
+    schema_version: int,
 ) -> tuple[
     dict[str, dict[str, object]],
-    Counter[tuple[str, str]],
-    Counter[tuple[str, str]],
+    Counter[OriginPath],
+    Counter[OriginPath],
     Counter[str],
 ]:
     required = {
@@ -993,8 +1037,8 @@ def _read_candidates(
             "converged": 0,
         }
     )
-    origin_final: Counter[tuple[str, str]] = Counter()
-    origin_converged: Counter[tuple[str, str]] = Counter()
+    origin_final: Counter[OriginPath] = Counter()
+    origin_converged: Counter[OriginPath] = Counter()
     warnings: Counter[str] = Counter()
     for batch in pq.ParquetFile(path).iter_batches(batch_size=32_768):
         for row in batch.to_pylist():
@@ -1017,7 +1061,11 @@ def _read_candidates(
             candidate_key = (sample_id, index, candidate_id)
             if evaluation is not None:
                 _join_candidate_evaluation(
-                    evaluation, candidate_key, row, path
+                    evaluation,
+                    candidate_key,
+                    row,
+                    path,
+                    schema_version=schema_version,
                 )
             sample_stats = stats[sample_id]
             indices = sample_stats["indices"]
@@ -1026,9 +1074,11 @@ def _read_candidates(
             indices.add(index)
             ids.add(candidate_id)
             sample_stats["count"] = _int_at(sample_stats, "count") + 1
-            origins = row["origins"] or []
-            if not origins:
-                _append_bad(sample_stats, "missing_origins")
+            try:
+                origins = _origin_paths(row["origins"], schema_version)
+            except ValueError:
+                origins = ()
+                _append_bad(sample_stats, "invalid_origin")
             sample_stats["origin_count"] = _int_at(
                 sample_stats, "origin_count"
             ) + len(origins)
@@ -1037,22 +1087,9 @@ def _read_candidates(
                     _int_at(sample_stats, "converged") + 1
                 )
             for origin in origins:
-                variant = (
-                    _str_or_none(origin.get("variant"))
-                    if isinstance(origin, dict)
-                    else None
-                )
-                strategy = (
-                    _str_or_none(origin.get("strategy"))
-                    if isinstance(origin, dict)
-                    else None
-                )
-                if variant is None or strategy is None:
-                    _append_bad(sample_stats, "invalid_origin")
-                else:
-                    origin_final[(variant, strategy)] += 1
-                    if len(origins) > 1:
-                        origin_converged[(variant, strategy)] += 1
+                origin_final[origin] += 1
+                if len(origins) > 1:
+                    origin_converged[origin] += 1
             if row["parse_ok"] is not True or row["compile_ok"] is not True:
                 _append_bad(sample_stats, "not_parse_compile_ok")
             function_count = row["top_level_function_count"]
@@ -1070,6 +1107,8 @@ def _join_candidate_evaluation(
     candidate_key: CandidateKey,
     row: Mapping[str, object],
     path: Path,
+    *,
+    schema_version: int,
 ) -> None:
     membership = evaluation.memberships.get(candidate_key)
     if membership is None:
@@ -1092,18 +1131,10 @@ def _join_candidate_evaluation(
         raise PreprocessingAnalysisError(
             f"duplicate final candidate during evaluation join: {candidate_key}"
         )
-    origins_value = row.get("origins")
-    origins = origins_value if isinstance(origins_value, list) else []
-    normalized_origins: list[tuple[str, str]] = []
-    for origin in origins:
-        if not isinstance(origin, Mapping):
-            continue
-        variant = _str_or_none(origin.get("variant"))
-        strategy = _str_or_none(origin.get("strategy"))
-        if variant is not None and strategy is not None:
-            normalized_origins.append((variant, strategy))
     evaluation.seen_candidates.add(candidate_key)
-    evaluation.candidate_origins[candidate_key] = tuple(normalized_origins)
+    evaluation.candidate_origins[candidate_key] = _origin_paths(
+        row.get("origins"), schema_version
+    )
 
 
 def _validate_evaluation_coverage(
@@ -1120,9 +1151,11 @@ def _validate_evaluation_coverage(
         )
 
 
-def _read_initial_origins(path: Path) -> Counter[tuple[str, str]]:
+def _read_initial_origins(
+    path: Path, *, schema_version: int
+) -> Counter[OriginPath]:
     _require_columns(path, {"step_name", "facts_json"})
-    origins: Counter[tuple[str, str]] = Counter()
+    origins: Counter[OriginPath] = Counter()
     parquet_file = pq.ParquetFile(path)
     for batch in parquet_file.iter_batches(
         batch_size=65_536, columns=["step_name", "facts_json"]
@@ -1131,22 +1164,108 @@ def _read_initial_origins(path: Path) -> Counter[tuple[str, str]]:
             if row["step_name"] != "extract_candidates":
                 continue
             facts = _parse_json_object(row["facts_json"], path)
+            if schema_version == 2:
+                paths = facts.get("paths")
+                if not isinstance(paths, list):
+                    continue
+                for value in paths:
+                    if not isinstance(value, dict):
+                        continue
+                    try:
+                        origin = _fact_origin_path(
+                            cast(Mapping[str, object], value), schema_version
+                        )
+                    except ValueError:
+                        continue
+                    origins[origin] += 1
+                continue
             values = facts.get("origins")
             if not isinstance(values, list):
                 continue
             for value in values:
                 if not isinstance(value, dict):
                     continue
-                variant = _str_or_none(value.get("variant"))
-                strategy = _str_or_none(value.get("strategy"))
                 count = value.get("candidate_count")
-                if (
-                    variant is not None
-                    and strategy is not None
-                    and isinstance(count, int)
-                ):
-                    origins[(variant, strategy)] += count
+                if not isinstance(count, int) or isinstance(count, bool):
+                    continue
+                try:
+                    origin = _fact_origin_path(
+                        cast(Mapping[str, object], value), schema_version
+                    )
+                except ValueError:
+                    continue
+                origins[origin] += count
     return origins
+
+
+def _origin_paths(
+    value: object, schema_version: int
+) -> tuple[OriginPath, ...]:
+    normalized = normalize_persisted_origins(value, schema_version)
+    return tuple(_origin_path_key(origin) for origin in normalized)
+
+
+def _origin_path_key(origin: Mapping[str, object]) -> OriginPath:
+    raw_path = origin.get("path")
+    if not isinstance(raw_path, list) or not raw_path:
+        raise ValueError("candidate origin path must be non-empty")
+    operations: list[OriginOperation] = []
+    for operation in raw_path:
+        if not isinstance(operation, Mapping):
+            raise ValueError("extraction operation must be an object")
+        kind = operation.get("kind")
+        details = operation.get("details")
+        if (
+            not isinstance(kind, str)
+            or not kind
+            or not isinstance(details, dict)
+        ):
+            raise ValueError("invalid extraction operation")
+        operations.append((kind, _canonical_json(details)))
+    return tuple(operations)
+
+
+def _fact_origin_path(
+    value: Mapping[str, object], schema_version: int
+) -> OriginPath:
+    if schema_version == 1:
+        return _origin_paths([dict(value)], schema_version)[0]
+    raw_path = value.get("path")
+    if not isinstance(raw_path, list):
+        raise ValueError("origin fact path must be a list")
+    persisted_path: list[dict[str, object]] = []
+    for operation in raw_path:
+        if not isinstance(operation, Mapping):
+            raise ValueError("origin fact operation must be an object")
+        details = operation.get("details", {})
+        if not isinstance(details, dict):
+            raise ValueError("origin fact operation details must be an object")
+        persisted_path.append(
+            {
+                "kind": operation.get("kind"),
+                "details_json": _canonical_json(details),
+            }
+        )
+    return _origin_paths([{"path": persisted_path}], schema_version)[0]
+
+
+def _origin_path_value(origin: OriginPath) -> dict[str, object]:
+    return {
+        "path": [
+            {"kind": kind, "details": json.loads(details_json)}
+            for kind, details_json in origin
+        ]
+    }
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
 def _read_rejections(
@@ -1296,9 +1415,9 @@ def _build_summary(
     results: Mapping[str, Result],
     samples: Mapping[str, Sample],
     candidate_stats: Mapping[str, Mapping[str, object]],
-    origin_final: Mapping[tuple[str, str], int],
-    origin_converged: Mapping[tuple[str, str], int],
-    initial_origins: Mapping[tuple[str, str], int],
+    origin_final: Mapping[OriginPath, int],
+    origin_converged: Mapping[OriginPath, int],
+    initial_origins: Mapping[OriginPath, int],
     rejections: Mapping[tuple[str, str, str], Mapping[str, object]],
     warning_stats: Mapping[str, int],
     rejected_sample_ids: set[str],
@@ -1313,6 +1432,9 @@ def _build_summary(
     outcome_rows = _outcome_rows(results, samples)
     multiplicity = _multiplicity_rows(results, samples)
     origin_rows = _origin_rows(initial_origins, origin_final, origin_converged)
+    operation_rows = _operation_rows(
+        initial_origins, origin_final, origin_converged
+    )
     failures = _failure_rows(rejections)
     warnings = _warning_rows(warning_stats, candidate_stats)
     evaluation_summary, evaluation_tables = _evaluation_analysis(
@@ -1329,6 +1451,7 @@ def _build_summary(
         "outcome_by_dimension": outcome_rows,
         "candidate_multiplicity": multiplicity,
         "origin_contribution": origin_rows,
+        "operation_contribution": operation_rows,
         "failure_modes": failures,
         "compile_warnings": warnings,
         **evaluation_tables,
@@ -1549,9 +1672,9 @@ def _multiplicity_rows(
 
 
 def _origin_rows(
-    initial: Mapping[tuple[str, str], int],
-    final: Mapping[tuple[str, str], int],
-    converged: Mapping[tuple[str, str], int],
+    initial: Mapping[OriginPath, int],
+    final: Mapping[OriginPath, int],
+    converged: Mapping[OriginPath, int],
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for key in sorted(set(initial) | set(final)):
@@ -1560,8 +1683,7 @@ def _origin_rows(
         converged_count = converged.get(key, 0)
         rows.append(
             {
-                "variant": key[0],
-                "strategy": key[1],
+                **_origin_path_value(key),
                 "extracted_candidate_count": extracted,
                 "final_candidate_origin_count": retained,
                 "recovery_rate": _rate(retained, extracted),
@@ -1570,6 +1692,48 @@ def _origin_rows(
             }
         )
     return rows
+
+
+def _operation_rows(
+    initial: Mapping[OriginPath, int],
+    final: Mapping[OriginPath, int],
+    converged: Mapping[OriginPath, int],
+) -> list[dict[str, object]]:
+    initial_operations = _operation_counts(initial)
+    final_operations = _operation_counts(final)
+    converged_operations = _operation_counts(converged)
+    rows: list[dict[str, object]] = []
+    for kind, details_json in sorted(
+        set(initial_operations) | set(final_operations)
+    ):
+        operation = (kind, details_json)
+        extracted = initial_operations.get(operation, 0)
+        retained = final_operations.get(operation, 0)
+        converged_count = converged_operations.get(operation, 0)
+        rows.append(
+            {
+                "operation": {
+                    "kind": kind,
+                    "details": json.loads(details_json),
+                },
+                "extracted_candidate_count": extracted,
+                "final_candidate_origin_count": retained,
+                "recovery_rate": _rate(retained, extracted),
+                "converged_final_candidate_count": converged_count,
+                "convergence_rate": _rate(converged_count, retained),
+            }
+        )
+    return rows
+
+
+def _operation_counts(
+    paths: Mapping[OriginPath, int],
+) -> Counter[OriginOperation]:
+    counts: Counter[OriginOperation] = Counter()
+    for path, count in paths.items():
+        for operation in path:
+            counts[operation] += count
+    return counts
 
 
 def _failure_rows(
@@ -1670,6 +1834,7 @@ def _evaluation_analysis(
         "candidate_test_outcomes": candidate_outcomes,
         "sample_best_test_outcomes": sample_best,
         "test_success_by_origin": _test_success_by_origin(evaluation),
+        "test_success_by_operation": _test_success_by_operation(evaluation),
         "test_success_by_multiplicity": _test_success_by_multiplicity(
             sample_outcomes, preprocessing_results
         ),
@@ -1764,24 +1929,59 @@ def _sample_best_test_outcomes(
 def _test_success_by_origin(
     evaluation: CandidateEvaluation,
 ) -> list[dict[str, object]]:
-    counts: Counter[tuple[str, str, str]] = Counter()
+    counts: Counter[tuple[OriginPath, str]] = Counter()
     for candidate_key, membership in evaluation.memberships.items():
         category = evaluation.results[membership.evaluation_key].category
-        for variant, strategy in evaluation.candidate_origins[candidate_key]:
-            counts[(variant, strategy, category)] += 1
+        for origin in evaluation.candidate_origins[candidate_key]:
+            counts[(origin, category)] += 1
     rows: list[dict[str, object]] = []
-    origins = sorted({(variant, strategy) for variant, strategy, _ in counts})
-    for variant, strategy in origins:
+    origins = sorted(origin for origin, _ in counts)
+    for origin in origins:
         outcome_counts = {
-            category: counts[(variant, strategy, category)]
+            category: counts[(origin, category)]
             for category in _EVALUATION_CATEGORIES
         }
         total = sum(outcome_counts.values())
         rows.append(
             {
-                "variant": variant,
-                "strategy": strategy,
+                **_origin_path_value(origin),
                 "unit": "final_candidate_origin_attribution",
+                "candidate_origin_count": total,
+                **{
+                    f"{category}_count": count
+                    for category, count in outcome_counts.items()
+                },
+                "pass_rate": _rate(outcome_counts["passed"], total),
+            }
+        )
+    return rows
+
+
+def _test_success_by_operation(
+    evaluation: CandidateEvaluation,
+) -> list[dict[str, object]]:
+    counts: Counter[tuple[OriginOperation, str]] = Counter()
+    for candidate_key, membership in evaluation.memberships.items():
+        category = evaluation.results[membership.evaluation_key].category
+        for origin in evaluation.candidate_origins[candidate_key]:
+            for operation in origin:
+                counts[(operation, category)] += 1
+    rows: list[dict[str, object]] = []
+    operations = sorted({operation for operation, _ in counts})
+    for kind, details_json in operations:
+        operation = (kind, details_json)
+        outcome_counts = {
+            category: counts[(operation, category)]
+            for category in _EVALUATION_CATEGORIES
+        }
+        total = sum(outcome_counts.values())
+        rows.append(
+            {
+                "operation": {
+                    "kind": kind,
+                    "details": json.loads(details_json),
+                },
+                "unit": "final_candidate_operation_attribution",
                 "candidate_origin_count": total,
                 **{
                     f"{category}_count": count
@@ -1898,6 +2098,7 @@ def _build_examples(
     samples: Mapping[str, Sample],
     candidate_stats: Mapping[str, Mapping[str, object]],
     rejected_sample_ids: set[str],
+    schema_version: int,
 ) -> list[dict[str, object]]:
     chosen: dict[str, str] = {}
     for sample_id, sample in samples.items():
@@ -1929,6 +2130,7 @@ def _build_examples(
         samples=samples,
         categories_by_id=categories_by_id,
         raw_text_limit=_TEXT_LIMIT,
+        schema_version=schema_version,
     ).examples
 
 
@@ -1938,6 +2140,7 @@ def _build_failure_examples(
     run_root: Path,
     results: Mapping[str, Result],
     samples: Mapping[str, Sample],
+    schema_version: int,
 ) -> dict[tuple[str, str], _FailureExampleGroup]:
     grouped_ids: dict[tuple[str, str], list[str]] = defaultdict(list)
     for sample_id, sample in samples.items():
@@ -1975,6 +2178,7 @@ def _build_failure_examples(
         samples=samples,
         categories_by_id=categories_by_id,
         raw_text_limit=_TEXT_LIMIT,
+        schema_version=schema_version,
         fact_step_by_id={
             sample_id: cast(str, results[sample_id].failed_step)
             for sample_id in selected
@@ -2008,6 +2212,7 @@ def _materialize_examples(
     samples: Mapping[str, Sample],
     categories_by_id: Mapping[str, list[str]],
     raw_text_limit: int | None,
+    schema_version: int,
     fact_step_by_id: Mapping[str, str] | None = None,
 ) -> _MaterializedExamples:
     raw_rows = _selected_corpus_rows(corpus_file, set(selected))
@@ -2079,7 +2284,9 @@ def _materialize_examples(
                     {
                         "candidate_index": value.get("candidate_index"),
                         "candidate_id": value.get("candidate_id"),
-                        "origins": value.get("origins"),
+                        "origins": normalize_persisted_origins(
+                            value.get("origins"), schema_version
+                        ),
                         "top_level_function_names": value.get(
                             "top_level_function_names"
                         ),
@@ -2196,10 +2403,8 @@ def _build_evaluation_examples(
                     )
                 },
                 "origins": [
-                    {"variant": variant, "strategy": strategy}
-                    for variant, strategy in evaluation.candidate_origins[
-                        candidate_key
-                    ]
+                    _origin_path_value(origin)
+                    for origin in evaluation.candidate_origins[candidate_key]
                 ],
                 "cleaned_source": _truncate(
                     result.cleaned_source, _CANDIDATE_LIMIT
@@ -2505,12 +2710,34 @@ def _failure_examples_artifact_id(
 
 
 def _write_table(path: Path, rows: Iterable[dict[str, object]]) -> None:
-    normalized = [row for row in rows if isinstance(row, dict)]
+    normalized = [
+        _parquet_table_row(row) for row in rows if isinstance(row, dict)
+    ]
     if normalized:
         table = pa.Table.from_pylist(normalized)
     else:
         table = pa.table({"empty": pa.array([], type=pa.string())})
     pq.write_table(table, path, compression="zstd", use_dictionary=True)
+
+
+def _parquet_table_row(row: dict[str, object]) -> dict[str, object]:
+    """Keep arbitrary operation details deterministic in inferred Parquet schemas."""
+
+    if "path" in row:
+        return {
+            **{key: value for key, value in row.items() if key != "path"},
+            "path_json": _canonical_json(row["path"]),
+        }
+    operation = row.get("operation")
+    if isinstance(operation, Mapping):
+        return {
+            **{key: value for key, value in row.items() if key != "operation"},
+            "operation_kind": operation.get("kind"),
+            "operation_details_json": _canonical_json(
+                operation.get("details")
+            ),
+        }
+    return row
 
 
 def _viewer_payload(
@@ -2533,6 +2760,7 @@ def _viewer_payload(
         },
         "failure_modes": tables["failure_modes"],
         "origin_contribution": tables["origin_contribution"],
+        "operation_contribution": tables["operation_contribution"],
         "candidate_multiplicity": tables["candidate_multiplicity"],
         "outcome_by_dimension": tables["outcome_by_dimension"],
         "compile_warnings": tables["compile_warnings"],
@@ -2545,6 +2773,7 @@ def _viewer_payload(
         payload["candidate_evaluation"] = {
             "summary": evaluation,
             "test_success_by_origin": tables["test_success_by_origin"],
+            "test_success_by_operation": tables["test_success_by_operation"],
             "test_success_by_multiplicity": tables[
                 "test_success_by_multiplicity"
             ],
@@ -2719,8 +2948,17 @@ def _report(
         f"- {multiple_samples} samples ({multiple_rate:.2%} of all samples) retained multiple final candidates; candidate rows and sample outcomes are therefore reported separately."
     )
     if leading_origin is not None:
+        recovery_rate = leading_origin["recovery_rate"]
+        assert recovery_rate is None or isinstance(recovery_rate, float)
+        recovery_label = (
+            "n/a" if recovery_rate is None else f"{recovery_rate:.2%}"
+        )
         conclusions.append(
-            f"- `{leading_origin['variant']}` / `{leading_origin['strategy']}` supplied {leading_origin['final_candidate_origin_count']} of {origin_attributions} final-origin attributions; its recovery rate is {leading_origin['recovery_rate']:.2%} from extracted candidates."
+            f"- `{_origin_path_label(leading_origin['path'])}` supplied "
+            f"{leading_origin['final_candidate_origin_count']} of "
+            f"{origin_attributions} final-origin attributions; its recovery "
+            f"rate is {recovery_label} from extracted "
+            "candidates."
         )
     conclusions.append(
         f"- `{leading_source_kind['source_kind']}` is the largest source kind with {leading_source_kind['sample_count']} samples ({leading_source_kind['sample_rate_of_all']:.2%} of all samples)."
@@ -2897,6 +3135,23 @@ def _report_coordinate(value: object) -> str:
     if value is None or isinstance(value, Mapping | list):
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
     return str(value)
+
+
+def _origin_path_label(value: object) -> str:
+    if not isinstance(value, list):
+        return "<invalid origin path>"
+    labels: list[str] = []
+    for operation in value:
+        if not isinstance(operation, Mapping):
+            return "<invalid origin path>"
+        kind = operation.get("kind")
+        details = operation.get("details")
+        if not isinstance(kind, str) or not isinstance(details, dict):
+            return "<invalid origin path>"
+        labels.append(
+            kind if not details else f"{kind}({_canonical_json(details)})"
+        )
+    return " -> ".join(labels)
 
 
 def _row_int(row: Mapping[str, object], key: str) -> int:

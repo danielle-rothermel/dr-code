@@ -11,8 +11,12 @@ from dr_code.trace import (
     Absent,
     Artifact,
     ArtifactKind,
+    CandidateInspection,
+    CandidateLineage,
     CodeArtifact,
     CodeCandidateSetArtifact,
+    IdentifiedCandidate,
+    IdentifiedCandidateSetArtifact,
     JsonArtifact,
     TextArtifact,
     is_absent,
@@ -26,6 +30,20 @@ ARTIFACT_CASES = [
     TextArtifact(text="hello"),
     CodeArtifact(source="x = 1\n"),
     CodeCandidateSetArtifact(candidates=("a = 1", "b = 2")),
+    IdentifiedCandidateSetArtifact(
+        candidates=(
+            IdentifiedCandidate(
+                source="a = 1",
+                lineage=CandidateLineage(candidate_id="candidate-a"),
+                inspection=CandidateInspection(
+                    parse_ok=True,
+                    parse_error=None,
+                    compile_ok=True,
+                    compile_error=None,
+                ),
+            ),
+        )
+    ),
     JsonArtifact(payload={"task_id": "HumanEval/0"}),
 ]
 
@@ -56,6 +74,12 @@ def test_json_artifact_holds_payload() -> None:
     art = JsonArtifact(payload={"nested": [1, 2, 3]})
     assert art.payload == {"nested": [1, 2, 3]}
     assert art.kind == ArtifactKind.JSON
+
+
+def test_identified_candidate_set_carries_inspection() -> None:
+    art = ARTIFACT_CASES[3]
+    assert isinstance(art, IdentifiedCandidateSetArtifact)
+    assert art.kind == ArtifactKind.IDENTIFIED_CANDIDATE_SET
 
 
 # --- frozen ----------------------------------------------------------
@@ -111,6 +135,24 @@ def test_absent_requires_failure_code() -> None:
         (
             {"kind": "code_candidate_set", "candidates": ["a"]},
             CodeCandidateSetArtifact,
+        ),
+        (
+            {
+                "kind": "identified_candidate_set",
+                "candidates": [
+                    {
+                        "source": "a = 1",
+                        "lineage": {"candidate_id": "candidate-a"},
+                        "inspection": {
+                            "parse_ok": True,
+                            "parse_error": None,
+                            "compile_ok": True,
+                            "compile_error": None,
+                        },
+                    }
+                ],
+            },
+            IdentifiedCandidateSetArtifact,
         ),
         ({"kind": "json", "payload": {"a": 1}}, JsonArtifact),
     ],

@@ -14,7 +14,7 @@ import re
 import unicodedata
 from typing import Final
 
-from dr_code.text_analysis import fence_marker
+from dr_code.fenced_text import fence_delimiter
 
 DEFAULT_TAB_WIDTH: Final[int] = 4
 FENCE: Final[str] = "```"
@@ -77,9 +77,9 @@ def strip_code_fences(source: str) -> str:
     trailing_newline = bool(lines) and lines[-1] == ""
     if trailing_newline:
         lines = lines[:-1]
-    if lines and fence_marker(lines[0]) is not None:
+    if lines and fence_delimiter(lines[0]) is not None:
         lines = lines[1:]
-    if lines and fence_marker(lines[-1]) is not None:
+    if lines and fence_delimiter(lines[-1]) is not None:
         lines = lines[:-1]
     return "\n".join(lines) + ("\n" if trailing_newline else "")
 
@@ -144,8 +144,8 @@ def _escaped_python_anchor(source: str) -> tuple[int | None, str | None]:
         if PYTHON_ANCHOR_RE.match(source, line_start):
             opening_fence = None
             if previous_line is not None:
-                marker = fence_marker(previous_line)
-                if marker is not None:
+                delimiter = fence_delimiter(previous_line)
+                if delimiter is not None:
                     opening_fence = previous_line
             return line_start, opening_fence
 

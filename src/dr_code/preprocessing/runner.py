@@ -19,6 +19,7 @@ from dr_code.trace import (
     ArtifactKind,
     CodeArtifact,
     CodeCandidateSetArtifact,
+    IdentifiedCandidateSetArtifact,
     JsonArtifact,
     TextArtifact,
     Trace,
@@ -38,6 +39,7 @@ _KIND_TYPES = {
     ArtifactKind.TEXT: TextArtifact,
     ArtifactKind.CODE: CodeArtifact,
     ArtifactKind.CODE_CANDIDATE_SET: CodeCandidateSetArtifact,
+    ArtifactKind.IDENTIFIED_CANDIDATE_SET: IdentifiedCandidateSetArtifact,
     ArtifactKind.JSON: JsonArtifact,
 }
 

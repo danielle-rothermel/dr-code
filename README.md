@@ -88,6 +88,24 @@ uv run python scripts/analyze_preprocessing_corpus.py \
 Both CLIs fail closed on incompatible or partial artifacts. The analysis API
 is also available as `dr_code.corpus.analyze_preprocessing_corpus`.
 
+Before rescoring a newly generated preprocessing run, export an append-only
+identity audit against the immutable baseline:
+
+```bash
+uv run python scripts/compare_preprocessing_runs.py \
+  --corpus ../gen-viewer/data/generation-corpus.parquet \
+  --before-run ../gen-viewer/data/preprocessing-runs/<before-run-id> \
+  --after-run ../gen-viewer/data/preprocessing-runs/<after-run-id> \
+  --output-dir analysis/preprocessing-comparisons/<before-run-id>--<after-run-id>
+```
+
+The comparison writes sample outcome transitions, candidate membership/source
+changes, and normalized provenance-path deltas as deterministic Parquet rows,
+plus a reconciled JSON summary and immutable-input manifest. To compare
+existing evaluation artifacts too, supply both `--before-evaluation` and
+`--after-evaluation`; supplying only one is rejected. Existing output paths are
+never overwritten.
+
 ## Local corpus viewer
 
 The interactive viewer is a local FastAPI application backed by DuckDB. It

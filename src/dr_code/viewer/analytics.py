@@ -13,6 +13,7 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from dr_code.corpus.preprocessing_artifacts import normalize_persisted_origins
 from dr_code.viewer.database import ViewerDatabase
 from dr_code.viewer.domain import (
     Annotation,
@@ -494,18 +495,21 @@ class ViewerAnalytics:
             for key, value in joined.items()
             if key not in result_columns and key != "sample_id"
         }
-        candidates = self._relation_rows(
-            descriptor.candidates_path,
-            sample_id,
-            (
-                "candidate_index",
-                "candidate_id",
-                "cleaned_source",
-                "origins",
-                "compile_warnings",
-                "top_level_function_names",
-            ),
-            "candidate_index, candidate_id",
+        candidates = tuple(
+            _normalize_candidate_row(row, descriptor)
+            for row in self._relation_rows(
+                descriptor.candidates_path,
+                sample_id,
+                (
+                    "candidate_index",
+                    "candidate_id",
+                    "cleaned_source",
+                    "origins",
+                    "compile_warnings",
+                    "top_level_function_names",
+                ),
+                "candidate_index, candidate_id",
+            )
         )
         facts = self._relation_rows(
             descriptor.step_facts_path,
@@ -595,6 +599,12 @@ class ViewerAnalytics:
             ),
             "candidate_index, candidate_id",
         )
+        candidates_by_sample = {
+            sample_id: tuple(
+                _normalize_candidate_row(row, descriptor) for row in rows
+            )
+            for sample_id, rows in candidates_by_sample.items()
+        }
         facts_by_sample = self._relation_rows_by_sample(
             descriptor.step_facts_path,
             sample_ids,
@@ -1228,6 +1238,17 @@ def _json_ready(value: object) -> object:
     if isinstance(value, bytes):
         return value.hex()
     return value
+
+
+def _normalize_candidate_row(
+    row: dict[str, object], descriptor: RunDescriptor
+) -> dict[str, object]:
+    return {
+        **row,
+        "origins": normalize_persisted_origins(
+            row.get("origins"), descriptor.preprocessing_schema_version
+        ),
+    }
 
 
 def _semantic_coordinates(descriptor: RunDescriptor) -> dict[str, object]:

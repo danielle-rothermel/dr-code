@@ -12,14 +12,17 @@ import re
 from collections.abc import Iterable
 from typing import Final
 
+from dr_code.fenced_text import (
+    FENCE_LINE_RE,
+    extract_fenced_document,
+    fence_delimiter,
+)
+
 # NOTE: The constants below are consumed by metric operators (currently
 # `code_leakage` and `text_stats`), whose recorded values are part of a
 # question's metric identity. Changing any of these patterns/sets changes
 # those operators' output and therefore requires bumping the affected
 # operators' `VERSION`.
-FENCE_LINE_RE: Final[re.Pattern[str]] = re.compile(
-    r"^[ \t]*(?P<fence>```|~~~)(?P<tag>[A-Za-z0-9_+\-]*)[ \t]*$"
-)
 CODE_ANCHOR_LINE_RE: Final[re.Pattern[str]] = re.compile(
     r"^(?:def |async def |class |import |from |@|if __name__)"
 )
@@ -37,10 +40,8 @@ LINE_SEP: Final[str] = "\n"
 
 def fence_marker(line: str) -> str | None:
     """The fence token (``` or ~~~) if `line` is a fence line, else None."""
-    match = FENCE_LINE_RE.match(line)
-    if match is None:
-        return None
-    return match.group("fence")
+    delimiter = fence_delimiter(line)
+    return None if delimiter is None else delimiter.marker
 
 
 def is_code_anchor_line(line: str) -> bool:
@@ -58,32 +59,19 @@ def is_code_like_line(line: str) -> bool:
     return bool(CODE_LIKE_LINE_RE.match(line))
 
 
-def _append_nonempty(blocks: list[str], lines: list[str]) -> None:
-    if lines:
-        blocks.append(LINE_SEP.join(lines))
-
-
 def split_by_fences(text: str) -> tuple[list[str], list[str]]:
-    """Split text into unfenced and fenced blocks, dropping fence markers."""
-    unfenced: list[str] = []
-    fenced: list[str] = []
-    current: list[str] = []
-    in_fence = False
-    active_fence: str | None = None
-
-    for line in text.split(LINE_SEP):
-        marker = fence_marker(line)
-        if marker is not None and (
-            active_fence is None or marker == active_fence
-        ):
-            _append_nonempty(fenced if in_fence else unfenced, current)
-            current = []
-            in_fence = not in_fence
-            active_fence = marker if in_fence else None
-            continue
-        current.append(line)
-
-    _append_nonempty(fenced if in_fence else unfenced, current)
+    """Compatibility view over the structured fenced-document parser."""
+    document = extract_fenced_document(text)
+    unfenced = [
+        segment.content
+        for segment in document.unfenced_segments
+        if segment.content
+    ]
+    fenced = [
+        block.content for block in document.fenced_blocks if block.content
+    ]
+    if not document.segments and not FENCE_LINE_RE.search(text):
+        unfenced.append(text)
     return unfenced, fenced
 
 

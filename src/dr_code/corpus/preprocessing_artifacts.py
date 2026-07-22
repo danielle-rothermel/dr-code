@@ -54,31 +54,54 @@ RESULTS_SCHEMA: Final = pa.schema(
     ]
 )
 
-_ORIGIN_SCHEMA: Final = pa.struct(
+LEGACY_ORIGIN_SCHEMA: Final = pa.struct(
     [
         pa.field("variant", pa.string(), nullable=False),
         pa.field("strategy", pa.string(), nullable=False),
     ]
 )
 
-CANDIDATES_SCHEMA: Final = pa.schema(
+_EXTRACTION_OPERATION_SCHEMA: Final = pa.struct(
     [
-        pa.field("sample_id", pa.string(), nullable=False),
-        pa.field("candidate_index", pa.int64(), nullable=False),
-        pa.field("candidate_id", pa.string(), nullable=False),
-        pa.field("cleaned_source", pa.string(), nullable=False),
-        pa.field("source_sha256", pa.string(), nullable=False),
-        pa.field("origins", pa.list_(_ORIGIN_SCHEMA), nullable=False),
-        pa.field("parse_ok", pa.bool_()),
-        pa.field("parse_error", pa.string()),
-        pa.field("compile_ok", pa.bool_()),
-        pa.field("compile_error", pa.string()),
-        pa.field("compile_warnings", pa.list_(pa.string())),
-        pa.field("top_level_function_count", pa.int64()),
-        pa.field("top_level_function_names", pa.list_(pa.string())),
-        pa.field("top_level_async_function_names", pa.list_(pa.string())),
+        pa.field("kind", pa.string(), nullable=False),
+        pa.field("details_json", pa.string(), nullable=False),
     ]
 )
+
+ORIGIN_PATH_SCHEMA: Final = pa.struct(
+    [
+        pa.field(
+            "path",
+            pa.list_(_EXTRACTION_OPERATION_SCHEMA),
+            nullable=False,
+        )
+    ]
+)
+
+
+def _candidates_schema(origin_schema: pa.DataType) -> pa.Schema:
+    return pa.schema(
+        [
+            pa.field("sample_id", pa.string(), nullable=False),
+            pa.field("candidate_index", pa.int64(), nullable=False),
+            pa.field("candidate_id", pa.string(), nullable=False),
+            pa.field("cleaned_source", pa.string(), nullable=False),
+            pa.field("source_sha256", pa.string(), nullable=False),
+            pa.field("origins", pa.list_(origin_schema), nullable=False),
+            pa.field("parse_ok", pa.bool_()),
+            pa.field("parse_error", pa.string()),
+            pa.field("compile_ok", pa.bool_()),
+            pa.field("compile_error", pa.string()),
+            pa.field("compile_warnings", pa.list_(pa.string())),
+            pa.field("top_level_function_count", pa.int64()),
+            pa.field("top_level_function_names", pa.list_(pa.string())),
+            pa.field("top_level_async_function_names", pa.list_(pa.string())),
+        ]
+    )
+
+
+LEGACY_CANDIDATES_SCHEMA: Final = _candidates_schema(LEGACY_ORIGIN_SCHEMA)
+CANDIDATES_SCHEMA: Final = _candidates_schema(ORIGIN_PATH_SCHEMA)
 
 STEP_FACTS_SCHEMA: Final = pa.schema(
     [
@@ -105,6 +128,84 @@ PROJECTED_ARTIFACT_SCHEMAS: Final[Mapping[str, pa.Schema]] = {
     "step_facts": STEP_FACTS_SCHEMA,
     "rejections": REJECTIONS_SCHEMA,
 }
+
+LEGACY_PROJECTED_ARTIFACT_SCHEMAS: Final[Mapping[str, pa.Schema]] = {
+    **PROJECTED_ARTIFACT_SCHEMAS,
+    "candidates": LEGACY_CANDIDATES_SCHEMA,
+}
+
+
+def projected_artifact_schemas(
+    schema_version: int,
+) -> Mapping[str, pa.Schema]:
+    """Return the exact persisted relation schemas for one manifest version."""
+
+    if schema_version == 1:
+        return LEGACY_PROJECTED_ARTIFACT_SCHEMAS
+    if schema_version == 2:
+        return PROJECTED_ARTIFACT_SCHEMAS
+    raise ValueError(
+        f"unsupported preprocessing manifest schema_version: {schema_version}"
+    )
+
+
+def normalize_persisted_origins(
+    value: object, schema_version: int
+) -> list[dict[str, object]]:
+    """Validate persisted origins and return the version-independent API shape."""
+
+    if not isinstance(value, list) or not value:
+        raise ValueError("candidate origins must be a non-empty list")
+    normalized: list[dict[str, object]] = []
+    for origin in value:
+        if not isinstance(origin, Mapping):
+            raise ValueError("candidate origin must be an object")
+        if schema_version == 1:
+            variant = _required_nonempty_string(origin.get("variant"))
+            strategy = _required_nonempty_string(origin.get("strategy"))
+            path = [
+                {"kind": variant, "details": {}},
+                {"kind": strategy, "details": {}},
+            ]
+        elif schema_version == 2:
+            raw_path = origin.get("path")
+            if not isinstance(raw_path, list) or not raw_path:
+                raise ValueError("candidate origin path must be non-empty")
+            path = []
+            for operation in raw_path:
+                if not isinstance(operation, Mapping):
+                    raise ValueError("extraction operation must be an object")
+                kind = _required_nonempty_string(operation.get("kind"))
+                raw_details = operation.get("details_json")
+                if not isinstance(raw_details, str):
+                    raise ValueError(
+                        "extraction operation details_json must be a string"
+                    )
+                try:
+                    details = json.loads(raw_details)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "extraction operation details_json is invalid JSON"
+                    ) from exc
+                if not isinstance(details, dict):
+                    raise ValueError(
+                        "extraction operation details_json must encode an object"
+                    )
+                path.append({"kind": kind, "details": details})
+        else:
+            raise ValueError(
+                "unsupported preprocessing manifest schema_version: "
+                f"{schema_version}"
+            )
+        normalized.append({"path": path})
+    return normalized
+
+
+def _required_nonempty_string(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("origin operation name must be a non-empty string")
+    return value
+
 
 _RELATION_NAMES: Final = tuple(PROJECTED_ARTIFACT_SCHEMAS)
 _CANDIDATE_FACT_FIELDS: Final = (
@@ -495,8 +596,15 @@ def _candidate_rows(
                 "source_sha256": _sha256(source),
                 "origins": [
                     {
-                        "variant": origin.variant,
-                        "strategy": origin.strategy,
+                        "path": [
+                            {
+                                "kind": operation.kind,
+                                "details_json": _canonical_json(
+                                    operation.details
+                                ),
+                            }
+                            for operation in origin.path
+                        ]
                     }
                     for origin in lineage.origins
                 ],
@@ -622,6 +730,9 @@ def _validated_part_id(part_id: str) -> str:
 
 __all__ = (
     "CANDIDATES_SCHEMA",
+    "LEGACY_CANDIDATES_SCHEMA",
+    "LEGACY_PROJECTED_ARTIFACT_SCHEMAS",
+    "ORIGIN_PATH_SCHEMA",
     "AtomicProjectedPartWriter",
     "PROJECTED_ARTIFACT_SCHEMAS",
     "REJECTIONS_SCHEMA",
@@ -630,6 +741,8 @@ __all__ = (
     "ProjectedArtifacts",
     "ProjectedPart",
     "combine_projected_parts",
+    "normalize_persisted_origins",
+    "projected_artifact_schemas",
     "project_preprocessing_result",
     "write_projected_part",
 )

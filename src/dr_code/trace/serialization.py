@@ -13,7 +13,7 @@ from dr_code.trace.facts import validate_step_facts
 from dr_code.trace.provenance import TraceProducer
 from dr_code.trace.trace import Trace
 
-TRACE_SCHEMA_VERSION: Final = 2
+TRACE_SCHEMA_VERSION: Final = 3
 
 
 class SerializedTrace(FrozenModel):
@@ -22,7 +22,7 @@ class SerializedTrace(FrozenModel):
     external schemas.
     """
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     producer: TraceProducer
     values: dict[str, Artifact | Absent]
     step_facts: dict[str, dict[str, JsonValue]] = {}

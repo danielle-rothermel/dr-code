@@ -132,7 +132,17 @@ class FakeService:
                     "candidate_index": 0,
                     "cleaned_source": "def f(): pass",
                     "compile_warnings": None,
-                    "origins": [{"strategy": "fence", "variant": "plain"}],
+                    "origins": [
+                        {
+                            "path": [
+                                {"kind": "plain", "details": {}},
+                                {
+                                    "kind": "fence",
+                                    "details": {"tag": "python"},
+                                },
+                            ]
+                        }
+                    ],
                     "top_level_function_names": ["f"],
                 },
             ),
@@ -324,6 +334,14 @@ def test_read_endpoints_adapt_domain_models_and_forward_exact_filters() -> (
     detail = client.get("/api/runs/baseline/examples/sample-1").json()
     assert detail["raw_decoder_output"] == "def f(): pass"
     assert detail["candidates"][0]["compile_warnings"] == []
+    assert detail["candidates"][0]["origins"] == [
+        {
+            "path": [
+                {"kind": "plain", "details": {}},
+                {"kind": "fence", "details": {"tag": "python"}},
+            ]
+        }
+    ]
     assert detail["context"] == {"task_id": "HumanEval/1"}
 
     review = client.get(
