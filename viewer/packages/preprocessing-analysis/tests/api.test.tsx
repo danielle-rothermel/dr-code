@@ -12,6 +12,21 @@ function response(payload: unknown, status = 200) {
 }
 
 describe("HttpPreprocessingApi", () => {
+  it("calls the default browser fetch transport with the global receiver", async () => {
+    const browserFetch = vi.fn(function (this: unknown) {
+      expect(this).toBe(globalThis);
+      return Promise.resolve(response([]));
+    });
+    vi.stubGlobal("fetch", browserFetch);
+
+    try {
+      await expect(new HttpPreprocessingApi().getRuns()).resolves.toEqual([]);
+      expect(browserFetch).toHaveBeenCalledWith("/api/runs", undefined);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("encodes exact example filters and annotation identities", async () => {
     const transport = vi.fn().mockResolvedValue(response({ items: [], limit: 50, offset: 0, total: 0 }));
     const api = new HttpPreprocessingApi(transport, "/viewer");

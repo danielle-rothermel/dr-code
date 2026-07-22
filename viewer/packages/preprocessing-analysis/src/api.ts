@@ -184,6 +184,13 @@ export type FetchTransport = (
   init?: { body?: string; headers?: Record<string, string>; method?: string },
 ) => Promise<FetchResponse>;
 
+function defaultTransport(
+  input: string,
+  init?: Parameters<FetchTransport>[1],
+): Promise<FetchResponse> {
+  return globalThis.fetch(input, init);
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -215,7 +222,7 @@ function detailMessage(payload: unknown): string | undefined {
 
 export class HttpPreprocessingApi implements PreprocessingApi {
   constructor(
-    private readonly transport: FetchTransport = fetch,
+    private readonly transport: FetchTransport = defaultTransport,
     private readonly baseUrl = "",
   ) {}
 
