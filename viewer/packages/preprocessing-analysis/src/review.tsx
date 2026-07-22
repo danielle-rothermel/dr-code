@@ -123,7 +123,7 @@ function Candidates({ example }: { example: ExampleDetail }) {
   );
 }
 
-function ReviewExampleMain({ example, titleId }: { example: ExampleDetail; titleId: string }) {
+function ReviewExampleMain({ example }: { example: ExampleDetail }) {
   const failureReason = example.cause === null || example.cause === ""
     ? humanize(example.failure_code)
     : example.cause;
@@ -131,9 +131,9 @@ function ReviewExampleMain({ example, titleId }: { example: ExampleDetail; title
   return (
     <div className="review-example-main">
       <div className="failure-reason">
-        <StatusBadge className="failure-reason__badge" status="failure">{failureReason}</StatusBadge>
-        <span>{humanize(example.failed_step)}</span>
-        <h3 id={titleId}>{example.sample_id}</h3>
+        <StatusBadge className="failure-reason__badge" status="failure">
+          {failureReason} · {humanize(example.failed_step)}
+        </StatusBadge>
       </div>
 
       <section className="decoder-output" aria-label={`Decoder output for ${example.sample_id}`}>
@@ -145,8 +145,13 @@ function ReviewExampleMain({ example, titleId }: { example: ExampleDetail; title
         )}
       </section>
 
-      {Object.keys(example.context).length > 0 && (
+      <details className="review-details">
+        <summary>Example details</summary>
         <dl className="review-metadata-grid">
+          <div className="metadata-field metadata-field--full">
+            <dt>Sample ID</dt>
+            <dd>{example.sample_id}</dd>
+          </div>
           {Object.entries(example.context).map(([key, value]) => (
             <div className={metadataFieldClass(key, value)} key={key}>
               <dt>{humanize(key)}</dt>
@@ -154,10 +159,10 @@ function ReviewExampleMain({ example, titleId }: { example: ExampleDetail; title
             </div>
           ))}
         </dl>
-      )}
 
-      <Diagnostics example={example} />
-      <Candidates example={example} />
+        <Diagnostics example={example} />
+        <Candidates example={example} />
+      </details>
     </div>
   );
 }
@@ -493,10 +498,9 @@ function ReviewExampleCard({
   registerCardGuard: RegisterCardGuard;
   tags: Tag[];
 }) {
-  const titleId = useId();
   return (
-    <article className="review-example-card review-example-card--three-one" aria-labelledby={titleId}>
-      <ReviewExampleMain example={example} titleId={titleId} />
+    <article className="review-example-card review-example-card--three-one" aria-label={`Example ${example.sample_id}`}>
+      <ReviewExampleMain example={example} />
       <aside className="annotation-rail" aria-label={`Annotation for ${example.sample_id}`}>
         <AnnotationEditor
           api={api}

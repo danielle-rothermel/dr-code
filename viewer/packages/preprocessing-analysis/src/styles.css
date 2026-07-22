@@ -120,13 +120,14 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .review-example-card { background: #fffdf8; border: 1px solid #cfc3b2; border-radius: 8px; box-shadow: 0 10px 28px rgba(61, 47, 31, .06); display: grid; min-width: 0; overflow: hidden; }
 .review-example-card--three-one { grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); }
 .review-example-main { min-width: 0; padding: 28px; }
-.failure-reason { align-items: center; display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 22px; }
+.failure-reason { align-items: center; display: flex; margin-bottom: 22px; }
 .failure-reason__badge { font-size: .9rem; font-weight: 800; padding: 6px 10px; }
-.failure-reason > span { color: #6f665c; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; }
-.failure-reason h3 { flex-basis: 100%; font-family: Georgia, serif; font-size: 1.5rem; font-weight: 500; margin: 5px 0 0; overflow-wrap: anywhere; }
 .decoder-output { min-width: 0; width: 100%; }
 .decoder-output h4, .review-diagnostics h4, .review-candidates h4 { margin: 0 0 10px; }
-.review-metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(12, minmax(0, 1fr)); margin: 24px 0; }
+.review-details { border-top: 1px solid #ddd3c5; margin-top: 22px; padding-top: 14px; }
+.review-details > summary { cursor: pointer; font-weight: 750; }
+.review-details[open] > summary { margin-bottom: 18px; }
+.review-metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(12, minmax(0, 1fr)); margin: 0 0 24px; }
 .metadata-field { border-left: 2px solid #cbbcac; grid-column: span 4; min-width: 0; padding-left: 9px; }
 .metadata-field--compact { grid-column: span 3; }
 .metadata-field--half { grid-column: span 6; }

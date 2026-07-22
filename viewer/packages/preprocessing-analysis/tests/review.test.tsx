@@ -32,6 +32,14 @@ function example(sampleId: string, overrides: Partial<ExampleDetail> = {}): Exam
   };
 }
 
+function getCard(sampleId: string) {
+  return screen.getByRole("article", { name: `Example ${sampleId}` });
+}
+
+function findCard(sampleId: string) {
+  return screen.findByRole("article", { name: `Example ${sampleId}` });
+}
+
 describe("Review", () => {
   it("requests complete page items, renders every card, and uses semantic review layout classes", async () => {
     const items = [
@@ -51,8 +59,8 @@ describe("Review", () => {
 
     const { container } = render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
 
-    expect(await screen.findByRole("heading", { name: "sample-1" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "sample-2" })).toBeTruthy();
+    expect(await findCard("sample-1")).toBeTruthy();
+    expect(getCard("sample-2")).toBeTruthy();
     expect(api.getReviewExamples).toHaveBeenCalledWith("baseline", {
       cause: "syntax error",
       failed_step: "compile",
@@ -75,9 +83,14 @@ describe("Review", () => {
     expect(metadata("warnings")?.className).toContain("metadata-field--full");
     expect(metadata("has prompt")?.className).toContain("metadata-field--compact");
 
-    const firstCard = screen.getByRole("heading", { name: "sample-1" }).closest("article")!;
+    const firstCard = getCard("sample-1");
     const decoder = within(firstCard).getByRole("region", { name: "Decoder output for sample-1" });
     expect(decoder.previousElementSibling?.className).toBe("failure-reason");
+    const details = firstCard.querySelector("details.review-details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(decoder.nextElementSibling).toBe(details);
+    expect(within(details).getByText("sample-1")).toBeTruthy();
+    expect(firstCard.querySelector(".failure-reason h3")).toBeNull();
   });
 
   it("provides page selectors, page buttons, page sizes, and resets page on each filter boundary", async () => {
@@ -90,17 +103,17 @@ describe("Review", () => {
     const api = fakeApi({ getReviewExamples });
     const view = render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
 
-    await screen.findByRole("heading", { name: "sample-1" });
+    await findCard("sample-1");
     expect((screen.getByLabelText("Page size") as HTMLSelectElement).value).toBe("10");
     expect((screen.getByLabelText("Page number") as HTMLSelectElement).selectedOptions[0]?.textContent).toBe("Page 1 of 6");
     expect((screen.getByRole("button", { name: "Previous page" }) as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.change(screen.getByLabelText("Page number"), { target: { value: "3" } });
     await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 20 })));
-    expect(await screen.findByRole("heading", { name: "sample-21" })).toBeTruthy();
+    expect(await findCard("sample-21")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     await waitFor(() => expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ limit: 10, offset: 10 })));
-    expect(await screen.findByRole("heading", { name: "sample-11" })).toBeTruthy();
+    expect(await findCard("sample-11")).toBeTruthy();
 
     const callsBeforeTyping = getReviewExamples.mock.calls.length;
     fireEvent.change(screen.getByLabelText("Search"), { target: { value: "n" } });
@@ -136,7 +149,7 @@ describe("Review", () => {
     });
     render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[tag]} />);
 
-    const card = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    const card = await findCard("sample-1");
     const radios = within(card).getAllByRole("radio");
     expect(radios.map((radio) => radio.parentElement?.textContent)).toEqual(["Unlabeled", "Flag", "Verify"]);
     expect((within(card).getByRole("radio", { name: "Unlabeled" }) as HTMLInputElement).checked).toBe(true);
@@ -170,7 +183,7 @@ describe("Review", () => {
     const api = fakeApi({ createTag: vi.fn().mockResolvedValue(created) });
     render(<Review api={api} onTagCreated={onTagCreated} runId="baseline" tags={[]} />);
 
-    const card = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    const card = await findCard("sample-1");
     fireEvent.change(within(card).getByLabelText("Create tag"), { target: { value: "new tag" } });
     fireEvent.click(within(card).getByRole("button", { name: "Create and select" }));
 
@@ -203,7 +216,7 @@ describe("Review", () => {
     const api = fakeApi({ createTag, getReviewExamples, putAnnotation });
     render(<Review api={api} onTagCreated={onTagCreated} runId="baseline" tags={[]} />);
 
-    const card = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
+    const card = await findCard("sample-1");
     const tagInput = within(card).getByLabelText("Create tag") as HTMLInputElement;
     fireEvent.change(tagInput, { target: { value: "retry tag" } });
     fireEvent.click(within(card).getByRole("button", { name: "Create and select" }));
@@ -226,7 +239,7 @@ describe("Review", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     expect(await screen.findByText("Navigation blocked")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
+    expect(getCard("sample-1")).toBeTruthy();
     expect(createTag).toHaveBeenCalledTimes(2);
     expect(tagInput.value).toBe("retry tag");
 
@@ -245,7 +258,7 @@ describe("Review", () => {
     window.dispatchEvent(cleanEvent);
     expect(cleanEvent.defaultPrevented).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    await screen.findByRole("heading", { name: "sample-11" });
+    await findCard("sample-11");
   });
 
   it("applies a submitted search after guarded saves without racing later draft text", async () => {
@@ -270,7 +283,7 @@ describe("Review", () => {
       pendingSave.resolve({ note: "", tags: [], verdict: "should_be_parseable" });
       await pendingSave.promise;
     });
-    await screen.findByRole("heading", { name: "applied-result" });
+    await findCard("applied-result");
     expect(getReviewExamples).toHaveBeenCalledWith("baseline", expect.objectContaining({ search: "applied" }));
     expect(getReviewExamples).not.toHaveBeenCalledWith("baseline", expect.objectContaining({ search: "still drafting" }));
     expect((screen.getByLabelText("Search") as HTMLInputElement).value).toBe("still drafting");
@@ -298,9 +311,9 @@ describe("Review", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "Flag" }));
     await screen.findByText("Saved");
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    await screen.findByRole("heading", { name: "sample-11" });
+    await findCard("sample-11");
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
-    await screen.findByRole("heading", { name: "sample-1" });
+    await findCard("sample-1");
     expect((screen.getByRole("radio", { name: "Flag" }) as HTMLInputElement).checked).toBe(true);
   });
 
@@ -316,8 +329,8 @@ describe("Review", () => {
     });
     render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
 
-    const firstCard = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
-    const secondCard = screen.getByRole("heading", { name: "sample-2" }).closest("article")!;
+    const firstCard = await findCard("sample-1");
+    const secondCard = getCard("sample-2");
     fireEvent.click(within(firstCard).getByRole("radio", { name: "Flag" }));
     fireEvent.click(within(secondCard).getByRole("radio", { name: "Verify" }));
     expect(putAnnotation).toHaveBeenCalledTimes(2);
@@ -352,21 +365,21 @@ describe("Review", () => {
     const api = fakeApi({ getReviewExamples, putAnnotation });
     render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
 
-    const firstCard = (await screen.findByRole("heading", { name: "sample-1" })).closest("article")!;
-    const failingCard = screen.getByRole("heading", { name: "sample-2" }).closest("article")!;
+    const firstCard = await findCard("sample-1");
+    const failingCard = getCard("sample-2");
     fireEvent.change(within(firstCard).getByLabelText("Comment"), { target: { value: "first draft" } });
     fireEvent.change(within(failingCard).getByLabelText("Comment"), { target: { value: "recoverable draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
 
     expect(await screen.findByText("Navigation blocked")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
+    expect(getCard("sample-1")).toBeTruthy();
     expect((within(firstCard).getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("first draft");
     expect((within(failingCard).getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("recoverable draft");
     expect(putAnnotation.mock.calls.map(([identity]) => identity.sample_id).sort()).toEqual(["sample-1", "sample-2"]);
     expect(getReviewExamples).not.toHaveBeenCalledWith("baseline", expect.objectContaining({ offset: 10 }));
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    await screen.findByRole("heading", { name: "sample-11" });
+    await findCard("sample-11");
     expect(putAnnotation).toHaveBeenCalledTimes(3);
   });
 

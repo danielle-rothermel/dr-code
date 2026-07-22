@@ -104,7 +104,7 @@ describe("PreprocessingViewer", () => {
     render(<PreprocessingViewer api={api} />);
     await screen.findByRole("heading", { name: "Trace every stage back to examples" });
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
-    await screen.findByRole("heading", { name: "sample-1" });
+    await screen.findByRole("article", { name: "Example sample-1" });
 
     fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "keep this draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Waterfall" }));
@@ -135,13 +135,13 @@ describe("PreprocessingViewer", () => {
     render(<PreprocessingViewer api={api} />);
     await screen.findByRole("heading", { name: "Trace every stage back to examples" });
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
-    await screen.findByRole("heading", { name: "sample-1" });
+    await screen.findByRole("article", { name: "Example sample-1" });
 
     fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "keep internal draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
 
     expect(await screen.findByText("Save failed")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "sample-1" })).toBeTruthy();
+    expect(screen.getByRole("article", { name: "Example sample-1" })).toBeTruthy();
     expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("keep internal draft");
   });
 });
