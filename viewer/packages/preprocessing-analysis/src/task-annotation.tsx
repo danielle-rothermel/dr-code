@@ -9,20 +9,12 @@ import type {
 } from "./api";
 import { datasetIdOf } from "./api";
 import { errorMessage } from "./format";
-
-const NOTE_AUTOSAVE_DELAY_MS = 300;
-
-type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+import { useAutosaveQueue } from "./use-autosave-queue";
 
 interface TaskDraft {
   category: string;
   note: string;
   tagIds: Set<string>;
-}
-
-interface SaveOperation {
-  input: TaskAnnotationInput;
-  revision: number;
 }
 
 function inputForDraft(draft: TaskDraft): TaskAnnotationInput {
@@ -34,9 +26,10 @@ function inputForDraft(draft: TaskDraft): TaskAnnotationInput {
   };
 }
 
-// A verdict-free, task-keyed note+tags editor. It reuses the example
-// AnnotationEditor's debounced-autosave-with-single-inflight discipline so a
-// durable per-task judgment survives across corpora and runs.
+// A verdict-free, task-keyed note+tags editor. It shares the example
+// AnnotationEditor's debounced-autosave-with-single-inflight discipline via
+// useAutosaveQueue so a durable per-task judgment survives across corpora and
+// runs.
 export function TaskAnnotationEditor({
   api,
   taskId,
@@ -60,26 +53,25 @@ export function TaskAnnotationEditor({
   });
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState("");
   const [newTag, setNewTag] = useState("");
   const [tagSaveState, setTagSaveState] = useState<"idle" | "saving" | "error">("idle");
 
   const activeRef = useRef(true);
-  const debounceRef = useRef<number | undefined>(undefined);
   const draftRef = useRef(draft);
-  const inFlightRef = useRef(false);
-  const queuedRef = useRef<SaveOperation | null>(null);
-  const revisionRef = useRef(0);
-  const runQueueRef = useRef<() => void>(() => undefined);
   draftRef.current = draft;
 
-  function updateSaveState(next: SaveState) {
-    if (activeRef.current) setSaveState(next);
-  }
+  const autosave = useAutosaveQueue<TaskAnnotationInput, TaskAnnotation>({
+    save: (input) => api.putTaskAnnotation(identity, input),
+    onSaved: () => undefined,
+    onError: (_revision, error) => {
+      if (activeRef.current) setSaveError(errorMessage(error));
+    },
+  });
 
   useEffect(() => {
     activeRef.current = true;
+    autosave.markActive(true);
     setLoaded(false);
     setLoadError("");
     void api.getTaskAnnotation(identity).then(
@@ -92,7 +84,6 @@ export function TaskAnnotationEditor({
         };
         draftRef.current = next;
         setDraft(next);
-        setSaveState("idle");
         setLoaded(true);
       },
       (error: unknown) => {
@@ -101,66 +92,20 @@ export function TaskAnnotationEditor({
     );
     return () => {
       activeRef.current = false;
-      if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
+      autosave.markActive(false);
     };
     // Reloading whenever the task identity changes keys the editor to one task.
   }, [api, taskId]);
 
-  runQueueRef.current = () => {
-    if (inFlightRef.current || queuedRef.current === null) return;
-    const operation = queuedRef.current;
-    queuedRef.current = null;
-    inFlightRef.current = true;
-    void api.putTaskAnnotation(identity, operation.input).then(
-      () => {
-        inFlightRef.current = false;
-        if (operation.revision === revisionRef.current) updateSaveState("saved");
-        if (queuedRef.current !== null) runQueueRef.current();
-      },
-      (error: unknown) => {
-        inFlightRef.current = false;
-        if (queuedRef.current !== null) {
-          runQueueRef.current();
-          return;
-        }
-        updateSaveState("error");
-        if (activeRef.current) setSaveError(errorMessage(error));
-      },
-    );
-  };
-
-  function queue(input: TaskAnnotationInput) {
-    queuedRef.current = { input, revision: revisionRef.current };
-    if (activeRef.current) setSaveError("");
-    updateSaveState("saving");
-    runQueueRef.current();
-  }
-
   function updateDraft(next: TaskDraft, saveImmediately: boolean) {
-    revisionRef.current += 1;
     draftRef.current = next;
     setDraft(next);
     setSaveError("");
-    if (debounceRef.current !== undefined) {
-      window.clearTimeout(debounceRef.current);
-      debounceRef.current = undefined;
-    }
-    if (saveImmediately) {
-      queue(inputForDraft(next));
-      return;
-    }
-    updateSaveState("dirty");
-    debounceRef.current = window.setTimeout(() => {
-      debounceRef.current = undefined;
-      queue(inputForDraft(draftRef.current));
-    }, NOTE_AUTOSAVE_DELAY_MS);
+    autosave.edit(inputForDraft(next), saveImmediately);
   }
 
   function flushDraft() {
-    if (debounceRef.current === undefined) return;
-    window.clearTimeout(debounceRef.current);
-    debounceRef.current = undefined;
-    queue(inputForDraft(draftRef.current));
+    autosave.flush(inputForDraft(draftRef.current));
   }
 
   function toggleTag(tagId: string, checked: boolean) {
@@ -190,6 +135,8 @@ export function TaskAnnotationEditor({
       },
     );
   }
+
+  const saveState = autosave.saveState;
 
   return (
     <form className="annotation-editor task-annotation-editor" onSubmit={(event) => event.preventDefault()}>

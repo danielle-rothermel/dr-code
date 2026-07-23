@@ -2,6 +2,7 @@ import { CodeBlock, StatusBadge } from "@dr-code/viewer";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type {
+  Annotation,
   AnnotationIdentity,
   AnnotationInput,
   ExampleDetail,
@@ -13,28 +14,20 @@ import type {
 import { CandidateOrigins } from "./candidate-origins";
 import { errorMessage, formatNumber, humanize } from "./format";
 import { TaskAnnotationEditor } from "./task-annotation";
+import { useAutosaveQueue } from "./use-autosave-queue";
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZES = [10, 25, 50] as const;
-const NOTE_AUTOSAVE_DELAY_MS = 300;
 
 type LoadState<T> =
   | { status: "loading" }
   | { error: string; status: "error" }
   | { data: T; status: "success" };
 
-type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
-
 interface AnnotationDraft {
   note: string;
   tagIds: Set<string>;
   verdict: Verdict | null;
-}
-
-interface SaveOperation {
-  identity: AnnotationIdentity;
-  input: AnnotationInput;
-  revision: number;
 }
 
 interface CardGuard {
@@ -188,7 +181,6 @@ function AnnotationEditor({
   });
   const [draft, setDraft] = useState<AnnotationDraft>(initialDraft);
   const [newTag, setNewTag] = useState("");
-  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState("");
   const [tagSaveState, setTagSaveState] = useState<"idle" | "saving" | "error">("idle");
   const [tagSaveError, setTagSaveError] = useState("");
@@ -198,15 +190,9 @@ function AnnotationEditor({
     sample_id: example.sample_id,
   };
   const activeRef = useRef(true);
-  const debounceRef = useRef<number | undefined>(undefined);
   const draftRef = useRef(draft);
   const exampleRef = useRef(example);
-  const inFlightRef = useRef(false);
   const onExampleChangeRef = useRef(onExampleChange);
-  const queuedRef = useRef<SaveOperation | null>(null);
-  const revisionRef = useRef(0);
-  const runQueueRef = useRef<() => void>(() => undefined);
-  const saveStateRef = useRef(saveState);
   const tagCreationRef = useRef<Promise<boolean> | null>(null);
   const tagSaveErrorRef = useRef("");
   const pendingTagNameRef = useRef<string | null>(null);
@@ -215,10 +201,23 @@ function AnnotationEditor({
   exampleRef.current = example;
   onExampleChangeRef.current = onExampleChange;
 
-  function updateSaveState(next: SaveState) {
-    saveStateRef.current = next;
-    if (activeRef.current) setSaveState(next);
-  }
+  const autosave = useAutosaveQueue<AnnotationInput, Annotation>({
+    // updateDraft/flushDraft never queue a save while the identity is null, so a
+    // queued operation always carries a persistable identity.
+    save: (input) => {
+      if (annotationIdentity === null) throw new Error("cannot save annotation without identity");
+      return api.putAnnotation(annotationIdentity, input);
+    },
+    onSaved: (_revision, annotation) => {
+      if (activeRef.current) {
+        onExampleChangeRef.current({ ...exampleRef.current, annotation });
+      }
+    },
+    onError: (_revision, error) => {
+      if (activeRef.current) setSaveError(errorMessage(error));
+    },
+    onIdle: (succeeded) => settleLeaveWaiters(succeeded),
+  });
 
   function updateTagSaveError(message: string) {
     tagSaveErrorRef.current = message;
@@ -231,89 +230,25 @@ function AnnotationEditor({
     for (const resolve of waiters) resolve(canLeave);
   }
 
-  function operationForDraft(value: AnnotationDraft, revision = revisionRef.current): SaveOperation | null {
-    if (annotationIdentity === null) return null;
+  function inputForDraft(value: AnnotationDraft): AnnotationInput {
     return {
-      identity: annotationIdentity,
-      input: {
-        note: value.note,
-        tag_ids: [...value.tagIds].sort(),
-        verdict: value.verdict,
-      },
-      revision,
+      note: value.note,
+      tag_ids: [...value.tagIds].sort(),
+      verdict: value.verdict,
     };
   }
 
-  function queue(operation: SaveOperation) {
-    queuedRef.current = operation;
-    if (activeRef.current) setSaveError("");
-    updateSaveState("saving");
-    runQueueRef.current();
-  }
-
-  runQueueRef.current = () => {
-    if (inFlightRef.current || queuedRef.current === null) return;
-    const operation = queuedRef.current;
-    queuedRef.current = null;
-    inFlightRef.current = true;
-    void api.putAnnotation(operation.identity, operation.input).then(
-      (annotation) => {
-        inFlightRef.current = false;
-        if (operation.revision === revisionRef.current) {
-          updateSaveState("saved");
-          if (activeRef.current) {
-            onExampleChangeRef.current({ ...exampleRef.current, annotation });
-          }
-        }
-        if (queuedRef.current !== null) {
-          runQueueRef.current();
-          return;
-        }
-        if (debounceRef.current === undefined) settleLeaveWaiters(true);
-      },
-      (error: unknown) => {
-        inFlightRef.current = false;
-        if (queuedRef.current !== null) {
-          runQueueRef.current();
-          return;
-        }
-        if (operation.revision !== revisionRef.current && debounceRef.current !== undefined) return;
-        updateSaveState("error");
-        if (activeRef.current) setSaveError(errorMessage(error));
-        settleLeaveWaiters(false);
-      },
-    );
-  };
-
   function updateDraft(nextDraft: AnnotationDraft, saveImmediately: boolean) {
-    revisionRef.current += 1;
     draftRef.current = nextDraft;
     setDraft(nextDraft);
     setSaveError("");
-    if (debounceRef.current !== undefined) {
-      window.clearTimeout(debounceRef.current);
-      debounceRef.current = undefined;
-    }
-    const operation = operationForDraft(nextDraft);
-    if (operation === null) return;
-    if (saveImmediately) {
-      queue(operation);
-      return;
-    }
-    updateSaveState("dirty");
-    debounceRef.current = window.setTimeout(() => {
-      debounceRef.current = undefined;
-      const latest = operationForDraft(draftRef.current);
-      if (latest !== null) queue(latest);
-    }, NOTE_AUTOSAVE_DELAY_MS);
+    if (annotationIdentity === null) return;
+    autosave.edit(inputForDraft(nextDraft), saveImmediately);
   }
 
   function flushDraft() {
-    if (debounceRef.current === undefined) return;
-    window.clearTimeout(debounceRef.current);
-    debounceRef.current = undefined;
-    const operation = operationForDraft(draftRef.current);
-    if (operation !== null) queue(operation);
+    if (annotationIdentity === null) return;
+    autosave.flush(inputForDraft(draftRef.current));
   }
 
   async function flushBeforeLeave(): Promise<boolean> {
@@ -324,21 +259,22 @@ function AnnotationEditor({
       if (name === null || !await startTagCreation(name)) return false;
     }
     flushDraft();
-    if (saveStateRef.current === "error" && !inFlightRef.current && queuedRef.current === null) {
-      const retry = operationForDraft(draftRef.current);
-      if (retry !== null) queue(retry);
+    if (annotationIdentity !== null && autosave.currentSaveState() === "error") {
+      autosave.requeueIfSettled(inputForDraft(draftRef.current));
     }
-    if (!inFlightRef.current && queuedRef.current === null) {
-      return saveStateRef.current !== "error";
+    if (autosave.isSettled()) {
+      return autosave.currentSaveState() !== "error";
     }
     return new Promise((resolve) => { leaveWaitersRef.current.push(resolve); });
   }
 
   useEffect(() => {
     activeRef.current = true;
+    autosave.markActive(true);
     return () => {
       flushDraft();
       activeRef.current = false;
+      autosave.markActive(false);
     };
   }, []);
 
@@ -347,7 +283,7 @@ function AnnotationEditor({
       `${example.corpus_sha256}:${example.sample_id}:${example.decoder_output_sha256 ?? "missing"}`,
       {
         flush: flushBeforeLeave,
-        isUnsafe: () => tagCreationRef.current !== null || tagSaveErrorRef.current !== "" || ["dirty", "saving", "error"].includes(saveStateRef.current),
+        isUnsafe: () => tagCreationRef.current !== null || tagSaveErrorRef.current !== "" || ["dirty", "saving", "error"].includes(autosave.currentSaveState()),
       },
     ),
     [example.corpus_sha256, example.decoder_output_sha256, example.sample_id, registerCardGuard],
@@ -399,7 +335,7 @@ function AnnotationEditor({
   const disabled = annotationIdentity === null;
   const displayedSaveState = tagSaveState === "error"
     ? "error"
-    : tagSaveState === "saving" ? "saving" : saveState;
+    : tagSaveState === "saving" ? "saving" : autosave.saveState;
 
   return (
     <form className="annotation-editor" onSubmit={(event) => event.preventDefault()}>
