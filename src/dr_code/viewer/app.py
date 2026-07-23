@@ -312,7 +312,7 @@ def _run(value: DomainRunSummary) -> RunSummary:
         has_evaluation=value.has_evaluation,
         semantic_coordinates={
             "definition_version": value.definition_version,
-            "definition_hash": value.definition_hash,
+            "definition_identity": value.definition_identity,
         },
     )
 

@@ -44,6 +44,28 @@ def test_descriptor_validates_complete_manifest_backed_bundle(
         evaluation_manifest["candidate_results_sha256"]
         == descriptor.artifact_sha256["candidate_results"]
     )
+    # New unified runs expose the canonical eval-kernel identity.
+    assert len(descriptor.definition_identity) == 64
+
+
+def test_descriptor_reads_legacy_definition_hash_manifest(tmp_path) -> None:
+    # Decision 3: the viewer keeps reading OLD artifacts read-only. A legacy
+    # manifest has only the BLAKE2 definition_hash and no canonical identity.
+    bundle = write_bundle(tmp_path / "legacy")
+    manifest_path = bundle.preprocessing_manifest_path
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    legacy_hash = manifest.pop("preprocessing_definition_identity")
+    manifest.pop("identity_scheme", None)
+    manifest["definition_hash"] = legacy_hash
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    reloaded = RunDescriptor.from_paths(
+        label=bundle.label,
+        corpus_path=bundle.corpus_path,
+        preprocessing=manifest_path.parent,
+        candidate_evaluation=None,
+    )
+    assert reloaded.definition_identity == legacy_hash
 
 
 def test_descriptor_accepts_legacy_evaluation_without_artifact_hashes(

@@ -45,7 +45,7 @@ def write_bundle(
     *,
     run_id: str = "fixture-run",
     corpus_path: Path | None = None,
-    definition_hash: str = "a" * 128,
+    definition_identity: str = "a" * 64,
     with_evaluation: bool = True,
     preprocessing_schema_version: int = 2,
     no_code_causes: tuple[str | None, str | None, str | None] = (
@@ -219,7 +219,8 @@ def write_bundle(
                 )
             ],
         },
-        "definition_hash": definition_hash,
+        "identity_scheme": "eval_kernel_v1",
+        "preprocessing_definition_identity": definition_identity,
         "relation_totals": {
             name: len(rows) for name, rows in relations.items()
         },

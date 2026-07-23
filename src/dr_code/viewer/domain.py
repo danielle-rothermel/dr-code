@@ -85,7 +85,7 @@ class RunDescriptor:
     preprocessing_schema_version: int
     definition_id: str
     definition_version: str
-    definition_hash: str
+    definition_identity: str
     evaluation_manifest_path: Path | None = None
     evaluation_manifest_sha256: str | None = None
     candidate_membership_path: Path | None = None
@@ -207,7 +207,7 @@ class RunDescriptor:
             preprocessing_schema_version=preprocessing_schema_version,
             definition_id=cast(str, definition["definition_id"]),
             definition_version=cast(str, definition["version"]),
-            definition_hash=cast(str, manifest["definition_hash"]),
+            definition_identity=_definition_identity(manifest),
             evaluation_manifest_path=evaluation_manifest_path,
             evaluation_manifest_sha256=evaluation_manifest_sha256,
             candidate_membership_path=candidate_membership_path,
@@ -299,7 +299,7 @@ class RunSummary:
     definition_id: str
     definition_version: str
     has_evaluation: bool
-    definition_hash: str | None = None
+    definition_identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,7 +477,11 @@ def _validate_preprocessing_manifest(
     if manifest.get("complete") is not True:
         raise RunValidationError("preprocessing manifest is incomplete")
     _required_string(manifest, "run_id", "preprocessing manifest")
-    _required_digest(manifest, "definition_hash", "preprocessing manifest")
+    # New (unified) manifests carry the canonical eval-kernel identity; legacy
+    # read-only artifacts carry only the old BLAKE2 definition_hash. Accept
+    # either so the viewer keeps reading old data (decision 3), preferring the
+    # canonical field. This is a versioned legacy reader, not a live alias.
+    _required_definition_identity(manifest, "preprocessing manifest")
     definition = manifest.get("definition")
     if not isinstance(definition, dict):
         raise RunValidationError(
@@ -873,6 +877,36 @@ def _required_digest(value: dict[str, object], field: str, label: str) -> str:
     ):
         raise RunValidationError(f"{label} has invalid {field!r}")
     return item
+
+
+_CANONICAL_DEFINITION_FIELD: Final = "preprocessing_definition_identity"
+_LEGACY_DEFINITION_FIELD: Final = "definition_hash"
+
+
+def _definition_identity(manifest: dict[str, object]) -> str:
+    """Read the preprocessing definition identity, canonical or legacy.
+
+    New unified manifests carry the canonical eval-kernel identity; legacy
+    read-only artifacts carry only the old ``definition_hash``. The canonical
+    field wins when present.
+    """
+
+    if manifest.get(_CANONICAL_DEFINITION_FIELD) is not None:
+        return cast(str, manifest[_CANONICAL_DEFINITION_FIELD])
+    return cast(str, manifest[_LEGACY_DEFINITION_FIELD])
+
+
+def _required_definition_identity(
+    manifest: dict[str, object], label: str
+) -> str:
+    """Validate that a canonical or legacy definition identity is present."""
+
+    field = (
+        _CANONICAL_DEFINITION_FIELD
+        if manifest.get(_CANONICAL_DEFINITION_FIELD) is not None
+        else _LEGACY_DEFINITION_FIELD
+    )
+    return _required_digest(manifest, field, label)
 
 
 def _required_sha256(value: dict[str, object], field: str, label: str) -> str:

@@ -38,7 +38,7 @@ def _run(run_id: str = "baseline") -> RunSummary:
         definition_id="functions-v1",
         definition_version="1",
         has_evaluation=False,
-        definition_hash="d" * 128,
+        definition_identity="d" * 64,
     )
 
 
@@ -242,7 +242,7 @@ def test_read_endpoints_adapt_domain_models_and_forward_exact_filters() -> (
 
     assert client.get("/api/runs").json()[0]["semantic_coordinates"] == {
         "definition_version": "1",
-        "definition_hash": "d" * 128,
+        "definition_identity": "d" * 64,
     }
     assert (
         client.get("/api/runs/baseline/waterfall").json()["stages"][0][

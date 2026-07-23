@@ -821,7 +821,7 @@ class ViewerAnalytics:
             definition_id=descriptor.definition_id,
             definition_version=descriptor.definition_version,
             has_evaluation=descriptor.has_evaluation,
-            definition_hash=descriptor.definition_hash,
+            definition_identity=descriptor.definition_identity,
         )
 
     def _stage_definitions(

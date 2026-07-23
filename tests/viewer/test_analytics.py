@@ -333,13 +333,15 @@ def test_compatible_comparison_allows_different_definition_hashes(
     tmp_path,
 ) -> None:
     baseline = write_bundle(
-        tmp_path / "baseline", run_id="baseline", definition_hash="a" * 128
+        tmp_path / "baseline",
+        run_id="baseline",
+        definition_identity="a" * 64,
     )
     candidate = write_bundle(
         tmp_path / "candidate",
         run_id="candidate",
         corpus_path=baseline.corpus_path,
-        definition_hash="f" * 128,
+        definition_identity="f" * 64,
     )
     with ViewerDatabase(":memory:") as database:
         analytics = ViewerAnalytics(database, [baseline, candidate])
