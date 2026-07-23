@@ -86,7 +86,7 @@ export function PreprocessingViewer({ api = defaultApi }: { api?: PreprocessingA
         </div>
         {runs !== null && runs.length > 0 && (
           <div className="run-controls">
-            <label htmlFor="active-run">Active run</label>
+            <label htmlFor="active-run">{surface === "compare" ? "Before run" : "Active run"}</label>
             <select
               id="active-run"
               onChange={(event) => {
@@ -107,7 +107,7 @@ export function PreprocessingViewer({ api = defaultApi }: { api?: PreprocessingA
             </select>
             {surface === "compare" && canCompare && (
               <>
-                <label htmlFor="compare-run">Candidate run</label>
+                <label htmlFor="compare-run">After run</label>
                 <select id="compare-run" onChange={(event) => setCompareRunId(event.target.value)} value={compareRunId}>
                   {runs.filter(({ run_id }) => run_id !== selectedRunId).map((run) => (
                     <option key={run.run_id} value={run.run_id}>{run.label}</option>
@@ -135,7 +135,7 @@ export function PreprocessingViewer({ api = defaultApi }: { api?: PreprocessingA
             <button aria-current={surface === "review" ? "page" : undefined} onClick={() => void navigate(() => setSurface("review"))} type="button">Review</button>
           </nav>
 
-          <aside className="run-provenance" aria-label="Active run provenance">
+          <aside className="run-provenance" aria-label={surface === "compare" ? "Before run provenance" : "Active run provenance"}>
             <strong>{selectedRun.label}</strong>
             <span>definition {selectedRun.definition_id}@{String(selectedRun.semantic_coordinates.definition_version ?? "unknown")}</span>
             <span title={selectedRun.corpus_sha256}>corpus {selectedRun.corpus_sha256.slice(0, 12)}…</span>

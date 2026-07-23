@@ -151,9 +151,7 @@ class ViewerAnalytics:
     def list_runs(self) -> tuple[RunSummary, ...]:
         return tuple(
             self._summary(descriptor)
-            for descriptor in sorted(
-                self._runs.values(), key=lambda item: (item.label, item.run_id)
-            )
+            for descriptor in self._runs.values()
         )
 
     def waterfall(self, run_id: str) -> Waterfall:

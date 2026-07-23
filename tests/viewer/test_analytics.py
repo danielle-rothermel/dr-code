@@ -14,6 +14,23 @@ from dr_code.viewer.domain import (
 from viewer.helpers import write_bundle
 
 
+def test_list_runs_preserves_registration_order(tmp_path) -> None:
+    before = write_bundle(tmp_path / "before", run_id="before")
+    after = write_bundle(
+        tmp_path / "after",
+        run_id="after",
+        corpus_path=before.corpus_path,
+    )
+
+    with ViewerDatabase(":memory:") as database:
+        analytics = ViewerAnalytics(database, [before, after])
+
+        assert [run.label for run in analytics.list_runs()] == [
+            "before",
+            "after",
+        ]
+
+
 def test_waterfall_counts_and_stage_drilldowns_share_predicates(
     tmp_path,
 ) -> None:

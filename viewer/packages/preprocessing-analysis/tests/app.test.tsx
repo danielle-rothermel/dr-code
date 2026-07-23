@@ -66,6 +66,9 @@ describe("PreprocessingViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
 
     const comparisonTable = await screen.findByRole("table");
+    expect((screen.getByLabelText("Before run") as HTMLSelectElement).value).toBe("baseline");
+    expect((screen.getByLabelText("After run") as HTMLSelectElement).value).toBe("candidate");
+    expect(api.compare).toHaveBeenCalledWith("baseline", "candidate");
     expect(within(comparisonTable).getByRole("columnheader", {
       name: "Before Baseline · preprocessing@1",
     })).toBeTruthy();
