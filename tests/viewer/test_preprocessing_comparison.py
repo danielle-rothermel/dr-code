@@ -479,6 +479,8 @@ def _change_after_evaluation(evaluation: Path) -> None:
     )
     manifest["membership_rows"] = len(changed_memberships)
     manifest["result_rows"] = len(changed_results)
+    manifest["candidate_membership_sha256"] = _sha256_file(membership_path)
+    manifest["candidate_results_sha256"] = _sha256_file(results_path)
     manifest_path.write_text(
         json.dumps(manifest, sort_keys=True), encoding="utf-8"
     )

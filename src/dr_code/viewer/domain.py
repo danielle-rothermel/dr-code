@@ -609,6 +609,11 @@ def _validate_evaluation_bundle(
         raise RunValidationError(
             "candidate evaluation result row count mismatch"
         )
+    _validate_evaluation_artifact_hashes(
+        manifest,
+        membership_path=membership_path,
+        results_path=results_path,
+    )
     coordinates: dict[str, object] = {}
     for field in (
         "metrics_profile",
@@ -643,6 +648,35 @@ def _validate_evaluation_bundle(
     # Include this in diagnostics without making a machine-local path semantic.
     coordinates["manifest_name"] = evaluation_manifest_path.name
     return coordinates
+
+
+def _validate_evaluation_artifact_hashes(
+    manifest: dict[str, object],
+    *,
+    membership_path: Path,
+    results_path: Path,
+) -> None:
+    fields = {
+        "candidate_membership_sha256": membership_path,
+        "candidate_results_sha256": results_path,
+    }
+    present = [field for field in fields if field in manifest]
+    if not present:
+        return
+    if len(present) != len(fields):
+        missing = sorted(set(fields) - set(present))
+        raise RunValidationError(
+            "candidate evaluation manifest is missing artifact hash field(s): "
+            + ", ".join(missing)
+        )
+    for field, path in fields.items():
+        expected = _required_sha256(
+            manifest, field, "candidate evaluation manifest"
+        )
+        if expected != _sha256_file(path):
+            raise RunValidationError(
+                f"candidate evaluation manifest {field} mismatch"
+            )
 
 
 def _parquet_file(path: Path, label: str) -> pq.ParquetFile:
@@ -835,6 +869,15 @@ def _required_string(value: dict[str, object], field: str, label: str) -> str:
 def _required_digest(value: dict[str, object], field: str, label: str) -> str:
     item = _required_string(value, field, label)
     if len(item) not in {_SHA256_LENGTH, 128} or any(
+        character not in "0123456789abcdef" for character in item
+    ):
+        raise RunValidationError(f"{label} has invalid {field!r}")
+    return item
+
+
+def _required_sha256(value: dict[str, object], field: str, label: str) -> str:
+    item = _required_string(value, field, label)
+    if len(item) != _SHA256_LENGTH or any(
         character not in "0123456789abcdef" for character in item
     ):
         raise RunValidationError(f"{label} has invalid {field!r}")

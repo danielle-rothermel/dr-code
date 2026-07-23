@@ -32,6 +32,78 @@ def test_descriptor_validates_complete_manifest_backed_bundle(
         "candidate_membership",
         "candidate_results",
     }
+    assert descriptor.evaluation_manifest_path is not None
+    evaluation_manifest = json.loads(
+        descriptor.evaluation_manifest_path.read_text(encoding="utf-8")
+    )
+    assert (
+        evaluation_manifest["candidate_membership_sha256"]
+        == descriptor.artifact_sha256["candidate_membership"]
+    )
+    assert (
+        evaluation_manifest["candidate_results_sha256"]
+        == descriptor.artifact_sha256["candidate_results"]
+    )
+
+
+def test_descriptor_accepts_legacy_evaluation_without_artifact_hashes(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    write_bundle(bundle)
+    manifest_path = (
+        bundle / "evaluation" / "candidate_evaluation_manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("candidate_membership_sha256")
+    manifest.pop("candidate_results_sha256")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    descriptor = RunDescriptor.from_paths(
+        label="legacy-evaluation",
+        corpus_path=bundle / "corpus.parquet",
+        preprocessing=bundle / "run",
+        candidate_evaluation=bundle / "evaluation",
+    )
+
+    assert descriptor.has_evaluation
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("membership_mismatch", "candidate_membership_sha256 mismatch"),
+        ("results_mismatch", "candidate_results_sha256 mismatch"),
+        ("partial_hashes", "missing artifact hash field"),
+        ("malformed_hash", "invalid 'candidate_results_sha256'"),
+    ],
+)
+def test_descriptor_rejects_invalid_evaluation_artifact_hashes(
+    tmp_path: Path, mutation: str, error: str
+) -> None:
+    bundle = tmp_path / "bundle"
+    write_bundle(bundle)
+    manifest_path = (
+        bundle / "evaluation" / "candidate_evaluation_manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if mutation == "membership_mismatch":
+        manifest["candidate_membership_sha256"] = "0" * 64
+    elif mutation == "results_mismatch":
+        manifest["candidate_results_sha256"] = "0" * 64
+    elif mutation == "partial_hashes":
+        manifest.pop("candidate_results_sha256")
+    else:
+        manifest["candidate_results_sha256"] = "not-a-sha256"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RunValidationError, match=error):
+        RunDescriptor.from_paths(
+            label="bad",
+            corpus_path=bundle / "corpus.parquet",
+            preprocessing=bundle / "run",
+            candidate_evaluation=bundle / "evaluation",
+        )
 
 
 def test_descriptor_accepts_legacy_preprocessing_artifacts(tmp_path) -> None:

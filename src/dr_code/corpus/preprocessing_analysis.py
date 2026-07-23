@@ -83,6 +83,10 @@ _EVALUATION_CATEGORIES: Final = (
     "infrastructure_failure",
 )
 _CANDIDATE_EVALUATION_SCHEMA_VERSION: Final = 1
+_EVALUATION_ARTIFACT_HASH_FIELDS: Final = (
+    "candidate_membership_sha256",
+    "candidate_results_sha256",
+)
 _EVALUATION_SEMANTIC_FIELDS: Final = (
     "snapshot_sha256",
     "sandbox_image",
@@ -513,6 +517,11 @@ def _read_evaluation_manifest(
             raise PreprocessingAnalysisError(
                 f"candidate evaluation manifest {field} mismatch"
             )
+    has_artifact_hashes = _validate_evaluation_artifact_hashes(
+        manifest,
+        membership_path=membership_path,
+        results_path=results_path,
+    )
     _manifest_required_str(manifest, "metrics_profile")
     _manifest_required_str(manifest, "operator")
     missing_semantic = [
@@ -524,9 +533,13 @@ def _read_evaluation_manifest(
             + ", ".join(missing_semantic)
         )
     _validate_v1_manifest_semantics(manifest)
-    limitations = [
-        "The candidate evaluation manifest does not contain membership/results file hashes; same-run linkage is validated through row counts, full relational joins, singleton coordinates, and deterministic evaluation keys."
-    ]
+    limitations = []
+    if not has_artifact_hashes:
+        limitations.append(
+            "The legacy candidate evaluation manifest does not publish "
+            "membership/results file hashes; linkage is validated through "
+            "row counts, relational joins, coordinates, and evaluation keys."
+        )
     semantic_coordinates = {
         field: manifest[field]
         for field in _EVALUATION_SEMANTIC_FIELDS
@@ -544,6 +557,49 @@ def _read_evaluation_manifest(
         "semantic_coordinates": semantic_coordinates,
     }
     return manifest, provenance, tuple(limitations)
+
+
+def _validate_evaluation_artifact_hashes(
+    manifest: Mapping[str, object],
+    *,
+    membership_path: Path,
+    results_path: Path,
+) -> bool:
+    present = [
+        field
+        for field in _EVALUATION_ARTIFACT_HASH_FIELDS
+        if field in manifest
+    ]
+    if not present:
+        return False
+    if len(present) != len(_EVALUATION_ARTIFACT_HASH_FIELDS):
+        missing = sorted(set(_EVALUATION_ARTIFACT_HASH_FIELDS) - set(present))
+        raise PreprocessingAnalysisError(
+            "candidate evaluation manifest is missing artifact hash field(s): "
+            + ", ".join(missing)
+        )
+    expected = {
+        "candidate_membership_sha256": _file_sha256(membership_path),
+        "candidate_results_sha256": _file_sha256(results_path),
+    }
+    for field, actual_hash in expected.items():
+        manifest_hash = manifest[field]
+        if (
+            not isinstance(manifest_hash, str)
+            or len(manifest_hash) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in manifest_hash
+            )
+        ):
+            raise PreprocessingAnalysisError(
+                f"candidate evaluation manifest has invalid {field}"
+            )
+        if manifest_hash != actual_hash:
+            raise PreprocessingAnalysisError(
+                f"candidate evaluation manifest {field} mismatch"
+            )
+    return True
 
 
 def _validate_v1_manifest_semantics(

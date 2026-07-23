@@ -1070,9 +1070,11 @@ Every result is measured and neither run contains an infrastructure failure.
 | Evaluation manifest SHA-256 | `18944b5479b851e8feeb02da361a1489f5ab9ce589ae1fd6e8e77bf8723f0177` | `a5cc78b2c66e3b17a1c59123d4bfe22d9dd4da35cbbee788eff07a68c33a9592` |
 
 The redesigned manifest authenticates the reused source manifest and result
-hash and imports all 216,527 matching keys. This makes the comparison
-deterministic: all 325,769 baseline membership-result identities are unchanged,
-107,643 are added, and none are removed or modified.
+hash and imports all 216,527 matching keys. This makes shared evaluation
+results deterministic: all 325,769 baseline result-bearing memberships retain
+the same task, source, evaluation key, and result; 101,553 of those memberships
+move to a different candidate index under the new additive ordering, 224,216
+retain the same index, 107,643 are added, and none are removed.
 
 ### Final comparison and viewer evidence
 

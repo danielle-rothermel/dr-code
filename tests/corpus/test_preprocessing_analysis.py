@@ -320,6 +320,8 @@ def _evaluation_relations(
         "execution_fingerprint": execution_fingerprint,
         "membership_rows": len(memberships),
         "result_rows": len(candidate_results),
+        "candidate_membership_sha256": _file_sha256(membership_path),
+        "candidate_results_sha256": _file_sha256(results_path),
         "complete": True,
         "completed_at": "2026-07-19T00:00:00+00:00",
     }
@@ -346,6 +348,18 @@ def _evaluated_run(
 
 def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _refresh_evaluation_artifact_hashes(
+    manifest_path: Path,
+    *,
+    membership_path: Path,
+    results_path: Path,
+) -> None:
+    manifest = json.loads(manifest_path.read_text())
+    manifest["candidate_membership_sha256"] = _file_sha256(membership_path)
+    manifest["candidate_results_sha256"] = _file_sha256(results_path)
+    manifest_path.write_text(json.dumps(manifest))
 
 
 def _completed_run(tmp_path: Path) -> tuple[Path, Path]:
@@ -620,6 +634,7 @@ def test_analysis_joins_candidate_evaluation_and_is_deterministic(
     summary = json.loads(first.summary_path.read_text())
     evaluation = summary["candidate_evaluation"]
     assert evaluation["available"] is True
+    assert evaluation["limitations"] == []
     assert evaluation["candidate_membership_count"] == 4
     assert evaluation["provenance"]["semantic_coordinates"][
         "runner_identity"
@@ -684,6 +699,72 @@ def test_analysis_joins_candidate_evaluation_and_is_deterministic(
         ].read_bytes()
 
 
+def test_analysis_accepts_legacy_evaluation_manifest_without_artifact_hashes(
+    tmp_path: Path,
+) -> None:
+    corpus, run, membership, candidate_results, manifest = _evaluated_run(
+        tmp_path
+    )
+    value = json.loads(manifest.read_text())
+    value.pop("candidate_membership_sha256")
+    value.pop("candidate_results_sha256")
+    manifest.write_text(json.dumps(value))
+
+    artifacts = analyze_preprocessing_corpus(
+        corpus_path=corpus,
+        run_dir=run,
+        output_dir=tmp_path / "legacy-analysis",
+        candidate_membership_path=membership,
+        candidate_results_path=candidate_results,
+        candidate_evaluation_manifest_path=manifest,
+    )
+
+    summary = json.loads(artifacts.summary_path.read_text())
+    assert summary["candidate_evaluation"]["available"] is True
+    assert summary["candidate_evaluation"]["limitations"] == [
+        "The legacy candidate evaluation manifest does not publish "
+        "membership/results file hashes; linkage is validated through row "
+        "counts, relational joins, coordinates, and evaluation keys."
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("membership_mismatch", "candidate_membership_sha256 mismatch"),
+        ("results_mismatch", "candidate_results_sha256 mismatch"),
+        ("partial_hashes", "missing artifact hash field"),
+        ("malformed_hash", "invalid candidate_results_sha256"),
+    ],
+)
+def test_analysis_rejects_invalid_evaluation_artifact_hashes(
+    tmp_path: Path, mutation: str, error: str
+) -> None:
+    corpus, run, membership, candidate_results, manifest = _evaluated_run(
+        tmp_path
+    )
+    value = json.loads(manifest.read_text())
+    if mutation == "membership_mismatch":
+        value["candidate_membership_sha256"] = "0" * 64
+    elif mutation == "results_mismatch":
+        value["candidate_results_sha256"] = "0" * 64
+    elif mutation == "partial_hashes":
+        value.pop("candidate_results_sha256")
+    else:
+        value["candidate_results_sha256"] = "not-a-sha256"
+    manifest.write_text(json.dumps(value))
+
+    with pytest.raises(PreprocessingAnalysisError, match=error):
+        analyze_preprocessing_corpus(
+            corpus_path=corpus,
+            run_dir=run,
+            output_dir=tmp_path / f"{mutation}-analysis",
+            candidate_membership_path=membership,
+            candidate_results_path=candidate_results,
+            candidate_evaluation_manifest_path=manifest,
+        )
+
+
 def test_analysis_reports_completed_evaluation_with_zero_candidates(
     tmp_path: Path,
 ) -> None:
@@ -744,6 +825,11 @@ def test_analysis_rejects_incomplete_or_invalid_evaluation_join(
     pq.write_table(
         pa.Table.from_pylist(rows, schema=MEMBERSHIP_SCHEMA),
         corrupt_membership,
+    )
+    _refresh_evaluation_artifact_hashes(
+        manifest,
+        membership_path=corrupt_membership,
+        results_path=candidate_results,
     )
     with pytest.raises(
         PreprocessingAnalysisError,
@@ -851,6 +937,11 @@ def test_analysis_rejects_contradictory_candidate_test_facts(
         pa.Table.from_pylist(rows, schema=CANDIDATE_RESULTS_SCHEMA),
         corrupt_results,
     )
+    _refresh_evaluation_artifact_hashes(
+        manifest,
+        membership_path=membership,
+        results_path=corrupt_results,
+    )
 
     with pytest.raises(PreprocessingAnalysisError, match=error):
         analyze_preprocessing_corpus(
@@ -895,6 +986,11 @@ def test_analysis_accepts_duplicate_name_stacked_status_counts(
     pq.write_table(
         pa.Table.from_pylist(rows, schema=CANDIDATE_RESULTS_SCHEMA),
         stacked_results,
+    )
+    _refresh_evaluation_artifact_hashes(
+        manifest,
+        membership_path=membership,
+        results_path=stacked_results,
     )
 
     artifacts = analyze_preprocessing_corpus(
@@ -1005,6 +1101,11 @@ def test_analysis_rejects_mixed_evaluation_coordinates(
     pq.write_table(
         pa.Table.from_pylist(membership_rows, schema=MEMBERSHIP_SCHEMA),
         mixed_membership,
+    )
+    _refresh_evaluation_artifact_hashes(
+        manifest,
+        membership_path=mixed_membership,
+        results_path=mixed_results,
     )
 
     with pytest.raises(PreprocessingAnalysisError, match=field):

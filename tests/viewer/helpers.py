@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pyarrow as pa
@@ -277,6 +278,8 @@ def write_bundle(
             ),
             "membership_rows": len(memberships),
             "result_rows": len(evaluation_results),
+            "candidate_membership_sha256": sha256_file(membership_path),
+            "candidate_results_sha256": sha256_file(evaluation_results_path),
             "metrics_profile": "fixture@v1",
             "operator": "code_test@1",
             "metrics_definition_hash": "b" * 128,
@@ -446,7 +449,7 @@ def _text_sha256(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def _write(path: Path, schema: pa.Schema, rows: list[object]) -> None:
+def _write(path: Path, schema: pa.Schema, rows: Sequence[object]) -> None:
     if rows and isinstance(rows[0], tuple):
         table = pa.Table.from_arrays(
             [
