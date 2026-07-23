@@ -223,15 +223,19 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
     except ProcessLookupError:
         pass
     except OSError as exc:
-        signaling_error = exc
-        try:
-            process.kill()
-        except ProcessLookupError:
-            pass
-        except OSError as kill_error:
-            raise SubprocessError(
-                "subprocess process group could not be signaled"
-            ) from kill_error
+        # ``poll`` reaps a normally completed group leader before cleanup.
+        # Keep trying ``killpg`` so descendants cannot outlive that leader,
+        # but a signaling error is actionable only while the direct child is
+        # still live. On macOS, treating post-reap errors as live-process
+        # failures produced rare false infrastructure failures under churn.
+        if process.poll() is None:
+            signaling_error = exc
+            try:
+                process.kill()
+            except ProcessLookupError:
+                signaling_error = None
+            except OSError as kill_error:
+                raise _process_group_signaling_error(kill_error) from exc
 
     try:
         process.wait(timeout=_TERMINATION_TIMEOUT_SECONDS)
@@ -240,6 +244,13 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
             "subprocess process group could not be terminated"
         ) from exc
     if signaling_error is not None:
-        raise SubprocessError(
-            "subprocess process group could not be signaled"
+        raise _process_group_signaling_error(
+            signaling_error
         ) from signaling_error
+
+
+def _process_group_signaling_error(error: OSError) -> SubprocessError:
+    return SubprocessError(
+        "subprocess process group could not be signaled: "
+        f"errno={error.errno} ({error.strerror or str(error)})"
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
@@ -12,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from dr_code.humaneval import subprocess_runner
 from dr_code.humaneval.subprocess_runner import (
     MAX_SUBPROCESS_INPUT_BYTES,
     MAX_SUBPROCESS_OUTPUT_BYTES,
@@ -191,3 +193,66 @@ def test_candidate_signal_returncode_uses_host_subprocess_semantics() -> None:
     )
 
     assert completed.returncode == -signal.SIGKILL
+
+
+class _ProcessStub:
+    def __init__(self, *, returncode: int | None) -> None:
+        self.pid = 12345
+        self.returncode = returncode
+        self.kill_called = False
+        self.wait_called = False
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def kill(self) -> None:
+        self.kill_called = True
+        self.returncode = -signal.SIGKILL
+
+    def wait(self, timeout: float) -> int:
+        self.wait_called = True
+        assert timeout > 0
+        assert self.returncode is not None
+        return self.returncode
+
+
+def test_post_reap_group_signal_error_is_not_infrastructure_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _ProcessStub(returncode=0)
+    group_signal_attempted = False
+
+    def stale_group(*_: object) -> None:
+        nonlocal group_signal_attempted
+        group_signal_attempted = True
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", stale_group)
+
+    subprocess_runner._terminate_process_group(process)  # type: ignore[arg-type]
+
+    assert group_signal_attempted is True
+    assert process.kill_called is False
+    assert process.wait_called is True
+
+
+def test_live_process_group_signal_error_remains_infrastructure_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _ProcessStub(returncode=None)
+
+    def denied_group(*_: object) -> None:
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", denied_group)
+
+    with pytest.raises(
+        SubprocessError,
+        match=r"could not be signaled: errno=1 \(Operation not permitted\)",
+    ):
+        subprocess_runner._terminate_process_group(  # type: ignore[arg-type]
+            process
+        )
+
+    assert process.kill_called is True
+    assert process.wait_called is True
