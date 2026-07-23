@@ -28,7 +28,10 @@ from dr_code.corpus.preprocessing_artifacts import (
     combine_projected_parts,
     project_preprocessing_result,
 )
-from dr_code.preprocessing.definition import preprocessing_definition_hash
+from dr_code.eval.humaneval_evaluation import (
+    IDENTITY_SCHEME,
+    kernel_preprocessing_definition,
+)
 from dr_code.preprocessing.definitions import (
     HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
 )
@@ -242,10 +245,19 @@ def _immutable_manifest(
     ]
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
+        # The relation/parquet layout is unchanged; the identity family is
+        # the eval kernel's canonical SHA-256, not the legacy BLAKE2 hash.
+        # These are separate concerns: schema_version tracks the parquet
+        # projection, identity_scheme tracks the identity family. New runs
+        # start clean under the unified identity; legacy artifacts keep their
+        # own on-disk manifests and are never relabelled under this scheme.
+        "identity_scheme": IDENTITY_SCHEME,
         "run_id": run_id,
         "input": input_fingerprint,
         "definition": serialized_definition,
-        "definition_hash": preprocessing_definition_hash(definition),
+        "preprocessing_definition_identity": (
+            kernel_preprocessing_definition(definition).identity_hash()
+        ),
         "source": _source_fingerprint(),
         "resolved_step_versions": resolved_step_versions,
         "batch_size": batch_size,
@@ -693,9 +705,9 @@ def _part_id(row_group_index: int) -> str:
 def _generated_run_id(input_fingerprint: Mapping[str, object]) -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     input_prefix = str(input_fingerprint["sha256"])[:8]
-    definition_prefix = preprocessing_definition_hash(
+    definition_prefix = kernel_preprocessing_definition(
         HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION
-    )[:8]
+    ).identity_hash()[:8]
     return f"preprocessing-{timestamp}-{input_prefix}-{definition_prefix}"
 
 

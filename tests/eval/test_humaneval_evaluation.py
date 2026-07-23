@@ -160,3 +160,36 @@ def test_empty_candidate_set_is_not_a_preprocessing_failure() -> None:
 def test_compile_gate_bridges_kernel_code_artifact() -> None:
     assert compile_facts_for_candidate("def f():\n    return 1\n") is True
     assert compile_facts_for_candidate("def f(:\n") is False
+
+
+def test_kernel_preprocessing_definition_is_lossless_and_canonical() -> None:
+    from dr_code.eval.humaneval_evaluation import (
+        kernel_preprocessing_definition,
+    )
+    from dr_code.preprocessing.definition import (
+        PreprocessingDefinition as OpDef,
+        StepSpec,
+    )
+
+    op = OpDef(
+        definition_id="d1",
+        version="1",
+        steps=(
+            StepSpec(
+                instance_name="extract",
+                step="extract_candidates",
+                settings={"b": 2, "a": 1},
+            ),
+            StepSpec(instance_name="dedupe", step="dedupe_candidates"),
+        ),
+    )
+    kernel = kernel_preprocessing_definition(op)
+    # Every step instance survives, in order, with settings preserved.
+    assert kernel.definition_id == "d1"
+    assert kernel.version == "1"
+    assert [b.instance_name for b in kernel.steps] == ["extract", "dedupe"]
+    assert dict(kernel.steps[0].settings) == {"a": 1, "b": 2}
+    # Canonical eval-kernel identity (full SHA-256), deterministic.
+    identity = kernel.identity_hash()
+    assert len(identity) == 64
+    assert identity == kernel_preprocessing_definition(op).identity_hash()

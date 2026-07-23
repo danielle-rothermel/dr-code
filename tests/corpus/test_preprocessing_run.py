@@ -88,6 +88,11 @@ def test_run_is_resumable_and_publishes_complete_relations(
     assert manifest["complete"] is True
     assert manifest["completed_row_groups"] == [0, 1, 2, 3]
     assert manifest["relation_totals"]["results"] == 4
+    # New runs carry the canonical eval-kernel identity, not the legacy hash.
+    assert manifest["identity_scheme"] == "eval_kernel_v1"
+    assert "definition_hash" not in manifest
+    identity = manifest["preprocessing_definition_identity"]
+    assert isinstance(identity, str) and len(identity) == 64
 
     results = pq.read_table(completed_dir / "results.parquet")
     assert results.num_rows == 4

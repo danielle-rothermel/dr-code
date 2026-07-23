@@ -43,14 +43,53 @@ from dr_code.eval.identity import (
     SCHEMA_CANDIDATE_EXECUTION,
     identity_hash_for,
 )
+from dr_code.eval.lifecycle import (
+    PreprocessingDefinition,
+    PreprocessingStepBinding,
+)
 from dr_code.eval.resolved_versions import resolved_operator_version
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.code_test import CodeTestResult
+from dr_code.preprocessing.definition import (
+    PreprocessingDefinition as OperationalPreprocessingDefinition,
+)
 
 # The canonical operator coordinate for HumanEval case execution.
 CODE_TEST_OPERATOR = str(MetricName.CODE_TEST)
 CODE_TEST_QUESTION = "humaneval_case_execution"
 CODE_TEST_ON_KEY = "code"
+
+
+# The canonical identity scheme label for corpus artifacts written under
+# the eval kernel. Distinct from the legacy BLAKE2 stable_hash scheme; the
+# two identity families must never be mixed under one label (guide step 9).
+IDENTITY_SCHEME = "eval_kernel_v1"
+
+
+def kernel_preprocessing_definition(
+    operational: OperationalPreprocessingDefinition,
+) -> PreprocessingDefinition:
+    """Losslessly map an operational definition to the kernel definition.
+
+    The operational ``StepSpec(instance_name, step, settings)`` maps directly
+    onto the kernel ``PreprocessingStepBinding``. Ordered settings preserve
+    every key. The result carries the canonical eval-kernel identity so new
+    corpus artifacts use one identity family instead of the legacy
+    ``preprocessing_definition_hash`` (BLAKE2) helper.
+    """
+
+    return PreprocessingDefinition(
+        definition_id=operational.definition_id,
+        version=operational.version,
+        steps=tuple(
+            PreprocessingStepBinding(
+                instance_name=spec.instance_name,
+                step=str(spec.step),
+                settings=tuple(sorted(spec.settings.items())),
+            )
+            for spec in operational.steps
+        ),
+    )
 
 
 def candidate_content_identity(source: str) -> str:
@@ -207,6 +246,7 @@ __all__ = [
     "CODE_TEST_ON_KEY",
     "CODE_TEST_OPERATOR",
     "CODE_TEST_QUESTION",
+    "IDENTITY_SCHEME",
     "candidate_content_identity",
     "candidate_execution_identity",
     "code_test_facts",
@@ -214,4 +254,5 @@ __all__ = [
     "code_test_record",
     "compile_facts_for_candidate",
     "empty_candidate_set_record",
+    "kernel_preprocessing_definition",
 ]
