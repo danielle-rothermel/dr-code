@@ -11,20 +11,21 @@
 <body>
 <main>
 
-<h1>Function-Candidate Preprocessing &amp; Corpus Analysis Plan</h1>
+<h1>One exhaustive preprocessing definition returns every candidate; analysis reads its traces</h1>
+<div class="dek">A two-part plan: rebuild the extraction flow, then analyze the corpus it records.</div>
 <div class="byline">dr-code · 2026-07-19</div>
 
-<div class="hero">
-  This plan has two ordered parts. <span class="key">Part I updates
+<div class="layer-head"><span class="n">00</span><h2>How the work is orchestrated and sequenced</h2></div>
+
+<p>
+  The plan runs in two ordered parts. <span class="key">Part I updates
   <code>dr_code.preprocessing</code></span> so one exhaustive, function-oriented
   definition returns every valid candidate and directly records all semantic
   analysis facts. <span class="key">Part II assumes that flow exists</span> and
-  describes the corpus analysis we will perform from its traces. The parquet
-  writer remains a thin persistence adapter: it attaches source identity and
-  serializes pipeline-owned results without reclassifying them.
-</div>
-
-<div class="layer-head"><span class="n">00</span><h2>Execution orchestration</h2></div>
+  describes the corpus analysis performed from its traces. The parquet writer
+  stays a <span class="key">thin persistence adapter</span>: it attaches source
+  identity and serializes pipeline-owned results without reclassifying them.
+</p>
 
 <p>
   Implementation proceeds as a five-PR Graphite stack. The root Sol-high agent
@@ -115,7 +116,7 @@
 </table>
 
 <div class="callout">
-  The orchestration is complete only when every PR is open against the fork’s
+  <span class="key">Orchestration is complete only when</span> every PR is open against the fork’s
   <code>main</code> with green CI; the full preprocessing and candidate-test
   manifests are complete and validated; compact analysis deliverables are
   committed; the full Parquet artifacts remain available in the shared
@@ -124,9 +125,9 @@
   and evidence-backed suggestions for any additional recovery rules.
 </div>
 
-<div class="layer-head"><span class="n">01</span><h2>Update the preprocessing flow</h2></div>
+<div class="layer-head"><span class="n">01</span><h2>Part I — how the preprocessing flow changes</h2></div>
 
-<div class="section-head"><h2>The target is one exhaustive, directly labeled contract</h2></div>
+<div class="section-head"><h2>What is the target contract?</h2><span class="tag">one exhaustive, directly labeled definition</span></div>
 
 <figure class="panel">
   <div class="flow">
@@ -212,7 +213,7 @@ for decoder_output in present_decoder_outputs:
     # failure: Absent(failure_code=..., failed_step=..., cause=...)</code></pre>
 </div>
 
-<div class="section-head"><h2>The new flow exhausts recovery before it filters</h2></div>
+<div class="section-head"><h2>How does the new ordered flow run?</h2><span class="tag">exhaust recovery, then filter</span></div>
 
 <div class="codeblock">
   <div class="cb-head"><span>humaneval-function-candidates@v1</span><span>ordered pipeline</span></div>
@@ -287,14 +288,15 @@ for decoder_output in present_decoder_outputs:
   </tbody>
 </table>
 
-<div class="callout danger">
-  Make parser complexity a candidate-level failure before the full-corpus run.
-  Python 3.13 can raise <code>MemoryError: Parser stack overflowed</code> for a
-  sufficiently long operator chain. Convert only that specific parser-limit
-  condition into a rejection; continue to re-raise genuine memory exhaustion.
+<div class="callout">
+  <span class="key">Make parser complexity a candidate-level failure</span> before
+  the full-corpus run. Python 3.13 can raise <code>MemoryError: Parser stack
+  overflowed</code> for a sufficiently long operator chain. Convert only that
+  specific parser-limit condition into a rejection; continue to re-raise genuine
+  memory exhaustion.
 </div>
 
-<div class="section-head"><h2>Failure labels and facts are public preprocessing output</h2></div>
+<div class="section-head"><h2>What does preprocessing publish about failures?</h2><span class="tag">labels and facts are public output</span></div>
 
 <div class="grid-2">
   <div class="card">
@@ -353,7 +355,7 @@ for decoder_output in present_decoder_outputs:
   </tbody>
 </table>
 
-<div class="section-head"><h2>Confirmed system findings define the implementation scope</h2></div>
+<div class="section-head"><h2>Which confirmed findings define the scope?</h2></div>
 
 <table>
   <thead>
@@ -417,7 +419,7 @@ for decoder_output in present_decoder_outputs:
   </tbody>
 </table>
 
-<div class="section-head"><h2>Implement and verify the redesign in four slices</h2></div>
+<div class="section-head"><h2>How is the redesign implemented and verified?</h2><span class="tag">four slices</span></div>
 
 <div class="grid-2">
   <div class="card">
@@ -478,7 +480,7 @@ for decoder_output in present_decoder_outputs:
   </div>
 </div>
 
-<div class="layer-head"><span class="n">02</span><h2>Analyze the corpus with the new flow in place</h2></div>
+<div class="layer-head"><span class="n">02</span><h2>Part II — how the corpus is analyzed</h2></div>
 
 <div class="callout">
   Everything below assumes <code>humaneval-function-candidates@v1</code> is
@@ -487,7 +489,7 @@ for decoder_output in present_decoder_outputs:
   reconstruct them from raw outputs in the analysis job.
 </div>
 
-<div class="section-head"><h2>Start with the complete corpus denominator</h2></div>
+<div class="section-head"><h2>What is the complete corpus denominator?</h2></div>
 
 <div class="grid-2">
   <div class="card">
@@ -530,7 +532,7 @@ for decoder_output in present_decoder_outputs:
   </tbody>
 </table>
 
-<div class="section-head"><h2>The analysis artifact is a thin, joinable trace projection</h2></div>
+<div class="section-head"><h2>What does the analysis artifact contain?</h2><span class="tag">a thin, joinable trace projection</span></div>
 
 <div class="grid-3">
   <div class="card">
@@ -580,7 +582,7 @@ JOIN read_parquet('preprocessing-runs/&lt;run-id&gt;.parquet') AS result
 USING (sample_id);</code></pre>
 </div>
 
-<div class="section-head"><h2>Six analyses explain coverage, failures, and usefulness</h2></div>
+<div class="section-head"><h2>Which analyses explain coverage, failures, and usefulness?</h2><span class="tag">six</span></div>
 
 <div class="grid-3">
   <div class="card">
@@ -636,7 +638,7 @@ USING (sample_id);</code></pre>
   </div>
 </div>
 
-<div class="section-head"><h2>The v2 audit supplies the comparison baseline</h2></div>
+<div class="section-head"><h2>What baseline does the v2 audit supply?</h2></div>
 
 <table>
   <thead>
@@ -678,13 +680,14 @@ USING (sample_id);</code></pre>
   </div>
 </div>
 
-<div class="callout warn">
-  These baseline counts describe extraction and AST shape, not semantic
-  correctness. Under the new flow, preprocessing supplies structural facts and
-  stable candidates; executable tests supply behavioral evidence afterward.
+<div class="callout">
+  <span class="key">These baseline counts describe extraction and AST shape, not
+  semantic correctness.</span> Under the new flow, preprocessing supplies
+  structural facts and stable candidates; executable tests supply behavioral
+  evidence afterward.
 </div>
 
-<div class="section-head"><h2>The analysis run has explicit completion criteria</h2></div>
+<div class="section-head"><h2>When is the analysis run complete?</h2><span class="tag">explicit criteria</span></div>
 
 <div class="grid-2">
   <div class="card">
@@ -716,6 +719,21 @@ USING (sample_id);</code></pre>
   correctness. That boundary lets us iterate on extraction rules and compare
   runs without rebuilding analysis semantics outside the official pipeline.
 </p>
+
+<div class="colophon">
+  Implementation plan for the <code>humaneval-function-candidates@v1</code>
+  preprocessing redesign and its corpus analysis. Baseline counts are measured
+  against the current v2 pipeline over the 365,216-row generation corpus
+  (307,761 nonblank outputs audited). Delivered as a five-PR Graphite stack
+  against <code>origin/main</code>. Row and recovery figures cited above are the
+  current audited state; v1 provenance will supersede them once every discovery
+  rule runs exhaustively. Referenced sources:
+  <a href="../src/dr_code/preprocessing/steps/base.py"><code>steps/base.py</code></a>,
+  <a href="../src/dr_code/preprocessing/steps/select_first.py"><code>steps/select_first.py</code></a>,
+  <a href="../src/dr_code/preprocessing/steps/filter_compilable.py"><code>steps/filter_compilable.py</code></a>,
+  <a href="../src/dr_code/preprocessing/runner.py"><code>runner.py</code></a>,
+  <a href="../src/dr_code/preprocessing/definition.py"><code>definition.py</code></a>.
+</div>
 
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
