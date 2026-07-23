@@ -7,7 +7,7 @@ vi.mock("@dr-code/viewer", () => ({
   StatusBadge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 
-import type { Annotation, ExampleDetail, ReviewExamplesQuery } from "../src/api";
+import type { Annotation, ExampleDetail, ReviewExamplesQuery, TaskAnnotation } from "../src/api";
 import { Review } from "../src/review";
 import { detail, fakeApi } from "./fixtures";
 
@@ -439,5 +439,104 @@ describe("Review", () => {
       { dataset_id: "HumanEval", task_id: "HumanEval/42" },
       { category: null, note: "recurring difficulty", tag_ids: ["dp-tag"] },
     ));
+  });
+
+  it("coalesces rapid task-judgment edits into a single queued save while one is in flight", async () => {
+    const firstSave = deferred<TaskAnnotation>();
+    const putTaskAnnotation = vi.fn()
+      .mockReturnValueOnce(firstSave.promise)
+      .mockResolvedValue({
+        category: null,
+        dataset_id: "HumanEval",
+        note: "c",
+        origin: "human" as const,
+        provenance: null,
+        tags: [],
+        task_id: "HumanEval/42",
+      });
+    const api = fakeApi({ getTaskAnnotation: vi.fn().mockResolvedValue(null), putTaskAnnotation });
+    render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+    const card = await findCard("sample-1");
+    const note = await within(card).findByLabelText("Note");
+
+    // First blur starts an in-flight save; two further blurred edits arrive while
+    // it runs and must collapse into exactly one queued save, not two.
+    fireEvent.change(note, { target: { value: "a" } });
+    fireEvent.blur(note);
+    await waitFor(() => expect(putTaskAnnotation).toHaveBeenCalledTimes(1));
+    fireEvent.change(note, { target: { value: "b" } });
+    fireEvent.blur(note);
+    fireEvent.change(note, { target: { value: "c" } });
+    fireEvent.blur(note);
+    expect(putTaskAnnotation).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstSave.resolve({
+        category: null,
+        dataset_id: "HumanEval",
+        note: "a",
+        origin: "human",
+        provenance: null,
+        tags: [],
+        task_id: "HumanEval/42",
+      });
+      await firstSave.promise;
+    });
+
+    await waitFor(() => expect(putTaskAnnotation).toHaveBeenCalledTimes(2));
+    expect(putTaskAnnotation).toHaveBeenLastCalledWith(
+      { dataset_id: "HumanEval", task_id: "HumanEval/42" },
+      { category: null, note: "c", tag_ids: [] },
+    );
+    await within(card).findByText("Saved");
+  });
+
+  it("suppresses a stale task-judgment save failure when a newer edit is already pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const failing = deferred<TaskAnnotation>();
+      const putTaskAnnotation = vi.fn().mockReturnValueOnce(failing.promise).mockResolvedValue({
+        category: null,
+        dataset_id: "HumanEval",
+        note: "final",
+        origin: "human" as const,
+        provenance: null,
+        tags: [],
+        task_id: "HumanEval/42",
+      });
+      const api = fakeApi({ getTaskAnnotation: vi.fn().mockResolvedValue(null), putTaskAnnotation });
+      render(<Review api={api} onTagCreated={vi.fn()} runId="baseline" tags={[]} />);
+
+      await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+      const card = getCard("sample-1");
+      const note = within(card).getByLabelText("Note") as HTMLTextAreaElement;
+
+      // Blur queues an immediate save (revision N). Before it settles, type again:
+      // the debounce arms a newer draft (revision N+1). When the first save now
+      // fails, its rejection is stale and must not surface "Save failed".
+      fireEvent.change(note, { target: { value: "first" } });
+      fireEvent.blur(note);
+      expect(putTaskAnnotation).toHaveBeenCalledTimes(1);
+      fireEvent.change(note, { target: { value: "final" } });
+
+      await act(async () => {
+        failing.reject(new Error("database is locked"));
+        await failing.promise.catch(() => undefined);
+      });
+      expect(within(card).queryByText("Save failed")).toBeNull();
+      expect(within(card).queryByText("database is locked")).toBeNull();
+
+      // The newer debounced edit then persists cleanly.
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+      expect(putTaskAnnotation).toHaveBeenLastCalledWith(
+        { dataset_id: "HumanEval", task_id: "HumanEval/42" },
+        { category: null, note: "final", tag_ids: [] },
+      );
+      expect(within(card).queryByText("Save failed")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
