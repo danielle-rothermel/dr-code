@@ -268,6 +268,12 @@ def test_reuses_identical_keys_and_executes_only_new_keys(
         identical_manifest["execution_fingerprint"]
         == seed_manifest["execution_fingerprint"]
     )
+    # Step 6: the evaluation manifest carries the canonical eval-kernel
+    # metric-extraction identity + scheme label alongside the legacy hash.
+    assert identical_manifest["identity_scheme"] == "eval_kernel_v1"
+    assert (
+        len(identical_manifest["metric_extraction_config_identity"]) == 64
+    )
     assert identical_manifest["reused_result_rows"] == 1
     assert identical_manifest["reuse_result_sources"] == [
         {
