@@ -6,7 +6,12 @@ import duckdb
 import pytest
 
 from dr_code.viewer.database import ViewerDatabase
-from dr_code.viewer.domain import InvalidQueryError, Verdict
+from dr_code.viewer.domain import (
+    AnnotationOrigin,
+    InvalidQueryError,
+    TaskAnnotationProvenance,
+    Verdict,
+)
 
 
 CORPUS_HASH = "a" * 64
@@ -259,3 +264,128 @@ def test_delete_annotation_removes_tag_links() -> None:
         assert not database.delete_annotation(
             CORPUS_HASH, "sample-1", OUTPUT_HASH
         )
+
+
+def test_task_annotation_round_trips_across_restart(tmp_path) -> None:
+    path = tmp_path / "viewer.duckdb"
+    with ViewerDatabase(path) as database:
+        tag = database.create_tag("recursion")
+        annotation = database.put_task_annotation(
+            "HumanEval",
+            "HumanEval/42",
+            category="hard",
+            note="tricky recursion",
+            tag_ids=[tag.tag_id],
+        )
+        assert annotation.origin is AnnotationOrigin.HUMAN
+        assert annotation.provenance is None
+
+    with ViewerDatabase(path) as reopened:
+        actual = reopened.get_task_annotation("HumanEval", "HumanEval/42")
+
+    assert actual is not None
+    assert actual.identity.dataset_id == "HumanEval"
+    assert actual.identity.task_id == "HumanEval/42"
+    assert actual.category == "hard"
+    assert actual.note == "tricky recursion"
+    assert [tag.name for tag in actual.tags] == ["recursion"]
+
+
+def test_task_annotation_survives_migration_on_existing_file(tmp_path) -> None:
+    path = tmp_path / "viewer.duckdb"
+    with ViewerDatabase(path) as database:
+        database.put_annotation(
+            CORPUS_HASH,
+            "sample-1",
+            OUTPUT_HASH,
+            verdict=Verdict.SHOULD_BE_PARSEABLE,
+            note="example note",
+        )
+
+    with ViewerDatabase(path) as reopened:
+        assert reopened.applied_migrations() == (1, 2, 3)
+        task = reopened.put_task_annotation(
+            "HumanEval", "HumanEval/7", category="easy"
+        )
+        assert task.category == "easy"
+        # The pre-existing example annotation is untouched by migration 3.
+        example = reopened.get_annotation(CORPUS_HASH, "sample-1", OUTPUT_HASH)
+        assert example is not None
+        assert example.note == "example note"
+
+
+def test_machine_task_annotation_persists_provenance() -> None:
+    provenance = TaskAnnotationProvenance(
+        model="claude",
+        taxonomy_version="v1",
+        repeats=5,
+        agreement=0.8,
+        extra={"quorum": 3},
+    )
+    with ViewerDatabase(":memory:") as database:
+        stored = database.put_task_annotation(
+            "HumanEval",
+            "HumanEval/9",
+            origin=AnnotationOrigin.MACHINE,
+            category="string-manipulation",
+            provenance=provenance,
+        )
+        assert stored.origin is AnnotationOrigin.MACHINE
+        assert stored.provenance == provenance
+        reloaded = database.get_task_annotation("HumanEval", "HumanEval/9")
+    assert reloaded is not None
+    assert reloaded.provenance == provenance
+
+
+def test_task_annotation_export_is_deterministic_and_machine_independent() -> None:
+    with ViewerDatabase(":memory:") as database:
+        second = database.create_tag("z-last")
+        first = database.create_tag("A-first")
+        database.put_task_annotation(
+            "MBPP",
+            "MBPP/3",
+            category="edge",
+            note="",
+            tag_ids=[second.tag_id, first.tag_id],
+        )
+        database.put_task_annotation(
+            "HumanEval",
+            "HumanEval/1",
+            origin=AnnotationOrigin.MACHINE,
+            provenance=TaskAnnotationProvenance(model="claude"),
+        )
+
+        first_export = database.export_task_annotations()
+        second_export = database.export_task_annotations()
+
+    assert first_export == second_export
+    assert [(row["dataset_id"], row["task_id"]) for row in first_export] == [
+        ("HumanEval", "HumanEval/1"),
+        ("MBPP", "MBPP/3"),
+    ]
+    assert first_export[1]["tags"] == ["A-first", "z-last"]
+    assert first_export[0]["provenance"] == '{"model":"claude"}'
+    assert "created_at" not in json.dumps(first_export)
+
+
+def test_task_annotation_upsert_rejects_unknown_tag_atomically() -> None:
+    with ViewerDatabase(":memory:") as database:
+        with pytest.raises(InvalidQueryError, match="unknown tag"):
+            database.put_task_annotation(
+                "HumanEval", "HumanEval/42", tag_ids=["missing"]
+            )
+        assert database.get_task_annotation("HumanEval", "HumanEval/42") is None
+
+
+def test_delete_task_annotation_removes_tag_links() -> None:
+    with ViewerDatabase(":memory:") as database:
+        tag = database.create_tag("review")
+        database.put_task_annotation(
+            "HumanEval", "HumanEval/42", tag_ids=[tag.tag_id]
+        )
+        assert database.delete_task_annotation("HumanEval", "HumanEval/42")
+        assert not database.delete_task_annotation("HumanEval", "HumanEval/42")
+        rows = database.connection.execute(
+            "SELECT count(*) FROM task_annotation_tags"
+        ).fetchone()
+        assert rows[0] == 0

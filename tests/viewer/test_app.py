@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from dr_code.viewer.app import create_app
 from dr_code.viewer.domain import (
     Annotation,
+    AnnotationOrigin,
     ComparisonStage,
     ExampleDetail,
     ExampleSummary,
@@ -20,6 +21,9 @@ from dr_code.viewer.domain import (
     RunComparison,
     RunSummary,
     Tag,
+    TaskAnnotation,
+    TaskAnnotationProvenance,
+    TaskIdentity,
     Verdict,
     Waterfall,
     WaterfallStage,
@@ -229,6 +233,54 @@ class FakeService:
                 "decoder_output_sha256": _OUTPUT_DIGEST,
                 "verdict": None,
                 "note": "reviewed",
+                "tags": ["Needs fence repair"],
+            }
+        ]
+
+    def get_task_annotation(self, dataset_id: str, task_id: str):
+        if task_id != "HumanEval/42":
+            return None
+        return TaskAnnotation(
+            identity=TaskIdentity(dataset_id=dataset_id, task_id=task_id),
+            origin=AnnotationOrigin.HUMAN,
+            category="hard",
+            note="tricky",
+            tags=(Tag(tag_id="tag-1", name="Needs fence repair"),),
+            provenance=None,
+        )
+
+    def put_task_annotation(
+        self, dataset_id: str, task_id: str, **kwargs: object
+    ):
+        self.task_put_kwargs = {
+            "dataset_id": dataset_id,
+            "task_id": task_id,
+            **kwargs,
+        }
+        origin = kwargs["origin"]
+        provenance = kwargs.get("provenance")
+        return TaskAnnotation(
+            identity=TaskIdentity(dataset_id=dataset_id, task_id=task_id),
+            origin=AnnotationOrigin(origin),
+            category=kwargs.get("category"),
+            note=kwargs.get("note"),
+            tags=(Tag(tag_id="tag-1", name="Needs fence repair"),),
+            provenance=provenance,
+        )
+
+    def delete_task_annotation(self, dataset_id: str, task_id: str):
+        self.task_deleted = (dataset_id, task_id)
+        return True
+
+    def export_task_annotations(self):
+        return [
+            {
+                "dataset_id": "HumanEval",
+                "task_id": "HumanEval/42",
+                "origin": "machine",
+                "category": "hard",
+                "note": "tricky",
+                "provenance": '{"model":"claude"}',
                 "tags": ["Needs fence repair"],
             }
         ]
@@ -455,6 +507,63 @@ def test_annotation_and_tag_endpoints_are_typed() -> None:
         json={"verdict": "should_be_parseable"},
     )
     assert invalid.status_code == 422
+
+
+def test_task_annotation_endpoints_are_typed() -> None:
+    service = FakeService()
+    client = TestClient(create_app(service), base_url="http://127.0.0.1")
+    path = "/api/task-annotations/HumanEval/HumanEval/42"
+
+    response = client.put(
+        path,
+        json={
+            "origin": "human",
+            "category": "hard",
+            "note": "tricky",
+            "tag_ids": ["tag-1"],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dataset_id"] == "HumanEval"
+    assert body["task_id"] == "HumanEval/42"
+    assert body["origin"] == "human"
+    assert body["tags"][0]["tag_id"] == "tag-1"
+    assert service.task_put_kwargs["tag_ids"] == ["tag-1"]
+    assert service.task_put_kwargs["category"] == "hard"
+
+    machine = client.put(
+        "/api/task-annotations/HumanEval/HumanEval/7",
+        json={
+            "origin": "machine",
+            "category": "easy",
+            "provenance": {
+                "model": "claude",
+                "repeats": 3,
+                "agreement": 0.9,
+                "quorum": 2,
+            },
+        },
+    )
+    assert machine.status_code == 200
+    assert machine.json()["origin"] == "machine"
+    provenance = service.task_put_kwargs["provenance"]
+    assert isinstance(provenance, TaskAnnotationProvenance)
+    assert provenance.model == "claude"
+    assert provenance.extra == {"quorum": 2}
+
+    fetched = client.get(path)
+    assert fetched.status_code == 200
+    assert fetched.json()["category"] == "hard"
+    assert client.get("/api/task-annotations/HumanEval/Missing/1").status_code == 404
+
+    assert client.delete(path).status_code == 204
+    assert service.task_deleted == ("HumanEval", "HumanEval/42")
+
+    exported = client.get("/api/task-annotations/export").json()[0]
+    assert exported["origin"] == "machine"
+    assert exported["provenance"] == '{"model":"claude"}'
+    assert exported["tags"] == ["Needs fence repair"]
 
 
 def test_domain_errors_have_useful_http_status() -> None:

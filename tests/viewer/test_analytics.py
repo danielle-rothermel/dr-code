@@ -542,3 +542,24 @@ def test_unchanged_output_reuses_annotation_in_another_run_list(
     assert (
         candidate_page.items[0].annotation_verdict is Verdict.EXPECTED_NO_CODE
     )
+
+
+def test_task_annotation_requires_task_in_registered_corpus(tmp_path) -> None:
+    descriptor = write_bundle(tmp_path / "bundle")
+    with ViewerDatabase(":memory:") as database:
+        analytics = ViewerAnalytics(database, [descriptor])
+
+        stored = analytics.put_task_annotation(
+            "Task",
+            "Task/2",
+            category="prose-heavy",
+            note="recurring no-code pattern",
+        )
+        assert stored.identity.task_id == "Task/2"
+        assert analytics.get_task_annotation("Task", "Task/2") == stored
+
+        with pytest.raises(InvalidQueryError, match="not present in any"):
+            analytics.put_task_annotation("Task", "Task/999")
+
+        assert analytics.delete_task_annotation("Task", "Task/2")
+        assert analytics.get_task_annotation("Task", "Task/2") is None

@@ -541,9 +541,7 @@ def decode_task_provenance(
     if not isinstance(payload, dict):
         raise InvalidQueryError("task provenance must be a JSON object")
     known = {"model", "taxonomy_version", "repeats", "agreement"}
-    extra = {
-        key: item for key, item in payload.items() if key not in known
-    }
+    extra = {key: item for key, item in payload.items() if key not in known}
     return TaskAnnotationProvenance(
         model=cast(str | None, payload.get("model")),
         taxonomy_version=cast(str | None, payload.get("taxonomy_version")),

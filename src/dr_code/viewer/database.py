@@ -671,9 +671,7 @@ class ViewerDatabase:
         ).fetchall()
         return tuple(Tag(tag_id=row[0], name=row[1]) for row in rows)
 
-    def _task_annotation_tags(
-        self, identity: TaskIdentity
-    ) -> tuple[Tag, ...]:
+    def _task_annotation_tags(self, identity: TaskIdentity) -> tuple[Tag, ...]:
         rows = self._connection.execute(
             """
             SELECT t.tag_id, t.name

@@ -499,9 +499,7 @@ def _task_annotation(value: DomainTaskAnnotation) -> TaskAnnotation:
                 taxonomy_version=provenance.taxonomy_version,
                 repeats=provenance.repeats,
                 agreement=provenance.agreement,
-                extra=cast(
-                    "dict[str, JsonValue] | None", provenance.extra
-                ),
+                extra=cast("dict[str, JsonValue] | None", provenance.extra),
             )
             if provenance is not None
             else None
