@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-22
+
+- Replaced per-candidate OCI container execution with a fresh bounded host
+  subprocess using isolated Python mode, a minimal child environment, and
+  process-group cleanup on timeout or output overflow.
+- Updated production candidate evaluation to preflight NumPy and canonical
+  HumanEval+ solutions locally and to record
+  `subprocess:python-isolated@v1`; the legacy `sandbox_image` manifest field is
+  retained as `null`, and older OCI execution state requires a new run.
+- Removed container image preparation from CI and the obsolete HumanEval+
+  image build, and documented that host subprocesses must run on disposable,
+  constrained workers because they are not security sandboxes.
+
 ## 2026-07-15
 
 - Removed superseded design-review and eval-flow hero artifacts, and updated

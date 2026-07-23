@@ -35,7 +35,11 @@ import zstandard
 
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 
-from metrics.helpers import code_test_trace, evaluate_oracle
+from metrics.helpers import (
+    code_test_trace,
+    evaluate_oracle,
+    kill_runner_process,
+)
 
 # gzip.compress and ZstdCompressor()'s implicit defaults were gzip level 9 and
 # zstd level 3; the pinned questions must reproduce those exact sizes.
@@ -387,12 +391,15 @@ def test_code_test_passing_counts_match_oracle(
     task, good_submission, local_runner
 ) -> None:
     oracle = evaluate_oracle(
-        task, good_submission, timeout_seconds=5.0, run_in_sandbox=local_runner
+        task,
+        good_submission,
+        timeout_seconds=5.0,
+        run_in_subprocess=local_runner,
     )
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )[0]
     assert record.values["total_cases"] == oracle.total_cases
     assert record.values["passed_count"] == oracle.status_counts.get("passed", 0)
@@ -408,12 +415,15 @@ def test_code_test_failing_counts_match_oracle(
     task, failing_submission, local_runner
 ) -> None:
     oracle = evaluate_oracle(
-        task, failing_submission, timeout_seconds=5.0, run_in_sandbox=local_runner
+        task,
+        failing_submission,
+        timeout_seconds=5.0,
+        run_in_subprocess=local_runner,
     )
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(failing_submission, task),
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )[0]
     assert record.values["passed_count"] == oracle.status_counts.get("passed", 0)
     assert record.values["failed_count"] == oracle.status_counts.get("failed", 0)
@@ -422,16 +432,15 @@ def test_code_test_failing_counts_match_oracle(
 def test_code_test_kill_returncode_attributed_to_candidate(
     task, good_submission
 ) -> None:
-    """A sandbox kill (returncode 137) is candidate data: all cases error."""
-    from dr_code.humaneval.sandbox import SandboxCompletedProcess
+    """A subprocess kill is candidate data: all cases become errors."""
 
     def kill_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        return SandboxCompletedProcess(returncode=137, stdout="", stderr="killed")
+        return kill_runner_process()
 
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=kill_runner,
+        run_in_subprocess=kill_runner,
     )[0]
     assert record.values["error_count"] == record.values["total_cases"]
     assert record.values["passed_count"] == 0
@@ -448,7 +457,9 @@ def test_code_test_nonzero_exit_attributed_to_candidate(
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(returncode=5, stdout="", stderr="boom"),
+        run_in_subprocess=scripted_runner(
+            returncode=5, stdout="", stderr="boom"
+        ),
     )[0]
     assert record.status.value == "measured"
     assert record.values["error_count"] == record.values["total_cases"]
@@ -473,7 +484,9 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
         record = _extract(
             _definition([_code_test_question()]),
             code_test_trace(good_submission, task),
-            run_in_sandbox=scripted_runner(returncode=0, stdout=bad_stdout),
+            run_in_subprocess=scripted_runner(
+                returncode=0, stdout=bad_stdout
+            ),
         )[0]
         assert record.status.value == "measured", bad_stdout
         assert (
@@ -482,23 +495,25 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
         assert record.values["passed_count"] == 0, bad_stdout
 
 
-def test_code_test_sandbox_error_still_propagates(
+def test_code_test_subprocess_error_still_propagates(
     task, good_submission
 ) -> None:
-    """``SandboxError`` is raised at the sandbox boundary before candidate code
+    """``SubprocessError`` is raised at the subprocess boundary before candidate code
     runs, so it remains the only propagating infrastructure path and still
     aborts the batch loudly -- it is not reclassified to case statuses."""
     import pytest
 
-    from dr_code.humaneval.sandbox import SandboxError
+    from dr_code.humaneval.subprocess_runner import SubprocessError
 
     from metrics.helpers import raising_runner
 
-    with pytest.raises(SandboxError):
+    with pytest.raises(SubprocessError):
         _extract(
             _definition([_code_test_question()]),
             code_test_trace(good_submission, task),
-            run_in_sandbox=raising_runner(SandboxError("boundary broke")),
+            run_in_subprocess=raising_runner(
+                SubprocessError("boundary broke")
+            ),
         )
 
 
@@ -577,7 +592,7 @@ def test_code_test_best_function_is_mechanical_max_passes(
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(candidate, task),
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )[0]
     assert record.values["best_function_name"] == task.entry_point
     assert record.values["function_count"] == 2
@@ -604,7 +619,7 @@ def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(stdout=incomplete_output),
+        run_in_subprocess=scripted_runner(stdout=incomplete_output),
     )[0]
     assert record.status.value == "measured"
     assert record.values["passed_count"] == 1
@@ -630,7 +645,7 @@ def test_code_test_complete_coverage_with_failure_is_covered(
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(stdout=complete_with_failure),
+        run_in_subprocess=scripted_runner(stdout=complete_with_failure),
     )[0]
     assert record.status.value == "measured"
     assert record.values["passed_count"] == 1

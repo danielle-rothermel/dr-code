@@ -1,12 +1,12 @@
 """Execution-cache contracts (plan section: ``engine/execution.py``).
 
 Covers ``ExecutionRequest`` content-hash ``cache_key`` (deterministic,
-content-addressed), ``ExecutionOutcome`` (SandboxCompletedProcess fields),
+content-addressed), ``ExecutionOutcome`` (SubprocessCompletedProcess fields),
 the ``ExecutionCache`` protocol + ``InMemoryExecutionCache`` get/put, and
 ``run_requests`` dedupe + at-most-once execution (design X-S4, L3).
 
 These tests run without a container: a counting fake runner stands in for the
-injected ``SandboxRunner``. ``dr_code.metrics`` is imported lazily inside each
+injected ``SubprocessRunner``. ``dr_code.metrics`` is imported lazily inside each
 test so the suite collects cleanly against the missing package.
 """
 
@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import (
-    SandboxCompletedProcess,
-    SandboxError,
+from dr_code.humaneval.subprocess_runner import (
+    SubprocessCompletedProcess,
+    SubprocessError,
+    SubprocessOutputLimitError,
+    SubprocessTimeoutError,
 )
 
 
@@ -57,7 +59,7 @@ class _CountingRunner:
 
     def __call__(self, *, source, input_json, timeout_seconds):  # noqa: ANN001
         self.calls += 1
-        return SandboxCompletedProcess(
+        return SubprocessCompletedProcess(
             returncode=0, stdout=self._stdout, stderr=""
         )
 
@@ -70,7 +72,7 @@ def _run(requests, *, runner=None, cache=None):
 
     return run_requests(
         requests,
-        run_in_sandbox=runner or _CountingRunner(),
+        run_in_subprocess=runner or _CountingRunner(),
         cache=cache or InMemoryExecutionCache(),
     )
 
@@ -99,10 +101,10 @@ def test_cache_key_depends_on_each_request_field(field, a, b) -> None:
 
 
 # ===========================================================================
-# ExecutionOutcome — SandboxCompletedProcess fields, frozen.
+# ExecutionOutcome — SubprocessCompletedProcess fields, frozen.
 # ===========================================================================
 
-def test_execution_outcome_holds_sandbox_completed_process_fields() -> None:
+def test_execution_outcome_holds_subprocess_completed_process_fields() -> None:
     outcome = _outcome(returncode=0, stdout="[{}]", stderr="warn")
     assert outcome.returncode == 0
     assert outcome.stdout == "[{}]"
@@ -215,11 +217,45 @@ def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
     assert cache.get(request.cache_key) is None
 
 
-def test_run_requests_sandbox_error_propagates() -> None:
-    """SandboxError (infrastructure) propagates through run_requests (L3)."""
+def test_run_requests_subprocess_error_propagates() -> None:
+    """SubprocessError (infrastructure) propagates through run_requests (L3)."""
 
     def infra(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        raise SandboxError("infra failed")
+        raise SubprocessError("infra failed")
 
-    with pytest.raises(SandboxError):
+    with pytest.raises(SubprocessError):
         _run([_request()], runner=infra)
+
+
+def test_run_requests_timeout_becomes_cacheable_candidate_outcome() -> None:
+    from dr_code.metrics.engine.execution import (
+        InMemoryExecutionCache,
+        is_timeout_outcome,
+    )
+
+    def timed_out(*, source, input_json, timeout_seconds):  # noqa: ANN001
+        raise SubprocessTimeoutError("timed out")
+
+    cache = InMemoryExecutionCache()
+    request = _request()
+    outcomes = _run([request], runner=timed_out, cache=cache)
+    outcome = outcomes[request.cache_key]
+    assert is_timeout_outcome(outcome)
+    assert cache.get(request.cache_key) == outcome
+
+
+def test_run_requests_output_limit_becomes_cacheable_candidate_outcome() -> None:
+    from dr_code.metrics.engine.execution import (
+        InMemoryExecutionCache,
+        is_output_limit_outcome,
+    )
+
+    def flooded(*, source, input_json, timeout_seconds):  # noqa: ANN001
+        raise SubprocessOutputLimitError("too much output")
+
+    cache = InMemoryExecutionCache()
+    request = _request()
+    outcomes = _run([request], runner=flooded, cache=cache)
+    outcome = outcomes[request.cache_key]
+    assert is_output_limit_outcome(outcome)
+    assert cache.get(request.cache_key) == outcome

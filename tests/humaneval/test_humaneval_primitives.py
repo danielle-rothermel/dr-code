@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -49,12 +50,12 @@ from dr_code.humaneval.task import (
     HumanEvalOverride,
     apply_human_eval_override,
 )
-from dr_code.humaneval.sandbox import (
-    SandboxCompletedProcess,
-    SandboxError,
-    SandboxOutputLimitError,
-    SandboxRunner,
-    SandboxTimeoutError,
+from dr_code.humaneval.subprocess_runner import (
+    SubprocessCompletedProcess,
+    SubprocessError,
+    SubprocessOutputLimitError,
+    SubprocessRunner,
+    SubprocessTimeoutError,
 )
 
 
@@ -142,13 +143,13 @@ def test_humaneval_public_api_is_curated() -> None:
 
 
 @pytest.fixture
-def local_runner() -> SandboxRunner:
+def local_runner() -> SubprocessRunner:
     """A real, injectable runner that keeps primitive tests fast.
 
-    It runs the candidate under the host interpreter instead of the OCI
-    sandbox; the container contract has its own probes in ``test_sandbox``.
-    Injected via ``run_in_sandbox=`` rather than patched, so the seam is a
-    real function argument.
+    It runs the candidate under the host interpreter; the execution contract
+    has probes in ``test_subprocess_runner``. Injected via
+    ``run_in_subprocess=`` rather than patched, so the seam is a real function
+    argument.
     """
 
     def run_local_python(
@@ -156,7 +157,7 @@ def local_runner() -> SandboxRunner:
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         try:
             completed = subprocess.run(
                 [sys.executable, "-I", "-c", source],
@@ -167,8 +168,8 @@ def local_runner() -> SandboxRunner:
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
-            raise SandboxTimeoutError(str(exc)) from exc
-        return SandboxCompletedProcess(
+            raise SubprocessTimeoutError(str(exc)) from exc
+        return SubprocessCompletedProcess(
             returncode=completed.returncode,
             stdout=completed.stdout,
             stderr=completed.stderr,
@@ -182,7 +183,7 @@ def _stub_runner(
     stdout: str,
     stderr: str = "",
     returncode: int = 0,
-) -> SandboxRunner:
+) -> SubprocessRunner:
     """Build a runner that returns a fixed completed process."""
 
     def run(
@@ -190,8 +191,8 @@ def _stub_runner(
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        return SandboxCompletedProcess(
+    ) -> SubprocessCompletedProcess:
+        return SubprocessCompletedProcess(
             returncode=returncode,
             stdout=stdout,
             stderr=stderr,
@@ -318,7 +319,7 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
 
 
 def test_evaluation_passes_when_best_function_passes(
-    local_runner: SandboxRunner,
+    local_runner: SubprocessRunner,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -330,7 +331,7 @@ def test_evaluation_passes_when_best_function_passes(
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )
 
     assert result.best_function_name == "add_one"
@@ -344,7 +345,7 @@ def test_evaluation_passes_when_best_function_passes(
 
 
 def test_evaluation_prefers_entry_point_when_pass_counts_tie(
-    local_runner: SandboxRunner,
+    local_runner: SubprocessRunner,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -356,7 +357,7 @@ def test_evaluation_prefers_entry_point_when_pass_counts_tie(
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )
 
     assert result.best_function_name == "add_one"
@@ -364,7 +365,7 @@ def test_evaluation_prefers_entry_point_when_pass_counts_tie(
 
 
 def test_evaluation_fails_when_best_function_does_not_pass_all_cases(
-    local_runner: SandboxRunner,
+    local_runner: SubprocessRunner,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -376,7 +377,7 @@ def test_evaluation_fails_when_best_function_does_not_pass_all_cases(
             "    return x + 1 if x == 1 else x\n"
         ),
         timeout_seconds=2.0,
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )
 
     assert result.best_function_name == "add_one"
@@ -385,7 +386,7 @@ def test_evaluation_fails_when_best_function_does_not_pass_all_cases(
 
 
 def test_evaluation_uses_highest_pass_count(
-    local_runner: SandboxRunner,
+    local_runner: SubprocessRunner,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -397,7 +398,7 @@ def test_evaluation_uses_highest_pass_count(
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )
 
     assert result.best_function_name == "helper"
@@ -406,7 +407,7 @@ def test_evaluation_uses_highest_pass_count(
 
 
 def test_evaluate_humaneval_code_reports_timeout_per_case(
-    local_runner: SandboxRunner,
+    local_runner: SubprocessRunner,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -416,7 +417,7 @@ def test_evaluate_humaneval_code_reports_timeout_per_case(
             "        pass\n"
         ),
         timeout_seconds=0.2,
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )
 
     assert result.passed is False
@@ -440,7 +441,7 @@ def test_run_subprocess_batch_raises_for_malformed_runner_output() -> None:
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
-            run_in_sandbox=runner,
+            run_in_subprocess=runner,
         )
 
     results = exc_info.value.case_results
@@ -522,7 +523,7 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+        run_in_subprocess=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
     )
 
     assert isinstance(result, CompletedScore)
@@ -539,7 +540,7 @@ def test_score_humaneval_submission_returns_harness_failure() -> None:
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=_stub_runner(stdout="not-json"),
+        run_in_subprocess=_stub_runner(stdout="not-json"),
     )
 
     assert isinstance(result, HarnessFailure)
@@ -554,27 +555,27 @@ def test_score_humaneval_submission_returns_harness_failure() -> None:
     assert candidate.evaluation.results[0].elapsed_seconds is not None
 
 
-def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
-    """A broken sandbox is a harness failure, never a scored result.
+def test_score_humaneval_submission_reports_subprocess_breakage() -> None:
+    """A broken subprocess boundary is a harness failure, not a score.
 
-    A candidate must not benefit from generic sandbox breakage: the base
-    ``SandboxError`` surfaces as a ``HarnessFailure`` rather than a
+    A candidate must not benefit from generic subprocess breakage: the base
+    ``SubprocessError`` surfaces as a ``HarnessFailure`` rather than a
     ``CompletedScore`` with a zero score.
     """
 
-    def broken_sandbox(
+    def broken_subprocess(
         *,
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        raise SandboxError("sandbox runtime is unavailable")
+    ) -> SubprocessCompletedProcess:
+        raise SubprocessError("Python subprocess is unavailable")
 
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=broken_sandbox,
+        run_in_subprocess=broken_subprocess,
     )
 
     assert isinstance(result, HarnessFailure)
@@ -582,7 +583,7 @@ def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
     assert not hasattr(result, "score")
     candidate = result.candidates[0]
     assert isinstance(candidate, CandidateHarnessFailure)
-    assert candidate.cause.exception_type == "SandboxError"
+    assert candidate.cause.exception_type == "SubprocessError"
 
 
 def test_completed_score_rejects_harness_failure_outcome() -> None:
@@ -590,7 +591,7 @@ def test_completed_score_rejects_harness_failure_outcome() -> None:
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=_stub_runner(stdout="not-json"),
+        run_in_subprocess=_stub_runner(stdout="not-json"),
     )
     assert isinstance(result, HarnessFailure)
 
@@ -610,15 +611,15 @@ def test_harness_failure_is_unscored_when_no_candidate_passes() -> None:
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         candidate_code = json.loads(input_json)["candidate_code"]
         if "return x + 2" in candidate_code:
-            return SandboxCompletedProcess(
+            return SubprocessCompletedProcess(
                 returncode=0,
                 stdout="not-json",
                 stderr="",
             )
-        return SandboxCompletedProcess(
+        return SubprocessCompletedProcess(
             returncode=0,
             stdout=(
                 '[{"case_id": "case_0", "status": "failed"}, '
@@ -640,7 +641,7 @@ def test_harness_failure_is_unscored_when_no_candidate_passes() -> None:
         ),
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=mixed_runner,
+        run_in_subprocess=mixed_runner,
     )
 
     assert isinstance(result, HarnessFailure)
@@ -657,15 +658,15 @@ def test_passing_candidate_makes_mixed_harness_result_determinate() -> None:
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         candidate_code = json.loads(input_json)["candidate_code"]
         if "return x + 2" in candidate_code:
-            return SandboxCompletedProcess(
+            return SubprocessCompletedProcess(
                 returncode=0,
                 stdout="not-json",
                 stderr="",
             )
-        return SandboxCompletedProcess(
+        return SubprocessCompletedProcess(
             returncode=0,
             stdout=(
                 '[{"case_id": "case_0", "status": "passed"}, '
@@ -687,7 +688,7 @@ def test_passing_candidate_makes_mixed_harness_result_determinate() -> None:
         ),
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=mixed_runner,
+        run_in_subprocess=mixed_runner,
     )
 
     assert isinstance(result, CompletedScore)
@@ -722,9 +723,9 @@ def test_score_humaneval_submission_evaluates_every_candidate() -> None:
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         evaluated_inputs.append(input_json)
-        return SandboxCompletedProcess(
+        return SubprocessCompletedProcess(
             returncode=0,
             stdout=(
                 '[{"case_id": "case_0", "status": "passed"}, '
@@ -746,7 +747,7 @@ def test_score_humaneval_submission_evaluates_every_candidate() -> None:
         ),
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=recording_runner,
+        run_in_subprocess=recording_runner,
     )
 
     assert [candidate.candidate_index for candidate in result.candidates] == [
@@ -767,7 +768,7 @@ def test_scoring_does_not_filter_candidates_by_task_entry_point() -> None:
         ),
         task=_task(),
         timeout_seconds=2.0,
-        run_in_sandbox=_stub_runner(
+        run_in_subprocess=_stub_runner(
             stdout=(
                 '[{"case_id": "case_0", "status": "passed"}, '
                 '{"case_id": "case_1", "status": "passed"}]'
@@ -786,7 +787,7 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
         task=_task(),
         candidate_code="def add_one(x):\n    return x + 1\n",
         timeout_seconds=2.0,
-        run_in_sandbox=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+        run_in_subprocess=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
     )
 
     assert result.passed is False
@@ -853,38 +854,42 @@ def test_run_subprocess_batch_scores_candidate_kill_returncode() -> None:
         candidate_code="def add_one(x):\n    return x + 1\n",
         function_name="add_one",
         timeout_seconds=2.0,
-        run_in_sandbox=_stub_runner(stdout="", stderr="", returncode=137),
+        run_in_subprocess=_stub_runner(
+            stdout="",
+            stderr="",
+            returncode=-signal.SIGKILL,
+        ),
     )
 
     assert len(results) == 2
     assert all(
         result.status is EvaluationCaseStatus.ERROR for result in results
     )
-    assert "sandbox killed candidate execution" in results[0].message
+    assert "subprocess killed candidate execution" in results[0].message
 
 
 def test_run_subprocess_batch_scores_output_limit_as_candidate_error() -> None:
-    def overflowing_sandbox(
+    def overflowing_subprocess(
         *,
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        raise SandboxOutputLimitError("sandbox output exceeded limit")
+    ) -> SubprocessCompletedProcess:
+        raise SubprocessOutputLimitError("subprocess output exceeded limit")
 
     results = run_subprocess_batch(
         task=_task(),
         candidate_code="def add_one(x):\n    return x + 1\n",
         function_name="add_one",
         timeout_seconds=2.0,
-        run_in_sandbox=overflowing_sandbox,
+        run_in_subprocess=overflowing_subprocess,
     )
 
     assert len(results) == 2
     assert all(
         result.status is EvaluationCaseStatus.ERROR for result in results
     )
-    assert "SandboxOutputLimitError" in results[0].message
+    assert "SubprocessOutputLimitError" in results[0].message
 
 
 @pytest.mark.parametrize(
@@ -911,12 +916,12 @@ def test_run_subprocess_batch_rejects_invalid_case_ids(
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
-            run_in_sandbox=_stub_runner(stdout=runner_stdout),
+            run_in_subprocess=_stub_runner(stdout=runner_stdout),
         )
 
 
 def test_candidate_module_level_sys_exit_is_scored(
-    local_runner: SandboxRunner,
+    local_runner: SubprocessRunner,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -927,7 +932,7 @@ def test_candidate_module_level_sys_exit_is_scored(
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )
 
     assert result.passed is False
@@ -943,7 +948,7 @@ def test_run_subprocess_batch_raises_for_nonzero_returncode() -> None:
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
-            run_in_sandbox=runner,
+            run_in_subprocess=runner,
         )
 
     results = exc_info.value.case_results
@@ -960,7 +965,7 @@ def test_run_subprocess_batch_raises_for_invalid_json() -> None:
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
-            run_in_sandbox=_stub_runner(stdout="not-json"),
+            run_in_subprocess=_stub_runner(stdout="not-json"),
         )
 
     results = exc_info.value.case_results
@@ -977,7 +982,7 @@ def test_run_subprocess_batch_raises_for_non_list_json() -> None:
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
-            run_in_sandbox=_stub_runner(stdout='{"not": "a list"}'),
+            run_in_subprocess=_stub_runner(stdout='{"not": "a list"}'),
         )
 
     results = exc_info.value.case_results
@@ -993,7 +998,7 @@ def test_run_subprocess_batch_fallback_case_id_is_harness_detail() -> None:
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
-            run_in_sandbox=runner,
+            run_in_subprocess=runner,
         )
 
     results = exc_info.value.case_results

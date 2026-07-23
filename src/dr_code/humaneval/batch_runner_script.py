@@ -1,9 +1,8 @@
-# Standalone program executed inside the sandbox container via
+# Standalone program executed in a fresh host subprocess via
 # ``python -I -c <source>``. It reads one JSON line from stdin and prints a
 # JSON list of case results. It must stay dependency-free (no ``dr_code``
-# imports) because it runs in a locked-down, interpreter-isolated container,
-# and it must NEVER be imported by host code: it has top-level side effects
-# (it reads stdin at import time). The host reads this file's text via
+# imports), and it must NEVER be imported by host code: it has top-level side
+# effects (it reads stdin at import time). The host reads this file's text via
 # ``importlib.resources`` and executes it as a string; it does not import it.
 import json
 import time

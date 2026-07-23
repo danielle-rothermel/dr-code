@@ -75,6 +75,33 @@ them after integration or retain them behind an explicit legacy schema reader.
 The dynamic viewer has already removed its copied static data and queries the
 authoritative Parquet artifacts directly.
 
+### Host subprocess execution
+
+The host subprocess backend is an intentional PR 57 contract, not a conflict
+resolution detail. A rebase onto `impl/01-eval-kernel` must not restore the
+older Docker/OCI runner, its image configuration, or per-evaluation container
+startup. Preserve all of these coordinates together:
+
+- `dr_code.humaneval.subprocess_runner` as the production execution boundary;
+- `run_python_subprocess` as the default runner and `run_in_subprocess` as the
+  injection keyword at scoring and evaluation boundaries;
+- a fresh `[sys.executable, "-I", "-c", source]` child for each request;
+- bounded JSON input and output, finite positive deadlines, and process-group
+  termination on timeout or output overflow;
+- the minimal child environment, without inherited credentials;
+- the exact `subprocess:python-isolated@v1` runner identity; and
+- `sandbox_image: null` only as a legacy manifest-schema field.
+
+There must be no image pull, image preflight, container-runtime environment
+variable, or Docker/Podman command in production evaluation or CI. Resolve any
+rebase conflict in favor of the subprocess backend, then run the focused
+contract tests before continuing the semantic integration.
+
+This backend is not an operating-system sandbox. The integrated workflow must
+continue to document that model-generated code can use the host permissions of
+the evaluation worker and therefore belongs only on a disposable, constrained
+host.
+
 ## Semantic conflict map
 
 ### Preprocessing definitions and configuration
@@ -152,8 +179,8 @@ Recommended direction:
   or scores, including missing-value and zero-denominator behavior.
 
 PR 57's execution cache, evaluation deduplication, infrastructure-failure
-separation, sandbox startup and cleanup hardening, and bounded-input behavior are
-additive and should be retained.
+separation, subprocess startup and process-group cleanup, and bounded-I/O
+behavior are additive and should be retained.
 
 ### Task and repeat provenance
 
@@ -204,7 +231,7 @@ without losing PR 57's terminal failure grouping.
 | Analysis tables and rates | Direct descriptive analysis plus explicit eval aggregation where reduction policy matters |
 | Dynamic viewer and annotations | Versioned artifact adapter with the existing annotation key |
 | Before/after comparison | Equal corpus plus compatible stage contracts, not equal preprocessing hashes |
-| Sandbox hardening | Execution/runtime coordinate only; it must not perturb unrelated definition identity |
+| Host subprocess execution | Preserve the subprocess API and exact `subprocess:python-isolated@v1` runtime coordinate; never restore Docker/OCI during conflict resolution |
 
 ## Superseded and additive work
 
@@ -228,7 +255,8 @@ Additive work to preserve:
 - trace serialization, finite JSON fact validation, and legacy trace migration;
 - atomic/resumable corpus artifacts and relational integrity validation;
 - leased candidate evaluation, execution deduplication, and cache behavior;
-- sandbox hardening and separation of planned requests from execution;
+- bounded host-subprocess execution and separation of planned requests from
+  execution;
 - analysis reports and tables after their identities/schemas are updated;
 - the DuckDB/FastAPI/React viewer and durable annotation workflow;
 - all eval-kernel lifecycle, identity, task/repeat, fact, aggregation, and
@@ -274,10 +302,12 @@ Additive work to preserve:
 6. **Move HumanEval candidate evaluation onto the kernel.**
    Use task-set and metric/procedure identities; emit eval facts, records, and
    scores. Preserve execution leasing/cache behavior, infrastructure failures,
-   sandbox behavior, and candidate membership.
+   subprocess behavior, and candidate membership.
 
    Gate: code-test parity, execution deduplication, task/evaluation identities,
-   failure classification, and sandbox tests pass.
+   failure classification, subprocess cleanup, and bounded-I/O tests pass. The
+   production and operational contract contains no Docker/Podman invocation or
+   runtime/image requirement.
 
 7. **Integrate aggregation and analysis.**
    Keep neutral descriptive facts and make reduction policy explicit for rates
@@ -300,7 +330,7 @@ Additive work to preserve:
 
 10. **Run the complete matrix.**
     Run `uv run --frozen pytest`, Ruff, Ty, all frontend workspace tests,
-    frontend typechecking/build, focused sandbox tests, and at least one
+    frontend typechecking/build, focused subprocess tests, and at least one
     interrupted/resumed corpus and candidate-evaluation run.
 
 ## Decisions required before the semantic integration

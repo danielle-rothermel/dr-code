@@ -16,7 +16,10 @@ from pydantic import (
 )
 
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
-from dr_code.humaneval.sandbox import SandboxRunner, run_python_in_sandbox
+from dr_code.humaneval.subprocess_runner import (
+    SubprocessRunner,
+    run_python_subprocess,
+)
 from dr_code.humaneval.task import (
     EvaluationCaseStatus,
     EvaluationHarnessError,
@@ -158,7 +161,7 @@ def score_humaneval_submission(
     preprocessing_runner: BoundPreprocessingRunner = (
         DEFAULT_HUMANEVAL_PREPROCESSING_RUNNER
     ),
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    run_in_subprocess: SubprocessRunner = run_python_subprocess,
 ) -> HumanEvalSubmissionScore:
     """Preprocess and score every returned candidate in deterministic order."""
     if not isinstance(raw_submission, str):
@@ -202,7 +205,7 @@ def score_humaneval_submission(
                 candidate_code=candidate_code,
                 task=task,
                 timeout_seconds=timeout_seconds,
-                run_in_sandbox=run_in_sandbox,
+                run_in_subprocess=run_in_subprocess,
             )
         )
     candidates = tuple(candidates_list)
@@ -229,14 +232,14 @@ def score_humaneval_candidate(
     candidate_code: str,
     task: HumanEvalTask,
     timeout_seconds: float,
-    run_in_sandbox: SandboxRunner,
+    run_in_subprocess: SubprocessRunner,
 ) -> HumanEvalCandidateScore:
     try:
         evaluation = evaluate_human_eval_code(
             task=task,
             candidate_code=candidate_code,
             timeout_seconds=timeout_seconds,
-            run_in_sandbox=run_in_sandbox,
+            run_in_subprocess=run_in_subprocess,
         )
     except EvaluationHarnessError as exc:
         return CandidateHarnessFailure(

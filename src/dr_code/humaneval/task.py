@@ -2,9 +2,9 @@
 
 Holds the pydantic/dataclass evaluation models (tasks, case/task results and
 summaries, runner payload shapes), the ``EvaluationHarnessError`` raised for
-sandbox or runtime breakage, best-function selection, and the benchmark
+subprocess breakage, best-function selection, and the benchmark
 override table plus dataset parsing. Test parsing lives in
-``parsed_tests``; subprocess batch orchestration and the sandbox runner
+``parsed_tests``; subprocess batch orchestration and the standalone runner
 script live in ``batch_runner``.
 """
 

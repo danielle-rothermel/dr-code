@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import SandboxRunner
+from dr_code.humaneval.subprocess_runner import SubprocessRunner
 from dr_code.humaneval.task import HumanEvalTask
 
 from metrics.helpers import (
@@ -43,12 +43,12 @@ def failing_submission() -> str:
 
 
 @pytest.fixture
-def local_runner() -> SandboxRunner:
-    """Injectable host-interpreter runner (no OCI container)."""
+def local_runner() -> SubprocessRunner:
+    """Injectable bounded host-subprocess runner."""
     return _local_runner()
 
 
 @pytest.fixture
-def counting_runner(local_runner: SandboxRunner) -> CountingRunner:
+def counting_runner(local_runner: SubprocessRunner) -> CountingRunner:
     """A counting wrapper around the local runner (observes at-most-once)."""
     return CountingRunner(local_runner)

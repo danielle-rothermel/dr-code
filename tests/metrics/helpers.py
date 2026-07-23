@@ -5,24 +5,21 @@ fixtures live in ``conftest.py``. Import as ``from metrics.helpers import ...``.
 
 These tests define the contract of a package that does not exist yet
 (``src/dr_code/metrics/``). The existing ``dr_code.humaneval`` modules are used
-as **oracles**; ``dr_code.trace`` is the input contract. Nothing here touches a
-real container runtime — execution stays behind the injectable
-``SandboxRunner`` seam (design L3).
+as **oracles**; ``dr_code.trace`` is the input contract. Execution stays behind
+the injectable ``SubprocessRunner`` seam (design L3).
 """
 
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from collections.abc import Mapping
 from typing import Any
 
-from dr_code.humaneval.sandbox import (
+from dr_code.humaneval.subprocess_runner import (
     CANDIDATE_KILL_RETURNCODES,
-    SandboxCompletedProcess,
-    SandboxRunner,
-    SandboxTimeoutError,
+    SubprocessCompletedProcess,
+    SubprocessRunner,
+    run_python_subprocess,
 )
 from dr_code.humaneval.task import EvaluationCaseStatus, HumanEvalTask
 from dr_code.trace import (
@@ -31,6 +28,7 @@ from dr_code.trace import (
     JsonArtifact,
     TextArtifact,
     Trace,
+    TraceValue,
     external_trace,
 )
 
@@ -73,8 +71,10 @@ def make_task(
 # records).
 # ---------------------------------------------------------------------------
 
-def text_trace(text: str, namespace: Mapping[str, object] | None = None) -> Trace:
-    values: dict[str, object] = {
+def text_trace(
+    text: str, namespace: Mapping[str, TraceValue] | None = None
+) -> Trace:
+    values: dict[str, TraceValue] = {
         "input": TextArtifact(text=text),
         "output": TextArtifact(text=text),
     }
@@ -83,9 +83,11 @@ def text_trace(text: str, namespace: Mapping[str, object] | None = None) -> Trac
     return external_trace(values)
 
 
-def code_trace(source: str, namespace: Mapping[str, object] | None = None) -> Trace:
+def code_trace(
+    source: str, namespace: Mapping[str, TraceValue] | None = None
+) -> Trace:
     code = CodeArtifact(source=source)
-    values: dict[str, object] = {
+    values: dict[str, TraceValue] = {
         "input": code,
         "output": code,
     }
@@ -150,38 +152,13 @@ def absent_trace(
 
 
 # ---------------------------------------------------------------------------
-# Injectable SandboxRunner fakes (L3: injected runner, never a real container).
+# Injectable SubprocessRunner collaborators (L3).
 # ---------------------------------------------------------------------------
 
-def local_runner() -> SandboxRunner:
-    """An injectable runner that runs the trusted program under the host
-    interpreter — fast and container-free. The OCI boundary has its own
-    probes elsewhere (``tests/humaneval/test_sandbox.py``)."""
+def local_runner() -> SubprocessRunner:
+    """Return the real bounded host-subprocess runner for parity checks."""
 
-    def run_local_python(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        try:
-            completed = subprocess.run(
-                [sys.executable, "-I", "-c", source],
-                input=input_json,
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-                timeout=timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise SandboxTimeoutError(str(exc)) from exc
-        return SandboxCompletedProcess(
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
-
-    return run_local_python
+    return run_python_subprocess
 
 
 class CountingRunner:
@@ -191,7 +168,7 @@ class CountingRunner:
     hash so identical requests execute once per cache lifetime.
     """
 
-    def __init__(self, inner: SandboxRunner) -> None:
+    def __init__(self, inner: SubprocessRunner) -> None:
         self._inner = inner
         self.calls: list[tuple[str, str, float]] = []
 
@@ -201,7 +178,7 @@ class CountingRunner:
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         self.calls.append((source, input_json, timeout_seconds))
         return self._inner(
             source=source,
@@ -219,7 +196,7 @@ def scripted_runner(
     stdout: str = "[]",
     stderr: str = "",
     returncode: int = 0,
-) -> SandboxRunner:
+) -> SubprocessRunner:
     """Build a runner that returns a fixed completed process."""
 
     def run(
@@ -227,8 +204,8 @@ def scripted_runner(
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        return SandboxCompletedProcess(
+    ) -> SubprocessCompletedProcess:
+        return SubprocessCompletedProcess(
             returncode=returncode,
             stdout=stdout,
             stderr=stderr,
@@ -237,7 +214,7 @@ def scripted_runner(
     return run
 
 
-def raising_runner(exc: BaseException) -> SandboxRunner:
+def raising_runner(exc: BaseException) -> SubprocessRunner:
     """A runner that always raises (infra breakage or candidate timeout)."""
 
     def run(
@@ -245,7 +222,7 @@ def raising_runner(exc: BaseException) -> SandboxRunner:
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         raise exc
 
     return run
@@ -310,14 +287,16 @@ def partial_pass_runner_output(
 
 def kill_runner_process(
     returncode: int = next(iter(CANDIDATE_KILL_RETURNCODES)),
-) -> SandboxCompletedProcess:
+) -> SubprocessCompletedProcess:
     """A completed-process shape for the candidate-kill attribution path."""
-    return SandboxCompletedProcess(returncode=returncode, stdout="", stderr="killed")
+    return SubprocessCompletedProcess(
+        returncode=returncode, stdout="", stderr="killed"
+    )
 
 
 def json_runner(
     results: list[dict[str, Any]] | None = None,
-) -> tuple[SandboxRunner, list[tuple[str, str, float]]]:
+) -> tuple[SubprocessRunner, list[tuple[str, str, float]]]:
     """A deterministic fake runner plus its call log (source, input, timeout)."""
     calls: list[tuple[str, str, float]] = []
     payload = json.dumps(results or [])
@@ -327,9 +306,11 @@ def json_runner(
         source: str,
         input_json: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         calls.append((source, input_json, timeout_seconds))
-        return SandboxCompletedProcess(returncode=0, stdout=payload, stderr="")
+        return SubprocessCompletedProcess(
+            returncode=0, stdout=payload, stderr=""
+        )
 
     return run, calls
 
@@ -343,7 +324,7 @@ def evaluate_oracle(
     candidate_code: str,
     *,
     timeout_seconds: float,
-    run_in_sandbox: SandboxRunner,
+    run_in_subprocess: SubprocessRunner,
 ):
     """Run the existing batch_runner to get the oracle EvaluationTaskResult."""
     from dr_code.humaneval.batch_runner import evaluate_human_eval_code
@@ -352,5 +333,5 @@ def evaluate_oracle(
         task=task,
         candidate_code=candidate_code,
         timeout_seconds=timeout_seconds,
-        run_in_sandbox=run_in_sandbox,
+        run_in_subprocess=run_in_subprocess,
     )

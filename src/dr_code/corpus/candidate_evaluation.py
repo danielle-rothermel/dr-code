@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import importlib.metadata
 import json
 import os
 import platform
+import re
 import sqlite3
 import sys
 import time
@@ -38,10 +40,10 @@ from dr_code.humaneval.profiles import (
     HUMANEVAL_METRICS_PROFILE_VERSION,
 )
 from dr_code.humaneval.batch_runner import runner_script
-from dr_code.humaneval.sandbox import (
-    SandboxError,
-    SandboxRunner,
-    run_python_in_sandbox,
+from dr_code.humaneval.subprocess_runner import (
+    SubprocessError,
+    SubprocessRunner,
+    run_python_subprocess,
 )
 from dr_code.humaneval.sampling import load_human_eval_rows
 from dr_code.humaneval.task import HumanEvalTask, parse_human_eval_dataset
@@ -74,6 +76,7 @@ RESULTS_FILENAME: Final = "candidate_results.parquet"
 SCHEMA_VERSION: Final = 1
 _LEASE_SECONDS: Final = 300.0
 _PRODUCTION_PREFLIGHT_TIMEOUT_SECONDS: Final = 10.0
+_DEFAULT_RUNNER_IDENTITY: Final = "subprocess:python-isolated@v1"
 
 MEMBERSHIP_SCHEMA: Final = pa.schema(
     [
@@ -164,7 +167,7 @@ def evaluate_preprocessing_candidates(
     output_dir: Path | str,
     snapshot_path: Path | str,
     max_workers: int = 4,
-    run_in_sandbox: SandboxRunner | None = None,
+    run_in_subprocess: SubprocessRunner | None = None,
     runner_identity: str | None = None,
 ) -> EvaluationArtifacts:
     """Evaluate every candidate in a completed preprocessing run.
@@ -176,7 +179,16 @@ def evaluate_preprocessing_candidates(
     if max_workers < 1:
         raise CandidateEvaluationError("max_workers must be at least 1")
     resolved_runner_identity = _resolve_runner_identity(
-        run_in_sandbox, runner_identity
+        run_in_subprocess, runner_identity
+    )
+    host_runtime = _host_runtime_coordinates()
+    execution_fingerprint = _execution_fingerprint(
+        resolved_runner_identity, host_runtime=host_runtime
+    )
+    runner = (
+        run_python_subprocess
+        if run_in_subprocess is None
+        else run_in_subprocess
     )
     run_dir = Path(preprocessing_run).expanduser().resolve(strict=True)
     corpus_file = Path(corpus_path).expanduser().resolve(strict=True)
@@ -190,6 +202,8 @@ def evaluate_preprocessing_candidates(
         snapshot_file=snapshot_file,
         definition=definition,
         runner_identity=resolved_runner_identity,
+        host_runtime=host_runtime,
+        execution_fingerprint=execution_fingerprint,
     )
     destination.mkdir(parents=True, exist_ok=True)
     connection = _open_state(destination / STATE_FILENAME)
@@ -198,8 +212,8 @@ def evaluate_preprocessing_candidates(
         _initialize_state(connection, immutable)
         _acquire_lease(connection, lease_id)
         tasks = _load_tasks(snapshot_file)
-        if run_in_sandbox is None:
-            _preflight_production(tasks)
+        if run_in_subprocess is None:
+            _preflight_production(tasks, run_in_subprocess=runner)
         task_fingerprints = {
             task_id: _task_fingerprint(task) for task_id, task in tasks.items()
         }
@@ -210,9 +224,7 @@ def evaluate_preprocessing_candidates(
             tasks=tasks,
             task_fingerprints=task_fingerprints,
             definition=definition,
-            execution_fingerprint=_execution_fingerprint(
-                resolved_runner_identity
-            ),
+            execution_fingerprint=execution_fingerprint,
         )
         _reset_stale_running(connection)
         _run_pending_work(
@@ -221,7 +233,7 @@ def evaluate_preprocessing_candidates(
             tasks=tasks,
             definition=definition,
             max_workers=max_workers,
-            run_in_sandbox=run_in_sandbox,
+            run_in_subprocess=runner,
         )
         artifacts = EvaluationArtifacts(
             output_dir=destination,
@@ -265,6 +277,8 @@ def _immutable_coordinates(
     snapshot_file: Path,
     definition: MetricsDefinition,
     runner_identity: str,
+    host_runtime: Mapping[str, object],
+    execution_fingerprint: str,
 ) -> dict[str, object]:
     operator_settings = definition.questions[0].settings
     return {
@@ -289,14 +303,12 @@ def _immutable_coordinates(
         ),
         "python": platform.python_version(),
         "python_implementation": platform.python_implementation(),
+        "host_runtime": host_runtime,
         "trusted_source_sha256": _trusted_source_fingerprints(),
-        "sandbox_image": (
-            _configured_sandbox_image()
-            if runner_identity.startswith("oci:")
-            else None
-        ),
+        # Retained as null for consumers of the legacy manifest shape.
+        "sandbox_image": None,
         "runner_identity": runner_identity,
-        "execution_fingerprint": _execution_fingerprint(runner_identity),
+        "execution_fingerprint": execution_fingerprint,
     }
 
 
@@ -694,7 +706,7 @@ def _acquire_lease(connection: sqlite3.Connection, lease_id: str) -> None:
     """Claim the mutable state, recovering only an expired owner lease.
 
     A separate process with a fresh lease is not a stale resume.  Treating it
-    as one would reset its running rows and permit duplicate sandbox work.
+    as one would reset its running rows and permit duplicate subprocess work.
     """
     now = time.time()
     with connection:
@@ -745,11 +757,12 @@ def _run_pending_work(
     tasks: Mapping[str, HumanEvalTask],
     definition: MetricsDefinition,
     max_workers: int,
-    run_in_sandbox: SandboxRunner | None,
+    run_in_subprocess: SubprocessRunner,
 ) -> None:
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures: dict[
-            Future[tuple[str, MetricRecord | None, SandboxError | None]], str
+            Future[tuple[str, MetricRecord | None, SubprocessError | None]],
+            str,
         ] = {}
         while True:
             while len(futures) < max_workers:
@@ -761,7 +774,7 @@ def _run_pending_work(
                     work,
                     tasks[work.task_id],
                     definition,
-                    run_in_sandbox,
+                    run_in_subprocess,
                 )
                 futures[future] = work.evaluation_key
             if not futures:
@@ -803,8 +816,8 @@ def _measure_work(
     work: _Work,
     task: HumanEvalTask,
     definition: MetricsDefinition,
-    run_in_sandbox: SandboxRunner | None,
-) -> tuple[str, MetricRecord | None, SandboxError | None]:
+    run_in_subprocess: SubprocessRunner,
+) -> tuple[str, MetricRecord | None, SubprocessError | None]:
     try:
         requests = plan_code_test_requests(
             task=task,
@@ -813,7 +826,7 @@ def _measure_work(
         )
         outcomes = run_requests(
             requests,
-            run_in_sandbox=run_in_sandbox or run_python_in_sandbox,
+            run_in_subprocess=run_in_subprocess,
             cache=InMemoryExecutionCache(),
         )
         result = compute_code_test_result(
@@ -836,7 +849,7 @@ def _measure_work(
             values=result.to_values(),
         )
         return work.evaluation_key, record, None
-    except SandboxError as exc:
+    except SubprocessError as exc:
         return work.evaluation_key, None, exc
 
 
@@ -844,7 +857,7 @@ def _complete_work(
     connection: sqlite3.Connection,
     evaluation_key: str,
     record: MetricRecord | None,
-    infrastructure_failure: SandboxError | None,
+    infrastructure_failure: SubprocessError | None,
 ) -> None:
     if infrastructure_failure is not None:
         fields = (
@@ -1015,47 +1028,76 @@ def _evaluation_key(
     )
 
 
-def _execution_fingerprint(runner_identity: str) -> str:
+def _execution_fingerprint(
+    runner_identity: str,
+    *,
+    host_runtime: Mapping[str, object] | None = None,
+) -> str:
     """Hash every trusted program/runtime coordinate affecting execution."""
 
+    resolved_host_runtime = (
+        _host_runtime_coordinates() if host_runtime is None else host_runtime
+    )
     return _sha256_text(
         _canonical_json(
             {
                 "trusted_source_sha256": _trusted_source_fingerprints(),
                 "python": sys.version,
-                "sandbox_image": (
-                    _configured_sandbox_image()
-                    if runner_identity.startswith("oci:")
-                    else None
-                ),
+                "host_runtime": resolved_host_runtime,
+                "sandbox_image": None,
                 "runner_identity": runner_identity,
             }
         )
     )
 
 
-def _configured_sandbox_image() -> str:
-    image = os.environ.get("DR_CODE_SANDBOX_IMAGE")
-    if not image:
-        raise CandidateEvaluationError(
-            "production evaluation requires explicit DR_CODE_SANDBOX_IMAGE"
-        )
-    return image
+def _host_runtime_coordinates() -> dict[str, object]:
+    installed_distributions = _installed_distributions()
+    return {
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+        },
+        "python_executable_sha256": _sha256_file(
+            Path(sys.executable).resolve(strict=True)
+        ),
+        "installed_distributions": installed_distributions,
+        "installed_distributions_sha256": _sha256_text(
+            _canonical_json(installed_distributions)
+        ),
+    }
+
+
+def _installed_distributions() -> list[dict[str, str]]:
+    coordinates: set[tuple[str, str]] = set()
+    for distribution in importlib.metadata.distributions():
+        name = distribution.metadata["Name"]
+        version = distribution.version
+        if not name or not version:
+            raise CandidateEvaluationError(
+                "installed distribution is missing its name or version"
+            )
+        normalized_name = re.sub(r"[-_.]+", "-", name).lower()
+        coordinates.add((normalized_name, version))
+    return [
+        {"name": name, "version": version}
+        for name, version in sorted(coordinates)
+    ]
 
 
 def _resolve_runner_identity(
-    run_in_sandbox: SandboxRunner | None, runner_identity: str | None
+    run_in_subprocess: SubprocessRunner | None, runner_identity: str | None
 ) -> str:
-    if run_in_sandbox is None:
+    if run_in_subprocess is None:
         if runner_identity is not None:
             raise CandidateEvaluationError(
-                "runner_identity is only valid with an injected sandbox runner"
+                "runner_identity is only valid with an injected subprocess runner"
             )
-        runtime = os.environ.get("DR_CODE_SANDBOX_RUNTIME", "docker")
-        return f"oci:{runtime}:{_configured_sandbox_image()}"
+        return _DEFAULT_RUNNER_IDENTITY
     if not runner_identity or not runner_identity.strip():
         raise CandidateEvaluationError(
-            "injected run_in_sandbox requires a non-empty runner_identity"
+            "injected run_in_subprocess requires a non-empty runner_identity"
         )
     return runner_identity
 
@@ -1063,7 +1105,7 @@ def _resolve_runner_identity(
 def _trusted_source_fingerprints() -> dict[str, str]:
     modules = (
         "dr_code.corpus.candidate_evaluation",
-        "dr_code.humaneval.sandbox",
+        "dr_code.humaneval.subprocess_runner",
         "dr_code.humaneval.task",
         "dr_code.humaneval.parsed_tests",
         "dr_code.humaneval.parsed_code",
@@ -1081,17 +1123,21 @@ def _trusted_source_fingerprints() -> dict[str, str]:
     return fingerprints
 
 
-def _preflight_production(tasks: Mapping[str, HumanEvalTask]) -> None:
-    """Fail closed if the configured OCI image cannot run trusted benchmark code."""
+def _preflight_production(
+    tasks: Mapping[str, HumanEvalTask],
+    *,
+    run_in_subprocess: SubprocessRunner = run_python_subprocess,
+) -> None:
+    """Fail closed if local isolated Python cannot run trusted benchmark code."""
 
-    numpy_probe = run_python_in_sandbox(
+    numpy_probe = run_in_subprocess(
         source="import numpy\nprint(numpy.__version__)\n",
         input_json="{}",
         timeout_seconds=_PRODUCTION_PREFLIGHT_TIMEOUT_SECONDS,
     )
     if numpy_probe.returncode != 0:
         raise CandidateEvaluationError(
-            "production sandbox preflight could not import NumPy"
+            "production subprocess preflight could not import NumPy"
         )
     for task in tasks.values():
         requests = plan_code_test_requests(
@@ -1101,7 +1147,7 @@ def _preflight_production(tasks: Mapping[str, HumanEvalTask]) -> None:
         )
         outcomes = run_requests(
             requests,
-            run_in_sandbox=run_python_in_sandbox,
+            run_in_subprocess=run_in_subprocess,
             cache=InMemoryExecutionCache(),
         )
         result = compute_code_test_result(
@@ -1118,7 +1164,7 @@ def _preflight_production(tasks: Mapping[str, HumanEvalTask]) -> None:
             or not result.coverage_complete
         ):
             raise CandidateEvaluationError(
-                "production sandbox preflight failed for "
+                "production subprocess preflight failed for "
                 f"{task.task_id}: passed={result.passed_count}, "
                 f"failed={result.failed_count}, errors={result.error_count}, "
                 f"timeouts={result.timeout_count}, "

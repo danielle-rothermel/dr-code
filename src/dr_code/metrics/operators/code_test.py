@@ -1,4 +1,4 @@
-"""Sandbox-backed HumanEval case execution facts.
+"""Subprocess-backed HumanEval case execution facts.
 
 This operator is HumanEval-specific by construction, not merely by its type
 annotations: it builds ``HumanEvalRunnerPayload``, drives ``runner_script()``,
@@ -290,8 +290,9 @@ def _statuses_from_outcome(
     # candidate can provoke, and so is any hard kill (is_candidate_kill_outcome)
     # or unexpected nonzero exit -- a candidate can produce any returncode via
     # ``os._exit``. All of these are candidate-controlled *data*: they become
-    # case statuses, never batch aborts. SandboxError (raised at the sandbox
-    # boundary before candidate code runs) is the only propagating infra path.
+    # case statuses, never batch aborts. SubprocessError (raised at the
+    # execution boundary before candidate code runs) is the only propagating
+    # infra path.
     if is_timeout_outcome(outcome):
         return [EvaluationCaseStatus.TIMEOUT] * total_cases
     if is_output_limit_outcome(outcome):
@@ -302,7 +303,7 @@ def _statuses_from_outcome(
         return error_statuses
 
     # KNOWN LIMITATION (documented, not fixed here): stdout is shared with the
-    # candidate (sandbox_runner_script.py), so its contents are
+    # candidate (batch_runner_script.py), so its contents are
     # candidate-controlled data. Reclassifying malformed stdout to ERROR
     # statuses contains the blast radius (one trace's record, not the whole
     # batch), but does not make stdout trustworthy: a candidate can forge a

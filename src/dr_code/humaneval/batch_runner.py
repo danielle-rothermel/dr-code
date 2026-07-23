@@ -1,22 +1,23 @@
 """Subprocess batch orchestration for HumanEval evaluation.
 
-Runs candidate code against parsed test cases inside the sandbox and maps the
-runner's JSON output back into ``EvaluationCaseResult`` rows. The subprocess
-runner validates each returned case result, but it currently preserves partial
-runner output rather than requiring one returned row per parsed test case.
+Runs candidate code against parsed test cases in fresh Python children and
+maps the runner's JSON output back into ``EvaluationCaseResult`` rows. The
+subprocess runner validates each returned case result, but it currently
+preserves partial runner output rather than requiring one returned row per
+parsed test case.
 Tightening that cardinality check would be a benchmark behavior change and is
 deferred until per-test score persistence semantics are defined. Returned case
 ids must still be known and unique so partial output can never inflate
 coverage.
 
-Failure attribution: candidate-attributable terminations (memory/CPU-limit
-SIGKILL, interpreter crash, SystemExit, output floods) are scored as case
+Failure attribution: candidate-attributable terminations (external SIGKILL,
+interpreter crash, SystemExit, output floods) are scored as case
 errors or timeouts; ``EvaluationHarnessError``/``HarnessFailure`` is reserved
-for sandbox or runtime breakage so operators can alert on it. Candidate code
-runs in the same in-container interpreter as the trusted runner, so a
-deliberately adversarial candidate can still forge its own task's case
-results; the sandbox boundary guarantees host, credential, and network
-isolation, not single-task score integrity against adversarial submissions.
+for subprocess breakage so operators can alert on it. Candidate code runs in
+the same child interpreter as the trusted runner, so a deliberately
+adversarial candidate can still forge its own task's case results. The
+subprocess boundary is not a security boundary and does not isolate the host,
+credentials, or network from candidate code.
 """
 
 from __future__ import annotations
@@ -34,12 +35,12 @@ from dr_code.humaneval.parsed_tests import (
     SingleCaseCheck,
     TestCase,
 )
-from dr_code.humaneval.sandbox import (
+from dr_code.humaneval.subprocess_runner import (
     CANDIDATE_KILL_RETURNCODES,
-    SandboxOutputLimitError,
-    SandboxRunner,
-    SandboxTimeoutError,
-    run_python_in_sandbox,
+    SubprocessOutputLimitError,
+    SubprocessRunner,
+    SubprocessTimeoutError,
+    run_python_subprocess,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
@@ -58,7 +59,7 @@ def evaluate_human_eval_code(
     candidate_code: str,
     timeout_seconds: float,
     candidate_ast: ast.Module | None = None,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    run_in_subprocess: SubprocessRunner = run_python_subprocess,
 ) -> EvaluationTaskResult:
     parsed_tests = require_parsed_tests(task)
     function_names = top_level_function_names(
@@ -78,7 +79,7 @@ def evaluate_human_eval_code(
                     timeout_seconds=timeout_seconds,
                     checks=checks,
                     runner_source=runner_source,
-                    run_in_sandbox=run_in_sandbox,
+                    run_in_subprocess=run_in_subprocess,
                 )
             )
         except EvaluationHarnessError as exc:
@@ -129,7 +130,7 @@ def run_subprocess_batch(
     timeout_seconds: float,
     checks: list[SingleCaseCheck] | None = None,
     runner_source: str | None = None,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    run_in_subprocess: SubprocessRunner = run_python_subprocess,
 ) -> list[EvaluationCaseResult]:
     parsed_tests = require_parsed_tests(task)
     check_payloads = (
@@ -147,18 +148,18 @@ def run_subprocess_batch(
     )
     started_at = time.perf_counter()
     try:
-        completed = run_in_sandbox(
+        completed = run_in_subprocess(
             source=runner_source or runner_script(),
             input_json=payload.model_dump_json(),
             timeout_seconds=timeout_seconds,
         )
-    except SandboxTimeoutError:
+    except SubprocessTimeoutError:
         return timeout_results(
             task=task,
             function_name=function_name,
             timeout_seconds=timeout_seconds,
         )
-    except SandboxOutputLimitError as exc:
+    except SubprocessOutputLimitError as exc:
         return error_results(
             task=task,
             function_name=function_name,
@@ -182,8 +183,8 @@ def run_subprocess_batch(
 
     if completed.returncode in CANDIDATE_KILL_RETURNCODES:
         message = (
-            f"sandbox killed candidate execution (exit {completed.returncode}"
-            ": memory limit, CPU limit, or interpreter crash)"
+            f"subprocess killed candidate execution (exit "
+            f"{completed.returncode}: external kill or interpreter crash)"
         )
         detail = completed.stderr.strip()
         if detail:
@@ -397,11 +398,11 @@ def require_parsed_tests(task: HumanEvalTask) -> ParsedTests:
 
 @cache
 def runner_script() -> str:
-    # The standalone runner program lives in ``sandbox_runner_script.py`` and
+    # The standalone runner program lives in ``batch_runner_script.py`` and
     # is read as text (never imported) so it stays dependency-free and can run
-    # interpreter-isolated inside the sandbox container. See that file's header.
+    # runs in a fresh isolated-mode Python child. See that file's header.
     return (
         files("dr_code.humaneval")
-        .joinpath("sandbox_runner_script.py")
+        .joinpath("batch_runner_script.py")
         .read_text(encoding="utf-8")
     )

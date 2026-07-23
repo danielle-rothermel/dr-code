@@ -725,7 +725,10 @@ Each slice should leave the repository green and reviewable.
 - Reprocess the complete corpus from the final source commit.
 - Create a new append-only candidate-evaluation run and immutable manifest.
 - Rescore every candidate membership, not only changed rows, under the pinned
-  HumanEval+ snapshot and OCI image.
+  HumanEval+ snapshot and the `subprocess:python-isolated@v1` host runner.
+- Run the NumPy and canonical-solution preflight on the disposable evaluation
+  worker before starting the score run. Do not restore the superseded OCI
+  backend when regenerating these artifacts.
 - Create a new append-only analysis run from those exact preprocessing and
   evaluation manifests; never overwrite the old preprocessing, evaluation,
   analysis, viewer, or annotation artifacts.

@@ -6,11 +6,11 @@ from collections.abc import Sequence
 from functools import cached_property
 from typing import Protocol
 
-from dr_code.humaneval.sandbox import (
+from dr_code.humaneval.subprocess_runner import (
     CANDIDATE_KILL_RETURNCODES,
-    SandboxOutputLimitError,
-    SandboxRunner,
-    SandboxTimeoutError,
+    SubprocessOutputLimitError,
+    SubprocessRunner,
+    SubprocessTimeoutError,
 )
 from dr_code.models import FrozenModel
 from dr_code.trace import stable_hash
@@ -20,7 +20,7 @@ _OUTPUT_LIMIT_RETURNCODE = -100_000_002
 
 
 class ExecutionRequest(FrozenModel):
-    """One deterministic invocation of a trusted sandbox runner program."""
+    """One deterministic invocation of a trusted subprocess runner program."""
 
     source: str
     input_json: str
@@ -35,7 +35,7 @@ class ExecutionRequest(FrozenModel):
 
 
 class ExecutionOutcome(FrozenModel):
-    """The cacheable fields returned by the sandbox execution boundary."""
+    """The cacheable fields returned by the subprocess execution boundary."""
 
     returncode: int
     stdout: str
@@ -45,7 +45,7 @@ class ExecutionOutcome(FrozenModel):
 class ExecutionCache(Protocol):
     """Outcome cache keyed by ``ExecutionRequest.cache_key``.
 
-    The key hashes only the request fields; the injected ``SandboxRunner``
+    The key hashes only the request fields; the injected ``SubprocessRunner``
     is not part of it. A cache instance must therefore be scoped to a single
     runner/runtime -- sharing one across runners can silently return an
     outcome produced by a different execution environment.
@@ -72,13 +72,13 @@ class InMemoryExecutionCache:
 def run_requests(
     requests: Sequence[ExecutionRequest],
     *,
-    run_in_sandbox: SandboxRunner,
+    run_in_subprocess: SubprocessRunner,
     cache: ExecutionCache,
 ) -> dict[str, ExecutionOutcome]:
     """Execute each distinct cache miss at most once.
 
     Timeouts and output-limit failures are candidate-attributable outcomes.
-    Other sandbox failures remain infrastructure exceptions and propagate.
+    Other subprocess failures remain infrastructure exceptions and propagate.
     """
 
     outcomes: dict[str, ExecutionOutcome] = {}
@@ -92,7 +92,7 @@ def run_requests(
             outcomes[key] = cached
             continue
         try:
-            completed = run_in_sandbox(
+            completed = run_in_subprocess(
                 source=request.source,
                 input_json=request.input_json,
                 timeout_seconds=request.timeout_seconds,
@@ -102,13 +102,13 @@ def run_requests(
                 stdout=completed.stdout,
                 stderr=completed.stderr,
             )
-        except SandboxTimeoutError as exc:
+        except SubprocessTimeoutError as exc:
             outcome = ExecutionOutcome(
                 returncode=_TIMEOUT_RETURNCODE,
                 stdout="",
                 stderr=str(exc),
             )
-        except SandboxOutputLimitError as exc:
+        except SubprocessOutputLimitError as exc:
             outcome = ExecutionOutcome(
                 returncode=_OUTPUT_LIMIT_RETURNCODE,
                 stdout="",
