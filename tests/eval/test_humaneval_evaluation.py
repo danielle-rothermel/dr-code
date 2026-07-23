@@ -274,3 +274,35 @@ def test_record_from_incomplete_row_is_operator_failure_not_success() -> None:
     assert record.status is RecordStatus.OPERATOR_FAILURE
     assert record.failure_type == "infrastructure"
     assert not record.facts  # never a silent success
+
+
+def test_pass_rate_reconciles_with_descriptive_count_rate() -> None:
+    from dr_code.eval.aggregation import AggregationStatus
+    from dr_code.eval.humaneval_evaluation import pass_rate
+
+    indicators = (True, True, False, True, False)
+    output = pass_rate(indicators)
+    assert output.status is AggregationStatus.OK
+    # Kernel mean reduction reconciles with the naive passed/total rate.
+    passed = sum(1 for i in indicators if i)
+    assert output.value == passed / len(indicators)
+    assert output.count_present == len(indicators)
+
+
+def test_pass_rate_missing_outcome_propagates_not_silent_failure() -> None:
+    from dr_code.eval.aggregation import AggregationStatus
+    from dr_code.eval.humaneval_evaluation import pass_rate
+
+    # A missing outcome must not be silently counted as a failure.
+    output = pass_rate((True, None, True))
+    assert output.status is AggregationStatus.MISSING_DATA
+    assert output.value is None
+
+
+def test_pass_rate_empty_denominator_is_not_applicable() -> None:
+    from dr_code.eval.aggregation import AggregationStatus
+    from dr_code.eval.humaneval_evaluation import pass_rate
+
+    output = pass_rate(())
+    assert output.status is AggregationStatus.NOT_APPLICABLE
+    assert output.value is None

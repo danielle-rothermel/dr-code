@@ -31,6 +31,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from dr_code.eval.aggregation import (
+    AggregationInput,
+    AggregationOutput,
+    aggregate,
+)
 from dr_code.eval.code import CodeArtifact
 from dr_code.eval.facts import (
     AbsenceMode,
@@ -46,6 +51,8 @@ from dr_code.eval.identity import (
     identity_hash_for,
 )
 from dr_code.eval.lifecycle import (
+    AggregationConfig,
+    AggregationDefinition,
     EvaluationProcedureConfig,
     EvaluationProcedureDefinition,
     MetricExtractionDefinition,
@@ -318,6 +325,50 @@ def compile_facts_for_candidate(source: str) -> bool:
     return True
 
 
+def pass_rate_aggregation_config() -> AggregationConfig:
+    """The explicit reduction policy for a candidate pass *rate*.
+
+    A pass rate is a ``mean`` over per-candidate pass indicators. The policy
+    is explicit end to end: missing indicators propagate (a missing outcome
+    is not silently treated as a failure), and an empty denominator is
+    ``not_applicable`` rather than an error. This is the canonical reduction
+    the descriptive analysis rate must reconcile with (guide step 7).
+    """
+
+    definition = AggregationDefinition(
+        definition_id="humaneval-pass-rate", version="v1"
+    )
+    return definition.materialize(
+        assignment={
+            "reduction": "mean",
+            "missing_data": "propagate",
+            "zero_denominator": "not_applicable",
+        }
+    )
+
+
+def pass_rate(
+    pass_indicators: tuple[bool | None, ...],
+    *,
+    config: AggregationConfig | None = None,
+) -> AggregationOutput:
+    """Reduce per-candidate pass indicators into a pass rate via the kernel.
+
+    ``None`` marks a candidate whose outcome is missing (not a failure). The
+    reduction is the kernel's pure :func:`aggregate`, so the rate carries an
+    explicit status and the exact contributing counts.
+    """
+
+    resolved = config or pass_rate_aggregation_config()
+    inputs = tuple(
+        AggregationInput(
+            value=None if indicator is None else float(indicator)
+        )
+        for indicator in pass_indicators
+    )
+    return aggregate(resolved, inputs)
+
+
 def record_from_result_row(
     row: Mapping[str, object],
     *,
@@ -400,5 +451,7 @@ __all__ = [
     "evaluation_procedure_config_identity",
     "kernel_metric_extraction_definition",
     "kernel_preprocessing_definition",
+    "pass_rate",
+    "pass_rate_aggregation_config",
     "record_from_result_row",
 ]
