@@ -1,119 +1,117 @@
 {
   "candidate_evaluation": {
     "available": true,
-    "candidate_membership_count": 433412,
+    "candidate_membership_count": 325769,
     "candidate_outcomes": [
       {
-        "candidate_count": 136,
-        "candidate_denominator_count": 433412,
-        "candidate_rate": 0.00031379,
+        "candidate_count": 109,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.00033459,
         "failure_type": "<null>",
         "official_outcome": "evaluation_incomplete",
         "record_status": "measured",
         "test_outcome": "failed"
       },
       {
-        "candidate_count": 117720,
-        "candidate_denominator_count": 433412,
-        "candidate_rate": 0.27161223,
+        "candidate_count": 72742,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.22329319,
         "failure_type": "<null>",
         "official_outcome": "tests_failed",
         "record_status": "measured",
         "test_outcome": "failed"
       },
       {
-        "candidate_count": 305622,
-        "candidate_denominator_count": 433412,
-        "candidate_rate": 0.70515353,
+        "candidate_count": 245839,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.75464209,
         "failure_type": "<null>",
         "official_outcome": "passed",
         "record_status": "measured",
         "test_outcome": "passed"
       },
       {
-        "candidate_count": 9934,
-        "candidate_denominator_count": 433412,
-        "candidate_rate": 0.02292045,
+        "candidate_count": 7079,
+        "candidate_denominator_count": 325769,
+        "candidate_rate": 0.02173012,
         "failure_type": "<null>",
         "official_outcome": "timed_out",
         "record_status": "measured",
         "test_outcome": "timed_out"
       }
     ],
-    "deduplicated_evaluation_count": 316618,
-    "extracted_sample_count": 305048,
+    "deduplicated_evaluation_count": 216527,
+    "extracted_sample_count": 300184,
     "funnel": [
       {
-        "count": 433412,
+        "count": 325769,
         "denominator": "extracted_final_candidates",
-        "denominator_count": 433412,
+        "denominator_count": 325769,
         "rate": 1.0,
         "stage": "extracted final candidates",
         "unit": "candidate_row"
       },
       {
-        "count": 433412,
+        "count": 325769,
         "denominator": "extracted_final_candidates",
-        "denominator_count": 433412,
+        "denominator_count": 325769,
         "rate": 1.0,
         "stage": "evaluation attempted candidates",
         "unit": "candidate_row"
       },
       {
-        "count": 433412,
+        "count": 325769,
         "denominator": "extracted_final_candidates",
-        "denominator_count": 433412,
+        "denominator_count": 325769,
         "rate": 1.0,
         "stage": "tested candidates",
         "unit": "candidate_row"
       },
       {
-        "count": 305622,
+        "count": 245839,
         "denominator": "extracted_final_candidates",
-        "denominator_count": 433412,
-        "rate": 0.70515353,
+        "denominator_count": 325769,
+        "rate": 0.75464209,
         "stage": "candidate passed",
         "unit": "candidate_row"
       },
       {
-        "count": 117856,
+        "count": 72851,
         "denominator": "extracted_final_candidates",
-        "denominator_count": 433412,
-        "rate": 0.27192602,
+        "denominator_count": 325769,
+        "rate": 0.22362779,
         "stage": "candidate failed",
         "unit": "candidate_row"
       },
       {
-        "count": 9934,
+        "count": 7079,
         "denominator": "extracted_final_candidates",
-        "denominator_count": 433412,
-        "rate": 0.02292045,
+        "denominator_count": 325769,
+        "rate": 0.02173012,
         "stage": "candidate timed_out",
         "unit": "candidate_row"
       },
       {
         "count": 0,
         "denominator": "extracted_final_candidates",
-        "denominator_count": 433412,
+        "denominator_count": 325769,
         "rate": 0.0,
         "stage": "candidate infrastructure_failure",
         "unit": "candidate_row"
       }
     ],
-    "limitations": [
-      "The candidate evaluation manifest does not contain membership/results file hashes; same-run linkage is validated through row counts, full relational joins, singleton coordinates, and deterministic evaluation keys."
-    ],
+    "limitations": [],
     "provenance": {
       "manifest": {
         "complete": true,
         "label": "candidate_evaluation_manifest.json",
-        "membership_rows": 433412,
-        "result_rows": 316618,
+        "membership_rows": 325769,
+        "result_rows": 216527,
         "schema_version": 1,
-        "sha256": "a5cc78b2c66e3b17a1c59123d4bfe22d9dd4da35cbbee788eff07a68c33a9592"
+        "sha256": "18944b5479b851e8feeb02da361a1489f5ab9ce589ae1fd6e8e77bf8723f0177"
       },
       "semantic_coordinates": {
-        "completed_at": "2026-07-23T06:10:37.014840+00:00",
+        "completed_at": "2026-07-23T05:14:23.138748+00:00",
         "execution_fingerprint": "1ccd695ab2c431f4d798979db14cf0b5a58df356ed3016cfa0ffda3093d7b6e5",
         "metrics_definition": {
           "definition_id": "humaneval-metrics",
@@ -157,33 +155,33 @@
     "sample_best_outcomes": [
       {
         "best_test_outcome": "passed",
-        "extracted_sample_count": 305048,
-        "rate_of_extracted_samples": 0.75664813,
-        "sample_count": 230814
+        "extracted_sample_count": 300184,
+        "rate_of_extracted_samples": 0.75768196,
+        "sample_count": 227444
       },
       {
         "best_test_outcome": "failed",
-        "extracted_sample_count": 305048,
-        "rate_of_extracted_samples": 0.22399098,
-        "sample_count": 68328
+        "extracted_sample_count": 300184,
+        "rate_of_extracted_samples": 0.22204381,
+        "sample_count": 66654
       },
       {
         "best_test_outcome": "timed_out",
-        "extracted_sample_count": 305048,
-        "rate_of_extracted_samples": 0.01936089,
-        "sample_count": 5906
+        "extracted_sample_count": 300184,
+        "rate_of_extracted_samples": 0.02027423,
+        "sample_count": 6086
       },
       {
         "best_test_outcome": "infrastructure_failure",
-        "extracted_sample_count": 305048,
+        "extracted_sample_count": 300184,
         "rate_of_extracted_samples": 0.0,
         "sample_count": 0
       }
     ]
   },
   "candidate_invariants": {
-    "final_candidate_rows": 433412,
-    "successful_candidate_rows": 433412,
+    "final_candidate_rows": 325769,
+    "successful_candidate_rows": 325769,
     "validated_samples": 365216
   },
   "denominators": {
@@ -214,22 +212,22 @@
       "unit": "sample"
     },
     {
-      "count": 305048,
-      "rate": 0.83525366,
+      "count": 300184,
+      "rate": 0.82193551,
       "rate_label": "share of all samples",
       "stage": "function candidates extracted",
       "unit": "sample"
     },
     {
-      "count": 433412,
-      "rate": 1.42079935,
+      "count": 325769,
+      "rate": 1.08523106,
       "rate_label": "candidates per extracted sample",
       "stage": "final candidates",
       "unit": "candidate_row"
     },
     {
-      "count": 237792,
-      "rate": 0.54865117,
+      "count": 292726,
+      "rate": 0.89856923,
       "rate_label": "share of final candidate rows",
       "stage": "final candidates with converged origins",
       "unit": "candidate_row"
@@ -238,8 +236,7 @@
   "limitations": [
     "Preprocessing metrics alone do not claim task correctness or execution success.",
     "Viewer examples cap raw decoder and candidate text at 1200 and 1200 characters.",
-    "Candidate test rates describe HumanEval+ execution under the supplied evaluation profile; they do not generalize to non-HumanEval tasks.",
-    "The candidate evaluation manifest does not contain membership/results file hashes; same-run linkage is validated through row counts, full relational joins, singleton coordinates, and deterministic evaluation keys."
+    "Candidate test rates describe HumanEval+ execution under the supplied evaluation profile; they do not generalize to non-HumanEval tasks."
   ],
   "outcomes": [
     {
@@ -261,53 +258,62 @@
       "rate_of_present": 0.0
     },
     {
-      "count_all": 305048,
-      "count_nonblank": 305048,
-      "count_present": 305048,
+      "count_all": 300184,
+      "count_nonblank": 300184,
+      "count_present": 300184,
       "outcome": "function_candidates_extracted",
-      "rate_of_all": 0.83525366,
-      "rate_of_nonblank": 0.99118472,
-      "rate_of_present": 0.99083379
+      "rate_of_all": 0.82193551,
+      "rate_of_nonblank": 0.97538025,
+      "rate_of_present": 0.97503492
     },
     {
-      "count_all": 313,
-      "count_nonblank": 313,
-      "count_present": 313,
+      "count_all": 363,
+      "count_nonblank": 363,
+      "count_present": 363,
       "outcome": "no_code_candidates",
-      "rate_of_all": 0.00085703,
-      "rate_of_nonblank": 0.00101702,
-      "rate_of_present": 0.00101666
+      "rate_of_all": 0.00099393,
+      "rate_of_nonblank": 0.00117949,
+      "rate_of_present": 0.00117907
     },
     {
-      "count_all": 749,
-      "count_nonblank": 749,
-      "count_present": 749,
+      "count_all": 5050,
+      "count_nonblank": 5050,
+      "count_present": 5050,
       "outcome": "no_compilable_candidate",
-      "rate_of_all": 0.00205084,
-      "rate_of_nonblank": 0.00243371,
-      "rate_of_present": 0.00243285
+      "rate_of_all": 0.01382743,
+      "rate_of_nonblank": 0.01640884,
+      "rate_of_present": 0.01640303
     },
     {
-      "count_all": 1635,
-      "count_nonblank": 1635,
-      "count_present": 1635,
+      "count_all": 1,
+      "count_nonblank": 1,
+      "count_present": 1,
+      "outcome": "no_nonblank_cleaned_candidate",
+      "rate_of_all": 2.74e-06,
+      "rate_of_nonblank": 3.25e-06,
+      "rate_of_present": 3.25e-06
+    },
+    {
+      "count_all": 1965,
+      "count_nonblank": 1965,
+      "count_present": 1965,
       "outcome": "no_top_level_function_candidate",
-      "rate_of_all": 0.0044768,
-      "rate_of_nonblank": 0.00531256,
-      "rate_of_present": 0.00531068
+      "rate_of_all": 0.00538038,
+      "rate_of_nonblank": 0.00638482,
+      "rate_of_present": 0.00638256
     },
     {
-      "count_all": 16,
-      "count_nonblank": 16,
-      "count_present": 16,
+      "count_all": 198,
+      "count_nonblank": 198,
+      "count_present": 198,
       "outcome": "plain_literal_only",
-      "rate_of_all": 4.381e-05,
-      "rate_of_nonblank": 5.199e-05,
-      "rate_of_present": 5.197e-05
+      "rate_of_all": 0.00054214,
+      "rate_of_nonblank": 0.00064336,
+      "rate_of_present": 0.00064313
     }
   ],
   "provenance": {
-    "analysis_module_sha256": "14c896549ea1654059519e6151d60eb52cf0821f8fdbacfe5d620066cd7a9536",
+    "analysis_module_sha256": "6dffad4c0aa22c4a3ff24bbad8a80da5cb2bdfbc23587eb4d6deadf337a0bee4",
     "corpus": {
       "label": "generation-corpus.parquet",
       "sha256": "a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5"
@@ -317,33 +323,33 @@
         "exists": true,
         "label": "candidate_evaluation_manifest.json",
         "provided": true,
-        "sha256": "a5cc78b2c66e3b17a1c59123d4bfe22d9dd4da35cbbee788eff07a68c33a9592"
+        "sha256": "18944b5479b851e8feeb02da361a1489f5ab9ce589ae1fd6e8e77bf8723f0177"
       },
       "candidate_membership": {
         "exists": true,
         "label": "candidate_membership.parquet",
         "provided": true,
-        "sha256": "91b57dd14dda230e447aada36e500f1361e96253722700c0ed61055e1b2c83a9"
+        "sha256": "c37a61ac3d8d627cf9cd18d2e05944c3ad5bab872208d59cec6a1ed2b6be16ae"
       },
       "candidate_results": {
         "exists": true,
         "label": "candidate_results.parquet",
         "provided": true,
-        "sha256": "58beeaa665f0f6d8b7d6c180998655e5ecd4b3fb62837686e45a647af8fa5428"
+        "sha256": "c2f44ff1ace1d68c52c884d96096cabdf21c82e9f56b21c825d9ec2ff66bc568"
       }
     },
     "relations": {
-      "candidates": "7cc4158f6ca8b7c754976f27adbce1fd26a01f9428159bff8a6e5e7893951daf",
-      "rejections": "b2415b879400ac6bd50af4636147a7f8a5c6354ee0ec7e90c28e0b8bd4e565b7",
-      "results": "77f6ea777568599aa0612afb4f509519ca9d5c3ae870e6ab291502cea6dba352",
-      "step_facts": "4771065b1fd8897360041c33690e483a78c5692804ffc6f1f136d9ab193f0d8f"
+      "candidates": "64d3effc33089e1fa36aa1db9ce0377e55cf3b324e1e8ab41105c0d99106e560",
+      "rejections": "e17bca912f2651bc76395b69341ef0ff8f6008f44807893c01db9606bbf7bb9a",
+      "results": "127388a2e09c6a64b50784e95e510fdc3e96b261a9d54d8ee613d4af83c8f2f2",
+      "step_facts": "25a2c257dba0166fdc49790623eefd568e309fd7841843f690a4aff48cafd04f"
     },
     "run": {
-      "run_id": "generation-corpus-functions-v1-extraction-redesign-v4-20260722"
+      "run_id": "generation-corpus-functions-v1-20260719"
     },
-    "run_manifest_sha256": "0cbe708f469722f05bd714abe3978702a1f066b7e0be11399ce74c240db5c965"
+    "run_manifest_sha256": "f2ed46fa3ea87facd97628e6d52b5b7fc58e6a9378d336e122c1c382f80be832"
   },
-  "rejection_sample_count": 61134,
+  "rejection_sample_count": 18589,
   "schema_version": 3,
   "source_kind_reconciliation": [
     {
@@ -400,7 +406,7 @@
   "tables": {
     "candidate_multiplicity": {
       "path": "tables/candidate_multiplicity.parquet",
-      "row_count": 36
+      "row_count": 27
     },
     "candidate_test_outcomes": {
       "path": "tables/candidate_test_outcomes.parquet",
@@ -408,7 +414,7 @@
     },
     "compile_warnings": {
       "path": "tables/compile_warnings.parquet",
-      "row_count": 28
+      "row_count": 27
     },
     "evaluation_funnel": {
       "path": "tables/evaluation_funnel.parquet",
@@ -416,19 +422,19 @@
     },
     "failure_modes": {
       "path": "tables/failure_modes.parquet",
-      "row_count": 10
+      "row_count": 11
     },
     "operation_contribution": {
       "path": "tables/operation_contribution.parquet",
-      "row_count": 5295
+      "row_count": 7
     },
     "origin_contribution": {
       "path": "tables/origin_contribution.parquet",
-      "row_count": 31319
+      "row_count": 12
     },
     "outcome_by_dimension": {
       "path": "tables/outcome_by_dimension.parquet",
-      "row_count": 2772
+      "row_count": 3096
     },
     "sample_best_test_outcomes": {
       "path": "tables/sample_best_test_outcomes.parquet",
@@ -440,19 +446,19 @@
     },
     "test_success_by_multiplicity": {
       "path": "tables/test_success_by_multiplicity.parquet",
-      "row_count": 11
+      "row_count": 8
     },
     "test_success_by_operation": {
       "path": "tables/test_success_by_operation.parquet",
-      "row_count": 5240
+      "row_count": 7
     },
     "test_success_by_origin": {
       "path": "tables/test_success_by_origin.parquet",
-      "row_count": 44058
+      "row_count": 26
     },
     "test_success_by_preprocessing_outcome": {
       "path": "tables/test_success_by_preprocessing_outcome.parquet",
-      "row_count": 7
+      "row_count": 8
     }
   }
 }

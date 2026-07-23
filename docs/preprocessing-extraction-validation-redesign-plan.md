@@ -1085,6 +1085,14 @@ its complete manifest has SHA-256
 It reconciles all 365,216 samples and records 4,885 preprocessing-outcome
 changes with no decoder-output identity change.
 
+The final hash-validated baseline and redesigned analysis summaries have
+SHA-256
+`2e3058308c0733e16897939b1b7724a9c9f4689b8b7fc8b223f602c6c26de35d`
+and
+`e8d3de1e33559c8cad06de63faa31a5c6a992b87f6cf199e0410ada5153879da`,
+respectively. Both validate the manifest-published membership and result hashes
+against the exact Parquet bytes and report no evaluation-linkage limitation.
+
 The live viewer comparison reports these waterfall deltas:
 
 | Stage | Baseline | Redesign | Delta |
