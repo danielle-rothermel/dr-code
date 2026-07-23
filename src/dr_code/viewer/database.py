@@ -11,11 +11,18 @@ import duckdb
 
 from dr_code.viewer.domain import (
     Annotation,
+    AnnotationOrigin,
     InvalidQueryError,
     RunDescriptor,
     Tag,
+    TaskAnnotation,
+    TaskAnnotationProvenance,
+    TaskIdentity,
     Verdict,
+    decode_task_provenance,
+    encode_task_provenance,
     validate_sha256,
+    validate_task_identity,
 )
 
 
@@ -74,6 +81,34 @@ _MIGRATIONS: Final[tuple[tuple[int, tuple[str, ...]], ...]] = (
     (
         2,
         ("ALTER TABLE annotations ALTER COLUMN verdict DROP NOT NULL",),
+    ),
+    (
+        3,
+        (
+            """
+            CREATE TABLE task_annotations (
+                dataset_id VARCHAR NOT NULL,
+                task_id VARCHAR NOT NULL,
+                origin VARCHAR NOT NULL DEFAULT 'human' CHECK (
+                    origin IN ('human', 'machine')
+                ),
+                category VARCHAR,
+                note VARCHAR,
+                provenance VARCHAR,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+                PRIMARY KEY (dataset_id, task_id)
+            )
+            """,
+            """
+            CREATE TABLE task_annotation_tags (
+                dataset_id VARCHAR NOT NULL,
+                task_id VARCHAR NOT NULL,
+                tag_id VARCHAR NOT NULL REFERENCES tags(tag_id),
+                PRIMARY KEY (dataset_id, task_id, tag_id)
+            )
+            """,
+        ),
     ),
 )
 
@@ -434,6 +469,186 @@ class ViewerDatabase:
             for row in rows
         ]
 
+    def get_task_annotation(
+        self, dataset_id: str, task_id: str
+    ) -> TaskAnnotation | None:
+        identity = validate_task_identity(dataset_id, task_id)
+        row = self._connection.execute(
+            """
+            SELECT origin, category, note, provenance
+            FROM task_annotations
+            WHERE dataset_id = ? AND task_id = ?
+            """,
+            [identity.dataset_id, identity.task_id],
+        ).fetchone()
+        if row is None:
+            return None
+        tags = self._task_annotation_tags(identity)
+        return TaskAnnotation(
+            identity=identity,
+            origin=AnnotationOrigin(row[0]),
+            category=row[1],
+            note=row[2],
+            tags=tags,
+            provenance=decode_task_provenance(row[3]),
+        )
+
+    def put_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        *,
+        origin: AnnotationOrigin | str = AnnotationOrigin.HUMAN,
+        category: str | None = None,
+        note: str | None = None,
+        tag_ids: Iterable[str] = (),
+        provenance: TaskAnnotationProvenance | None = None,
+    ) -> TaskAnnotation:
+        identity = validate_task_identity(dataset_id, task_id)
+        try:
+            parsed_origin = AnnotationOrigin(origin)
+        except ValueError as exc:
+            raise InvalidQueryError(
+                f"unsupported task annotation origin: {origin}"
+            ) from exc
+        normalized_note = _normalize_note(note)
+        normalized_category = _normalize_category(category)
+        provenance_json = encode_task_provenance(provenance)
+        selected_tag_ids = tuple(sorted(set(tag_ids)))
+        if any(
+            not isinstance(tag_id, str) or not tag_id
+            for tag_id in selected_tag_ids
+        ):
+            raise InvalidQueryError("tag_ids must contain nonblank strings")
+
+        def upsert() -> None:
+            if selected_tag_ids:
+                placeholders = ", ".join("?" for _ in selected_tag_ids)
+                found = {
+                    row[0]
+                    for row in self._connection.execute(
+                        f"SELECT tag_id FROM tags WHERE tag_id IN ({placeholders})",
+                        list(selected_tag_ids),
+                    ).fetchall()
+                }
+                missing = sorted(set(selected_tag_ids).difference(found))
+                if missing:
+                    raise InvalidQueryError(
+                        "unknown tag ID(s): " + ", ".join(missing)
+                    )
+            self._connection.execute(
+                """
+                INSERT INTO task_annotations(
+                    dataset_id, task_id, origin, category, note, provenance
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(dataset_id, task_id) DO UPDATE SET
+                    origin = excluded.origin,
+                    category = excluded.category,
+                    note = excluded.note,
+                    provenance = excluded.provenance,
+                    updated_at = now()
+                """,
+                [
+                    identity.dataset_id,
+                    identity.task_id,
+                    parsed_origin.value,
+                    normalized_category,
+                    normalized_note,
+                    provenance_json,
+                ],
+            )
+            self._connection.execute(
+                """
+                DELETE FROM task_annotation_tags
+                WHERE dataset_id = ? AND task_id = ?
+                """,
+                [identity.dataset_id, identity.task_id],
+            )
+            for tag_id in selected_tag_ids:
+                self._connection.execute(
+                    """
+                    INSERT INTO task_annotation_tags(
+                        dataset_id, task_id, tag_id
+                    ) VALUES (?, ?, ?)
+                    """,
+                    [identity.dataset_id, identity.task_id, tag_id],
+                )
+
+        self._transaction(upsert)
+        annotation = self.get_task_annotation(
+            identity.dataset_id, identity.task_id
+        )
+        assert annotation is not None
+        return annotation
+
+    def delete_task_annotation(self, dataset_id: str, task_id: str) -> bool:
+        identity = validate_task_identity(dataset_id, task_id)
+        deleted = False
+
+        def remove() -> None:
+            nonlocal deleted
+            self._connection.execute(
+                """
+                DELETE FROM task_annotation_tags
+                WHERE dataset_id = ? AND task_id = ?
+                """,
+                [identity.dataset_id, identity.task_id],
+            )
+            result = self._connection.execute(
+                """
+                DELETE FROM task_annotations
+                WHERE dataset_id = ? AND task_id = ?
+                RETURNING task_id
+                """,
+                [identity.dataset_id, identity.task_id],
+            ).fetchone()
+            deleted = result is not None
+
+        self._transaction(remove)
+        return deleted
+
+    def export_task_annotations(self) -> list[dict[str, object]]:
+        """Return a timestamp- and machine-path-free deterministic export."""
+        rows = self._connection.execute(
+            """
+            SELECT
+                a.dataset_id,
+                a.task_id,
+                a.origin,
+                a.category,
+                a.note,
+                a.provenance,
+                coalesce(
+                    list(t.name ORDER BY t.normalized_name, t.tag_id)
+                        FILTER (WHERE t.tag_id IS NOT NULL),
+                    []
+                ) AS tags
+            FROM task_annotations AS a
+            LEFT JOIN task_annotation_tags AS atag USING (dataset_id, task_id)
+            LEFT JOIN tags AS t USING (tag_id)
+            GROUP BY
+                a.dataset_id,
+                a.task_id,
+                a.origin,
+                a.category,
+                a.note,
+                a.provenance
+            ORDER BY a.dataset_id, a.task_id
+            """
+        ).fetchall()
+        return [
+            {
+                "dataset_id": row[0],
+                "task_id": row[1],
+                "origin": row[2],
+                "category": row[3],
+                "note": row[4],
+                "provenance": row[5],
+                "tags": row[6],
+            }
+            for row in rows
+        ]
+
     def applied_migrations(self) -> tuple[int, ...]:
         rows = self._connection.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
@@ -453,6 +668,21 @@ class ViewerDatabase:
             ORDER BY t.normalized_name, t.tag_id
             """,
             [corpus_sha256, sample_id, decoder_output_sha256],
+        ).fetchall()
+        return tuple(Tag(tag_id=row[0], name=row[1]) for row in rows)
+
+    def _task_annotation_tags(
+        self, identity: TaskIdentity
+    ) -> tuple[Tag, ...]:
+        rows = self._connection.execute(
+            """
+            SELECT t.tag_id, t.name
+            FROM task_annotation_tags AS atag
+            JOIN tags AS t USING (tag_id)
+            WHERE atag.dataset_id = ? AND atag.task_id = ?
+            ORDER BY t.normalized_name, t.tag_id
+            """,
+            [identity.dataset_id, identity.task_id],
         ).fetchall()
         return tuple(Tag(tag_id=row[0], name=row[1]) for row in rows)
 
@@ -553,6 +783,23 @@ def _normalize_note(note: str | None) -> str | None:
             "annotation note must be at most 20000 characters"
         )
     return note
+
+
+def _normalize_category(category: str | None) -> str | None:
+    if category is None:
+        return None
+    if not isinstance(category, str):
+        raise InvalidQueryError(
+            "task annotation category must be a string or null"
+        )
+    normalized = category.strip()
+    if not normalized:
+        return None
+    if len(normalized) > 256:
+        raise InvalidQueryError(
+            "task annotation category must be at most 256 characters"
+        )
+    return normalized
 
 
 def _duplicates(values: Iterable[str]) -> tuple[str, ...]:
