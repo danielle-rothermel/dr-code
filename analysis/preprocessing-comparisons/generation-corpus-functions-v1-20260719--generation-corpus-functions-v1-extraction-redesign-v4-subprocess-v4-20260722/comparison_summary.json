@@ -1,0 +1,176 @@
+{
+  "candidate_changes": {
+    "after_count": 433412,
+    "before_count": 325769,
+    "by_change": {
+      "added": 107643,
+      "modified": 101553,
+      "unchanged": 224216
+    },
+    "changed_identity_rows": 209196,
+    "count_delta": 107643,
+    "identity_rows": 433412
+  },
+  "corpus_rows": 365216,
+  "evaluation": {
+    "coordinates": {
+      "after": {
+        "execution_fingerprint": "1ccd695ab2c431f4d798979db14cf0b5a58df356ed3016cfa0ffda3093d7b6e5",
+        "metrics_definition_hash": "79d1065c6f64464bc56dc345b5346d5670f2b65c05610e472109e240f13a48e79e280b40ef4d09cbc054ad00ef46b974be8cc91aca81fc3f7986f5c22ed20455",
+        "metrics_profile": "humaneval-metrics@v1",
+        "operator": "code_test@1",
+        "operator_settings": {
+          "task_key": "task",
+          "timeout_seconds": 2.0
+        },
+        "runner_identity": "subprocess:python-isolated@v1",
+        "snapshot_sha256": "141cdc0e5f035fae5b614640f866f8d5c544462d7f51fe59174c87235b8b4fe2"
+      },
+      "before": {
+        "execution_fingerprint": "1ccd695ab2c431f4d798979db14cf0b5a58df356ed3016cfa0ffda3093d7b6e5",
+        "metrics_definition_hash": "79d1065c6f64464bc56dc345b5346d5670f2b65c05610e472109e240f13a48e79e280b40ef4d09cbc054ad00ef46b974be8cc91aca81fc3f7986f5c22ed20455",
+        "metrics_profile": "humaneval-metrics@v1",
+        "operator": "code_test@1",
+        "operator_settings": {
+          "task_key": "task",
+          "timeout_seconds": 2.0
+        },
+        "runner_identity": "subprocess:python-isolated@v1",
+        "snapshot_sha256": "141cdc0e5f035fae5b614640f866f8d5c544462d7f51fe59174c87235b8b4fe2"
+      },
+      "changed_fields": []
+    },
+    "included": true,
+    "membership_changes": {
+      "after_count": 433412,
+      "before_count": 325769,
+      "by_change": {
+        "added": 107643,
+        "modified": 101553,
+        "unchanged": 224216
+      },
+      "changed_identity_rows": 209196,
+      "count_delta": 107643,
+      "identity_rows": 433412
+    },
+    "result_changes": {
+      "by_change": {
+        "added": 107643,
+        "unchanged": 325769
+      },
+      "changed_identity_rows": 107643,
+      "identity_rows": 433412
+    }
+  },
+  "provenance_path_deltas": {
+    "after_count": 798135,
+    "before_count": 726150,
+    "by_change": {
+      "added": 798135,
+      "removed": 725899
+    },
+    "changed_identity_rows": 1524034,
+    "identity_rows": 1524034,
+    "net_count_delta": 71985
+  },
+  "reconciliation": {
+    "candidate_after_count": 433412,
+    "candidate_before_count": 325769,
+    "evaluation_membership_after_count": 433412,
+    "evaluation_membership_before_count": 325769,
+    "evaluation_result_identity_rows": 433412,
+    "provenance_after_count": 798135,
+    "provenance_before_count": 726150,
+    "sample_identity_rows": 365216,
+    "sample_rows_match_corpus": true
+  },
+  "sample_outcome_transitions": {
+    "by_change": {
+      "semantic_result_changed": 101472,
+      "unchanged": 263744
+    },
+    "changed_identity_rows": 101472,
+    "identity_rows": 365216,
+    "outcome_changed_count": 4885,
+    "output_identity_changed_count": 0,
+    "semantic_result_changed_count": 101472,
+    "transitions": [
+      {
+        "after_outcome": "decoder_output_blank",
+        "before_outcome": "decoder_output_blank",
+        "count": 109
+      },
+      {
+        "after_outcome": "decoder_output_missing",
+        "before_outcome": "decoder_output_missing",
+        "count": 57346
+      },
+      {
+        "after_outcome": "function_candidates_extracted",
+        "before_outcome": "function_candidates_extracted",
+        "count": 300184
+      },
+      {
+        "after_outcome": "function_candidates_extracted",
+        "before_outcome": "no_code_candidates",
+        "count": 35
+      },
+      {
+        "after_outcome": "no_code_candidates",
+        "before_outcome": "no_code_candidates",
+        "count": 313
+      },
+      {
+        "after_outcome": "no_compilable_candidate",
+        "before_outcome": "no_code_candidates",
+        "count": 15
+      },
+      {
+        "after_outcome": "function_candidates_extracted",
+        "before_outcome": "no_compilable_candidate",
+        "count": 4318
+      },
+      {
+        "after_outcome": "no_compilable_candidate",
+        "before_outcome": "no_compilable_candidate",
+        "count": 732
+      },
+      {
+        "after_outcome": "function_candidates_extracted",
+        "before_outcome": "no_nonblank_cleaned_candidate",
+        "count": 1
+      },
+      {
+        "after_outcome": "function_candidates_extracted",
+        "before_outcome": "no_top_level_function_candidate",
+        "count": 334
+      },
+      {
+        "after_outcome": "no_top_level_function_candidate",
+        "before_outcome": "no_top_level_function_candidate",
+        "count": 1631
+      },
+      {
+        "after_outcome": "function_candidates_extracted",
+        "before_outcome": "plain_literal_only",
+        "count": 176
+      },
+      {
+        "after_outcome": "no_compilable_candidate",
+        "before_outcome": "plain_literal_only",
+        "count": 2
+      },
+      {
+        "after_outcome": "no_top_level_function_candidate",
+        "before_outcome": "plain_literal_only",
+        "count": 4
+      },
+      {
+        "after_outcome": "plain_literal_only",
+        "before_outcome": "plain_literal_only",
+        "count": 16
+      }
+    ]
+  },
+  "schema_version": 1
+}

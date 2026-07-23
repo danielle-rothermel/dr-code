@@ -8,11 +8,11 @@ deterministic evaluation-reuse work is implemented. The detailed architecture,
 sample dispositions, and verification gates below remain the approved contract
 and are preserved as the implementation record.
 
-The append-only preprocessing-v3 run is complete and useful diagnostic
-evidence, but it is superseded: its salvage provenance does not record the
-required `end_line` and `end_column` boundary. Final preprocessing-v4,
-candidate-evaluation-v4, analysis, and comparison coordinates remain pending.
-No v4 score, rate, or comparison metric is claimed in this document.
+The append-only preprocessing-v3 run remains useful diagnostic evidence but is
+superseded because its salvage provenance omitted the required `end_line` and
+`end_column` boundary. The corrected preprocessing-v4, baseline and redesigned
+candidate-evaluation-v4, analysis, and comparison artifacts are complete and
+reconciled below.
 
 ## Pre-implementation context
 
@@ -670,11 +670,10 @@ released before implementation begins, introduce `v2` instead.
 
 ## Implementation sequence and status
 
-Slices 1 through 8 are implemented. The 135-test hard suite is the stable
-contract for those slices. Slice 9 produced preprocessing-v3 diagnostic
-evidence, then reopened when review required exact salvage-boundary details in
-provenance. Its final preprocessing-v4 regeneration and all downstream v4
-evaluation, analysis, and comparison work remain pending.
+All nine slices are implemented. The 135-test hard suite is the stable contract.
+Slice 9 first produced preprocessing-v3 diagnostic evidence, then regenerated
+preprocessing-v4 and every downstream artifact after review required exact
+salvage-boundary details in provenance.
 
 ### Slice 1: Characterization
 
@@ -962,7 +961,7 @@ because its preprocessing provenance contract is incomplete.
 
 The checked fixture
 `tests/preprocessing/fixtures/hard_examples.json` has file SHA-256
-`e6d700bc988885137adc8de925779f0421194faf077276df2f3893fdb417c046`.
+`c31734a1003fed8fdfeafe30027f68ecc3446bce5668354b81b0bc42cdef5063`.
 It contains 130 unique decoder-output contracts:
 
 - 112 sealed cases: 90 development and 22 holdout under
@@ -976,9 +975,8 @@ It contains 130 unique decoder-output contracts:
 
 `tests/preprocessing/test_hard_examples.py` collects 135 tests: 130
 per-output pipeline cases plus five fixture-integrity, adjudication, and
-provenance-oracle tests. At the recorded preprocessing-v3 source state, all 135
-passed. The v4 boundary-detail repair must update the exact provenance
-expectations and return this same suite to green before regeneration.
+provenance-oracle tests. All 135 pass with the exact v4 boundary-detail
+provenance expectations.
 
 ### Superseded preprocessing-v3 diagnostic
 
@@ -1022,10 +1020,10 @@ Its projected relation totals are:
 A read-only fixture-to-artifact audit found zero mismatches under the
 then-current provenance contract:
 
-- 110 corpus-backed fixture cases mapped to 120 exact result rows;
+- 110 corpus-backed fixture cases mapped to 275 exact result rows;
 - all decoder-output hashes, outcomes, stable failure codes, and failed steps
   matched;
-- 57 successful source rows produced 75 candidates in exact source order;
+- successful source rows produced 154 candidates in exact source order;
 - candidate function names and required or forbidden origin paths matched; and
 - the remaining 20 cases were synthetic and had no authoritative corpus row.
 
@@ -1034,20 +1032,70 @@ comparison or scoring. Its salvage origin records name the operation without
 the newly required `end_line` and `end_column`, so preprocessing-v4 must be
 regenerated rather than relabeling or patching v3.
 
-### Pending final evidence
+### Final preprocessing-v4 evidence
 
-No preprocessing-v4 run ID, manifest hash, relation count, v4 evaluation rate,
-reuse total, or comparison delta belongs here until the append-only artifacts
-are complete. Final evidence must record:
+The authoritative run is
+`generation-corpus-functions-v1-extraction-redesign-v4-20260722`. Its complete
+179-row-group manifest has SHA-256
+`0cbe708f469722f05bd714abe3978702a1f066b7e0be11399ce74c240db5c965`
+and records source commit `b3cee2c7e0796809e9c8ba43d657ce876fc711ce`,
+corpus SHA-256
+`a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5`,
+definition hash
+`b2da7cbd62c7702069afd750e92265255b9b7451fa59cc858f709aafba36848a3de17065307ec57594777b043f881d77111f8faeb013746bcf7aa2eb2575f436`,
+and `expand_last_return_salvage@4`.
 
-1. the preprocessing-v4 source, definition, corpus, step versions, relation
-   hashes, and counts;
-2. baseline and redesigned v4 candidate-evaluation coordinates and complete
-   membership/result reconciliation;
-3. reused and newly executed key counts from validated manifests;
-4. infrastructure-failure totals;
-5. every sample, candidate, outcome, provenance, and evaluation delta; and
-6. deterministic analysis, report, viewer-data, and descriptor hashes.
+Its counts equal v3 exactly: 365,216 results, 433,412 candidates, 104,133
+rejections, 5,221,754 step facts, and 305,048 samples with final function
+candidates. A row-level audit found zero fixture or annotation mismatches. All
+189,564 salvage operations across 125,557 candidate rows carry exact boundary
+coordinates; after removing only those new details, every v4 candidate row is
+identical to v3 in source, order, names, inspection, and remaining lineage.
+
+### Final candidate-evaluation evidence
+
+Both evaluations use `subprocess:python-isolated@v1`, a null legacy
+`sandbox_image`, the pinned HumanEval+ snapshot, and execution fingerprint
+`1ccd695ab2c431f4d798979db14cf0b5a58df356ed3016cfa0ffda3093d7b6e5`.
+Every result is measured and neither run contains an infrastructure failure.
+
+| Coordinate | Baseline | Redesign |
+| --- | ---: | ---: |
+| Membership rows | 325,769 | 433,412 |
+| Unique result rows | 216,527 | 316,618 |
+| Reused baseline results | 0 | 216,527 |
+| Newly executed results | 216,527 | 100,091 |
+| Passing candidate rows | 245,839 | 305,622 |
+| Samples with a passing candidate | 227,444 | 230,814 |
+| Evaluation manifest SHA-256 | `18944b5479b851e8feeb02da361a1489f5ab9ce589ae1fd6e8e77bf8723f0177` | `a5cc78b2c66e3b17a1c59123d4bfe22d9dd4da35cbbee788eff07a68c33a9592` |
+
+The redesigned manifest authenticates the reused source manifest and result
+hash and imports all 216,527 matching keys. This makes the comparison
+deterministic: all 325,769 baseline membership-result identities are unchanged,
+107,643 are added, and none are removed or modified.
+
+### Final comparison and viewer evidence
+
+The comparison summary has SHA-256
+`17de77f53927ded217548d884d17dfa4c6513c9b7bce5e5af3c58dd5d320c1cd`;
+its complete manifest has SHA-256
+`9b134618c7a0ddcb6d41cebbced9047ff374495b862446398fbe76faaa3ecad8`.
+It reconciles all 365,216 samples and records 4,885 preprocessing-outcome
+changes with no decoder-output identity change.
+
+The live viewer comparison reports these waterfall deltas:
+
+| Stage | Baseline | Redesign | Delta |
+| --- | ---: | ---: | ---: |
+| Extracted response candidate | 307,398 | 307,448 | +50 |
+| Compilable candidate | 302,149 | 306,683 | +4,534 |
+| Top-level function candidate | 300,184 | 305,048 | +4,864 |
+| Tested candidate | 300,184 | 305,048 | +4,864 |
+| Passing candidate | 227,444 | 230,814 | +3,370 |
+
+There are exactly 3,370 passing-sample gains and zero passing-sample losses.
+Both committed viewer descriptors load, pass relational validation, and produce
+this compatible comparison from the external append-only artifacts.
 
 ## Expected outcome
 
@@ -1061,6 +1109,6 @@ conflicts. Exact full-source Python parsing and compilation is reduced from as
 many as four validation calls per surviving candidate to one without collapsing
 the existing policy-stage failure contract.
 
-The remaining outcome is operational: finish the boundary-detail repair,
-regenerate preprocessing-v4, then produce and reconcile the complete v4
-evaluation and comparison stack append-only.
+The boundary-detail repair and the complete v4 preprocessing, evaluation,
+analysis, comparison, and viewer stack are regenerated and reconciled
+append-only.

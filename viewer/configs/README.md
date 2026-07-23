@@ -12,10 +12,17 @@ directories.
   candidate evaluation.
 - `generation-corpus-functions-v1-20260719-subprocess-v3-20260722.json`
   registers the same baseline preprocessing artifacts with the append-only
-  subprocess-v3 candidate evaluation.
+  subprocess-v3 candidate evaluation. It is retained as diagnostic evidence.
 - `generation-corpus-functions-v1-extraction-redesign-v2-subprocess-v3-20260722.json`
   registers the append-only extraction-redesign-v2 preprocessing artifacts and
-  their subprocess-v3 candidate evaluation.
+  their subprocess-v3 candidate evaluation. It is superseded diagnostic
+  evidence from before the additive-salvage and runner-protocol corrections.
+- `generation-corpus-functions-v1-20260719-subprocess-v4-20260722.json`
+  registers the definitive host-subprocess baseline evaluation.
+- `generation-corpus-functions-v1-extraction-redesign-v4-subprocess-v4-20260722.json`
+  registers the definitive extraction redesign, exact salvage-boundary
+  provenance, and host-subprocess evaluation. Matching results are
+  deterministically reused from the definitive baseline.
 
 Start the viewer from the repository root:
 
@@ -31,6 +38,15 @@ Compare the subprocess-v3 baseline and extraction redesign runs with:
 uv run dr-code viewer \
   --run baseline=viewer/configs/generation-corpus-functions-v1-20260719-subprocess-v3-20260722.json \
   --run extraction-redesign-v2=viewer/configs/generation-corpus-functions-v1-extraction-redesign-v2-subprocess-v3-20260722.json \
+  --database .runs/dr-code-viewer.duckdb
+```
+
+Compare the definitive baseline and extraction redesign runs with:
+
+```bash
+uv run dr-code viewer \
+  --run before=viewer/configs/generation-corpus-functions-v1-20260719-subprocess-v4-20260722.json \
+  --run after=viewer/configs/generation-corpus-functions-v1-extraction-redesign-v4-subprocess-v4-20260722.json \
   --database .runs/dr-code-viewer.duckdb
 ```
 
