@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from click import unstyle
 from typer.testing import CliRunner
 
 from dr_code.viewer import cli
@@ -86,4 +87,4 @@ def test_viewer_requires_explicit_named_descriptor() -> None:
     result = CliRunner().invoke(cli.app, ["viewer"])
 
     assert result.exit_code == 2
-    assert "Missing option '--run'" in result.output
+    assert "Missing option '--run'" in unstyle(result.output)
