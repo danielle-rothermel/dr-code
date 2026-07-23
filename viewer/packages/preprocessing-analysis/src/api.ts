@@ -195,6 +195,37 @@ export interface AnnotationIdentity {
   sample_id: string;
 }
 
+export type Origin = "human" | "machine";
+
+export interface TaskProvenance {
+  agreement: number | null;
+  extra: Record<string, JsonValue> | null;
+  model: string | null;
+  repeats: number | null;
+  taxonomy_version: string | null;
+}
+
+export interface TaskAnnotation {
+  category: string | null;
+  dataset_id: string;
+  note: string | null;
+  origin: Origin;
+  provenance: TaskProvenance | null;
+  tags: Tag[];
+  task_id: string;
+}
+
+export interface TaskAnnotationIdentity {
+  dataset_id: string;
+  task_id: string;
+}
+
+export interface TaskAnnotationInput {
+  category: string | null;
+  note: string;
+  tag_ids: string[];
+}
+
 export interface PreprocessingApi {
   compare(baselineRunId: string, candidateRunId: string): Promise<CompareResponse>;
   createTag(name: string): Promise<Tag>;
@@ -205,8 +236,10 @@ export interface PreprocessingApi {
   getReviewExamples(runId: string, query: ReviewExamplesQuery): Promise<ReviewExamplesResponse>;
   getRuns(): Promise<RunSummary[]>;
   getTags(): Promise<Tag[]>;
+  getTaskAnnotation(identity: TaskAnnotationIdentity): Promise<TaskAnnotation | null>;
   getWaterfall(runId: string): Promise<WaterfallResponse>;
   putAnnotation(example: AnnotationIdentity, input: AnnotationInput): Promise<Annotation>;
+  putTaskAnnotation(identity: TaskAnnotationIdentity, input: TaskAnnotationInput): Promise<TaskAnnotation>;
 }
 
 interface FetchResponse {
@@ -249,6 +282,19 @@ function queryString(values: object): string {
 
 function segment(value: string): string {
   return encodeURIComponent(value);
+}
+
+// Task IDs are matched by a path converter, so slashes stay literal while each
+// delimited part is still percent-encoded.
+function taskSegment(value: string): string {
+  return value.split("/").map(encodeURIComponent).join("/");
+}
+
+// A benchmark task id (e.g. "HumanEval/42") namespaces its dataset in the
+// segment before the final slash. Bare ids fall back to themselves.
+export function datasetIdOf(taskId: string): string {
+  const cut = taskId.lastIndexOf("/");
+  return cut > 0 ? taskId.slice(0, cut) : taskId;
 }
 
 function detailMessage(payload: unknown): string | undefined {
@@ -332,10 +378,38 @@ export class HttpPreprocessingApi implements PreprocessingApi {
     return this.request(this.annotationPath(example), { method: "DELETE" });
   }
 
+  async getTaskAnnotation(
+    identity: TaskAnnotationIdentity,
+  ): Promise<TaskAnnotation | null> {
+    try {
+      return await this.request(this.taskAnnotationPath(identity));
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  putTaskAnnotation(
+    identity: TaskAnnotationIdentity,
+    input: TaskAnnotationInput,
+  ): Promise<TaskAnnotation> {
+    return this.request(this.taskAnnotationPath(identity), {
+      body: JSON.stringify({ ...input, origin: "human" }),
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+    });
+  }
+
   private annotationPath(
     example: AnnotationIdentity,
   ): string {
     return `/api/annotations/${segment(example.corpus_sha256)}/${segment(example.sample_id)}/${segment(example.decoder_output_sha256)}`;
+  }
+
+  private taskAnnotationPath(
+    identity: TaskAnnotationIdentity,
+  ): string {
+    return `/api/task-annotations/${segment(identity.dataset_id)}/${taskSegment(identity.task_id)}`;
   }
 }
 
@@ -343,4 +417,8 @@ export const defaultApi = new HttpPreprocessingApi();
 
 export function annotationExportUrl(baseUrl = ""): string {
   return `${baseUrl}/api/annotations/export`;
+}
+
+export function taskAnnotationExportUrl(baseUrl = ""): string {
+  return `${baseUrl}/api/task-annotations/export`;
 }

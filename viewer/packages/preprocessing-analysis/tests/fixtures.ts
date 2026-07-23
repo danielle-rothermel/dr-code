@@ -9,6 +9,7 @@ import type {
   PreprocessingApi,
   RunSummary,
   Tag,
+  TaskAnnotation,
   WaterfallResponse,
 } from "../src/api";
 
@@ -34,7 +35,7 @@ export const detail: ExampleDetail = {
   annotation: null,
   candidates: [],
   cause: "syntax error",
-  context: { source_kind: "fixture" },
+  context: { source_kind: "fixture", task_id: "HumanEval/42" },
   corpus_sha256: baselineRun.corpus_sha256,
   decoder_output_sha256: "output-sha",
   failed_step: "compile",
@@ -98,6 +99,16 @@ export const comparison: CompareResponse = {
   transitions: [{ baseline_outcome: "compile_failed", candidate_outcome: "function_candidate", count: 1, id: "compile_failed → function_candidate" }],
 };
 
+export const savedTaskAnnotation: TaskAnnotation = {
+  category: null,
+  dataset_id: "HumanEval",
+  note: null,
+  origin: "human",
+  provenance: null,
+  tags: [],
+  task_id: "HumanEval/42",
+};
+
 export function fakeApi(overrides: Partial<PreprocessingApi> = {}): PreprocessingApi {
   const saved: Annotation = { note: null, tags: [], verdict: "should_be_parseable" };
   const tag: Tag = { name: "markdown fence", tag_id: "tag-1" };
@@ -116,8 +127,10 @@ export function fakeApi(overrides: Partial<PreprocessingApi> = {}): Preprocessin
     }),
     getRuns: vi.fn().mockResolvedValue([baselineRun, candidateRun]),
     getTags: vi.fn().mockResolvedValue([]),
+    getTaskAnnotation: vi.fn().mockResolvedValue(null),
     getWaterfall: vi.fn().mockResolvedValue(waterfall),
     putAnnotation: vi.fn().mockResolvedValue(saved),
+    putTaskAnnotation: vi.fn().mockResolvedValue(savedTaskAnnotation),
     ...overrides,
   };
 }

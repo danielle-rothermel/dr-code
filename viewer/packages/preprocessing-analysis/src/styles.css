@@ -166,6 +166,10 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .create-tag > div { display: flex; gap: 7px; margin-top: 6px; }
 .create-tag input { flex: 1; min-width: 0; }
 .create-tag button { flex: 0 1 auto; }
+.task-annotation-editor { border-top: 1px solid #d4cabb; margin-top: 22px; padding-top: 18px; }
+.task-annotation-editor .field-label { display: block; margin-top: 14px; }
+.task-annotation-editor input[type="text"], .task-annotation-editor > input { width: 100%; }
+.task-annotation-identity { color: #776d5f; font-size: .8rem; font-weight: 700; margin: 2px 0 0; }
 .save-state { font-size: .78rem; font-weight: 800; min-height: 1.2em; }
 .save-state--saving { color: #776d5f; }
 .save-state--dirty { color: #9a591b; }

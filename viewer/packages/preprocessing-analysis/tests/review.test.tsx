@@ -401,4 +401,43 @@ describe("Review", () => {
     window.dispatchEvent(cleanEvent);
     expect(cleanEvent.defaultPrevented).toBe(false);
   });
+
+  it("loads and autosaves a task-keyed judgment for the visible task", async () => {
+    const created = { name: "dynamic programming", tag_id: "dp-tag" };
+    const getTaskAnnotation = vi.fn().mockResolvedValue(null);
+    const putTaskAnnotation = vi.fn(async (identity, input) => ({
+      category: input.category,
+      dataset_id: identity.dataset_id,
+      note: input.note,
+      origin: "human" as const,
+      provenance: null,
+      tags: [],
+      task_id: identity.task_id,
+    }));
+    const onTagCreated = vi.fn();
+    const api = fakeApi({ createTag: vi.fn().mockResolvedValue(created), getTaskAnnotation, putTaskAnnotation });
+    render(<Review api={api} onTagCreated={onTagCreated} runId="baseline" tags={[]} />);
+
+    const card = await findCard("sample-1");
+    await waitFor(() => expect(getTaskAnnotation).toHaveBeenCalledWith({
+      dataset_id: "HumanEval",
+      task_id: "HumanEval/42",
+    }));
+
+    const note = await within(card).findByLabelText("Note");
+    fireEvent.change(note, { target: { value: "recurring difficulty" } });
+    fireEvent.blur(note);
+    await waitFor(() => expect(putTaskAnnotation).toHaveBeenLastCalledWith(
+      { dataset_id: "HumanEval", task_id: "HumanEval/42" },
+      { category: null, note: "recurring difficulty", tag_ids: [] },
+    ));
+
+    fireEvent.change(within(card).getByLabelText("Create task tag"), { target: { value: "dynamic programming" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Create and select task tag" }));
+    await waitFor(() => expect(onTagCreated).toHaveBeenCalledWith(created));
+    await waitFor(() => expect(putTaskAnnotation).toHaveBeenLastCalledWith(
+      { dataset_id: "HumanEval", task_id: "HumanEval/42" },
+      { category: null, note: "recurring difficulty", tag_ids: ["dp-tag"] },
+    ));
+  });
 });

@@ -12,6 +12,7 @@ import type {
 } from "./api";
 import { CandidateOrigins } from "./candidate-origins";
 import { errorMessage, formatNumber, humanize } from "./format";
+import { TaskAnnotationEditor } from "./task-annotation";
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZES = [10, 25, 50] as const;
@@ -495,6 +496,7 @@ function ReviewExampleCard({
   registerCardGuard: RegisterCardGuard;
   tags: Tag[];
 }) {
+  const taskId = typeof example.context.task_id === "string" ? example.context.task_id : null;
   return (
     <article className="review-example-card review-example-card--three-one" aria-label={`Example ${example.sample_id}`}>
       <ReviewExampleMain example={example} />
@@ -507,6 +509,14 @@ function ReviewExampleCard({
           registerCardGuard={registerCardGuard}
           tags={tags}
         />
+        {taskId !== null && (
+          <TaskAnnotationEditor
+            api={api}
+            onTagCreated={onTagCreated}
+            tags={tags}
+            taskId={taskId}
+          />
+        )}
       </aside>
     </article>
   );
@@ -644,6 +654,7 @@ export function Review({
       <div className="surface-heading review-heading">
         <div><p className="eyebrow">Review</p><h2 id="review-title">Triage terminal preprocessing failures</h2></div>
         <a className="export-link" href="/api/annotations/export">Export annotations</a>
+        <a className="export-link" href="/api/task-annotations/export">Export task judgments</a>
       </div>
       <p className="surface-copy">Review nonblank decoder outputs that produced no final function candidate. Changes save to the local annotation database.</p>
 

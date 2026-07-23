@@ -73,6 +73,46 @@ describe("HttpPreprocessingApi", () => {
     );
   });
 
+  it("keeps literal task-id slashes while encoding each identity part", async () => {
+    const transport = vi.fn().mockResolvedValue(
+      response({
+        category: "hard",
+        dataset_id: "HumanEval",
+        note: "tricky",
+        origin: "human",
+        provenance: null,
+        tags: [],
+        task_id: "HumanEval/42",
+      }),
+    );
+    const api = new HttpPreprocessingApi(transport, "/viewer");
+
+    await api.putTaskAnnotation(
+      { dataset_id: "HumanEval", task_id: "HumanEval/42" },
+      { category: "hard", note: "tricky", tag_ids: ["tag-1"] },
+    );
+    expect(transport).toHaveBeenCalledWith(
+      "/viewer/api/task-annotations/HumanEval/HumanEval/42",
+      {
+        body: JSON.stringify({ category: "hard", note: "tricky", tag_ids: ["tag-1"], origin: "human" }),
+        headers: { "Content-Type": "application/json" },
+        method: "PUT",
+      },
+    );
+  });
+
+  it("resolves a missing task annotation to null and rethrows other errors", async () => {
+    const missing = new HttpPreprocessingApi(vi.fn().mockResolvedValue(response({ detail: "Not Found" }, 404)));
+    await expect(
+      missing.getTaskAnnotation({ dataset_id: "HumanEval", task_id: "HumanEval/42" }),
+    ).resolves.toBeNull();
+
+    const broken = new HttpPreprocessingApi(vi.fn().mockResolvedValue(response({ detail: "boom" }, 500)));
+    await expect(
+      broken.getTaskAnnotation({ dataset_id: "HumanEval", task_id: "HumanEval/42" }),
+    ).rejects.toEqual(new ApiError("boom", 500));
+  });
+
   it("uses FastAPI detail messages for rejected comparisons", async () => {
     const api = new HttpPreprocessingApi(vi.fn().mockResolvedValue(response({ detail: "Corpus fingerprints differ" }, 409)));
 
