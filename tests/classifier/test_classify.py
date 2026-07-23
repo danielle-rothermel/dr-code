@@ -259,3 +259,84 @@ def test_off_taxonomy_label_becomes_a_typed_failure(tmp_path) -> None:
     assert all(
         reason is not None and "off-taxonomy" in reason for reason in reasons
     )
+
+
+def test_existing_human_task_annotation_is_not_clobbered(tmp_path) -> None:
+    analytics, descriptor = _analytics(tmp_path)
+    # A human has already annotated Task/2 (which has parse failures and would
+    # otherwise earn a machine rollup).
+    analytics.put_task_annotation(
+        "Task",
+        "Task/2",
+        origin=AnnotationOrigin.HUMAN,
+        category="prose-no-code",
+        note="human reviewed",
+    )
+
+    summary = run_classification(
+        analytics,
+        descriptor,
+        FixedLane(_LABELS),
+        detail_path=tmp_path / "details.jsonl",
+        repeats=3,
+    )
+
+    annotation = analytics.get_task_annotation("Task", "Task/2")
+    assert annotation is not None
+    # The human row survives untouched: origin, category, note, no machine
+    # provenance overwrite.
+    assert annotation.origin is AnnotationOrigin.HUMAN
+    assert annotation.category == "prose-no-code"
+    assert annotation.note == "human reviewed"
+    assert annotation.provenance is None
+    # The collision is counted and surfaced on the run summary.
+    assert summary.human_collisions_skipped == 1
+
+
+def test_existing_machine_task_annotation_is_refreshed(tmp_path) -> None:
+    # A prior machine rollup is not a human decision, so a re-run overwrites it.
+    analytics, descriptor = _analytics(tmp_path)
+    analytics.put_task_annotation(
+        "Task",
+        "Task/2",
+        origin=AnnotationOrigin.MACHINE,
+        category="other",
+        note="stale machine rollup",
+    )
+
+    summary = run_classification(
+        analytics,
+        descriptor,
+        FixedLane(_LABELS),
+        detail_path=tmp_path / "details.jsonl",
+        repeats=3,
+    )
+
+    annotation = analytics.get_task_annotation("Task", "Task/2")
+    assert annotation is not None
+    assert annotation.origin is AnnotationOrigin.MACHINE
+    assert annotation.category == "prose-no-code"
+    assert annotation.note != "stale machine rollup"
+    assert annotation.provenance is not None
+    # Machine-over-machine is a refresh, not a human collision.
+    assert summary.human_collisions_skipped == 0
+
+
+def test_dominant_category_tie_resolves_to_mixed() -> None:
+    from collections import Counter
+
+    from dr_code.classifier.classify import MIXED_CATEGORY, _dominant_category
+    from dr_code.classifier.taxonomy import FailureKind, is_valid_label
+
+    # Two labels tie for the top per-task count -> the rollup-only "mixed"
+    # category. This is deliberately NOT a taxonomy label: the tie is a rollup
+    # summary state, and the raw per-label counts live in provenance.extra.
+    tied = Counter({"prose-no-code": 2, "truncated-output": 2})
+    category = _dominant_category(tied)
+    assert category == MIXED_CATEGORY
+    assert MIXED_CATEGORY == "mixed"
+    assert not is_valid_label(FailureKind.PARSE, MIXED_CATEGORY)
+
+    # A clear winner is returned as-is.
+    clear = Counter({"prose-no-code": 3, "truncated-output": 1})
+    assert _dominant_category(clear) == "prose-no-code"

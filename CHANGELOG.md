@@ -14,6 +14,13 @@
   agreement plus per-label counts and the detail-artifact path); per-example
   detail is written to a deterministic JSONL beside the viewer database. The
   feature is additive: no schema migration and no new example-level columns.
+  Per-task rollups never overwrite an existing human task annotation (the
+  machine rollup is skipped when a human row is present, and the skipped-human
+  collision count is surfaced on the run summary); machine-over-machine
+  overwrite stays allowed so re-runs refresh their own rows. A tie for the
+  dominant per-task label resolves to the rollup-only `mixed` category
+  (deliberately not a taxonomy label), with the per-label tie recorded in
+  `provenance.extra`.
 
 ## 2026-07-22
 

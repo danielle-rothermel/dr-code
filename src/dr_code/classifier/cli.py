@@ -167,6 +167,9 @@ def register(app: typer.Typer) -> None:
                     "min_agreement": summary.min_agreement,
                     "label_distribution": summary.label_distribution,
                     "tasks_written": summary.tasks_written,
+                    "human_collisions_skipped": (
+                        summary.human_collisions_skipped
+                    ),
                     "detail_path": str(summary.detail_path),
                 },
                 indent=2,

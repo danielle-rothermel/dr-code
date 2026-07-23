@@ -10,6 +10,22 @@ Outputs are additive:
 * a per-task rollup written through ``put_task_annotation`` with
   ``origin=machine`` and provenance carrying model/taxonomy_version/repeats/
   mean-agreement plus ``extra`` (per-label counts, run ref, detail path).
+
+Two rollup behaviors are worth calling out:
+
+* **Human annotations are never clobbered.** ``put_task_annotation`` upserts on
+  ``(dataset_id, task_id)`` with ``ON CONFLICT DO UPDATE``, so writing a machine
+  rollup over a pre-existing ``origin=human`` row would silently flip its origin
+  and replace its category/note/provenance. Before writing, we read the existing
+  annotation and skip the task when a human row is present. The count of such
+  skips is surfaced on :class:`ClassificationSummary` as
+  ``human_collisions_skipped``. Machine-over-machine overwrite stays allowed so
+  re-runs refresh their own rows.
+* **The task category may be** ``mixed``. When per-task labels tie for the top
+  count, the rollup category is :data:`MIXED_CATEGORY` (``"mixed"``) -- a
+  rollup-only value, deliberately NOT a taxonomy label (contrast per-item
+  aggregation, which uses the taxonomy's ``other`` escape hatch). The tie is
+  fully described by the per-label counts stored in ``provenance.extra``.
 """
 
 from __future__ import annotations
@@ -54,6 +70,10 @@ from dr_code.viewer.domain import (
 
 MAX_CONCURRENCY = 4
 
+# A rollup-only category used when per-task labels tie. Deliberately not a
+# taxonomy label (see the module docstring and ``_dominant_category``).
+MIXED_CATEGORY = "mixed"
+
 
 @dataclass(frozen=True, slots=True)
 class ClassificationSummary:
@@ -74,6 +94,7 @@ class ClassificationSummary:
     label_distribution: dict[str, int]
     typed_failures: int
     tasks_written: int
+    human_collisions_skipped: int
     detail_path: Path
 
 
@@ -259,7 +280,7 @@ def run_classification(
     ordered_records = [all_records[item.item_id] for item in items]
     _write_details(detail_path, list(all_records.values()))
 
-    tasks_written = _write_task_rollups(
+    tasks_written, human_collisions_skipped = _write_task_rollups(
         analytics,
         descriptor,
         ordered_records,
@@ -291,6 +312,7 @@ def run_classification(
         label_distribution=label_distribution,
         typed_failures=typed_failures,
         tasks_written=tasks_written,
+        human_collisions_skipped=human_collisions_skipped,
         detail_path=detail_path,
     )
 
@@ -321,8 +343,13 @@ def _write_task_rollups(
     detail_path: Path,
     repeats: int,
     model: str,
-) -> int:
-    """Write one machine task annotation per task with parse failures."""
+) -> tuple[int, int]:
+    """Write one machine task annotation per task with parse failures.
+
+    Returns ``(tasks_written, human_collisions_skipped)``: the number of machine
+    rollups persisted and the number of tasks skipped because a human annotation
+    already occupied that ``(dataset_id, task_id)``.
+    """
     by_task: dict[tuple[str, str], list[ItemRecord]] = defaultdict(list)
     for record in records:
         if record.kind != FailureKind.PARSE.value:
@@ -332,10 +359,21 @@ def _write_task_rollups(
         by_task[(record.dataset_id, record.task_id)].append(record)
 
     written = 0
+    human_collisions_skipped = 0
     for (dataset_id, task_id), task_records in sorted(by_task.items()):
         # Skip tasks whose every failure produced only typed lane failures: no
         # label was earned, so we do not write a fabricated machine annotation.
         if all(record.majority_label is None for record in task_records):
+            continue
+        # Never clobber a human's task annotation. put_task_annotation upserts
+        # by (dataset_id, task_id), so writing a machine rollup over an existing
+        # human row would flip origin and replace category/note/provenance. A
+        # human decision wins; the machine rollup is skipped for that task and
+        # the collision is counted for the run summary. Machine-over-machine
+        # overwrite stays allowed so re-runs refresh their own rows.
+        existing = analytics.get_task_annotation(dataset_id, task_id)
+        if existing is not None and existing.origin is AnnotationOrigin.HUMAN:
+            human_collisions_skipped += 1
             continue
         counts: Counter[str] = Counter()
         agreements: list[float] = []
@@ -369,7 +407,7 @@ def _write_task_rollups(
             provenance=provenance,
         )
         written += 1
-    return written
+    return written, human_collisions_skipped
 
 
 def _dominant_category(counts: Counter[str]) -> str:
@@ -381,7 +419,14 @@ def _dominant_category(counts: Counter[str]) -> str:
     top = max(counts[label] for label in labels)
     winners = [label for label in labels if counts[label] == top]
     if len(winners) > 1:
-        return "mixed"
+        # A tie for the dominant per-task label resolves to ``mixed`` -- a
+        # rollup-only category, deliberately NOT a taxonomy label. It signals
+        # that the task's failures split across kinds rather than fabricating a
+        # single winner; the raw per-label counts (which show the tie) are
+        # preserved in provenance.extra. Unlike per-item aggregation, which uses
+        # the taxonomy's ``other`` escape hatch, the task rollup is a summary
+        # surface, so a distinct sentinel is clearer than reusing ``other``.
+        return MIXED_CATEGORY
     return winners[0]
 
 
@@ -398,6 +443,7 @@ def _counts_note(total: int, counts: Counter[str]) -> str:
 
 __all__ = (
     "MAX_CONCURRENCY",
+    "MIXED_CATEGORY",
     "ClassificationSummary",
     "classify_item",
     "classify_one_repeat",
