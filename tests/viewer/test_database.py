@@ -26,7 +26,7 @@ def test_migrations_and_annotations_survive_restart(tmp_path) -> None:
             note="look again",
             tag_ids=[tag.tag_id],
         )
-        assert database.applied_migrations() == (1, 2)
+        assert database.applied_migrations() == (1, 2, 3)
         assert duplicate == tag
         assert annotation.tags == (tag,)
 
@@ -101,7 +101,7 @@ def test_v1_migration_preserves_data_and_verdict_check(tmp_path) -> None:
         actual = database.get_annotation(
             CORPUS_HASH, "sample-v1", OUTPUT_HASH
         )
-        assert database.applied_migrations() == (1, 2)
+        assert database.applied_migrations() == (1, 2, 3)
         assert actual is not None
         assert actual.verdict is Verdict.SHOULD_BE_PARSEABLE
         assert actual.note == "preserved"

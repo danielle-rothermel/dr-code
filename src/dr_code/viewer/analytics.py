@@ -17,6 +17,7 @@ from dr_code.corpus.preprocessing_artifacts import normalize_persisted_origins
 from dr_code.viewer.database import ViewerDatabase
 from dr_code.viewer.domain import (
     Annotation,
+    AnnotationOrigin,
     ComparisonStage,
     ExampleDetail,
     ExampleSummary,
@@ -32,10 +33,13 @@ from dr_code.viewer.domain import (
     RunNotFoundError,
     RunSummary,
     Tag,
+    TaskAnnotation,
+    TaskAnnotationProvenance,
     Verdict,
     Waterfall,
     WaterfallStage,
     validate_sha256,
+    validate_task_identity,
 )
 
 
@@ -802,6 +806,39 @@ class ViewerAnalytics:
     def export_annotations(self) -> list[dict[str, object]]:
         return self._database.export_annotations()
 
+    def get_task_annotation(
+        self, dataset_id: str, task_id: str
+    ) -> TaskAnnotation | None:
+        return self._database.get_task_annotation(dataset_id, task_id)
+
+    def put_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        *,
+        origin: AnnotationOrigin | str = AnnotationOrigin.HUMAN,
+        category: str | None = None,
+        note: str | None = None,
+        tag_ids: Iterable[str] = (),
+        provenance: TaskAnnotationProvenance | None = None,
+    ) -> TaskAnnotation:
+        self._validate_task_target(dataset_id, task_id)
+        return self._database.put_task_annotation(
+            dataset_id,
+            task_id,
+            origin=origin,
+            category=category,
+            note=note,
+            tag_ids=tag_ids,
+            provenance=provenance,
+        )
+
+    def delete_task_annotation(self, dataset_id: str, task_id: str) -> bool:
+        return self._database.delete_task_annotation(dataset_id, task_id)
+
+    def export_task_annotations(self) -> list[dict[str, object]]:
+        return self._database.export_task_annotations()
+
     @property
     def _connection(self) -> duckdb.DuckDBPyConnection:
         return self._database.connection
@@ -1250,6 +1287,28 @@ class ViewerAnalytics:
         raise InvalidQueryError(
             "annotation sample and decoder output are not present in a "
             "registered run for this corpus"
+        )
+
+    def _validate_task_target(self, dataset_id: str, task_id: str) -> None:
+        validate_task_identity(dataset_id, task_id)
+        # The task key is corpus-independent, but a note must attach to a task
+        # a registered run actually exposes. Any corpus carrying a task_id
+        # column and this task_id value confirms the identity.
+        for descriptor in self._runs.values():
+            if not self._corpus_has_column(descriptor, "task_id"):
+                continue
+            found = self._connection.execute(
+                """
+                SELECT 1 FROM read_parquet(?)
+                WHERE task_id = ?
+                LIMIT 1
+                """,
+                [str(descriptor.corpus_path), task_id],
+            ).fetchone()
+            if found is not None:
+                return
+        raise InvalidQueryError(
+            "task is not present in any registered run corpus"
         )
 
 

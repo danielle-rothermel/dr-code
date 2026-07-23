@@ -22,6 +22,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from dr_code.viewer.domain import (
     Annotation as DomainAnnotation,
+    AnnotationOrigin as DomainAnnotationOrigin,
     ExampleDetail as DomainExampleDetail,
     Failures as DomainFailures,
     IncompatibleRunsError,
@@ -33,6 +34,8 @@ from dr_code.viewer.domain import (
     RunSummary as DomainRunSummary,
     RunValidationError,
     Tag as DomainTag,
+    TaskAnnotation as DomainTaskAnnotation,
+    TaskAnnotationProvenance as DomainTaskAnnotationProvenance,
     Verdict as DomainVerdict,
     ViewerError,
     Waterfall as DomainWaterfall,
@@ -40,8 +43,10 @@ from dr_code.viewer.domain import (
 
 Scalar = str | int | float | bool | None
 Verdict = Literal["should_be_parseable", "expected_no_code"]
+Origin = Literal["human", "machine"]
 Unit = Literal["sample", "candidate"]
 Sha256Path = Annotated[str, ApiPath(pattern=r"^[0-9a-f]{64}$")]
+IdentityPath = Annotated[str, ApiPath(min_length=1, max_length=256)]
 
 
 class ResponseModel(BaseModel):
@@ -210,6 +215,34 @@ class AnnotationExport(ResponseModel):
     tags: list[str]
 
 
+class TaskProvenance(ResponseModel):
+    model: str | None = None
+    taxonomy_version: str | None = None
+    repeats: int | None = Field(default=None, ge=0)
+    agreement: float | None = None
+    extra: dict[str, JsonValue] | None = None
+
+
+class TaskAnnotation(ResponseModel):
+    dataset_id: str
+    task_id: str
+    origin: Origin
+    category: str | None
+    note: str | None
+    tags: list[Tag]
+    provenance: TaskProvenance | None
+
+
+class TaskAnnotationExport(ResponseModel):
+    dataset_id: str
+    task_id: str
+    origin: Origin
+    category: str | None
+    note: str | None
+    provenance: str | None
+    tags: list[str]
+
+
 class CreateTagRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -230,6 +263,25 @@ class PutAnnotationRequest(BaseModel):
     verdict: Verdict | None
     note: str | None = Field(default=None, max_length=10_000)
     tag_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class PutTaskProvenance(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    model: str | None = Field(default=None, max_length=256)
+    taxonomy_version: str | None = Field(default=None, max_length=256)
+    repeats: int | None = Field(default=None, ge=0)
+    agreement: float | None = None
+
+
+class PutTaskAnnotationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    origin: Origin = "human"
+    category: str | None = Field(default=None, max_length=256)
+    note: str | None = Field(default=None, max_length=10_000)
+    tag_ids: list[str] = Field(default_factory=list, max_length=100)
+    provenance: PutTaskProvenance | None = None
 
 
 class ViewerService(Protocol):
@@ -300,6 +352,28 @@ class ViewerService(Protocol):
     ) -> bool: ...
 
     def export_annotations(self) -> Sequence[dict[str, object]]: ...
+
+    def get_task_annotation(
+        self, dataset_id: str, task_id: str
+    ) -> DomainTaskAnnotation | None: ...
+
+    def put_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        *,
+        origin: DomainAnnotationOrigin | str = ...,
+        category: str | None = None,
+        note: str | None = None,
+        tag_ids: Sequence[str] = (),
+        provenance: DomainTaskAnnotationProvenance | None = None,
+    ) -> DomainTaskAnnotation: ...
+
+    def delete_task_annotation(
+        self, dataset_id: str, task_id: str
+    ) -> bool: ...
+
+    def export_task_annotations(self) -> Sequence[dict[str, object]]: ...
 
 
 def _run(value: DomainRunSummary) -> RunSummary:
@@ -407,6 +481,51 @@ def _annotation(value: DomainAnnotation) -> Annotation:
         verdict=value.verdict.value if value.verdict is not None else None,
         note=value.note,
         tags=[_tag(tag) for tag in value.tags],
+    )
+
+
+def _task_annotation(value: DomainTaskAnnotation) -> TaskAnnotation:
+    provenance = value.provenance
+    return TaskAnnotation(
+        dataset_id=value.identity.dataset_id,
+        task_id=value.identity.task_id,
+        origin=cast(Origin, value.origin.value),
+        category=value.category,
+        note=value.note,
+        tags=[_tag(tag) for tag in value.tags],
+        provenance=(
+            TaskProvenance(
+                model=provenance.model,
+                taxonomy_version=provenance.taxonomy_version,
+                repeats=provenance.repeats,
+                agreement=provenance.agreement,
+                extra=cast(
+                    "dict[str, JsonValue] | None", provenance.extra
+                ),
+            )
+            if provenance is not None
+            else None
+        ),
+    )
+
+
+def _domain_provenance(
+    value: PutTaskProvenance | None,
+) -> DomainTaskAnnotationProvenance | None:
+    if value is None:
+        return None
+    known = {"model", "taxonomy_version", "repeats", "agreement"}
+    extra = {
+        key: item
+        for key, item in (value.model_extra or {}).items()
+        if key not in known
+    }
+    return DomainTaskAnnotationProvenance(
+        model=value.model,
+        taxonomy_version=value.taxonomy_version,
+        repeats=value.repeats,
+        agreement=value.agreement,
+        extra=extra or None,
     )
 
 
@@ -722,6 +841,58 @@ def create_app(
             AnnotationExport.model_validate(item)
             for item in service.export_annotations()
         ]
+
+    @application.get(
+        "/api/task-annotations/export",
+        response_model=list[TaskAnnotationExport],
+    )
+    async def export_task_annotations() -> list[TaskAnnotationExport]:
+        return [
+            TaskAnnotationExport.model_validate(item)
+            for item in service.export_task_annotations()
+        ]
+
+    @application.get(
+        "/api/task-annotations/{dataset_id}/{task_id:path}",
+        response_model=TaskAnnotation,
+    )
+    async def get_task_annotation(
+        dataset_id: IdentityPath, task_id: IdentityPath
+    ) -> TaskAnnotation:
+        result = service.get_task_annotation(dataset_id, task_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Not Found")
+        return _task_annotation(result)
+
+    @application.put(
+        "/api/task-annotations/{dataset_id}/{task_id:path}",
+        response_model=TaskAnnotation,
+    )
+    async def put_task_annotation(
+        dataset_id: IdentityPath,
+        task_id: IdentityPath,
+        request: PutTaskAnnotationRequest,
+    ) -> TaskAnnotation:
+        result = service.put_task_annotation(
+            dataset_id,
+            task_id,
+            origin=request.origin,
+            category=request.category,
+            note=request.note,
+            tag_ids=request.tag_ids,
+            provenance=_domain_provenance(request.provenance),
+        )
+        return _task_annotation(result)
+
+    @application.delete(
+        "/api/task-annotations/{dataset_id}/{task_id:path}",
+        status_code=204,
+    )
+    async def delete_task_annotation(
+        dataset_id: IdentityPath, task_id: IdentityPath
+    ) -> Response:
+        service.delete_task_annotation(dataset_id, task_id)
+        return Response(status_code=204)
 
     frontend = (static_dir or _default_static_dir()).resolve()
     index = frontend / "index.html"
