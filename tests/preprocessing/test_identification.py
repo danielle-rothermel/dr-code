@@ -221,9 +221,18 @@ def test_last_return_salvage_is_additive_and_globally_appended() -> None:
         "def f(x):\n    return (\n        x + 1\n    )\n",
         "def g(x):\n    return x\n",
     )
-    assert output.value.lineage[2].origins[0].path[-1].kind == (
-        "drop_after_last_return_salvage"
-    )
+    multiline_operation = output.value.lineage[2].origins[0].path[-1]
+    trailing_operation = output.value.lineage[3].origins[0].path[-1]
+    assert multiline_operation.kind == "drop_after_last_return_salvage"
+    assert multiline_operation.details == {
+        "end_line": 4,
+        "end_column": 6,
+    }
+    assert trailing_operation.kind == "drop_after_last_return_salvage"
+    assert trailing_operation.details == {
+        "end_line": 2,
+        "end_column": 13,
+    }
 
 
 def test_identification_retains_distinct_salvage_for_compiling_intact_function(
@@ -276,6 +285,14 @@ def test_identification_retains_distinct_salvage_for_compiling_intact_function(
     ]
     assert all(
         origin.path[-1].kind == "drop_after_last_return_salvage"
+        for origin in salvaged.lineage.origins
+    )
+    assert all(
+        origin.path[-1].details
+        == {
+            "end_line": 2,
+            "end_column": 13,
+        }
         for origin in salvaged.lineage.origins
     )
     assert len(calls) == len(set(calls)) == 2

@@ -10,12 +10,27 @@ directories.
 - `generation-corpus-functions-v1-20260719.json` registers the generation
   corpus, its complete functions-v1 preprocessing artifacts, and the completed
   candidate evaluation.
+- `generation-corpus-functions-v1-20260719-subprocess-v3-20260722.json`
+  registers the same baseline preprocessing artifacts with the append-only
+  subprocess-v3 candidate evaluation.
+- `generation-corpus-functions-v1-extraction-redesign-v2-subprocess-v3-20260722.json`
+  registers the append-only extraction-redesign-v2 preprocessing artifacts and
+  their subprocess-v3 candidate evaluation.
 
 Start the viewer from the repository root:
 
 ```bash
 uv run dr-code viewer \
   --run generation-corpus=viewer/configs/generation-corpus-functions-v1-20260719.json \
+  --database .runs/dr-code-viewer.duckdb
+```
+
+Compare the subprocess-v3 baseline and extraction redesign runs with:
+
+```bash
+uv run dr-code viewer \
+  --run baseline=viewer/configs/generation-corpus-functions-v1-20260719-subprocess-v3-20260722.json \
+  --run extraction-redesign-v2=viewer/configs/generation-corpus-functions-v1-extraction-redesign-v2-subprocess-v3-20260722.json \
   --database .runs/dr-code-viewer.duckdb
 ```
 

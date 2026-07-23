@@ -180,6 +180,22 @@ def test_hard_example_fixture_integrity() -> None:
         )
         for case in POST_HOLDOUT_REGRESSION_CASES
     )
+    salvage_expectations = [
+        operation
+        for case in FIXTURE.cases
+        for path in case.required_origin_paths
+        for operation in path
+        if operation.kind == "drop_after_last_return_salvage"
+    ]
+    assert salvage_expectations
+    assert all(
+        set(operation.details) == {"end_line", "end_column"}
+        and isinstance(operation.details["end_line"], int)
+        and operation.details["end_line"] >= 1
+        and isinstance(operation.details["end_column"], int)
+        and operation.details["end_column"] >= 0
+        for operation in salvage_expectations
+    )
     intact = [
         case
         for case in annotated_cases

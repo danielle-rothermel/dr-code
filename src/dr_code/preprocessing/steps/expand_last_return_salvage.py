@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import token
 import tokenize
+from dataclasses import dataclass
 from typing import ClassVar
 
 from dr_code.preprocessing.names import StepName
@@ -19,11 +20,18 @@ from dr_code.trace import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _SalvagedPrefix:
+    source: str
+    end_line: int
+    end_column: int
+
+
 class ExpandLastReturnSalvage(Step):
     """Append changed legacy truncations without replacing original source."""
 
     NAME: ClassVar[StepName] = StepName.EXPAND_LAST_RETURN_SALVAGE
-    VERSION: ClassVar[str] = "3"
+    VERSION: ClassVar[str] = "4"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
@@ -41,14 +49,20 @@ class ExpandLastReturnSalvage(Step):
             else []
         )
         repairs: list[dict[str, int]] = []
-        operation = ExtractionOperation(kind="drop_after_last_return_salvage")
 
         for index, source in enumerate(value.candidates):
             salvaged = _salvage_after_last_return(source)
-            if salvaged is None or salvaged == source:
+            if salvaged is None or salvaged.source == source:
                 continue
-            originals.append(salvaged)
+            originals.append(salvaged.source)
             if value.lineage:
+                operation = ExtractionOperation(
+                    kind="drop_after_last_return_salvage",
+                    details={
+                        "end_line": salvaged.end_line,
+                        "end_column": salvaged.end_column,
+                    },
+                )
                 lineage.append(
                     _append_operation(value.lineage_at(index), operation)
                 )
@@ -84,7 +98,7 @@ def _append_operation(
     )
 
 
-def _salvage_after_last_return(source: str) -> str | None:
+def _salvage_after_last_return(source: str) -> _SalvagedPrefix | None:
     """Return source through its last complete logical return statement.
 
     Tokenization distinguishes real keywords from strings and comments, and a
@@ -128,7 +142,12 @@ def _salvage_after_last_return(source: str) -> str | None:
         pass
     if boundary is None or pending_return:
         return None
-    return source[: _source_offset(source, boundary)]
+    end_line, end_column = boundary
+    return _SalvagedPrefix(
+        source=source[: _source_offset(source, boundary)],
+        end_line=end_line,
+        end_column=end_column,
+    )
 
 
 def _source_offset(source: str, position: tuple[int, int]) -> int:

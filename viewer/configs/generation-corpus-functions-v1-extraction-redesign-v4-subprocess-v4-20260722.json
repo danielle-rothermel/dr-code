@@ -1,0 +1,6 @@
+{
+  "label": "Generation corpus — extraction redesign v4, subprocess v4 (2026-07-22)",
+  "corpus": "../../../gen-viewer/data/generation-corpus.parquet",
+  "preprocessing": "../../../gen-viewer/data/preprocessing-runs/generation-corpus-functions-v1-extraction-redesign-v4-20260722",
+  "candidate_evaluation": "../../../gen-viewer/data/candidate-evaluations/generation-corpus-functions-v1-extraction-redesign-v4-subprocess-v4-20260722"
+}

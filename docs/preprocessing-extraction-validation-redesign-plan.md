@@ -2,13 +2,21 @@
 
 ## Status
 
-Proposed implementation plan. This document defines the intended architecture,
-migration sequence, and verification gates; it does not describe an implemented
-state.
+The modular extraction, additive salvage, parse-once validation, versioned
+provenance, host-subprocess evaluation, stdout-protocol hardening, and
+deterministic evaluation-reuse work is implemented. The detailed architecture,
+sample dispositions, and verification gates below remain the approved contract
+and are preserved as the implementation record.
 
-## Context
+The append-only preprocessing-v3 run is complete and useful diagnostic
+evidence, but it is superseded: its salvage provenance does not record the
+required `end_line` and `end_column` boundary. Final preprocessing-v4,
+candidate-evaluation-v4, analysis, and comparison coordinates remain pending.
+No v4 score, rate, or comparison metric is claimed in this document.
 
-The `humaneval-function-candidates@v1` flow currently combines response
+## Pre-implementation context
+
+Before this redesign, the `humaneval-function-candidates@v1` flow combined response
 representation recovery, Markdown fence handling, candidate discovery, and
 provenance construction inside `ExtractCandidates`. Its four named extraction
 strategies are precomposed paths:
@@ -34,16 +42,16 @@ a valid function. A corpus diagnostic found 194 fenced JSON objects with string
 `code` fields among the 198 `plain_literal_only` samples; 176 of those code
 fields produce valid function candidates when reprocessed.
 
-Candidate validation has a related composition problem. The plain-literal,
+Candidate validation had a related composition problem. The plain-literal,
 code-representation, compilation, and top-level-function filters each call the
 same parse-and-compile helper. A candidate that reaches the final filter may be
 parsed and compiled four times. Consolidating the filters into one opaque step
 would remove that duplication but would also discard useful filter-stage
 failure semantics.
 
-This plan addresses both problems as one pipeline redesign. It also incorporates
-the completed annotation audit described below; those dispositions are inputs
-to the design, not claims about the current implementation.
+The implementation addressed both problems as one pipeline redesign. It also
+incorporates the completed annotation audit described below as an immutable
+behavior contract.
 
 ## Annotation audit and approved dispositions
 
@@ -52,12 +60,11 @@ The authoritative review input is the 2026-07-22 annotation checkpoint
 has SHA-256
 `c9ebe01e398bfe589fe67b69260553dc37647a8d9a662463cda5c169eb75a441`.
 It contains 101 sample records covering 91 distinct decoder-output hashes.
-Slice 1 must promote this ignored working checkpoint into a checked-in,
-content-addressed immutable fixture plus a manifest recording its source hash,
+Slice 1 promoted this ignored working checkpoint into a checked-in,
+content-addressed immutable fixture whose contract records its source hash,
 corpus hash, sample identities, decoder-output hashes, verdicts, notes, and
-tags. Tests and reports must consume the immutable fixture, never mutable
-viewer annotation state. The canonical annotation-record stream in that
-fixture has SHA-256
+tags. Tests consume the immutable fixture, never mutable viewer annotation
+state. The canonical annotation-record stream in that fixture has SHA-256
 `0048761890b9e20af9016d15f7b4eacaeb2171bfd895579b89293650063437d5`;
 the source-file hash and canonical-record hash protect different boundaries and
 both belong in the manifest.
@@ -196,7 +203,7 @@ is promoted, no class is converted, and "top level" is not weakened.
 - Do not combine other unrelated candidate-cleaning changes with this redesign.
 - Do not infer preprocessing outcomes in the corpus projector or analyzer.
 
-## Target pipeline
+## Implemented pipeline
 
 ```text
 TextArtifact
@@ -559,6 +566,63 @@ candidates back to `CodeCandidateSetArtifact`, preserving source, order,
 candidate ID, and complete provenance. The public preprocessing output contract
 therefore remains unchanged.
 
+## Implemented evaluation and reuse boundary
+
+### Host subprocess
+
+HumanEval execution now uses a fresh host subprocess for each request:
+
+```text
+[sys.executable, "-I", "-c", runner_source]
+```
+
+`run_python_subprocess` provides bounded JSON input, a combined stdout/stderr
+output bound, a finite positive deadline, a fresh process session, and
+process-group termination. Candidate evaluation records
+`subprocess:python-isolated@v1` and fingerprints the Python executable, host
+platform, installed distributions, and trusted sources as execution
+coordinates.
+
+Production evaluation performs no per-candidate OCI invocation, image pull, or
+image preflight. This is intentionally a host-process boundary, not an
+operating-system sandbox: candidate code retains the worker's filesystem and
+network permissions. Evaluation therefore belongs on a disposable,
+constrained worker without valuable credentials or data.
+
+### Stdout protocol
+
+The dependency-free batch runner keeps its original stdout handle only for the
+final JSON result. Before support or candidate code executes, Python-level
+`sys.stdout` and `sys.__stdout__` are redirected to bounded stderr. Tests cover
+top-level and function prints, support-code prints, `sys.__stdout__`, output
+floods, malformed JSON, invalid result shapes, unknown case IDs, and duplicate
+case IDs.
+
+Direct writes to file descriptor 1 remain an explicit limitation. They can
+corrupt the protocol, and valid forged JSON is not authenticated. A separate
+result channel or protocol authentication would be required to close that path.
+
+### Deterministic `--reuse-results-from`
+
+The candidate-evaluation CLI accepts repeatable completed evaluation
+directories through `--reuse-results-from`. Before importing results, it
+validates:
+
+- complete source manifests and required final artifacts;
+- exact snapshot, metric, operator, runner, execution, and host-runtime
+  coordinates;
+- candidate-results schema, row count, and SHA-256;
+- candidate source SHA-256, task fingerprint, and recomputed evaluation key;
+- profile, operator, record status, outcome, and result-value invariants; and
+- agreement between duplicate reused keys.
+
+Only keys in the target work set are imported; new keys execute normally.
+Partial, incompatible, self-referential, duplicate, hash-mismatched, and
+conflicting sources fail closed. The target manifest records ordered reuse
+source hashes and per-source reuse counts. Those descriptors are immutable
+resume coordinates, so changing their values or order rejects a partial resume
+rather than silently changing its result set.
+
 ## Persistence and analysis migration
 
 ### Provenance schema
@@ -604,9 +668,13 @@ Because this stack has not merged, keep the public
 version and accepting a new definition hash. If the definition is treated as
 released before implementation begins, introduce `v2` instead.
 
-## Implementation sequence
+## Implementation sequence and status
 
-Each slice should leave the repository green and reviewable.
+Slices 1 through 8 are implemented. The 135-test hard suite is the stable
+contract for those slices. Slice 9 produced preprocessing-v3 diagnostic
+evidence, then reopened when review required exact salvage-boundary details in
+provenance. Its final preprocessing-v4 regeneration and all downstream v4
+evaluation, analysis, and comparison work remain pending.
 
 ### Slice 1: Characterization
 
@@ -721,8 +789,9 @@ Each slice should leave the repository green and reviewable.
 
 ### Slice 9: Authoritative append-only regeneration and rescore
 
-- Create a new append-only preprocessing run ID.
-- Reprocess the complete corpus from the final source commit.
+- Create a new append-only preprocessing-v4 run ID after the salvage
+  `end_line`/`end_column` provenance contract and its hard fixtures are final.
+- Reprocess the complete corpus from that final source commit.
 - Create a new append-only candidate-evaluation run and immutable manifest.
 - Rescore every candidate membership, not only changed rows, under the pinned
   HumanEval+ snapshot and the `subprocess:python-isolated@v1` host runner.
@@ -736,6 +805,10 @@ Each slice should leave the repository green and reviewable.
 - Produce the complete old/new comparison and require every outcome,
   membership, source, and test-result delta to be attributed or rejected.
 - Re-run concurrency and infrastructure-failure checks.
+
+The complete preprocessing-v3 directory must remain unchanged as superseded
+diagnostic evidence. It is not an acceptable reuse source for final v4 scoring
+because its preprocessing provenance contract is incomplete.
 
 ## Verification gates
 
@@ -883,16 +956,111 @@ Each slice should leave the repository green and reviewable.
 - rerunning regeneration from the same manifests produces identical content
   hashes.
 
+## Implementation evidence appendix
+
+### Stable hard contract
+
+The checked fixture
+`tests/preprocessing/fixtures/hard_examples.json` has file SHA-256
+`e6d700bc988885137adc8de925779f0421194faf077276df2f3893fdb417c046`.
+It contains 130 unique decoder-output contracts:
+
+- 112 sealed cases: 90 development and 22 holdout under
+  `sha256-prefix-mod-5-v1`;
+- 18 separately labeled post-holdout full-corpus regressions;
+- 101 annotation records covering 91 distinct outputs;
+- 34 approved recoveries over 32 outputs;
+- one intrinsic invalid;
+- 62 enforced negatives over 54 outputs; and
+- four quarantined annotation/definition conflicts.
+
+`tests/preprocessing/test_hard_examples.py` collects 135 tests: 130
+per-output pipeline cases plus five fixture-integrity, adjudication, and
+provenance-oracle tests. At the recorded preprocessing-v3 source state, all 135
+passed. The v4 boundary-detail repair must update the exact provenance
+expectations and return this same suite to green before regeneration.
+
+### Superseded preprocessing-v3 diagnostic
+
+The complete diagnostic run is
+`generation-corpus-functions-v1-extraction-redesign-v3-20260722`. Its manifest
+records:
+
+- source commit
+  `025a3f042507159b2b72e2eab03ffbaf4f292b43`;
+- source diff SHA-256
+  `905096d3b2768f8aec0a04c05de4bdd0732f924cebf0315cd5200db0c7632e88`;
+- corpus SHA-256
+  `a58acf1b1ed0ad54dc91d12bcca80398f3f3850b559f8051f52af2e4d4f1c4f5`;
+- definition hash
+  `b2da7cbd62c7702069afd750e92265255b9b7451fa59cc858f709aafba36848a3de17065307ec57594777b043f881d77111f8faeb013746bcf7aa2eb2575f436`;
+- artifact schema version 2; and
+- 365,216 input rows in 179 row groups.
+
+Its outcomes reconcile exactly:
+
+| Outcome | Rows |
+| --- | ---: |
+| `decoder_output_blank` | 109 |
+| `decoder_output_missing` | 57,346 |
+| `function_candidates_extracted` | 305,048 |
+| `no_code_candidates` | 313 |
+| `no_compilable_candidate` | 749 |
+| `no_top_level_function_candidate` | 1,635 |
+| `plain_literal_only` | 16 |
+| **Total** | **365,216** |
+
+Its projected relation totals are:
+
+| Relation | Rows |
+| --- | ---: |
+| `results.parquet` | 365,216 |
+| `candidates.parquet` | 433,412 |
+| `rejections.parquet` | 104,133 |
+| `step_facts.parquet` | 5,221,754 |
+
+A read-only fixture-to-artifact audit found zero mismatches under the
+then-current provenance contract:
+
+- 110 corpus-backed fixture cases mapped to 120 exact result rows;
+- all decoder-output hashes, outcomes, stable failure codes, and failed steps
+  matched;
+- 57 successful source rows produced 75 candidates in exact source order;
+- candidate function names and required or forbidden origin paths matched; and
+- the remaining 20 cases were synthetic and had no authoritative corpus row.
+
+These facts remain useful diagnostics, but v3 is not authoritative for final
+comparison or scoring. Its salvage origin records name the operation without
+the newly required `end_line` and `end_column`, so preprocessing-v4 must be
+regenerated rather than relabeling or patching v3.
+
+### Pending final evidence
+
+No preprocessing-v4 run ID, manifest hash, relation count, v4 evaluation rate,
+reuse total, or comparison delta belongs here until the append-only artifacts
+are complete. Final evidence must record:
+
+1. the preprocessing-v4 source, definition, corpus, step versions, relation
+   hashes, and counts;
+2. baseline and redesigned v4 candidate-evaluation coordinates and complete
+   membership/result reconciliation;
+3. reused and newly executed key counts from validated manifests;
+4. infrastructure-failure totals;
+5. every sample, candidate, outcome, provenance, and evaluation delta; and
+6. deterministic analysis, report, viewer-data, and descriptor hashes.
+
 ## Expected outcome
 
-The completed redesign should make extraction behavior a visible composition
-of small deterministic, additive operations rather than a matrix of
-preassembled strategies. It should satisfy the immutable annotation contract,
-recover the approved fenced JSON, singleton sequence, EOF envelope, lambda,
-unfenced-segment, and last-return cases through named paths, and preserve the
+The implemented redesign makes extraction behavior a visible composition of
+small deterministic, additive operations rather than a matrix of preassembled
+strategies. It satisfies the immutable annotation contract, recovers the
+approved fenced JSON, singleton sequence, EOF envelope, lambda,
+unfenced-segment, and last-return cases through named paths, and preserves the
 enforced negatives while explicitly reporting the annotation/definition
-conflicts. It should retain meaningful convergence and before/after analysis,
-reduce exact full-source Python parsing and compilation from as many as four
-validation calls per surviving candidate
-to one, and regenerate the complete preprocessing/evaluation/analysis stack
-append-only without collapsing the existing policy-stage failure contract.
+conflicts. Exact full-source Python parsing and compilation is reduced from as
+many as four validation calls per surviving candidate to one without collapsing
+the existing policy-stage failure contract.
+
+The remaining outcome is operational: finish the boundary-detail repair,
+regenerate preprocessing-v4, then produce and reconcile the complete v4
+evaluation and comparison stack append-only.
