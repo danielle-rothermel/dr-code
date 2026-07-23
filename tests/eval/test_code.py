@@ -46,6 +46,43 @@ def test_empty_candidate_set_is_not_a_failure() -> None:
     assert empty.candidates == ()
 
 
+def test_candidate_lineage_defaults_empty_for_legacy_producers() -> None:
+    # from_sources stays byte-stable: origin summary, empty rich lineage.
+    candidate_set = CodeCandidateSet.from_sources(("a = 1",), origin="ex")
+    only = candidate_set.candidates[0]
+    assert only.origin == "ex"
+    assert only.lineage.candidate_id is None
+    assert only.lineage.origins == ()
+
+
+def test_from_lineage_preserves_multi_origin_lineage_losslessly() -> None:
+    from dr_code.trace.artifacts import (
+        CandidateLineage,
+        CandidateOrigin,
+        ExtractionOperation,
+    )
+
+    lineage = CandidateLineage(
+        candidate_id="c-abc",
+        origins=(
+            CandidateOrigin(path=(ExtractionOperation(kind="fenced"),)),
+            CandidateOrigin(
+                path=(ExtractionOperation(kind="last_return_salvage"),)
+            ),
+        ),
+    )
+    candidate_set = CodeCandidateSet.from_lineage(
+        (("def f():\n    return 1\n", "extract", lineage),)
+    )
+    only = candidate_set.candidates[0]
+    assert only.position == 0
+    assert only.origin == "extract"
+    # Every origin path survives the crosswalk into the kernel candidate.
+    assert only.lineage == lineage
+    assert only.lineage.candidate_id == "c-abc"
+    assert len(only.lineage.origins) == 2
+
+
 def test_python_source_is_a_plain_text_role() -> None:
     # PythonSource carries text without a compilation guarantee.
     source = PythonSource(text="def f(:")

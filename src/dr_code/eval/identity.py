@@ -45,6 +45,7 @@ SCHEMA_COMPRESSION_REFERENCE_KEY = "dr_code.compression_reference.key"
 SCHEMA_COMPRESSION_REFERENCE_ARTIFACT = (
     "dr_code.compression_reference.artifact"
 )
+SCHEMA_CANDIDATE_EXECUTION = "dr_code.candidate_execution"
 
 
 def identity_hash_for(

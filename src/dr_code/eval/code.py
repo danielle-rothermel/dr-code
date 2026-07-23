@@ -26,6 +26,7 @@ import ast
 from typing import Self
 
 from dr_code.models import FrozenModel
+from dr_code.trace.artifacts import CandidateLineage
 
 
 class CodeCompilationError(ValueError):
@@ -59,11 +60,19 @@ class CodeCandidate(FrozenModel):
     :class:`CodeCandidateSet`; ``origin`` records the lineage step that
     emitted the candidate. Candidates are never reordered by position;
     it is identity, not a sort key.
+
+    ``lineage`` optionally carries the full multi-origin extraction lineage
+    (stable candidate id plus every :class:`CandidateOrigin` path) produced
+    by the preprocessing stack. A single ``origin`` string is not sufficient
+    to retain multi-origin lineage, so richer producers populate ``lineage``
+    losslessly while ``origin`` keeps the simple summary for existing
+    consumers. ``lineage`` defaults empty; legacy producers stay unchanged.
     """
 
     position: int
     source: str
     origin: str
+    lineage: CandidateLineage = CandidateLineage()
 
     def to_python_source(self) -> PythonSource:
         return PythonSource(text=self.source)
@@ -92,6 +101,31 @@ class CodeCandidateSet(FrozenModel):
             candidates=tuple(
                 CodeCandidate(position=index, source=source, origin=origin)
                 for index, source in enumerate(sources)
+            )
+        )
+
+    @classmethod
+    def from_lineage(
+        cls,
+        entries: tuple[tuple[str, str, CandidateLineage], ...],
+    ) -> Self:
+        """Build a set preserving each candidate's full extraction lineage.
+
+        ``entries`` is an ordered ``(source, origin, lineage)`` sequence;
+        contiguous positions are assigned in order. Unlike
+        :meth:`from_sources`, this retains the multi-origin
+        :class:`CandidateLineage` losslessly (decision: lossless is the bar).
+        """
+
+        return cls(
+            candidates=tuple(
+                CodeCandidate(
+                    position=index,
+                    source=source,
+                    origin=origin,
+                    lineage=lineage,
+                )
+                for index, (source, origin, lineage) in enumerate(entries)
             )
         )
 
