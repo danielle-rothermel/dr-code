@@ -130,6 +130,13 @@ _EVALUATION_STAGES: Final = (
     ),
 )
 
+_COMPARISON_STAGE_IDS: Final = (
+    "has_extracted_candidate",
+    "has_compilable_candidate",
+    "has_top_level_candidate",
+    "has_passing_candidate",
+)
+
 
 class ViewerAnalytics:
     """Query registered immutable artifacts and persisted local review state."""
@@ -652,6 +659,8 @@ class ViewerAnalytics:
         self._validate_compatible(baseline, candidate)
         baseline_waterfall = self.waterfall(baseline_run_id)
         candidate_waterfall = self.waterfall(candidate_run_id)
+        baseline_corpus_rows = baseline_waterfall.stages[0].count
+        candidate_corpus_rows = candidate_waterfall.stages[0].count
         stages: list[ComparisonStage] = []
         for before, after in zip(
             baseline_waterfall.stages, candidate_waterfall.stages, strict=True
@@ -660,19 +669,23 @@ class ViewerAnalytics:
                 raise IncompatibleRunsError(
                     "runs expose different waterfall stage mappings"
                 )
+            if before.stage_id not in _COMPARISON_STAGE_IDS:
+                continue
+            baseline_rate = _rate(before.count, baseline_corpus_rows)
+            candidate_rate = _rate(after.count, candidate_corpus_rows)
             stages.append(
                 ComparisonStage(
                     stage_id=before.stage_id,
                     label=before.label,
                     unit=before.unit,
                     baseline_count=before.count,
-                    baseline_denominator_count=before.denominator,
+                    baseline_denominator_count=baseline_corpus_rows,
                     candidate_count=after.count,
-                    candidate_denominator_count=after.denominator,
+                    candidate_denominator_count=candidate_corpus_rows,
                     count_delta=after.count - before.count,
-                    baseline_rate=before.rate,
-                    candidate_rate=after.rate,
-                    rate_delta=_difference(after.rate, before.rate),
+                    baseline_rate=baseline_rate,
+                    candidate_rate=candidate_rate,
+                    rate_delta=_difference(candidate_rate, baseline_rate),
                 )
             )
         rows = self._connection.execute(

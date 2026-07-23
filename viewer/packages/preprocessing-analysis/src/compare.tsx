@@ -32,10 +32,17 @@ export function Compare({
     return () => { active = false; };
   }, [api, baselineRunId, candidateRunId, retry]);
 
+  const baselineOutcomes = comparison === null
+    ? []
+    : Array.from(new Set(comparison.transitions.map(({ baseline_outcome }) => baseline_outcome))).sort();
+  const candidateOutcomes = comparison === null
+    ? []
+    : Array.from(new Set(comparison.transitions.map(({ candidate_outcome }) => candidate_outcome))).sort();
+
   return (
     <section className="surface" aria-labelledby="compare-title">
       <div className="surface-heading"><div><p className="eyebrow">Compare</p><h2 id="compare-title">Compatible before / after deltas</h2></div></div>
-      <p className="surface-copy">Counts and rates share named stage contracts. Incompatible corpora, stage mappings, or evaluation semantics are rejected by the service.</p>
+      <p className="surface-copy">Counts are corpus rows, and every percentage uses all corpus rows as its denominator. Incompatible corpora, stage mappings, or evaluation semantics are rejected by the service.</p>
 
       {comparison === null && error === "" && <p className="loading-state" role="status">Checking compatibility and loading comparison…</p>}
       {error !== "" && (
@@ -47,7 +54,7 @@ export function Compare({
       {comparison !== null && (
         <>
           <div className="table-scroll">
-            <table className="comparison-table">
+            <table aria-label="Corpus row comparison" className="comparison-table">
               <thead>
                 <tr>
                   <th>Stage</th>
@@ -60,13 +67,13 @@ export function Compare({
                     <small>{candidateRun.label} · {candidateRun.definition_id}@{String(candidateRun.semantic_coordinates.definition_version ?? "unknown")}</small>
                   </th>
                   <th>Count Δ</th>
-                  <th>Rate Δ</th>
+                  <th>Row share Δ</th>
                 </tr>
               </thead>
               <tbody>
                 {comparison.stages.map((stage) => (
                   <tr key={stage.id}>
-                    <th scope="row">{stage.label}<small>{stage.unit}</small></th>
+                    <th scope="row">{stage.label}<small>corpus rows</small></th>
                     <td>
                       <button
                         aria-label={`Inspect ${formatNumber(stage.baseline_count)} baseline examples at ${stage.label}`}
@@ -96,24 +103,51 @@ export function Compare({
           <div className="transition-section">
             <div className="surface-heading compact"><div><p className="eyebrow">Transitions</p><h3>Terminal outcome matrix</h3></div></div>
             {comparison.transitions.length === 0 ? <p className="empty-state">No terminal transitions were found.</p> : (
-              <div className="transition-grid" aria-label="Terminal outcome transitions">
-                {comparison.transitions.map((transition) => (
-                  <button
-                    key={`${transition.baseline_outcome}-${transition.candidate_outcome}`}
-                    onClick={() => setSelection({
-                      query: {
-                        baseline_outcome: transition.baseline_outcome,
-                        candidate_outcome: transition.candidate_outcome,
-                        compare_run_id: candidateRunId,
-                      },
-                      runId: baselineRunId,
-                      title: `${humanize(transition.baseline_outcome)} → ${humanize(transition.candidate_outcome)}`,
-                    })}
-                    type="button"
-                  >
-                    <span>{humanize(transition.baseline_outcome)}</span><i aria-hidden="true">→</i><span>{humanize(transition.candidate_outcome)}</span><strong>{formatNumber(transition.count)}</strong>
-                  </button>
-                ))}
+              <div className="table-scroll">
+                <table aria-label="Terminal outcome transitions" className="transition-matrix">
+                  <caption className="visually-hidden">Before outcomes by after outcome</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Before ↓ / After →</th>
+                      {candidateOutcomes.map((outcome) => (
+                        <th key={outcome} scope="col">{humanize(outcome)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {baselineOutcomes.map((baselineOutcome) => (
+                      <tr key={baselineOutcome}>
+                        <th scope="row">{humanize(baselineOutcome)}</th>
+                        {candidateOutcomes.map((candidateOutcome) => {
+                          const transition = comparison.transitions.find(
+                            ({ baseline_outcome, candidate_outcome }) => baseline_outcome === baselineOutcome && candidate_outcome === candidateOutcome,
+                          );
+                          return (
+                            <td key={candidateOutcome}>
+                              {transition === undefined ? <span className="matrix-zero">0</span> : (
+                                <button
+                                  aria-label={`${humanize(transition.baseline_outcome)} → ${humanize(transition.candidate_outcome)}: inspect ${formatNumber(transition.count)} examples`}
+                                  onClick={() => setSelection({
+                                    query: {
+                                      baseline_outcome: transition.baseline_outcome,
+                                      candidate_outcome: transition.candidate_outcome,
+                                      compare_run_id: candidateRunId,
+                                    },
+                                    runId: baselineRunId,
+                                    title: `${humanize(transition.baseline_outcome)} → ${humanize(transition.candidate_outcome)}`,
+                                  })}
+                                  type="button"
+                                >
+                                  {formatNumber(transition.count)}
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

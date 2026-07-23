@@ -161,8 +161,10 @@ Repeat `--run LABEL=descriptor.json` to load additional runs.
 Open `http://127.0.0.1:8000`. This unauthenticated development tool binds only
 to loopback addresses (or `localhost`) and rejects non-loopback `--host`
 values. The Waterfall view traces stage counts to examples, Compare shows
-compatible run deltas and terminal transitions, and Review groups terminal
-failures for verdicts, notes, and tags.
+compatible corpus-row deltas for extracted, compilable, top-level, and passing
+outcomes plus a terminal outcome matrix, and Review groups terminal failures
+for verdicts, notes, and tags. Compare percentages always use all corpus rows
+as their denominator.
 
 Review annotations persist in the selected DuckDB database across restarts and
 can be downloaded as deterministic JSON from `GET /api/annotations/export`.

@@ -65,7 +65,7 @@ describe("PreprocessingViewer", () => {
     await screen.findByRole("heading", { name: "Trace every stage back to examples" });
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
 
-    const comparisonTable = await screen.findByRole("table");
+    const comparisonTable = await screen.findByRole("table", { name: "Corpus row comparison" });
     expect((screen.getByLabelText("Before run") as HTMLSelectElement).value).toBe("baseline");
     expect((screen.getByLabelText("After run") as HTMLSelectElement).value).toBe("candidate");
     expect(api.compare).toHaveBeenCalledWith("baseline", "candidate");
@@ -75,18 +75,24 @@ describe("PreprocessingViewer", () => {
     expect(within(comparisonTable).getByRole("columnheader", {
       name: "After Candidate · preprocessing@2",
     })).toBeTruthy();
+    expect(within(comparisonTable).getByRole("columnheader", {
+      name: "Row share Δ",
+    })).toBeTruthy();
 
     fireEvent.click(await screen.findByRole("button", {
-      name: "Inspect 8 candidate examples at Nonblank output",
+      name: "Inspect 8 candidate examples at Candidates extracted",
     }));
     await waitFor(() => expect(getExamples).toHaveBeenCalledWith("candidate", {
       limit: 25,
       offset: 0,
-      stage_id: "output_nonblank",
+      stage_id: "has_extracted_candidate",
     }));
     await waitFor(() => expect(getExample).toHaveBeenCalledWith("candidate", "sample-1"));
 
-    fireEvent.click(await screen.findByRole("button", { name: /compile failed.*function candidate.*1/i }));
+    const transitionMatrix = screen.getByRole("table", { name: "Terminal outcome transitions" });
+    expect(within(transitionMatrix).getByRole("rowheader", { name: /compile failed/i })).toBeTruthy();
+    expect(within(transitionMatrix).getByRole("columnheader", { name: /function candidate/i })).toBeTruthy();
+    fireEvent.click(within(transitionMatrix).getByRole("button", { name: /compile failed.*function candidate.*1/i }));
 
     await waitFor(() => expect(getExamples).toHaveBeenCalledWith("baseline", {
       baseline_outcome: "compile_failed",

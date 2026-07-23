@@ -1093,14 +1093,14 @@ and
 respectively. Both validate the manifest-published membership and result hashes
 against the exact Parquet bytes and report no evaluation-linkage limitation.
 
-The live viewer comparison reports these waterfall deltas:
+The live viewer comparison reports these corpus-row deltas, with every
+percentage using all 365,216 corpus rows as its denominator:
 
 | Stage | Baseline | Redesign | Delta |
 | --- | ---: | ---: | ---: |
 | Extracted response candidate | 307,398 | 307,448 | +50 |
 | Compilable candidate | 302,149 | 306,683 | +4,534 |
 | Top-level function candidate | 300,184 | 305,048 | +4,864 |
-| Tested candidate | 300,184 | 305,048 | +4,864 |
 | Passing candidate | 227,444 | 230,814 | +3,370 |
 
 There are exactly 3,370 passing-sample gains and zero passing-sample losses.
