@@ -13,11 +13,11 @@ coverage.
 Failure attribution: candidate-attributable terminations (external SIGKILL,
 interpreter crash, SystemExit, output floods) are scored as case
 errors or timeouts; ``EvaluationHarnessError``/``HarnessFailure`` is reserved
-for subprocess breakage so operators can alert on it. Candidate code runs in
-the same child interpreter as the trusted runner, so a deliberately
-adversarial candidate can still forge its own task's case results. The
-subprocess boundary is not a security boundary and does not isolate the host,
-credentials, or network from candidate code.
+for subprocess breakage so operators can alert on it. Python-level candidate
+output is redirected away from the runner's stdout JSON protocol. Direct file
+descriptor writes can still corrupt or forge that protocol, and the subprocess
+boundary does not isolate the host, credentials, or network from candidate
+code.
 """
 
 from __future__ import annotations

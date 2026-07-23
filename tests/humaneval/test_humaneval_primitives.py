@@ -51,11 +51,13 @@ from dr_code.humaneval.task import (
     apply_human_eval_override,
 )
 from dr_code.humaneval.subprocess_runner import (
+    MAX_SUBPROCESS_OUTPUT_BYTES,
     SubprocessCompletedProcess,
     SubprocessError,
     SubprocessOutputLimitError,
     SubprocessRunner,
     SubprocessTimeoutError,
+    run_python_subprocess,
 )
 
 
@@ -425,6 +427,100 @@ def test_evaluate_humaneval_code_reports_timeout_per_case(
     assert {case.case_id for case in result.results} == {"case_0", "case_1"}
     assert {case.timeout_seconds for case in result.results} == {0.2}
     assert evaluation_outcome(result) is SubmissionOutcome.TIMED_OUT
+
+
+@pytest.mark.parametrize(
+    ("candidate_code", "test_source", "expected_stderr"),
+    [
+        (
+            "print('candidate top-level output')\n"
+            "def add_one(x):\n"
+            "    return x + 1\n",
+            None,
+            "candidate top-level output",
+        ),
+        (
+            "def add_one(x):\n"
+            "    print('candidate function output')\n"
+            "    return x + 1\n",
+            None,
+            "candidate function output",
+        ),
+        (
+            "def add_one(x):\n"
+            "    return x + 1\n",
+            "print('support top-level output')\n" + _input_result_test(),
+            "support top-level output",
+        ),
+        (
+            "import sys\n"
+            "print('dunder stdout output', file=sys.__stdout__)\n"
+            "def add_one(x):\n"
+            "    return x + 1\n",
+            None,
+            "dunder stdout output",
+        ),
+    ],
+    ids=(
+        "candidate_top_level",
+        "candidate_function",
+        "support_top_level",
+        "dunder_stdout",
+    ),
+)
+def test_python_print_output_does_not_corrupt_runner_protocol(
+    candidate_code: str,
+    test_source: str | None,
+    expected_stderr: str,
+) -> None:
+    completed_processes: list[SubprocessCompletedProcess] = []
+
+    def recording_runner(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SubprocessCompletedProcess:
+        completed = run_python_subprocess(
+            source=source,
+            input_json=input_json,
+            timeout_seconds=timeout_seconds,
+        )
+        completed_processes.append(completed)
+        return completed
+
+    result = evaluate_human_eval_code(
+        task=_task(test=test_source),
+        candidate_code=candidate_code,
+        timeout_seconds=2.0,
+        run_in_subprocess=recording_runner,
+    )
+
+    assert result.passed is True
+    assert len(completed_processes) == 1
+    assert isinstance(json.loads(completed_processes[0].stdout), list)
+    assert expected_stderr in completed_processes[0].stderr
+    assert expected_stderr not in completed_processes[0].stdout
+
+
+def test_redirected_print_flood_retains_output_limit_attribution() -> None:
+    results = run_subprocess_batch(
+        task=_task(),
+        candidate_code=(
+            "def add_one(x):\n"
+            f"    print('x' * {MAX_SUBPROCESS_OUTPUT_BYTES + 1})\n"
+            "    return x + 1\n"
+        ),
+        function_name="add_one",
+        timeout_seconds=2.0,
+    )
+
+    assert all(
+        result.status is EvaluationCaseStatus.ERROR for result in results
+    )
+    assert all(
+        "SubprocessOutputLimitError" in result.message for result in results
+    )
 
 
 def test_run_subprocess_batch_raises_for_malformed_runner_output() -> None:

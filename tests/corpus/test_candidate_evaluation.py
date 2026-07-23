@@ -13,6 +13,7 @@ import pytest
 
 from dr_code.corpus.candidate_evaluation import (
     CandidateEvaluationError,
+    EvaluationArtifacts,
     STATE_FILENAME,
     evaluate_preprocessing_candidates,
 )
@@ -65,7 +66,9 @@ def _corpus(path: Path, sample_ids: list[str]) -> Path:
     return path
 
 
-def _run(path: Path, sample_ids: list[str], source: str) -> Path:
+def _run(
+    path: Path, sample_ids: list[str], source: str | dict[str, str]
+) -> Path:
     path.mkdir()
     (path / "manifest.json").write_text(
         '{"complete":true}\n', encoding="utf-8"
@@ -91,16 +94,24 @@ def _run(path: Path, sample_ids: list[str], source: str) -> Path:
         ),
         path / "results.parquet",
     )
-    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    sources = (
+        {sample_id: source for sample_id in sample_ids}
+        if isinstance(source, str)
+        else source
+    )
     pq.write_table(
         pa.Table.from_pylist(
             [
                 {
                     "sample_id": sample_id,
                     "candidate_index": 0,
-                    "candidate_id": candidate_id_for_source(source),
-                    "cleaned_source": source,
-                    "source_sha256": digest,
+                    "candidate_id": candidate_id_for_source(
+                        sources[sample_id]
+                    ),
+                    "cleaned_source": sources[sample_id],
+                    "source_sha256": hashlib.sha256(
+                        sources[sample_id].encode("utf-8")
+                    ).hexdigest(),
                     "origins": [],
                     "parse_ok": True,
                     "parse_error": None,
@@ -172,17 +183,23 @@ def test_deduplicates_work_persists_membership_and_resume_is_zero_reruns(
     source = "def add_one(x):\n    return x + 1\n"
     sample_ids = ["sample-a", "sample-b"]
     runner = _PassingRunner()
-    kwargs = {
-        "preprocessing_run": _run(tmp_path / "run", sample_ids, source),
-        "corpus_path": _corpus(tmp_path / "corpus.parquet", sample_ids),
-        "output_dir": tmp_path / "evaluation",
-        "snapshot_path": _snapshot(tmp_path / "snapshot.json"),
-        "max_workers": 2,
-        "run_in_subprocess": runner,
-        "runner_identity": "test-passing-runner@v1",
-    }
+    preprocessing_run = _run(tmp_path / "run", sample_ids, source)
+    corpus = _corpus(tmp_path / "corpus.parquet", sample_ids)
+    output = tmp_path / "evaluation"
+    snapshot = _snapshot(tmp_path / "snapshot.json")
 
-    artifacts = evaluate_preprocessing_candidates(**kwargs)
+    def evaluate() -> EvaluationArtifacts:
+        return evaluate_preprocessing_candidates(
+            preprocessing_run=preprocessing_run,
+            corpus_path=corpus,
+            output_dir=output,
+            snapshot_path=snapshot,
+            max_workers=2,
+            run_in_subprocess=runner,
+            runner_identity="test-passing-runner@v1",
+        )
+
+    artifacts = evaluate()
 
     assert runner.calls == 1
     membership = pq.read_table(artifacts.membership_path).to_pylist()
@@ -196,11 +213,224 @@ def test_deduplicates_work_persists_membership_and_resume_is_zero_reruns(
     first_membership = artifacts.membership_path.read_bytes()
     first_results = artifacts.results_path.read_bytes()
 
-    evaluate_preprocessing_candidates(**kwargs)
+    evaluate()
 
     assert runner.calls == 1
     assert artifacts.membership_path.read_bytes() == first_membership
     assert artifacts.results_path.read_bytes() == first_results
+
+
+def test_reuses_identical_keys_and_executes_only_new_keys(
+    tmp_path: Path,
+) -> None:
+    shared_source = "def add_one(x):\n    return x + 1\n"
+    new_source = "def add_one(x):\n    return 1 + x\n"
+    snapshot = _snapshot(tmp_path / "snapshot.json")
+    seed_run = _run(tmp_path / "seed-run", ["sample-a"], shared_source)
+    seed_corpus = _corpus(tmp_path / "seed-corpus.parquet", ["sample-a"])
+    seed_output = tmp_path / "seed-evaluation"
+    evaluate_preprocessing_candidates(
+        preprocessing_run=seed_run,
+        corpus_path=seed_corpus,
+        output_dir=seed_output,
+        snapshot_path=snapshot,
+        run_in_subprocess=_PassingRunner(),
+        runner_identity="test-passing-runner@v1",
+    )
+
+    identical_runner = _PassingRunner()
+    identical = evaluate_preprocessing_candidates(
+        preprocessing_run=seed_run,
+        corpus_path=seed_corpus,
+        output_dir=tmp_path / "identical-evaluation",
+        snapshot_path=snapshot,
+        run_in_subprocess=identical_runner,
+        runner_identity="test-passing-runner@v1",
+        reuse_results_from=[seed_output],
+    )
+
+    assert identical_runner.calls == 0
+    identical_manifest = json.loads(
+        identical.manifest_path.read_text(encoding="utf-8")
+    )
+    seed_manifest_sha = hashlib.sha256(
+        (seed_output / "candidate_evaluation_manifest.json").read_bytes()
+    ).hexdigest()
+    seed_results_sha = hashlib.sha256(
+        (seed_output / "candidate_results.parquet").read_bytes()
+    ).hexdigest()
+    seed_manifest = json.loads(
+        (seed_output / "candidate_evaluation_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        identical_manifest["execution_fingerprint"]
+        == seed_manifest["execution_fingerprint"]
+    )
+    assert identical_manifest["reused_result_rows"] == 1
+    assert identical_manifest["reuse_result_sources"] == [
+        {
+            "manifest_sha256": seed_manifest_sha,
+            "results_sha256": seed_results_sha,
+            "result_rows": 1,
+        }
+    ]
+    assert identical_manifest["reused_result_rows_by_source"] == [
+        {
+            "manifest_sha256": seed_manifest_sha,
+            "results_sha256": seed_results_sha,
+            "result_rows": 1,
+            "reused_result_rows": 1,
+        }
+    ]
+
+    evaluate_preprocessing_candidates(
+        preprocessing_run=seed_run,
+        corpus_path=seed_corpus,
+        output_dir=tmp_path / "identical-evaluation",
+        snapshot_path=snapshot,
+        run_in_subprocess=identical_runner,
+        runner_identity="test-passing-runner@v1",
+        reuse_results_from=[seed_output],
+    )
+    assert identical_runner.calls == 0
+
+    expanded_runner = _PassingRunner()
+    expanded = evaluate_preprocessing_candidates(
+        preprocessing_run=_run(
+            tmp_path / "expanded-run",
+            ["sample-a", "sample-b"],
+            {"sample-a": shared_source, "sample-b": new_source},
+        ),
+        corpus_path=_corpus(
+            tmp_path / "expanded-corpus.parquet",
+            ["sample-a", "sample-b"],
+        ),
+        output_dir=tmp_path / "expanded-evaluation",
+        snapshot_path=snapshot,
+        run_in_subprocess=expanded_runner,
+        runner_identity="test-passing-runner@v1",
+        reuse_results_from=[seed_output],
+    )
+
+    assert expanded_runner.calls == 1
+    assert len(pq.read_table(expanded.results_path)) == 2
+    expanded_manifest = json.loads(
+        expanded.manifest_path.read_text(encoding="utf-8")
+    )
+    assert expanded_manifest["reused_result_rows"] == 1
+    assert expanded_manifest["result_rows"] == 2
+
+
+def test_rejects_incompatible_or_partial_reuse_sources(
+    tmp_path: Path,
+) -> None:
+    source = "def add_one(x):\n    return x + 1\n"
+    snapshot = _snapshot(tmp_path / "snapshot.json")
+    preprocessing_run = _run(tmp_path / "run", ["sample-a"], source)
+    corpus = _corpus(tmp_path / "corpus.parquet", ["sample-a"])
+    seed_output = tmp_path / "seed-evaluation"
+    seed = evaluate_preprocessing_candidates(
+        preprocessing_run=preprocessing_run,
+        corpus_path=corpus,
+        output_dir=seed_output,
+        snapshot_path=snapshot,
+        run_in_subprocess=_PassingRunner(),
+        runner_identity="seed-runner@v1",
+    )
+
+    with pytest.raises(CandidateEvaluationError, match="runner_identity"):
+        evaluate_preprocessing_candidates(
+            preprocessing_run=preprocessing_run,
+            corpus_path=corpus,
+            output_dir=tmp_path / "incompatible-evaluation",
+            snapshot_path=snapshot,
+            run_in_subprocess=_PassingRunner(),
+            runner_identity="different-runner@v1",
+            reuse_results_from=[seed_output],
+        )
+
+    manifest = json.loads(seed.manifest_path.read_text(encoding="utf-8"))
+    manifest["complete"] = False
+    seed.manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True), encoding="utf-8"
+    )
+    with pytest.raises(CandidateEvaluationError, match="not complete"):
+        evaluate_preprocessing_candidates(
+            preprocessing_run=preprocessing_run,
+            corpus_path=corpus,
+            output_dir=tmp_path / "partial-evaluation",
+            snapshot_path=snapshot,
+            run_in_subprocess=_PassingRunner(),
+            runner_identity="seed-runner@v1",
+            reuse_results_from=[seed_output],
+        )
+
+
+def test_rejects_reuse_source_with_tampered_results(tmp_path: Path) -> None:
+    source = "def add_one(x):\n    return x + 1\n"
+    snapshot = _snapshot(tmp_path / "snapshot.json")
+    preprocessing_run = _run(tmp_path / "run", ["sample-a"], source)
+    corpus = _corpus(tmp_path / "corpus.parquet", ["sample-a"])
+    seed = evaluate_preprocessing_candidates(
+        preprocessing_run=preprocessing_run,
+        corpus_path=corpus,
+        output_dir=tmp_path / "seed-evaluation",
+        snapshot_path=snapshot,
+        run_in_subprocess=_PassingRunner(),
+        runner_identity="test-passing-runner@v1",
+    )
+    rows = pq.read_table(seed.results_path).to_pylist()
+    rows[0]["outcome"] = "tests_failed"
+    pq.write_table(
+        pa.Table.from_pylist(rows, schema=pq.read_schema(seed.results_path)),
+        seed.results_path,
+    )
+
+    with pytest.raises(CandidateEvaluationError, match="results hash"):
+        evaluate_preprocessing_candidates(
+            preprocessing_run=preprocessing_run,
+            corpus_path=corpus,
+            output_dir=tmp_path / "target-evaluation",
+            snapshot_path=snapshot,
+            run_in_subprocess=_PassingRunner(),
+            runner_identity="test-passing-runner@v1",
+            reuse_results_from=[seed.output_dir],
+        )
+
+
+def test_rejects_reuse_source_without_results_hash(tmp_path: Path) -> None:
+    source = "def add_one(x):\n    return x + 1\n"
+    snapshot = _snapshot(tmp_path / "snapshot.json")
+    preprocessing_run = _run(tmp_path / "run", ["sample-a"], source)
+    corpus = _corpus(tmp_path / "corpus.parquet", ["sample-a"])
+    seed = evaluate_preprocessing_candidates(
+        preprocessing_run=preprocessing_run,
+        corpus_path=corpus,
+        output_dir=tmp_path / "seed-evaluation",
+        snapshot_path=snapshot,
+        run_in_subprocess=_PassingRunner(),
+        runner_identity="test-passing-runner@v1",
+    )
+    manifest = json.loads(seed.manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("candidate_results_sha256")
+    seed.manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True), encoding="utf-8"
+    )
+
+    with pytest.raises(
+        CandidateEvaluationError, match="candidate_results_sha256"
+    ):
+        evaluate_preprocessing_candidates(
+            preprocessing_run=preprocessing_run,
+            corpus_path=corpus,
+            output_dir=tmp_path / "target-evaluation",
+            snapshot_path=snapshot,
+            run_in_subprocess=_PassingRunner(),
+            runner_identity="test-passing-runner@v1",
+            reuse_results_from=[seed.output_dir],
+        )
 
 
 def test_rejects_candidate_source_hash_corruption(tmp_path: Path) -> None:

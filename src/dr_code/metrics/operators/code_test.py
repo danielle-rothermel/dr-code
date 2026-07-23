@@ -302,19 +302,15 @@ def _statuses_from_outcome(
     if outcome.returncode != 0:  # was: raise EvaluationHarnessError
         return error_statuses
 
-    # KNOWN LIMITATION (documented, not fixed here): stdout is shared with the
-    # candidate (batch_runner_script.py), so its contents are
-    # candidate-controlled data. Reclassifying malformed stdout to ERROR
-    # statuses contains the blast radius (one trace's record, not the whole
-    # batch), but does not make stdout trustworthy: a candidate can forge a
-    # valid-looking results array and ``os._exit(0)`` before the runner prints
-    # the real one. This forgery hole is baseline (the retired scoring path
-    # parses the same shared stdout); closing it needs a runner protocol change
-    # (a separate result channel or an authenticated sentinel), which is out of
-    # scope for this PR.
+    # ``batch_runner_script.py`` redirects Python-level candidate output away
+    # from its stdout protocol. Direct fd 1 writes remain candidate-controlled:
+    # a candidate can still forge a valid-looking array and ``os._exit(0)``
+    # before the runner emits its result. Reclassifying malformed stdout to
+    # ERROR contains ordinary corruption to one trace, but closing the direct
+    # fd forgery path requires a separate result channel or authentication.
     try:
         raw_results = json.loads(outcome.stdout)
-    except json.JSONDecodeError:  # candidate shares the runner's stdout
+    except json.JSONDecodeError:  # direct fd writes can corrupt the protocol
         return error_statuses
     if not isinstance(raw_results, list):
         return error_statuses

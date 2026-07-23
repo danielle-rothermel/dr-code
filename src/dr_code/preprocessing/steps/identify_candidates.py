@@ -15,7 +15,7 @@ class IdentifyCandidates(Step):
     """Canonicalize and inspect candidates for downstream policy filters."""
 
     NAME: ClassVar[StepName] = StepName.IDENTIFY_CANDIDATES
-    VERSION: ClassVar[str] = "2"
+    VERSION: ClassVar[str] = "3"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.IDENTIFIED_CANDIDATE_SET
 

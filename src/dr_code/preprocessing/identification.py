@@ -29,10 +29,6 @@ from dr_code.trace import (
 
 CODE_REPR_VARIABLE_NAME = "code"
 BARE_LAMBDA_FUNCTION_NAME = "candidate"
-LAST_RETURN_SALVAGE_OPERATION = "drop_after_last_return_salvage"
-INCOMPLETE_RESPONSE_REPRESENTATIONS = frozenset(
-    {"completed_top_level_json_code"}
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,15 +65,6 @@ def identify_candidates(
                     "output_source": canonical.source,
                 }
             )
-
-    primary, suppressed_salvage_origins = _suppress_redundant_salvage(primary)
-    if suppressed_salvage_origins:
-        transformations.append(
-            {
-                "kind": "suppress_redundant_last_return_salvage",
-                "origin_count": suppressed_salvage_origins,
-            }
-        )
 
     for canonical in primary:
         rendered_source = _render_lambda_function(
@@ -134,87 +121,6 @@ def identify_candidates(
         ],
     }
     return IdentifiedCandidateSetArtifact(candidates=identified), facts
-
-
-def _suppress_redundant_salvage(
-    drafts: list[_IdentifiedDraft],
-) -> tuple[list[_IdentifiedDraft], int]:
-    """Drop salvage origins when their intact path is already acceptable.
-
-    Expansion remains parse-free. Identification can make the decision from
-    inspections it already owns: a salvage is redundant only when the same
-    pre-salvage origin path produced a compilable top-level function.
-    """
-    acceptable_intact_paths = [
-        origin.path
-        for draft in drafts
-        if _is_acceptable_function(draft.inspected)
-        for origin in draft.lineage.origins
-        if (
-            not _path_has_operation(origin.path, LAST_RETURN_SALVAGE_OPERATION)
-            and not _path_has_incomplete_response_representation(origin.path)
-        )
-    ]
-    if not acceptable_intact_paths:
-        return drafts, 0
-
-    retained: list[_IdentifiedDraft] = []
-    suppressed = 0
-    for draft in drafts:
-        origins: list[CandidateOrigin] = []
-        for origin in draft.lineage.origins:
-            intact_path = tuple(
-                operation
-                for operation in origin.path
-                if operation.kind != LAST_RETURN_SALVAGE_OPERATION
-            )
-            if (
-                len(intact_path) != len(origin.path)
-                and intact_path in acceptable_intact_paths
-            ):
-                suppressed += 1
-                continue
-            origins.append(origin)
-        if draft.lineage.origins and not origins:
-            continue
-        retained.append(
-            _IdentifiedDraft(
-                source=draft.source,
-                lineage=draft.lineage.model_copy(
-                    update={"origins": tuple(origins)}
-                ),
-                inspected=draft.inspected,
-            )
-        )
-    return retained, suppressed
-
-
-def _is_acceptable_function(inspected: SourceValidationWithTree) -> bool:
-    return bool(
-        inspected.validation.compile_ok
-        and inspected.tree is not None
-        and any(
-            isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef)
-            for statement in inspected.tree.body
-        )
-    )
-
-
-def _path_has_operation(
-    path: tuple[ExtractionOperation, ...], kind: str
-) -> bool:
-    return any(operation.kind == kind for operation in path)
-
-
-def _path_has_incomplete_response_representation(
-    path: tuple[ExtractionOperation, ...],
-) -> bool:
-    return any(
-        operation.kind == "response_representation"
-        and operation.details.get("name")
-        in INCOMPLETE_RESPONSE_REPRESENTATIONS
-        for operation in path
-    )
 
 
 def _dedupe_input_sources(

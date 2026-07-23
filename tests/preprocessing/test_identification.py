@@ -226,16 +226,20 @@ def test_last_return_salvage_is_additive_and_globally_appended() -> None:
     )
 
 
-def test_identification_suppresses_salvage_for_matching_intact_function(
+def test_identification_retains_distinct_salvage_for_compiling_intact_function(
     monkeypatch,
 ) -> None:
     source = "def f():\n    return 1\nprint(f())"
+    intact_origins = (_origin("intact-first"), _origin("intact-second"))
     expanded = (
         ExpandLastReturnSalvage()
         .apply(
             CodeCandidateSetArtifact(
-                candidates=(source,),
-                lineage=(CandidateLineage(origins=(_origin("intact"),)),),
+                candidates=(source, source),
+                lineage=tuple(
+                    CandidateLineage(origins=(origin,))
+                    for origin in intact_origins
+                ),
             )
         )
         .value
@@ -257,21 +261,26 @@ def test_identification_suppresses_salvage_for_matching_intact_function(
     identified, facts = identification.identify_candidates(expanded)
 
     assert [candidate.source for candidate in identified.candidates] == [
-        source
+        source,
+        "def f():\n    return 1\n",
     ]
+    intact, salvaged = identified.candidates
     assert all(
         operation.kind != "drop_after_last_return_salvage"
-        for candidate in identified.candidates
-        for origin in candidate.lineage.origins
+        for origin in intact.lineage.origins
         for operation in origin.path
     )
+    assert intact.lineage.origins == intact_origins
+    assert [origin.path[:-1] for origin in salvaged.lineage.origins] == [
+        origin.path for origin in intact_origins
+    ]
+    assert all(
+        origin.path[-1].kind == "drop_after_last_return_salvage"
+        for origin in salvaged.lineage.origins
+    )
     assert len(calls) == len(set(calls)) == 2
-    transformations = facts["transformations"]
-    assert isinstance(transformations, list)
-    assert transformations[-1] == {
-        "kind": "suppress_redundant_last_return_salvage",
-        "origin_count": 1,
-    }
+    assert facts["unique_input_source_count"] == 2
+    assert facts["transformations"] == []
 
 
 def test_identification_retains_salvage_for_incomplete_json_representation() -> (

@@ -19,7 +19,7 @@ import sqlite3
 import sys
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import (
     FIRST_COMPLETED,
     Future,
@@ -141,6 +141,45 @@ class _Work:
     candidate_source: str
 
 
+@dataclass(frozen=True, slots=True)
+class _ReuseSource:
+    results_path: Path
+    manifest_sha256: str
+    results_sha256: str
+    result_rows: int
+
+    def descriptor(self) -> dict[str, object]:
+        return {
+            "manifest_sha256": self.manifest_sha256,
+            "results_sha256": self.results_sha256,
+            "result_rows": self.result_rows,
+        }
+
+
+_SEMANTIC_REUSE_COORDINATES: Final = (
+    "snapshot_sha256",
+    "metrics_definition",
+    "metrics_definition_hash",
+    "metrics_profile",
+    "operator",
+    "operator_settings",
+    "runner_identity",
+    "sandbox_image",
+    "execution_fingerprint",
+    "host_runtime",
+)
+_RESULT_VALUE_FIELDS: Final = (
+    "function_count",
+    "best_function_name",
+    "total_cases",
+    "passed_count",
+    "failed_count",
+    "error_count",
+    "timeout_count",
+    "coverage_complete",
+)
+
+
 def humaneval_metrics_definition() -> MetricsDefinition:
     """Return the pinned facts-first HumanEval metric declaration."""
 
@@ -169,6 +208,7 @@ def evaluate_preprocessing_candidates(
     max_workers: int = 4,
     run_in_subprocess: SubprocessRunner | None = None,
     runner_identity: str | None = None,
+    reuse_results_from: Sequence[Path | str] = (),
 ) -> EvaluationArtifacts:
     """Evaluate every candidate in a completed preprocessing run.
 
@@ -196,7 +236,7 @@ def evaluate_preprocessing_candidates(
     snapshot_file = Path(snapshot_path).expanduser().resolve(strict=True)
     _validate_completed_preprocessing_run(run_dir)
     definition = humaneval_metrics_definition()
-    immutable = _immutable_coordinates(
+    base_immutable = _immutable_coordinates(
         run_dir=run_dir,
         corpus_file=corpus_file,
         snapshot_file=snapshot_file,
@@ -205,6 +245,17 @@ def evaluate_preprocessing_candidates(
         host_runtime=host_runtime,
         execution_fingerprint=execution_fingerprint,
     )
+    reuse_sources = _load_reuse_sources(
+        reuse_results_from,
+        destination=destination,
+        expected_coordinates=base_immutable,
+    )
+    immutable = {
+        **base_immutable,
+        "reuse_result_sources": [
+            source.descriptor() for source in reuse_sources
+        ],
+    }
     destination.mkdir(parents=True, exist_ok=True)
     connection = _open_state(destination / STATE_FILENAME)
     lease_id = uuid.uuid4().hex
@@ -227,6 +278,13 @@ def evaluate_preprocessing_candidates(
             execution_fingerprint=execution_fingerprint,
         )
         _reset_stale_running(connection)
+        _reuse_completed_results(
+            connection,
+            reuse_sources=reuse_sources,
+            tasks=tasks,
+            definition=definition,
+            execution_fingerprint=execution_fingerprint,
+        )
         _run_pending_work(
             connection=connection,
             lease_id=lease_id,
@@ -241,7 +299,12 @@ def evaluate_preprocessing_candidates(
             results_path=destination / RESULTS_FILENAME,
             manifest_path=destination / MANIFEST_FILENAME,
         )
-        _export_artifacts(connection, artifacts, immutable)
+        _export_artifacts(
+            connection,
+            artifacts,
+            immutable,
+            reuse_sources=reuse_sources,
+        )
         return artifacts
     finally:
         _release_lease(connection, lease_id)
@@ -310,6 +373,101 @@ def _immutable_coordinates(
         "runner_identity": runner_identity,
         "execution_fingerprint": execution_fingerprint,
     }
+
+
+def _load_reuse_sources(
+    paths: Sequence[Path | str],
+    *,
+    destination: Path,
+    expected_coordinates: Mapping[str, object],
+) -> tuple[_ReuseSource, ...]:
+    sources: list[_ReuseSource] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_path in paths:
+        source_dir = Path(raw_path).expanduser().resolve(strict=True)
+        if not source_dir.is_dir():
+            raise CandidateEvaluationError(
+                f"reuse source is not a directory: {source_dir}"
+            )
+        if source_dir == destination:
+            raise CandidateEvaluationError(
+                "evaluation output cannot reuse results from itself"
+            )
+        manifest_path = source_dir / MANIFEST_FILENAME
+        results_path = source_dir / RESULTS_FILENAME
+        if not manifest_path.is_file() or not results_path.is_file():
+            raise CandidateEvaluationError(
+                "reuse source must contain a candidate evaluation manifest "
+                "and candidate results"
+            )
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CandidateEvaluationError(
+                f"reuse source manifest is invalid: {manifest_path}"
+            ) from exc
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("complete") is not True
+        ):
+            raise CandidateEvaluationError(
+                f"reuse source is not complete: {manifest_path}"
+            )
+        for coordinate in _SEMANTIC_REUSE_COORDINATES:
+            if coordinate not in manifest or _canonical_json(
+                manifest[coordinate]
+            ) != _canonical_json(expected_coordinates[coordinate]):
+                raise CandidateEvaluationError(
+                    "reuse source has incompatible semantic coordinate "
+                    f"{coordinate!r}: {manifest_path}"
+                )
+        result_rows = manifest.get("result_rows")
+        if not isinstance(result_rows, int) or result_rows < 0:
+            raise CandidateEvaluationError(
+                f"reuse source manifest has invalid result_rows: {manifest_path}"
+            )
+        try:
+            parquet = pq.ParquetFile(results_path)
+        except (OSError, pa.ArrowException) as exc:
+            raise CandidateEvaluationError(
+                f"reuse source results are invalid: {results_path}"
+            ) from exc
+        if not parquet.schema_arrow.equals(RESULTS_SCHEMA):
+            raise CandidateEvaluationError(
+                f"reuse source results schema is incompatible: {results_path}"
+            )
+        if parquet.metadata.num_rows != result_rows:
+            raise CandidateEvaluationError(
+                f"reuse source result row count does not match its manifest: {results_path}"
+            )
+        results_sha256 = _sha256_file(results_path)
+        recorded_results_sha = manifest.get("candidate_results_sha256")
+        if (
+            not isinstance(recorded_results_sha, str)
+            or re.fullmatch(r"[0-9a-f]{64}", recorded_results_sha) is None
+        ):
+            raise CandidateEvaluationError(
+                "reuse source manifest must contain a valid "
+                f"candidate_results_sha256: {manifest_path}"
+            )
+        if recorded_results_sha != results_sha256:
+            raise CandidateEvaluationError(
+                f"reuse source results hash does not match its manifest: {results_path}"
+            )
+        source = _ReuseSource(
+            results_path=results_path,
+            manifest_sha256=_sha256_file(manifest_path),
+            results_sha256=results_sha256,
+            result_rows=result_rows,
+        )
+        identity = (source.manifest_sha256, source.results_sha256)
+        if identity in seen:
+            raise CandidateEvaluationError(
+                f"duplicate reuse source: {source_dir}"
+            )
+        seen.add(identity)
+        sources.append(source)
+    return tuple(sources)
 
 
 def _load_tasks(snapshot_file: Path) -> dict[str, HumanEvalTask]:
@@ -597,7 +755,8 @@ def _initialize_state(
             failure_type TEXT,
             failure_message TEXT,
             values_json TEXT,
-            completed_at TEXT
+            completed_at TEXT,
+            reused_from_manifest_sha256 TEXT
         );
         CREATE INDEX IF NOT EXISTS work_pending_claim
             ON work(status, evaluation_key);
@@ -696,10 +855,193 @@ def _reset_stale_running(connection: sqlite3.Connection) -> None:
             """UPDATE work
                SET status = 'pending', record_status = NULL,
                    failure_type = NULL, failure_message = NULL,
-                   values_json = NULL, completed_at = NULL
+                   values_json = NULL, completed_at = NULL,
+                   reused_from_manifest_sha256 = NULL
                WHERE status = 'completed'
                  AND record_status = 'infrastructure_failure'"""
         )
+
+
+def _reuse_completed_results(
+    connection: sqlite3.Connection,
+    *,
+    reuse_sources: Sequence[_ReuseSource],
+    tasks: Mapping[str, HumanEvalTask],
+    definition: MetricsDefinition,
+    execution_fingerprint: str,
+) -> None:
+    if not reuse_sources:
+        return
+    task_fingerprints = {
+        task_id: _task_fingerprint(task) for task_id, task in tasks.items()
+    }
+    with connection:
+        for source in reuse_sources:
+            parquet = pq.ParquetFile(source.results_path)
+            for batch in parquet.iter_batches():
+                for result in pa.Table.from_batches([batch]).to_pylist():
+                    imported = _validated_reuse_result(
+                        result,
+                        task_fingerprints=task_fingerprints,
+                        definition=definition,
+                        execution_fingerprint=execution_fingerprint,
+                        source_path=source.results_path,
+                    )
+                    if imported is None:
+                        continue
+                    (
+                        evaluation_key,
+                        task_id,
+                        source_sha256,
+                        task_fingerprint,
+                        candidate_source,
+                        record_status,
+                        failure_type,
+                        failure_message,
+                        values_json,
+                    ) = imported
+                    target = connection.execute(
+                        """SELECT task_id, source_sha256, task_fingerprint,
+                                  candidate_source, status, record_status,
+                                  failure_type, failure_message, values_json,
+                                  reused_from_manifest_sha256
+                             FROM work WHERE evaluation_key = ?""",
+                        (evaluation_key,),
+                    ).fetchone()
+                    if target is None:
+                        continue
+                    expected_identity = (
+                        task_id,
+                        source_sha256,
+                        task_fingerprint,
+                        candidate_source,
+                    )
+                    if target[:4] != expected_identity:
+                        raise CandidateEvaluationError(
+                            "reuse result conflicts with target work identity "
+                            f"for evaluation key {evaluation_key}"
+                        )
+                    if target[4] == "pending":
+                        connection.execute(
+                            """UPDATE work
+                               SET status = 'completed', record_status = ?,
+                                   failure_type = ?, failure_message = ?,
+                                   values_json = ?, completed_at = ?,
+                                   reused_from_manifest_sha256 = ?
+                               WHERE evaluation_key = ? AND status = 'pending'""",
+                            (
+                                record_status,
+                                failure_type,
+                                failure_message,
+                                values_json,
+                                _timestamp(),
+                                source.manifest_sha256,
+                                evaluation_key,
+                            ),
+                        )
+                    elif target[4] == "completed" and target[9] is not None:
+                        if target[5:9] != (
+                            record_status,
+                            failure_type,
+                            failure_message,
+                            values_json,
+                        ):
+                            raise CandidateEvaluationError(
+                                "reuse sources contain conflicting completed "
+                                f"results for evaluation key {evaluation_key}"
+                            )
+
+
+def _validated_reuse_result(
+    result: Mapping[str, object],
+    *,
+    task_fingerprints: Mapping[str, str],
+    definition: MetricsDefinition,
+    execution_fingerprint: str,
+    source_path: Path,
+) -> tuple[str, str, str, str, str, str, object, object, str] | None:
+    evaluation_key = _string(
+        result.get("evaluation_key"), "reuse evaluation_key"
+    )
+    task_id = _string(result.get("task_id"), "reuse task_id")
+    candidate_source = _string(
+        result.get("cleaned_source"), "reuse cleaned_source"
+    )
+    source_sha256 = _string(result.get("source_sha256"), "reuse source_sha256")
+    task_fingerprint = _string(
+        result.get("task_fingerprint"), "reuse task_fingerprint"
+    )
+    if _sha256_text(candidate_source) != source_sha256:
+        raise CandidateEvaluationError(
+            f"reuse result has invalid source hash: {source_path}"
+        )
+    if task_fingerprints.get(task_id) != task_fingerprint:
+        raise CandidateEvaluationError(
+            f"reuse result has invalid task fingerprint: {source_path}"
+        )
+    expected_key = _evaluation_key(
+        task_id=task_id,
+        task_fingerprint=task_fingerprint,
+        candidate_source=candidate_source,
+        definition=definition,
+        execution_fingerprint=execution_fingerprint,
+    )
+    if evaluation_key != expected_key:
+        raise CandidateEvaluationError(
+            f"reuse result has invalid evaluation key: {source_path}"
+        )
+    expected_profile = (
+        f"{HUMANEVAL_METRICS_PROFILE_ID}@{HUMANEVAL_METRICS_PROFILE_VERSION}"
+    )
+    if (
+        result.get("metrics_profile") != expected_profile
+        or result.get("operator") != "code_test@1"
+    ):
+        raise CandidateEvaluationError(
+            f"reuse result has incompatible metric coordinates: {source_path}"
+        )
+    record_status = _string(result.get("record_status"), "reuse record_status")
+    if record_status not in {"measured", "infrastructure_failure"}:
+        raise CandidateEvaluationError(
+            f"reuse result has invalid record status: {source_path}"
+        )
+    values = {field: result.get(field) for field in _RESULT_VALUE_FIELDS}
+    if record_status != "measured":
+        values = {}
+    values_json = _canonical_json(values)
+    reconstructed = _result_row(
+        (
+            evaluation_key,
+            task_id,
+            source_sha256,
+            task_fingerprint,
+            candidate_source,
+            record_status,
+            result.get("failure_type"),
+            result.get("failure_message"),
+            values_json if values else None,
+        )
+    )
+    if any(
+        reconstructed[field.name] != result.get(field.name)
+        for field in RESULTS_SCHEMA
+    ):
+        raise CandidateEvaluationError(
+            f"reuse result contains inconsistent completed fields: {source_path}"
+        )
+    if record_status != "measured":
+        return None
+    return (
+        evaluation_key,
+        task_id,
+        source_sha256,
+        task_fingerprint,
+        candidate_source,
+        record_status,
+        result.get("failure_type"),
+        result.get("failure_message"),
+        values_json,
+    )
 
 
 def _acquire_lease(connection: sqlite3.Connection, lease_id: str) -> None:
@@ -892,6 +1234,8 @@ def _export_artifacts(
     connection: sqlite3.Connection,
     artifacts: EvaluationArtifacts,
     immutable: Mapping[str, object],
+    *,
+    reuse_sources: Sequence[_ReuseSource],
 ) -> None:
     outstanding = connection.execute(
         "SELECT COUNT(*) FROM work WHERE status != 'completed'"
@@ -906,6 +1250,14 @@ def _export_artifacts(
     result_count = connection.execute("SELECT COUNT(*) FROM work").fetchone()[
         0
     ]
+    reused_counts = dict(
+        connection.execute(
+            """SELECT reused_from_manifest_sha256, COUNT(*)
+                 FROM work
+                WHERE reused_from_manifest_sha256 IS NOT NULL
+                GROUP BY reused_from_manifest_sha256"""
+        )
+    )
     _atomic_write_query_parquet(
         artifacts.membership_path,
         MEMBERSHIP_SCHEMA,
@@ -927,10 +1279,21 @@ def _export_artifacts(
         ),
         _result_row,
     )
+    reuse_provenance = [
+        {
+            **source.descriptor(),
+            "reused_result_rows": reused_counts.get(source.manifest_sha256, 0),
+        }
+        for source in reuse_sources
+    ]
     manifest = {
         **immutable,
         "membership_rows": membership_count,
         "result_rows": result_count,
+        "candidate_membership_sha256": _sha256_file(artifacts.membership_path),
+        "candidate_results_sha256": _sha256_file(artifacts.results_path),
+        "reused_result_rows": sum(reused_counts.values()),
+        "reused_result_rows_by_source": reuse_provenance,
         "complete": True,
         "completed_at": _timestamp(),
     }

@@ -35,8 +35,7 @@ FIXTURE = load_hard_examples()
 SEALED_DEVELOPMENT_CASES = tuple(
     case
     for case in FIXTURE.cases
-    if case.partition == "development"
-    and case.cohort == "sealed_hard_suite"
+    if case.partition == "development" and case.cohort == "sealed_hard_suite"
 )
 HOLDOUT_CASES = tuple(
     case
@@ -77,6 +76,15 @@ POST_HOLDOUT_REGRESSION_SAMPLE_IDS = {
     "d4f03da500a62e32d5d556c15bf0fdb010609347651b076e684705421262efd7",
     "e05eaa5f5c23217103f486e7e35acc0a0c403da34eafe76193b6189d51106b11",
     "eafeb0a0e810cb29f31ca438258191451a00b34762d8cde1b76d694ddb271b43",
+}
+ADDITIVE_CONTRACT_CORRECTION_IDS = {
+    "annotation-0bb72a8884d3908e",
+    "annotation-13e483831955166e",
+    "annotation-6ce43080f39f2600",
+    "annotation-6f2d0d165ba311f4",
+    "annotation-881cb9c30a779e90",
+    "annotation-9d15658df4acfb6d",
+    "annotation-a83289ac1ebe27bd",
 }
 
 
@@ -173,13 +181,35 @@ def test_hard_example_fixture_integrity() -> None:
         for case in POST_HOLDOUT_REGRESSION_CASES
     )
     intact = [
-        case for case in annotated_cases if "intact_candidate" in case.categories
+        case
+        for case in annotated_cases
+        if "intact_candidate" in case.categories
+    ]
+    corrected_intact = [
+        case for case in intact if case.id in ADDITIVE_CONTRACT_CORRECTION_IDS
+    ]
+    unchanged_intact = [
+        case
+        for case in intact
+        if case.id not in ADDITIVE_CONTRACT_CORRECTION_IDS
     ]
     assert len(intact) == 17
+    assert {case.id for case in corrected_intact} == (
+        ADDITIVE_CONTRACT_CORRECTION_IDS
+    )
     assert all(
         "drop_after_last_return_salvage"
         in case.forbidden_origin_operation_kinds
-        for case in intact
+        for case in unchanged_intact
+    )
+    assert all(
+        not case.forbidden_origin_operation_kinds
+        and case.required_origin_paths
+        and all(
+            path[-1].kind == "drop_after_last_return_salvage"
+            for path in case.required_origin_paths
+        )
+        for case in corrected_intact
     )
     approved_path_tags = {
         "json_fences",
@@ -241,13 +271,18 @@ def test_exact_fenced_json_spot_check_is_present() -> None:
 
 def test_forbidden_origin_oracle_rejects_mixed_origins() -> None:
     output = CodeCandidateSetArtifact(
-        candidates=("def allowed():\n    return 1", "def mixed():\n    return 2"),
+        candidates=(
+            "def allowed():\n    return 1",
+            "def mixed():\n    return 2",
+        ),
         lineage=(
             CandidateLineage(
                 candidate_id="allowed",
                 origins=(
                     CandidateOrigin(
-                        path=(ExtractionOperation(kind="anchored_python_block"),)
+                        path=(
+                            ExtractionOperation(kind="anchored_python_block"),
+                        )
                     ),
                 ),
             ),
@@ -255,7 +290,9 @@ def test_forbidden_origin_oracle_rejects_mixed_origins() -> None:
                 candidate_id="mixed",
                 origins=(
                     CandidateOrigin(
-                        path=(ExtractionOperation(kind="anchored_python_block"),)
+                        path=(
+                            ExtractionOperation(kind="anchored_python_block"),
+                        )
                     ),
                     CandidateOrigin(
                         path=(
@@ -273,6 +310,72 @@ def test_forbidden_origin_oracle_rejects_mixed_origins() -> None:
         _assert_no_forbidden_origin_operations(
             output, {"drop_after_last_return_salvage"}
         )
+
+
+def test_additive_contract_corrections_preserve_exact_salvage_paths() -> None:
+    """The written additive contract and corpus regression override suppression."""
+    corrected = [
+        case
+        for case in FIXTURE.cases
+        if case.id in ADDITIVE_CONTRACT_CORRECTION_IDS
+    ]
+
+    for case in corrected:
+        output = (
+            _runner()
+            .run(TextArtifact(text=case.decoder_output))
+            .value("output")
+        )
+        assert isinstance(output, CodeCandidateSetArtifact)
+        assert output.candidates == case.exact_candidates
+
+        salvage_paths: set[
+            tuple[tuple[str, tuple[tuple[str, object], ...]], ...]
+        ] = set()
+        salvage_started = False
+        for index, (candidate, lineage) in enumerate(
+            zip(output.candidates, output.lineage, strict=True)
+        ):
+            candidate_has_salvage = any(
+                operation.kind == "drop_after_last_return_salvage"
+                for origin in lineage.origins
+                for operation in origin.path
+            )
+            if not candidate_has_salvage:
+                assert not salvage_started
+                continue
+            salvage_started = True
+            assert all(
+                origin.path[-1].kind == "drop_after_last_return_salvage"
+                for origin in lineage.origins
+            )
+            assert any(
+                prior != candidate and prior.startswith(candidate)
+                for prior in output.candidates[:index]
+            )
+            salvage_paths.update(
+                tuple(
+                    (
+                        operation.kind,
+                        tuple(sorted(operation.details.items())),
+                    )
+                    for operation in origin.path
+                )
+                for origin in lineage.origins
+            )
+
+        expected_paths = {
+            tuple(
+                (
+                    operation.kind,
+                    tuple(sorted(operation.details.items())),
+                )
+                for operation in path
+            )
+            for path in case.required_origin_paths
+        }
+        assert salvage_started
+        assert salvage_paths == expected_paths
 
 
 @pytest.mark.parametrize("case", SEALED_DEVELOPMENT_CASES, ids=_case_id)

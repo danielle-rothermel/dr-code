@@ -346,13 +346,67 @@
         }
       ],
       "exact_candidates": [
-        "def sort_every_third(lst):\n    \"\"\"\n    Sorts every third element of the list in ascending order.\n    \"\"\"\n    # 1. Extract every third element (indices 2, 5, 8, ...)\n    # Slicing: [start:stop:step]\n    third_elements = lst[2::3]\n\n    # 2. Sort these elements in ascending order\n    sorted_thirds = sorted(third_elements)\n\n    # 3. Create an iterator for the sorted elements to consume them sequentially\n    sorted_iter = iter(sorted_thirds)\n\n    # 4. Build the new list using a list comprehension\n    # If the index is a multiple of 3 (i.e., index % 3 == 2),\n    # take the next value from the sorted iterator.\n    # Otherwise, keep the original element.\n    return [\n        next(sorted_iter) if i % 3 == 2 else val\n        for i, val in enumerate(lst)\n    ]\n\n# Example Usage:\nmy_list = [9, 1, 4, 3, 7, 5, 8, 2, 6]\nresult = sort_every_third(my_list)\nprint(f\"Original: {my_list}\")\nprint(f\"Result:   {result}\")"
+        "def sort_every_third(lst):\n    \"\"\"\n    Sorts every third element of the list in ascending order.\n    \"\"\"\n    # 1. Extract every third element (indices 2, 5, 8, ...)\n    # Slicing: [start:stop:step]\n    third_elements = lst[2::3]\n\n    # 2. Sort these elements in ascending order\n    sorted_thirds = sorted(third_elements)\n\n    # 3. Create an iterator for the sorted elements to consume them sequentially\n    sorted_iter = iter(sorted_thirds)\n\n    # 4. Build the new list using a list comprehension\n    # If the index is a multiple of 3 (i.e., index % 3 == 2),\n    # take the next value from the sorted iterator.\n    # Otherwise, keep the original element.\n    return [\n        next(sorted_iter) if i % 3 == 2 else val\n        for i, val in enumerate(lst)\n    ]\n\n# Example Usage:\nmy_list = [9, 1, 4, 3, 7, 5, 8, 2, 6]\nresult = sort_every_third(my_list)\nprint(f\"Original: {my_list}\")\nprint(f\"Result:   {result}\")",
+        "def sort_every_third(lst):\n    \"\"\"\n    Sorts every third element of the list in ascending order.\n    \"\"\"\n    # 1. Extract every third element (indices 2, 5, 8, ...)\n    # Slicing: [start:stop:step]\n    third_elements = lst[2::3]\n\n    # 2. Sort these elements in ascending order\n    sorted_thirds = sorted(third_elements)\n\n    # 3. Create an iterator for the sorted elements to consume them sequentially\n    sorted_iter = iter(sorted_thirds)\n\n    # 4. Build the new list using a list comprehension\n    # If the index is a multiple of 3 (i.e., index % 3 == 2),\n    # take the next value from the sorted iterator.\n    # Otherwise, keep the original element.\n    return [\n        next(sorted_iter) if i % 3 == 2 else val\n        for i, val in enumerate(lst)\n    ]"
       ],
       "expected_top_level_function_names": [
         "sort_every_third"
       ],
-      "forbidden_origin_operation_kinds": [
-        "drop_after_last_return_salvage"
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 1,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "raw_fenced_block",
+            "details": {}
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 1,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
       ]
     },
     {
@@ -413,7 +467,8 @@
         }
       ],
       "exact_candidates": [
-        "import sys\nimport re\nfrom typing import List, Set\n\ndef get_consonant_regex() -> re.Pattern:\n    \"\"\"\n    Returns a compiled regex pattern that matches consonants.\n    Consonants are defined as letters that are not vowels (a, e, i, o, u).\n    This handles both uppercase and lowercase letters.\n    \"\"\"\n    return re.compile(r'[b-df-hj-np-tv-zB-DF-HJ-NP-TV-Z]')\n\ndef count_consonants(word: str, pattern: re.Pattern) -> int:\n    \"\"\"\n    Counts the number of consonants in a given word using the regex pattern.\n    \"\"\"\n    return len(pattern.findall(word))\n\ndef filter_words_by_consonants(words: List[str], n: int) -> List[str]:\n    \"\"\"\n    Filters a list of words, returning only those with exactly n consonants.\n    Uses functional programming paradigms (map and filter).\n    \"\"\"\n    if n < 0:\n        return []\n\n    pattern = get_consonant_regex()\n\n    # Functional approach:\n    # 1. Map each word to a tuple (word, count)\n    # 2. Filter tuples where count equals n\n    # 3. Map back to just the word\n    return list(\n        map(\n            lambda t: t[0],\n            filter(\n                lambda t: t[1] == n,\n                map(lambda w: (w, count_consonants(w, pattern)), words)\n            )\n        )\n    )\n\ndef main():\n    # Example usage\n    # You can modify this list or read from stdin/file as needed\n    word_list = [\n        \"apple\", \"banana\", \"cherry\", \"date\", \"fig\", \"grape\",\n        \"kiwi\", \"lemon\", \"mango\", \"orange\", \"pear\", \"quince\",\n        \"strawberry\", \"watermelon\", \"sky\", \"fly\", \"try\", \"by\",\n        \"strength\", \"rhythm\", \"syzygy\", \"a\", \"i\", \"bc\", \"xyz\"\n    ]\n\n    target_n = 3\n\n    # Functional processing\n    result = filter_words_by_consonants(word_list, target_n)\n\n    # Output results\n    print(f\"Words with exactly {target_n} consonants:\")\n    for word in result:\n        print(word)"
+        "import sys\nimport re\nfrom typing import List, Set\n\ndef get_consonant_regex() -> re.Pattern:\n    \"\"\"\n    Returns a compiled regex pattern that matches consonants.\n    Consonants are defined as letters that are not vowels (a, e, i, o, u).\n    This handles both uppercase and lowercase letters.\n    \"\"\"\n    return re.compile(r'[b-df-hj-np-tv-zB-DF-HJ-NP-TV-Z]')\n\ndef count_consonants(word: str, pattern: re.Pattern) -> int:\n    \"\"\"\n    Counts the number of consonants in a given word using the regex pattern.\n    \"\"\"\n    return len(pattern.findall(word))\n\ndef filter_words_by_consonants(words: List[str], n: int) -> List[str]:\n    \"\"\"\n    Filters a list of words, returning only those with exactly n consonants.\n    Uses functional programming paradigms (map and filter).\n    \"\"\"\n    if n < 0:\n        return []\n\n    pattern = get_consonant_regex()\n\n    # Functional approach:\n    # 1. Map each word to a tuple (word, count)\n    # 2. Filter tuples where count equals n\n    # 3. Map back to just the word\n    return list(\n        map(\n            lambda t: t[0],\n            filter(\n                lambda t: t[1] == n,\n                map(lambda w: (w, count_consonants(w, pattern)), words)\n            )\n        )\n    )\n\ndef main():\n    # Example usage\n    # You can modify this list or read from stdin/file as needed\n    word_list = [\n        \"apple\", \"banana\", \"cherry\", \"date\", \"fig\", \"grape\",\n        \"kiwi\", \"lemon\", \"mango\", \"orange\", \"pear\", \"quince\",\n        \"strawberry\", \"watermelon\", \"sky\", \"fly\", \"try\", \"by\",\n        \"strength\", \"rhythm\", \"syzygy\", \"a\", \"i\", \"bc\", \"xyz\"\n    ]\n\n    target_n = 3\n\n    # Functional processing\n    result = filter_words_by_consonants(word_list, target_n)\n\n    # Output results\n    print(f\"Words with exactly {target_n} consonants:\")\n    for word in result:\n        print(word)",
+        "import sys\nimport re\nfrom typing import List, Set\n\ndef get_consonant_regex() -> re.Pattern:\n    \"\"\"\n    Returns a compiled regex pattern that matches consonants.\n    Consonants are defined as letters that are not vowels (a, e, i, o, u).\n    This handles both uppercase and lowercase letters.\n    \"\"\"\n    return re.compile(r'[b-df-hj-np-tv-zB-DF-HJ-NP-TV-Z]')\n\ndef count_consonants(word: str, pattern: re.Pattern) -> int:\n    \"\"\"\n    Counts the number of consonants in a given word using the regex pattern.\n    \"\"\"\n    return len(pattern.findall(word))\n\ndef filter_words_by_consonants(words: List[str], n: int) -> List[str]:\n    \"\"\"\n    Filters a list of words, returning only those with exactly n consonants.\n    Uses functional programming paradigms (map and filter).\n    \"\"\"\n    if n < 0:\n        return []\n\n    pattern = get_consonant_regex()\n\n    # Functional approach:\n    # 1. Map each word to a tuple (word, count)\n    # 2. Filter tuples where count equals n\n    # 3. Map back to just the word\n    return list(\n        map(\n            lambda t: t[0],\n            filter(\n                lambda t: t[1] == n,\n                map(lambda w: (w, count_consonants(w, pattern)), words)\n            )\n        )\n    )"
       ],
       "expected_top_level_function_names": [
         "count_consonants",
@@ -421,8 +476,61 @@
         "get_consonant_regex",
         "main"
       ],
-      "forbidden_origin_operation_kinds": [
-        "drop_after_last_return_salvage"
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "raw_fenced_block",
+            "details": {}
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
       ]
     },
     {
@@ -1687,13 +1795,67 @@
         }
       ],
       "exact_candidates": [
-        "def get_most_unique_word(words):\n    \"\"\"\n    Returns the word with the most unique characters.\n    In case of a tie, returns the lexicographically smallest word.\n    \"\"\"\n    return min(\n        words,\n        key=lambda w: (-len(set(w)), w)\n    )\n\n# Example usage:\n# result = get_most_unique_word([\"apple\", \"banana\", \"cherry\", \"date\"])\n# print(result)"
+        "def get_most_unique_word(words):\n    \"\"\"\n    Returns the word with the most unique characters.\n    In case of a tie, returns the lexicographically smallest word.\n    \"\"\"\n    return min(\n        words,\n        key=lambda w: (-len(set(w)), w)\n    )\n\n# Example usage:\n# result = get_most_unique_word([\"apple\", \"banana\", \"cherry\", \"date\"])\n# print(result)",
+        "def get_most_unique_word(words):\n    \"\"\"\n    Returns the word with the most unique characters.\n    In case of a tie, returns the lexicographically smallest word.\n    \"\"\"\n    return min(\n        words,\n        key=lambda w: (-len(set(w)), w)\n    )"
       ],
       "expected_top_level_function_names": [
         "get_most_unique_word"
       ],
-      "forbidden_origin_operation_kinds": [
-        "drop_after_last_return_salvage"
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "raw_fenced_block",
+            "details": {}
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
       ]
     },
     {
@@ -1720,13 +1882,100 @@
       ],
       "exact_candidates": [
         "def process_string(s):\n    \"\"\"\n    Checks if the string is a palindrome and appends its reverse.\n\n    Args:\n        s (str): The input string\n\n    Returns:\n        dict: A dictionary containing:\n            - 'input': the original string\n            - 'is_palindrome': boolean indicating if it's a palindrome\n            - 'result': the original string with its reverse appended\n    \"\"\"\n    # Check if it's a palindrome (case-insensitive, ignoring spaces and punctuation)\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    is_palindrome = cleaned == cleaned[::-1]\n\n    # Append the reverse of the original string\n    result = s + s[::-1]\n\n    return {\n        'input': s,\n        'is_palindrome': is_palindrome,\n        'result': result\n    }\n\n# Example usage and demonstration",
-        "def process_string(s):\n    \"\"\"\n    Checks if the string is a palindrome and appends its reverse.\n\n    Args:\n        s (str): The input string\n\n    Returns:\n        dict: A dictionary containing:\n'input': the original string\n'is_palindrome': boolean indicating if it's a palindrome\n'result': the original string with its reverse appended\n    \"\"\"\n    # Check if it's a palindrome (case-insensitive, ignoring spaces and punctuation)\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    is_palindrome = cleaned == cleaned[::-1]\n\n    # Append the reverse of the original string\n    result = s + s[::-1]\n\n    return {\n        'input': s,\n        'is_palindrome': is_palindrome,\n        'result': result\n    }\n\n# Example usage and demonstration"
+        "def process_string(s):\n    \"\"\"\n    Checks if the string is a palindrome and appends its reverse.\n\n    Args:\n        s (str): The input string\n\n    Returns:\n        dict: A dictionary containing:\n'input': the original string\n'is_palindrome': boolean indicating if it's a palindrome\n'result': the original string with its reverse appended\n    \"\"\"\n    # Check if it's a palindrome (case-insensitive, ignoring spaces and punctuation)\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    is_palindrome = cleaned == cleaned[::-1]\n\n    # Append the reverse of the original string\n    result = s + s[::-1]\n\n    return {\n        'input': s,\n        'is_palindrome': is_palindrome,\n        'result': result\n    }\n\n# Example usage and demonstration",
+        "def process_string(s):\n    \"\"\"\n    Checks if the string is a palindrome and appends its reverse.\n\n    Args:\n        s (str): The input string\n\n    Returns:\n        dict: A dictionary containing:\n            - 'input': the original string\n            - 'is_palindrome': boolean indicating if it's a palindrome\n            - 'result': the original string with its reverse appended\n    \"\"\"\n    # Check if it's a palindrome (case-insensitive, ignoring spaces and punctuation)\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    is_palindrome = cleaned == cleaned[::-1]\n\n    # Append the reverse of the original string\n    result = s + s[::-1]\n\n    return {\n        'input': s,\n        'is_palindrome': is_palindrome,\n        'result': result\n    }",
+        "def process_string(s):\n    \"\"\"\n    Checks if the string is a palindrome and appends its reverse.\n\n    Args:\n        s (str): The input string\n\n    Returns:\n        dict: A dictionary containing:\n'input': the original string\n'is_palindrome': boolean indicating if it's a palindrome\n'result': the original string with its reverse appended\n    \"\"\"\n    # Check if it's a palindrome (case-insensitive, ignoring spaces and punctuation)\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    is_palindrome = cleaned == cleaned[::-1]\n\n    # Append the reverse of the original string\n    result = s + s[::-1]\n\n    return {\n        'input': s,\n        'is_palindrome': is_palindrome,\n        'result': result\n    }"
       ],
       "expected_top_level_function_names": [
         "process_string"
       ],
-      "forbidden_origin_operation_kinds": [
-        "drop_after_last_return_salvage"
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "raw_fenced_block",
+            "details": {}
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "markdown_wrapper_removal",
+            "details": {}
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
       ]
     },
     {
@@ -1999,13 +2248,67 @@
         }
       ],
       "exact_candidates": [
-        "def is_palindrome_and_sum_leq_w(q, w):\n    \"\"\"\n    Returns True if list q is a palindrome and sum(q) <= w, else False.\n    \"\"\"\n    return (\n        sum(q) <= w and\n        all(a == b for a, b in zip(q, reversed(q)))\n    )\n\n# --- Usage Examples ---\n\n# Example 1: Palindrome and sum <= w\nlist1 = [1, 2, 3, 2, 1]\nlimit1 = 10\nprint(f\"List: {list1}, w: {limit1} -> {is_palindrome_and_sum_leq_w(list1, limit1)}\")\n# Output: True (Sum is 9, which is <= 10)\n\n# Example 2: Palindrome but sum > w\nlist2 = [1, 2, 3, 2, 1]\nlimit2 = 5\nprint(f\"List: {list2}, w: {limit2} -> {is_palindrome_and_sum_leq_w(list2, limit2)}\")\n# Output: False (Sum is 9, which is > 5)\n\n# Example 3: Not a palindrome\nlist3 = [1, 2, 3, 4, 5]\nlimit3 = 15\nprint(f\"List: {list3}, w: {limit3} -> {is_palindrome_and_sum_leq_w(list3, limit3)}\")\n# Output: False (Not a palindrome)\n\n# Example 4: Empty list (considered a palindrome)\nlist4 = []\nlimit4 = 0\nprint(f\"List: {list4}, w: {limit4} -> {is_palindrome_and_sum_leq_w(list4, limit4)}\")\n# Output: True"
+        "def is_palindrome_and_sum_leq_w(q, w):\n    \"\"\"\n    Returns True if list q is a palindrome and sum(q) <= w, else False.\n    \"\"\"\n    return (\n        sum(q) <= w and\n        all(a == b for a, b in zip(q, reversed(q)))\n    )\n\n# --- Usage Examples ---\n\n# Example 1: Palindrome and sum <= w\nlist1 = [1, 2, 3, 2, 1]\nlimit1 = 10\nprint(f\"List: {list1}, w: {limit1} -> {is_palindrome_and_sum_leq_w(list1, limit1)}\")\n# Output: True (Sum is 9, which is <= 10)\n\n# Example 2: Palindrome but sum > w\nlist2 = [1, 2, 3, 2, 1]\nlimit2 = 5\nprint(f\"List: {list2}, w: {limit2} -> {is_palindrome_and_sum_leq_w(list2, limit2)}\")\n# Output: False (Sum is 9, which is > 5)\n\n# Example 3: Not a palindrome\nlist3 = [1, 2, 3, 4, 5]\nlimit3 = 15\nprint(f\"List: {list3}, w: {limit3} -> {is_palindrome_and_sum_leq_w(list3, limit3)}\")\n# Output: False (Not a palindrome)\n\n# Example 4: Empty list (considered a palindrome)\nlist4 = []\nlimit4 = 0\nprint(f\"List: {list4}, w: {limit4} -> {is_palindrome_and_sum_leq_w(list4, limit4)}\")\n# Output: True",
+        "def is_palindrome_and_sum_leq_w(q, w):\n    \"\"\"\n    Returns True if list q is a palindrome and sum(q) <= w, else False.\n    \"\"\"\n    return (\n        sum(q) <= w and\n        all(a == b for a, b in zip(q, reversed(q)))\n    )"
       ],
       "expected_top_level_function_names": [
         "is_palindrome_and_sum_leq_w"
       ],
-      "forbidden_origin_operation_kinds": [
-        "drop_after_last_return_salvage"
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 1,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "raw_fenced_block",
+            "details": {}
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 1,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
       ]
     },
     {
@@ -2081,13 +2384,67 @@
         }
       ],
       "exact_candidates": [
-        "def count_multiples_with_sevens(n: int) -> int:\n    \"\"\"\n    Counts the total number of digit '7's appearing in the string\n    representation of multiples of 11 or 13 strictly below n.\n    \"\"\"\n    return sum(\n        str(num).count('7')\n        for num in range(1, n)\n        if num % 11 == 0 or num % 13 == 0\n    )\n\n# Example usage:"
+        "def count_multiples_with_sevens(n: int) -> int:\n    \"\"\"\n    Counts the total number of digit '7's appearing in the string\n    representation of multiples of 11 or 13 strictly below n.\n    \"\"\"\n    return sum(\n        str(num).count('7')\n        for num in range(1, n)\n        if num % 11 == 0 or num % 13 == 0\n    )\n\n# Example usage:",
+        "def count_multiples_with_sevens(n: int) -> int:\n    \"\"\"\n    Counts the total number of digit '7's appearing in the string\n    representation of multiples of 11 or 13 strictly below n.\n    \"\"\"\n    return sum(\n        str(num).count('7')\n        for num in range(1, n)\n        if num % 11 == 0 or num % 13 == 0\n    )"
       ],
       "expected_top_level_function_names": [
         "count_multiples_with_sevens"
       ],
-      "forbidden_origin_operation_kinds": [
-        "drop_after_last_return_salvage"
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 1,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "raw_fenced_block",
+            "details": {}
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 1,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
       ]
     },
     {
@@ -2138,13 +2495,67 @@
         }
       ],
       "exact_candidates": [
-        "def int_to_roman(num):\n    # Validate input\n    if not isinstance(num, int):\n        raise TypeError(\"Input must be an integer\")\n    if not (1 <= num <= 3999):\n        raise ValueError(\"Input must be between 1 and 3999\")\n\n    # Predefined string arrays for each place value\n    # Thousands place (0-3)\n    thousands = [\"\", \"m\", \"mm\", \"mmm\"]\n\n    # Hundreds place (0-9)\n    hundreds = [\"\", \"c\", \"cc\", \"ccc\", \"cd\", \"d\", \"dc\", \"dcc\", \"dccc\", \"cm\"]\n\n    # Tens place (0-9)\n    tens = [\"\", \"x\", \"xx\", \"xxx\", \"xl\", \"l\", \"lx\", \"lxx\", \"lxxx\", \"xc\"]\n\n    # Ones place (0-9)\n    ones = [\"\", \"i\", \"ii\", \"iii\", \"iv\", \"v\", \"vi\", \"vii\", \"viii\", \"ix\"]\n\n    # Decompose the number into thousands, hundreds, tens, and ones\n    thousands_digit = num // 1000\n    hundreds_digit = (num % 1000) // 100\n    tens_digit = (num % 100) // 10\n    ones_digit = num % 10\n\n    # Build the lowercase Roman numeral string\n    return (thousands[thousands_digit] +\n            hundreds[hundreds_digit] +\n            tens[tens_digit] +\n            ones[ones_digit])\n\n# Example usage and demonstration"
+        "def int_to_roman(num):\n    # Validate input\n    if not isinstance(num, int):\n        raise TypeError(\"Input must be an integer\")\n    if not (1 <= num <= 3999):\n        raise ValueError(\"Input must be between 1 and 3999\")\n\n    # Predefined string arrays for each place value\n    # Thousands place (0-3)\n    thousands = [\"\", \"m\", \"mm\", \"mmm\"]\n\n    # Hundreds place (0-9)\n    hundreds = [\"\", \"c\", \"cc\", \"ccc\", \"cd\", \"d\", \"dc\", \"dcc\", \"dccc\", \"cm\"]\n\n    # Tens place (0-9)\n    tens = [\"\", \"x\", \"xx\", \"xxx\", \"xl\", \"l\", \"lx\", \"lxx\", \"lxxx\", \"xc\"]\n\n    # Ones place (0-9)\n    ones = [\"\", \"i\", \"ii\", \"iii\", \"iv\", \"v\", \"vi\", \"vii\", \"viii\", \"ix\"]\n\n    # Decompose the number into thousands, hundreds, tens, and ones\n    thousands_digit = num // 1000\n    hundreds_digit = (num % 1000) // 100\n    tens_digit = (num % 100) // 10\n    ones_digit = num % 10\n\n    # Build the lowercase Roman numeral string\n    return (thousands[thousands_digit] +\n            hundreds[hundreds_digit] +\n            tens[tens_digit] +\n            ones[ones_digit])\n\n# Example usage and demonstration",
+        "def int_to_roman(num):\n    # Validate input\n    if not isinstance(num, int):\n        raise TypeError(\"Input must be an integer\")\n    if not (1 <= num <= 3999):\n        raise ValueError(\"Input must be between 1 and 3999\")\n\n    # Predefined string arrays for each place value\n    # Thousands place (0-3)\n    thousands = [\"\", \"m\", \"mm\", \"mmm\"]\n\n    # Hundreds place (0-9)\n    hundreds = [\"\", \"c\", \"cc\", \"ccc\", \"cd\", \"d\", \"dc\", \"dcc\", \"dccc\", \"cm\"]\n\n    # Tens place (0-9)\n    tens = [\"\", \"x\", \"xx\", \"xxx\", \"xl\", \"l\", \"lx\", \"lxx\", \"lxxx\", \"xc\"]\n\n    # Ones place (0-9)\n    ones = [\"\", \"i\", \"ii\", \"iii\", \"iv\", \"v\", \"vi\", \"vii\", \"viii\", \"ix\"]\n\n    # Decompose the number into thousands, hundreds, tens, and ones\n    thousands_digit = num // 1000\n    hundreds_digit = (num % 1000) // 100\n    tens_digit = (num % 100) // 10\n    ones_digit = num % 10\n\n    # Build the lowercase Roman numeral string\n    return (thousands[thousands_digit] +\n            hundreds[hundreds_digit] +\n            tens[tens_digit] +\n            ones[ones_digit])"
       ],
       "expected_top_level_function_names": [
         "int_to_roman"
       ],
-      "forbidden_origin_operation_kinds": [
-        "drop_after_last_return_salvage"
+      "required_origin_paths": [
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "raw_fenced_block",
+            "details": {}
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ],
+        [
+          {
+            "kind": "response_representation",
+            "details": {
+              "name": "normalized_raw_response"
+            }
+          },
+          {
+            "kind": "fenced_block",
+            "details": {
+              "index": 0,
+              "segment_index": 0,
+              "marker": "```",
+              "tag": "python",
+              "closed": true
+            }
+          },
+          {
+            "kind": "anchored_python_block",
+            "details": {
+              "index": 0
+            }
+          },
+          {
+            "kind": "drop_after_last_return_salvage",
+            "details": {}
+          }
+        ]
       ]
     },
     {
