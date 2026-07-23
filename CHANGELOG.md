@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-23
+
+- Added a re-runnable `dr-code classify-failures` command that labels
+  preprocessing parse/extraction failures (and test failures when evaluation
+  artifacts exist) with a versioned, seeded taxonomy using a subscription LLM
+  lane (pi headless; glm-coding by default, kimi/minimax/stepfun selectable).
+  Each item is classified over N repeats with majority vote, ties resolving to
+  `other`, and per-item agreement recorded as a descriptive statistic; lane and
+  off-taxonomy errors become recorded typed failures rather than fabricated
+  labels. Per-task rollups persist through the machine task-annotation path
+  (`origin=machine`, provenance carrying model/taxonomy_version/repeats/mean
+  agreement plus per-label counts and the detail-artifact path); per-example
+  detail is written to a deterministic JSONL beside the viewer database. The
+  feature is additive: no schema migration and no new example-level columns.
+
 ## 2026-07-22
 
 - Replaced per-candidate OCI container execution with a fresh bounded host
