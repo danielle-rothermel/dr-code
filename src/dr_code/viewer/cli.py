@@ -30,6 +30,15 @@ def main() -> None:
     """Run dr-code development tools."""
 
 
+def _register_classifier() -> None:
+    from dr_code.classifier.cli import register
+
+    register(app)
+
+
+_register_classifier()
+
+
 def _loopback_host(value: str) -> str:
     """Reject hosts that would expose this unauthenticated local tool."""
     if value.lower() == "localhost":
