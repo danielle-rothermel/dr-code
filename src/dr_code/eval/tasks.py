@@ -123,6 +123,88 @@ class TaskSet(FrozenModel):
         )
 
 
+class RepeatProvenanceRow(FrozenModel):
+    """One generation-corpus provenance row for Repeat materialization.
+
+    The generation corpus records ``repeat_index`` and an optional ``seed``
+    per observation so a :class:`RepeatPlan` can be reconstructed faithfully.
+    These are **provenance only**: ``seed`` never enters any identity payload
+    (see :meth:`RepeatPlan.identity_payload` and :class:`RepeatId`). Consistent
+    with commit ``9a597c6``, identity is invariant under differing seeds.
+    """
+
+    task_identity: str
+    repeat_index: int
+    seed: int | None = None
+
+    @field_validator("repeat_index")
+    @classmethod
+    def _nonnegative_index(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("repeat_index must be non-negative")
+        return value
+
+
+def repeat_plan_from_provenance(
+    rows: tuple[RepeatProvenanceRow, ...],
+    *,
+    plan_id: str,
+    version: str,
+) -> RepeatPlan:
+    """Materialize a :class:`RepeatPlan` from generation-corpus provenance.
+
+    Faithful reconstruction: every ``(task_identity, repeat_index)`` slot in
+    ``rows`` is covered, task order is first-seen, and ``repeat_count`` is the
+    per-task slot count (which must be uniform and contiguous ``0..n-1`` for a
+    well-formed plan). Seeds are carried as slot data, never identity.
+    """
+
+    task_order: list[str] = []
+    indices_by_task: dict[str, set[int]] = {}
+    seeds: dict[tuple[str, int], int] = {}
+    for row in rows:
+        if row.task_identity not in indices_by_task:
+            task_order.append(row.task_identity)
+            indices_by_task[row.task_identity] = set()
+        if row.repeat_index in indices_by_task[row.task_identity]:
+            raise ValueError(
+                "duplicate (task_identity, repeat_index) in provenance rows"
+            )
+        indices_by_task[row.task_identity].add(row.repeat_index)
+        if row.seed is not None:
+            seeds[(row.task_identity, row.repeat_index)] = row.seed
+
+    if not task_order:
+        raise ValueError("provenance rows are empty")
+
+    counts = {len(indices) for indices in indices_by_task.values()}
+    if len(counts) != 1:
+        raise ValueError(
+            "every task must have the same number of repeat slots"
+        )
+    repeat_count = counts.pop()
+    for task_identity, indices in indices_by_task.items():
+        if indices != set(range(repeat_count)):
+            raise ValueError(
+                f"task {task_identity!r} repeat indices are not contiguous "
+                f"0..{repeat_count - 1}"
+            )
+
+    seed_pairs = tuple(
+        (f"{task_identity}#{index}", seeds[(task_identity, index)])
+        for task_identity in task_order
+        for index in range(repeat_count)
+        if (task_identity, index) in seeds
+    )
+    return RepeatPlan(
+        plan_id=plan_id,
+        version=version,
+        task_identities=tuple(task_order),
+        repeat_count=repeat_count,
+        seeds=seed_pairs,
+    )
+
+
 class RepeatId(FrozenModel):
     """Stable identity of one Repeat slot in a Repeat Plan.
 
@@ -235,8 +317,10 @@ __all__ = [
     "Repeat",
     "RepeatId",
     "RepeatPlan",
+    "RepeatProvenanceRow",
     "SelectionRule",
     "TaskSet",
     "humaneval_task_identity",
     "humaneval_task_identity_payload",
+    "repeat_plan_from_provenance",
 ]

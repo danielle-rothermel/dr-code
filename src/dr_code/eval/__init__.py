@@ -61,10 +61,12 @@ from dr_code.eval.tasks import (
     Repeat,
     RepeatId,
     RepeatPlan,
+    RepeatProvenanceRow,
     SelectionRule,
     TaskSet,
     humaneval_task_identity,
     humaneval_task_identity_payload,
+    repeat_plan_from_provenance,
 )
 from dr_code.eval.variables import (
     VariableError,
@@ -107,6 +109,7 @@ __all__ = [
     "Repeat",
     "RepeatId",
     "RepeatPlan",
+    "RepeatProvenanceRow",
     "SamplingConfig",
     "SamplingDefinition",
     "Score",
@@ -119,6 +122,7 @@ __all__ = [
     "humaneval_task_identity",
     "humaneval_task_identity_payload",
     "identity_hash_for",
+    "repeat_plan_from_provenance",
     "resolve_assignment",
     "resolved_operator_version",
     "resolved_step_version",
