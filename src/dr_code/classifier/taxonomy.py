@@ -80,8 +80,9 @@ _PARSE_LABELS: Final = (
         name="json-wrapped-code",
         definition=(
             "The output is a JSON/structured envelope (e.g. {\"code\": ...}) "
-            "carrying an expression or snippet rather than a bare Python "
-            "function definition."
+            "carrying a nonempty expression or snippet rather than a bare "
+            "Python function definition. If the envelope's code payload is "
+            "explicitly empty, prefer empty-code instead."
         ),
         example='{\n  "code": "sum(ord(c) for c in s if c.isupper())"\n}',
     ),
