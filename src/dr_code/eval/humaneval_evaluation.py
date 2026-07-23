@@ -29,6 +29,8 @@ This module is additive: it introduces no change to any existing
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from dr_code.eval.code import CodeArtifact
 from dr_code.eval.facts import (
     AbsenceMode,
@@ -44,10 +46,15 @@ from dr_code.eval.identity import (
     identity_hash_for,
 )
 from dr_code.eval.lifecycle import (
+    EvaluationProcedureConfig,
+    EvaluationProcedureDefinition,
+    MetricExtractionDefinition,
+    MetricQuestionBinding,
     PreprocessingDefinition,
     PreprocessingStepBinding,
 )
 from dr_code.eval.resolved_versions import resolved_operator_version
+from dr_code.metrics.definition import MetricsDefinition
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.code_test import CodeTestResult
 from dr_code.preprocessing.definition import (
@@ -90,6 +97,75 @@ def kernel_preprocessing_definition(
             for spec in operational.steps
         ),
     )
+
+
+def kernel_metric_extraction_definition(
+    operational: MetricsDefinition,
+) -> MetricExtractionDefinition:
+    """Losslessly map an operational MetricsDefinition to the kernel form.
+
+    Operational ``MetricQuestion(metric, on, settings)`` maps directly onto
+    the kernel ``MetricQuestionBinding``; ordered settings preserve every key.
+    """
+
+    return MetricExtractionDefinition(
+        definition_id=operational.definition_id,
+        version=operational.version,
+        questions=tuple(
+            MetricQuestionBinding(
+                metric=str(question.metric),
+                on=question.on,
+                settings=tuple(sorted(question.settings.items())),
+            )
+            for question in operational.questions
+        ),
+    )
+
+
+def evaluation_procedure_config(
+    *,
+    preprocessing: OperationalPreprocessingDefinition,
+    metrics: MetricsDefinition,
+    procedure_definition_id: str = "humaneval-evaluation-procedure",
+    procedure_version: str = "v1",
+) -> EvaluationProcedureConfig:
+    """Compose the canonical Evaluation Procedure Config for HumanEval.
+
+    Folds the resolved preprocessing + metric-extraction Config identities
+    (which include resolved step/operator versions) into one canonical
+    Procedure Config identity. This is the ``evaluation_procedure_config_hash``
+    every candidate execution and Metric Fact is lineage-stamped with.
+    """
+
+    preprocessing_config = kernel_preprocessing_definition(
+        preprocessing
+    ).materialize()
+    metric_extraction_config = kernel_metric_extraction_definition(
+        metrics
+    ).materialize()
+    return EvaluationProcedureDefinition(
+        definition_id=procedure_definition_id,
+        version=procedure_version,
+    ).materialize(
+        preprocessing=preprocessing_config,
+        metric_extraction=metric_extraction_config,
+        # Explicit zero-denominator policy; the procedure definition requires
+        # it. "not_applicable" means an empty denominator yields an absent
+        # record rather than an operator error.
+        assignment={"zero_denominator": "not_applicable"},
+    )
+
+
+def evaluation_procedure_config_identity(
+    *,
+    preprocessing: OperationalPreprocessingDefinition,
+    metrics: MetricsDefinition,
+) -> str:
+    """The canonical Evaluation Procedure Config identity hash."""
+
+    return evaluation_procedure_config(
+        preprocessing=preprocessing, metrics=metrics
+    ).config_identity_hash
 
 
 def candidate_content_identity(source: str) -> str:
@@ -242,6 +318,72 @@ def compile_facts_for_candidate(source: str) -> bool:
     return True
 
 
+def record_from_result_row(
+    row: Mapping[str, object],
+    *,
+    evaluation_procedure_config_hash: str,
+) -> MetricRecord:
+    """Derive an eval-kernel Metric Record from one persisted result row.
+
+    The candidate-evaluation parquet already carries the raw CodeTestResult
+    fields losslessly; this reconstructs the neutral kernel record from a row
+    so analysis derives records/scores from facts rather than a pre-reduced
+    outcome. A row whose ``record_status`` is not ``measured`` becomes the
+    matching non-measured record (operator failure or empty/absent), never a
+    silent success.
+    """
+
+    status = str(row.get("record_status"))
+    if status == str(RecordStatus.MEASURED):
+        result = CodeTestResult(
+            total_cases=_row_int(row, "total_cases"),
+            passed_count=_row_int(row, "passed_count"),
+            failed_count=_row_int(row, "failed_count"),
+            error_count=_row_int(row, "error_count"),
+            timeout_count=_row_int(row, "timeout_count"),
+            coverage_complete=bool(row.get("coverage_complete")),
+            function_count=_row_int(row, "function_count"),
+            best_function_name=(
+                str(row["best_function_name"])
+                if row.get("best_function_name") is not None
+                else None
+            ),
+        )
+        return code_test_record(
+            result,
+            evaluation_procedure_config_hash=(
+                evaluation_procedure_config_hash
+            ),
+        )
+
+    failure_type = row.get("failure_type")
+    return MetricRecord(
+        question=CODE_TEST_QUESTION,
+        on_key=CODE_TEST_ON_KEY,
+        evaluation_procedure_config_hash=evaluation_procedure_config_hash,
+        status=RecordStatus.OPERATOR_FAILURE,
+        failure_type=(
+            str(failure_type)
+            if failure_type is not None
+            else "evaluation_incomplete"
+        ),
+        failure_message=(
+            str(row["failure_message"])
+            if row.get("failure_message") is not None
+            else "candidate evaluation did not complete"
+        ),
+    )
+
+
+def _row_int(row: Mapping[str, object], key: str) -> int:
+    value = row.get(key)
+    if not isinstance(value, (int, bool)):
+        raise ValueError(
+            f"measured result row {key!r} must be an integer, got {value!r}"
+        )
+    return int(value)
+
+
 __all__ = [
     "CODE_TEST_ON_KEY",
     "CODE_TEST_OPERATOR",
@@ -254,5 +396,9 @@ __all__ = [
     "code_test_record",
     "compile_facts_for_candidate",
     "empty_candidate_set_record",
+    "evaluation_procedure_config",
+    "evaluation_procedure_config_identity",
+    "kernel_metric_extraction_definition",
     "kernel_preprocessing_definition",
+    "record_from_result_row",
 ]

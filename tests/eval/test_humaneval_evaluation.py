@@ -19,8 +19,30 @@ from dr_code.eval.humaneval_evaluation import (
     code_test_record,
     compile_facts_for_candidate,
     empty_candidate_set_record,
+    evaluation_procedure_config_identity,
+    kernel_metric_extraction_definition,
+    record_from_result_row,
 )
+from dr_code.metrics.definition import MetricQuestion, MetricsDefinition
+from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.code_test import CodeTestResult
+from dr_code.preprocessing.definitions import (
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+)
+
+
+def _metrics_definition() -> MetricsDefinition:
+    return MetricsDefinition(
+        definition_id="humaneval-metrics",
+        version="v1",
+        questions=(
+            MetricQuestion(
+                metric=MetricName.CODE_TEST,
+                on="code",
+                settings={"task_key": "task", "timeout_seconds": 2.0},
+            ),
+        ),
+    )
 
 _CFG = "epc-hash-1"
 
@@ -193,3 +215,62 @@ def test_kernel_preprocessing_definition_is_lossless_and_canonical() -> None:
     identity = kernel.identity_hash()
     assert len(identity) == 64
     assert identity == kernel_preprocessing_definition(op).identity_hash()
+
+
+def test_metric_extraction_crosswalk_is_lossless_and_canonical() -> None:
+    kernel = kernel_metric_extraction_definition(_metrics_definition())
+    assert kernel.definition_id == "humaneval-metrics"
+    assert len(kernel.questions) == 1
+    q = kernel.questions[0]
+    assert q.metric == str(MetricName.CODE_TEST)
+    assert q.on == "code"
+    assert dict(q.settings) == {"task_key": "task", "timeout_seconds": 2.0}
+    identity = kernel.materialize().config_identity_hash
+    assert len(identity) == 64
+
+
+def test_procedure_config_identity_folds_both_components() -> None:
+    identity = evaluation_procedure_config_identity(
+        preprocessing=HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+        metrics=_metrics_definition(),
+    )
+    assert len(identity) == 64
+    # Deterministic across calls.
+    assert identity == evaluation_procedure_config_identity(
+        preprocessing=HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+        metrics=_metrics_definition(),
+    )
+
+
+def test_record_from_measured_row_reconstructs_facts() -> None:
+    row = {
+        "record_status": "measured",
+        "total_cases": 5,
+        "passed_count": 5,
+        "failed_count": 0,
+        "error_count": 0,
+        "timeout_count": 0,
+        "coverage_complete": True,
+        "function_count": 1,
+        "best_function_name": "solve",
+    }
+    record = record_from_result_row(
+        row, evaluation_procedure_config_hash="epc"
+    )
+    assert record.status is RecordStatus.MEASURED
+    names = {f.name for f in record.facts}
+    assert "passed_count" in names and "total_cases" in names
+
+
+def test_record_from_incomplete_row_is_operator_failure_not_success() -> None:
+    row = {
+        "record_status": "evaluation_incomplete",
+        "failure_type": "infrastructure",
+        "failure_message": "worker died",
+    }
+    record = record_from_result_row(
+        row, evaluation_procedure_config_hash="epc"
+    )
+    assert record.status is RecordStatus.OPERATOR_FAILURE
+    assert record.failure_type == "infrastructure"
+    assert not record.facts  # never a silent success

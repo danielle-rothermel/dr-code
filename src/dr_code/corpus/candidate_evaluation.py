@@ -34,6 +34,10 @@ from typing import Final
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from dr_code.eval.humaneval_evaluation import (
+    IDENTITY_SCHEME,
+    kernel_metric_extraction_definition,
+)
 from dr_code.humaneval.profiles import (
     DEFAULT_HUMANEVAL_TIMEOUT_SECONDS,
     HUMANEVAL_METRICS_PROFILE_ID,
@@ -359,6 +363,16 @@ def _immutable_coordinates(
         "snapshot_sha256": _sha256_file(snapshot_file),
         "metrics_definition": definition.model_dump(mode="json"),
         "metrics_definition_hash": metrics_definition_hash(definition),
+        # Canonical eval-kernel identity of the metric-extraction config
+        # (folds resolved operator versions). Additive alongside the legacy
+        # BLAKE2 metrics_definition_hash; the two families are labelled, never
+        # mixed (guide step 9).
+        "identity_scheme": IDENTITY_SCHEME,
+        "metric_extraction_config_identity": (
+            kernel_metric_extraction_definition(definition)
+            .materialize()
+            .config_identity_hash
+        ),
         "operator": "code_test@1",
         "operator_settings": operator_settings,
         "metrics_profile": (
