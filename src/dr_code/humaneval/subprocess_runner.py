@@ -217,25 +217,20 @@ def _read_bounded(
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
-    signaling_error: OSError | None = None
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    except OSError as exc:
+    signaling_error = _signal_process_group(process.pid)
+    if signaling_error is not None:
         # ``poll`` reaps a normally completed group leader before cleanup.
         # Keep trying ``killpg`` so descendants cannot outlive that leader,
         # but a signaling error is actionable only while the direct child is
         # still live. On macOS, treating post-reap errors as live-process
         # failures produced rare false infrastructure failures under churn.
         if process.poll() is None:
-            signaling_error = exc
             try:
                 process.kill()
             except ProcessLookupError:
-                signaling_error = None
+                pass
             except OSError as kill_error:
-                raise _process_group_signaling_error(kill_error) from exc
+                signaling_error = kill_error
 
     try:
         process.wait(timeout=_TERMINATION_TIMEOUT_SECONDS)
@@ -243,10 +238,31 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
         raise SubprocessError(
             "subprocess process group could not be terminated"
         ) from exc
-    if signaling_error is not None:
-        raise _process_group_signaling_error(
-            signaling_error
-        ) from signaling_error
+    if signaling_error is None:
+        return
+
+    # Completion can win between the live ``poll`` above and ``Popen.kill``'s
+    # own internal poll, in which case ``kill`` deliberately does nothing.
+    # Retry group cleanup after the leader is terminal. A successful signal or
+    # an absent group proves cleanup is complete. If the leader nevertheless
+    # exited normally, the earlier error was stale completion-race state; IPC
+    # thread liveness remains the backstop for descendants holding pipes open.
+    remaining_error = _signal_process_group(process.pid)
+    if remaining_error is None or process.returncode != -signal.SIGKILL:
+        return
+    raise _process_group_signaling_error(
+        remaining_error
+    ) from remaining_error
+
+
+def _signal_process_group(process_group_id: int) -> OSError | None:
+    try:
+        os.killpg(process_group_id, signal.SIGKILL)
+    except ProcessLookupError:
+        return None
+    except OSError as exc:
+        return exc
+    return None
 
 
 def _process_group_signaling_error(error: OSError) -> SubprocessError:

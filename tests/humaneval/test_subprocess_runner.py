@@ -256,3 +256,47 @@ def test_live_process_group_signal_error_remains_infrastructure_failure(
 
     assert process.kill_called is True
     assert process.wait_called is True
+
+
+def test_completion_during_direct_kill_clears_stale_group_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _ProcessStub(returncode=None)
+
+    def denied_group(*_: object) -> None:
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    def completion_wins_kill_race() -> None:
+        process.kill_called = True
+        process.returncode = 0
+
+    monkeypatch.setattr(os, "killpg", denied_group)
+    monkeypatch.setattr(process, "kill", completion_wins_kill_race)
+
+    subprocess_runner._terminate_process_group(process)  # type: ignore[arg-type]
+
+    assert process.kill_called is True
+    assert process.wait_called is True
+    assert process.returncode == 0
+
+
+def test_group_cleanup_retry_preserves_descendant_termination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _ProcessStub(returncode=None)
+    group_signal_attempts = 0
+
+    def transient_denial(*_: object) -> None:
+        nonlocal group_signal_attempts
+        group_signal_attempts += 1
+        if group_signal_attempts == 1:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", transient_denial)
+
+    subprocess_runner._terminate_process_group(process)  # type: ignore[arg-type]
+
+    assert group_signal_attempts == 2
+    assert process.kill_called is True
+    assert process.wait_called is True
+    assert process.returncode == -signal.SIGKILL
