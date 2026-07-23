@@ -370,6 +370,52 @@ class Annotation:
     tags: tuple[Tag, ...]
 
 
+class AnnotationOrigin(StrEnum):
+    HUMAN = "human"
+    MACHINE = "machine"
+
+
+@dataclass(frozen=True, slots=True)
+class TaskIdentity:
+    """A run-hash-independent benchmark task identity.
+
+    ``dataset_id`` is the benchmark namespace (for HumanEval, the segment of a
+    ``task_id`` before its final ``/``, e.g. ``"HumanEval"``). ``task_id`` is
+    the full benchmark task id (e.g. ``"HumanEval/42"``). Neither depends on any
+    corpus or run fingerprint, so a task annotation survives across corpora and
+    runs.
+    """
+
+    dataset_id: str
+    task_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class TaskAnnotationProvenance:
+    """Machine-classification provenance for a task annotation.
+
+    Kept nullable and generic so a later machine-classifier track writes through
+    the same table without a migration. ``extra`` carries any additional
+    recorded fields verbatim.
+    """
+
+    model: str | None = None
+    taxonomy_version: str | None = None
+    repeats: int | None = None
+    agreement: float | None = None
+    extra: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskAnnotation:
+    identity: TaskIdentity
+    origin: AnnotationOrigin
+    category: str | None
+    note: str | None
+    tags: tuple[Tag, ...]
+    provenance: TaskAnnotationProvenance | None
+
+
 @dataclass(frozen=True, slots=True)
 class ExampleDetail:
     sample_id: str
@@ -431,6 +477,80 @@ def validate_sha256(value: str, label: str) -> str:
     ):
         raise InvalidQueryError(f"{label} must be a lowercase SHA-256 digest")
     return value
+
+
+_TASK_IDENTITY_MAX_LENGTH: Final = 256
+
+
+def validate_task_identity(dataset_id: str, task_id: str) -> TaskIdentity:
+    """Validate a run-hash-independent benchmark task identity."""
+    dataset = _validate_identity_field(dataset_id, "dataset_id")
+    task = _validate_identity_field(task_id, "task_id")
+    return TaskIdentity(dataset_id=dataset, task_id=task)
+
+
+def _validate_identity_field(value: str, label: str) -> str:
+    if not isinstance(value, str):
+        raise InvalidQueryError(f"{label} must be a string")
+    if not value or value.strip() != value:
+        raise InvalidQueryError(
+            f"{label} must not be blank or surrounded by whitespace"
+        )
+    if len(value) > _TASK_IDENTITY_MAX_LENGTH:
+        raise InvalidQueryError(
+            f"{label} must be at most {_TASK_IDENTITY_MAX_LENGTH} characters"
+        )
+    return value
+
+
+def encode_task_provenance(
+    provenance: TaskAnnotationProvenance | None,
+) -> str | None:
+    """Serialize provenance to a deterministic JSON string, or null."""
+    if provenance is None:
+        return None
+    payload: dict[str, object] = {}
+    if provenance.model is not None:
+        payload["model"] = provenance.model
+    if provenance.taxonomy_version is not None:
+        payload["taxonomy_version"] = provenance.taxonomy_version
+    if provenance.repeats is not None:
+        payload["repeats"] = provenance.repeats
+    if provenance.agreement is not None:
+        payload["agreement"] = provenance.agreement
+    if provenance.extra:
+        for key, value in provenance.extra.items():
+            payload.setdefault(str(key), value)
+    if not payload:
+        return None
+    return json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+
+
+def decode_task_provenance(
+    value: str | None,
+) -> TaskAnnotationProvenance | None:
+    """Parse a stored provenance JSON string back into its value object."""
+    if value is None:
+        return None
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise InvalidQueryError("task provenance is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise InvalidQueryError("task provenance must be a JSON object")
+    known = {"model", "taxonomy_version", "repeats", "agreement"}
+    extra = {
+        key: item for key, item in payload.items() if key not in known
+    }
+    return TaskAnnotationProvenance(
+        model=cast(str | None, payload.get("model")),
+        taxonomy_version=cast(str | None, payload.get("taxonomy_version")),
+        repeats=cast(int | None, payload.get("repeats")),
+        agreement=cast(float | None, payload.get("agreement")),
+        extra=extra or None,
+    )
 
 
 def _required_file(value: str | Path, label: str) -> Path:
@@ -957,6 +1077,7 @@ def _relative_to(descriptor_path: Path, value: str) -> Path:
 
 __all__ = (
     "Annotation",
+    "AnnotationOrigin",
     "ComparisonStage",
     "ExampleDetail",
     "ExampleSummary",
@@ -973,9 +1094,15 @@ __all__ = (
     "ReviewPage",
     "RunValidationError",
     "Tag",
+    "TaskAnnotation",
+    "TaskAnnotationProvenance",
+    "TaskIdentity",
     "Verdict",
     "ViewerError",
     "Waterfall",
     "WaterfallStage",
+    "decode_task_provenance",
+    "encode_task_provenance",
     "validate_sha256",
+    "validate_task_identity",
 )
