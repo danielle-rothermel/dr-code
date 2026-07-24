@@ -3,11 +3,9 @@
 Pure helpers (no pytest fixtures) so test modules import them directly. Pytest
 fixtures live in ``conftest.py``. Import as ``from metrics.helpers import ...``.
 
-These tests define the contract of a package that does not exist yet
-(``src/dr_code/metrics/``). The existing ``dr_code.humaneval`` modules are used
-as **oracles**; ``dr_code.trace`` is the input contract. Nothing here touches a
-real container runtime — execution stays behind the injectable
-``SandboxRunner`` seam (design L3).
+The existing ``dr_code.humaneval`` modules are used as **oracles**;
+``dr_code.trace`` is the input contract. Execution stays behind the injectable
+``PythonSubprocessRunner`` seam.
 """
 
 from __future__ import annotations
@@ -18,12 +16,12 @@ import sys
 from collections.abc import Mapping
 from typing import Any
 
-from dr_code.humaneval.sandbox import (
-    CANDIDATE_KILL_RETURNCODES,
-    SandboxCompletedProcess,
-    SandboxRunner,
-    SandboxTimeoutError,
+from dr_code.execution.subprocess import (
+    PythonSubprocessRunner,
+    SubprocessCompletedProcess,
+    SubprocessTimeoutError,
 )
+from dr_code.humaneval.batch_runner import CANDIDATE_KILL_RETURNCODES
 from dr_code.humaneval.task import EvaluationCaseStatus, HumanEvalTask
 from dr_code.trace import (
     Absent,
@@ -138,32 +136,31 @@ def absent_trace(
 
 
 # ---------------------------------------------------------------------------
-# Injectable SandboxRunner fakes (L3: injected runner, never a real container).
+# Injectable runner fakes.
 # ---------------------------------------------------------------------------
 
-def local_runner() -> SandboxRunner:
+def local_runner() -> PythonSubprocessRunner:
     """An injectable runner that runs the trusted program under the host
-    interpreter — fast and container-free. The OCI boundary has its own
-    probes elsewhere (``tests/humaneval/test_sandbox.py``)."""
+    interpreter."""
 
     def run_local_python(
         *,
         source: str,
-        input_json: str,
+        input_text: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         try:
             completed = subprocess.run(
                 [sys.executable, "-I", "-c", source],
-                input=input_json,
+                input=input_text,
                 capture_output=True,
                 check=False,
                 encoding="utf-8",
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
-            raise SandboxTimeoutError(str(exc)) from exc
-        return SandboxCompletedProcess(
+            raise SubprocessTimeoutError(str(exc)) from exc
+        return SubprocessCompletedProcess(
             returncode=completed.returncode,
             stdout=completed.stdout,
             stderr=completed.stderr,
@@ -179,7 +176,7 @@ class CountingRunner:
     hash so identical requests execute once per cache lifetime.
     """
 
-    def __init__(self, inner: SandboxRunner) -> None:
+    def __init__(self, inner: PythonSubprocessRunner) -> None:
         self._inner = inner
         self.calls: list[tuple[str, str, float]] = []
 
@@ -187,13 +184,13 @@ class CountingRunner:
         self,
         *,
         source: str,
-        input_json: str,
+        input_text: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        self.calls.append((source, input_json, timeout_seconds))
+    ) -> SubprocessCompletedProcess:
+        self.calls.append((source, input_text, timeout_seconds))
         return self._inner(
             source=source,
-            input_json=input_json,
+            input_text=input_text,
             timeout_seconds=timeout_seconds,
         )
 
@@ -207,16 +204,16 @@ def scripted_runner(
     stdout: str = "[]",
     stderr: str = "",
     returncode: int = 0,
-) -> SandboxRunner:
+) -> PythonSubprocessRunner:
     """Build a runner that returns a fixed completed process."""
 
     def run(
         *,
         source: str,
-        input_json: str,
+        input_text: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        return SandboxCompletedProcess(
+    ) -> SubprocessCompletedProcess:
+        return SubprocessCompletedProcess(
             returncode=returncode,
             stdout=stdout,
             stderr=stderr,
@@ -225,15 +222,15 @@ def scripted_runner(
     return run
 
 
-def raising_runner(exc: BaseException) -> SandboxRunner:
+def raising_runner(exc: BaseException) -> PythonSubprocessRunner:
     """A runner that always raises (infra breakage or candidate timeout)."""
 
     def run(
         *,
         source: str,
-        input_json: str,
+        input_text: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
+    ) -> SubprocessCompletedProcess:
         raise exc
 
     return run
@@ -298,14 +295,14 @@ def partial_pass_runner_output(
 
 def kill_runner_process(
     returncode: int = next(iter(CANDIDATE_KILL_RETURNCODES)),
-) -> SandboxCompletedProcess:
+) -> SubprocessCompletedProcess:
     """A completed-process shape for the candidate-kill attribution path."""
-    return SandboxCompletedProcess(returncode=returncode, stdout="", stderr="killed")
+    return SubprocessCompletedProcess(returncode=returncode, stdout="", stderr="killed")
 
 
 def json_runner(
     results: list[dict[str, Any]] | None = None,
-) -> tuple[SandboxRunner, list[tuple[str, str, float]]]:
+) -> tuple[PythonSubprocessRunner, list[tuple[str, str, float]]]:
     """A deterministic fake runner plus its call log (source, input, timeout)."""
     calls: list[tuple[str, str, float]] = []
     payload = json.dumps(results or [])
@@ -313,11 +310,11 @@ def json_runner(
     def run(
         *,
         source: str,
-        input_json: str,
+        input_text: str,
         timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        calls.append((source, input_json, timeout_seconds))
-        return SandboxCompletedProcess(returncode=0, stdout=payload, stderr="")
+    ) -> SubprocessCompletedProcess:
+        calls.append((source, input_text, timeout_seconds))
+        return SubprocessCompletedProcess(returncode=0, stdout=payload, stderr="")
 
     return run, calls
 
@@ -331,7 +328,7 @@ def evaluate_oracle(
     candidate_code: str,
     *,
     timeout_seconds: float,
-    run_in_sandbox: SandboxRunner,
+    run_in_subprocess: PythonSubprocessRunner,
 ):
     """Run the existing batch_runner to get the oracle EvaluationTaskResult."""
     from dr_code.humaneval.batch_runner import evaluate_human_eval_code
@@ -340,5 +337,5 @@ def evaluate_oracle(
         task=task,
         candidate_code=candidate_code,
         timeout_seconds=timeout_seconds,
-        run_in_sandbox=run_in_sandbox,
+        run_in_subprocess=run_in_subprocess,
     )

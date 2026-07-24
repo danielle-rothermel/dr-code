@@ -1,11 +1,9 @@
 """HumanEval task models, benchmark overrides, and dataset parsing.
 
-Holds the pydantic/dataclass evaluation models (tasks, case/task results and
-summaries, runner payload shapes), the ``EvaluationHarnessError`` raised for
-sandbox or runtime breakage, best-function selection, and the benchmark
-override table plus dataset parsing. Test parsing lives in
-``parsed_tests``; subprocess batch orchestration and the sandbox runner
-script live in ``batch_runner``.
+Holds the serialization-boundary task and summary models, frozen internal
+case results, best-function selection, and dataset parsing. Test parsing lives
+in ``parsed_tests``; execution orchestration and its standalone resource live
+in ``batch_runner``.
 """
 
 from __future__ import annotations
@@ -131,13 +129,6 @@ def _results_for_function(
     ]
 
 
-# PARITY TWIN: duplicated by ``dr_code.metrics.operators.code_test``
-# ``_best_function_name`` (which holds bare statuses, not
-# ``EvaluationCaseResult`` objects). Both stay live while this old scoring path
-# runs; a parity test (tests/metrics/test_operator_parity.py) pins the two
-# selectors equal. RETIREMENT PLAN: when the scoring path retires, this copy
-# goes with it and the parity test is deleted. Any behaviour fix must land in
-# both twins.
 def select_best_function_name(
     *,
     function_names: list[str],
@@ -192,9 +183,6 @@ class EvaluationTaskResult(BaseModel):
             and result.status is not EvaluationCaseStatus.PASSED
         ]
 
-    # PARITY TWIN: duplicated by the coverage_complete value in
-    # ``dr_code.metrics.operators.code_test.CodeTest.compute``. Retires with
-    # this scoring path; kept equal by the metrics parity test.
     @computed_field
     @property
     def coverage_complete(self) -> bool:

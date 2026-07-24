@@ -8,14 +8,14 @@ Every symbol from ``dr_code.metrics`` is imported lazily inside the test that
 exercises it, so the suite collects cleanly against the missing package and
 fails hard — never skips — when it is absent.
 
-Nothing here touches a real container runtime.
+Execution is injected through host-process runner fakes.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import SandboxRunner
+from dr_code.execution.subprocess import PythonSubprocessRunner
 from dr_code.humaneval.task import HumanEvalTask
 
 from metrics.helpers import (
@@ -43,12 +43,12 @@ def failing_submission() -> str:
 
 
 @pytest.fixture
-def local_runner() -> SandboxRunner:
-    """Injectable host-interpreter runner (no OCI container)."""
+def local_runner() -> PythonSubprocessRunner:
+    """Injectable host-interpreter runner."""
     return _local_runner()
 
 
 @pytest.fixture
-def counting_runner(local_runner: SandboxRunner) -> CountingRunner:
+def counting_runner(local_runner: PythonSubprocessRunner) -> CountingRunner:
     """A counting wrapper around the local runner (observes at-most-once)."""
     return CountingRunner(local_runner)

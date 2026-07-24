@@ -26,9 +26,9 @@ from dr_code.humaneval.scoring import (
     SubmissionOutcome,
     score_humaneval_submission,
 )
-from dr_code.humaneval.sandbox import (
-    SandboxCompletedProcess,
-    SandboxTimeoutError,
+from dr_code.execution.subprocess import (
+    SubprocessCompletedProcess,
+    SubprocessTimeoutError,
 )
 
 from metrics.helpers import code_test_trace, raising_runner
@@ -53,7 +53,7 @@ def _code_test_record(trace, *, runner, timeout=5.0):
             ),
         ),
     )
-    records = extract_metrics(definition, trace, run_in_sandbox=runner)
+    records = extract_metrics(definition, trace, run_in_subprocess=runner)
     code_test = [r for r in records if r.metric is MetricName.CODE_TEST]
     assert len(code_test) == 1
     return code_test[0]
@@ -71,7 +71,7 @@ def _score_outcome(submission, task, *, runner, timeout=5.0) -> str:
         task=task,
         parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=timeout,
-        run_in_sandbox=runner,
+        run_in_subprocess=runner,
     )
     return result.outcome.value
 
@@ -123,7 +123,7 @@ def test_no_top_level_functions_outcome_parity(task, local_runner) -> None:
 
 
 def test_timed_out_outcome_parity(task, good_submission) -> None:
-    runner = raising_runner(SandboxTimeoutError("timed out"))
+    runner = raising_runner(SubprocessTimeoutError("timed out"))
     _assert_parity(good_submission, task, runner=runner, timeout=1.0)
     record = _code_test_record(
         code_test_trace(good_submission, task), runner=runner, timeout=1.0
@@ -134,8 +134,8 @@ def test_timed_out_outcome_parity(task, good_submission) -> None:
 def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
     """Partial runner output (incomplete coverage, no failures) ⇒ incomplete."""
 
-    def partial_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        return SandboxCompletedProcess(
+    def partial_runner(*, source, input_text, timeout_seconds):  # noqa: ANN001
+        return SubprocessCompletedProcess(
             returncode=0,
             stdout='[{"case_id": "case_0", "status": "passed"}]',
             stderr="",

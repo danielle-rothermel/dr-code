@@ -1,9 +1,9 @@
-"""Sandbox-backed HumanEval case execution facts.
+"""Subprocess-backed HumanEval case execution facts.
 
 This operator is HumanEval-specific by construction, not merely by its type
-annotations: it builds ``HumanEvalRunnerPayload``, drives ``runner_script()``,
-and depends on ``HumanEvalTask.parsed_tests`` semantics. There is deliberately
-no generic ``Task`` supertype -- a single-implementation abstraction with a
+annotations: it uses the HumanEval batch request and result protocol and
+depends on ``HumanEvalTask.parsed_tests`` semantics. There is deliberately no
+generic ``Task`` supertype -- a single-implementation abstraction with a
 guessed interface would be premature. The shared interface gets extracted when
 a second benchmark exists to constrain it; until then the HumanEval scope is
 kept honest through naming and docstrings.
@@ -11,27 +11,28 @@ kept honest through naming and docstrings.
 
 from __future__ import annotations
 
-import ast
-import json
 import math
-from collections import Counter
 from collections.abc import Mapping
 from typing import Self
 
-from pydantic import TypeAdapter, ValidationError, model_validator
+from pydantic import model_validator
 
-from dr_code.humaneval.batch_runner import runner_script
+from dr_code.execution.subprocess import (
+    SubprocessCompletedProcess,
+    SubprocessOutputLimitError,
+)
+from dr_code.humaneval import batch_runner
 from dr_code.humaneval.profiles import DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
 from dr_code.humaneval.task import (
+    EvaluationCaseResult,
     EvaluationCaseStatus,
-    HumanEvalRunnerCaseOutput,
-    HumanEvalRunnerPayload,
+    EvaluationHarnessError,
+    EvaluationTaskResult,
     HumanEvalTask,
 )
 from dr_code.metrics.engine.execution import (
     ExecutionOutcome,
     ExecutionRequest,
-    is_candidate_kill_outcome,
     is_output_limit_outcome,
     is_timeout_outcome,
 )
@@ -105,7 +106,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> tuple[ExecutionRequest, ...]:
         source = _code_source(value)
         task = self._task(aux)
-        function_names = _top_level_function_names(source)
+        function_names = batch_runner.top_level_function_names(source)
         return tuple(
             self._request(
                 task=task,
@@ -123,7 +124,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> CodeTestResult:
         source = _code_source(value)
         task = self._task(aux)
-        function_names = _top_level_function_names(source)
+        function_names = batch_runner.top_level_function_names(source)
         requests = tuple(
             self._request(
                 task=task,
@@ -132,49 +133,38 @@ class CodeTest(MetricOperator[CodeTestSettings]):
             )
             for function_name in function_names
         )
-        statuses_by_name: dict[str, list[EvaluationCaseStatus]] = {}
+        case_results = []
         for function_name, request in zip(
             function_names,
             requests,
             strict=True,
         ):
-            statuses = _statuses_from_outcome(
-                outcome=ctx.outcome_for(request),
-                task=task,
+            case_results.extend(
+                _results_from_outcome(
+                    task=task,
+                    function_name=function_name,
+                    timeout_seconds=request.timeout_seconds,
+                    outcome=ctx.outcome_for(request),
+                )
             )
-            statuses_by_name.setdefault(function_name, []).extend(statuses)
 
-        best_function_name = _best_function_name(
-            function_names=function_names,
+        evaluation = EvaluationTaskResult(
+            task_id=task.task_id,
             entry_point=task.entry_point,
-            passed_counts=_passed_counts(statuses_by_name),
+            function_names=function_names,
+            total_cases=len(batch_runner.require_parsed_tests(task).cases),
+            results=case_results,
         )
-        best_statuses = (
-            statuses_by_name[best_function_name]
-            if best_function_name is not None
-            else []
-        )
-        counts = Counter(status.value for status in best_statuses)
-        total_cases = _total_cases(task)
+        counts = evaluation.status_counts
         return CodeTestResult(
-            total_cases=total_cases,
+            total_cases=evaluation.total_cases,
             passed_count=counts.get(EvaluationCaseStatus.PASSED.value, 0),
             failed_count=counts.get(EvaluationCaseStatus.FAILED.value, 0),
             error_count=counts.get(EvaluationCaseStatus.ERROR.value, 0),
-            timeout_count=counts.get(
-                EvaluationCaseStatus.TIMEOUT.value,
-                0,
-            ),
-            # PARITY TWIN of ``EvaluationTaskResult.coverage_complete``
-            # (dr_code.humaneval.task): "did every case produce a result", not a
-            # pass/fail verdict. Pinned equal by the parity test; retires with
-            # the old scoring path.
-            coverage_complete=(
-                best_function_name is not None
-                and len(best_statuses) == total_cases
-            ),
-            function_count=len(function_names),
-            best_function_name=best_function_name,
+            timeout_count=counts.get(EvaluationCaseStatus.TIMEOUT.value, 0),
+            coverage_complete=evaluation.coverage_complete,
+            function_count=len(evaluation.function_names),
+            best_function_name=evaluation.best_function_name,
         )
 
     def _task(self, aux: Mapping[str, Artifact]) -> HumanEvalTask:
@@ -190,22 +180,61 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         candidate_code: str,
         function_name: str,
     ) -> ExecutionRequest:
-        parsed_tests = task.parsed_tests
-        if parsed_tests is None:
-            raise ValueError("HumanEvalTask.parsed_tests is required")
-        payload = HumanEvalRunnerPayload(
-            task_id=task.task_id,
+        request = batch_runner.build_human_eval_batch_request(
+            task=task,
             candidate_code=candidate_code,
-            support_code=parsed_tests.support_code,
             function_name=function_name,
-            test_type=parsed_tests.test_type,
-            checks=list(parsed_tests.iter_checks(candidate_name="candidate")),
+            timeout_seconds=self.settings.timeout_seconds,
         )
         return ExecutionRequest(
-            source=runner_script(),
-            input_json=payload.model_dump_json(),
-            timeout_seconds=self.settings.timeout_seconds,
+            source=request.source,
+            input_text=request.input_text,
+            timeout_seconds=request.timeout_seconds,
             computation_id=_COMPUTATION_ID,
+        )
+
+
+def _results_from_outcome(
+    *,
+    task: HumanEvalTask,
+    function_name: str,
+    timeout_seconds: float,
+    outcome: ExecutionOutcome,
+) -> list[EvaluationCaseResult]:
+    """Interpret a cached process outcome through the HumanEval protocol."""
+
+    if is_timeout_outcome(outcome):
+        return batch_runner.timeout_results(
+            task=task,
+            function_name=function_name,
+            timeout_seconds=timeout_seconds,
+        )
+    if is_output_limit_outcome(outcome):
+        return batch_runner.error_results(
+            task=task,
+            function_name=function_name,
+            message=f"{SubprocessOutputLimitError.__name__}: {outcome.stderr}",
+        )
+
+    completed = SubprocessCompletedProcess(
+        returncode=outcome.returncode,
+        stdout=outcome.stdout,
+        stderr=outcome.stderr,
+    )
+    try:
+        return batch_runner.interpret_subprocess_batch_result(
+            task=task,
+            function_name=function_name,
+            completed=completed,
+            elapsed_seconds=0.0,
+        )
+    except EvaluationHarnessError as exc:
+        # Metrics treats runner protocol failures and unexpected candidate
+        # exits as candidate-attributable case errors, not batch failures.
+        return batch_runner.error_results(
+            task=task,
+            function_name=function_name,
+            message=str(exc),
         )
 
 
@@ -232,135 +261,3 @@ def _code_source(value: Artifact) -> str:
     if not isinstance(value, CodeArtifact):
         raise TypeError("code_test input must be code")
     return value.source
-
-
-# PARITY TWIN: duplicates ``dr_code.humaneval.batch_runner``
-# ``top_level_function_names``. Both stay live while the old scoring path runs;
-# retires together with it. Baseline quirk (documented, not fixed): duplicate
-# top-level function names (legal Python) are all returned, so their status
-# counts stack downstream and can defeat coverage_complete -- exact parity with
-# the retired path. Any fix must land in both twins.
-def _top_level_function_names(source: str) -> list[str]:
-    tree = ast.parse(source)
-    return [
-        node.name
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-    ]
-
-
-def _total_cases(task: HumanEvalTask) -> int:
-    if task.parsed_tests is None:
-        raise ValueError("HumanEvalTask.parsed_tests is required")
-    return len(task.parsed_tests.cases)
-
-
-def _statuses_from_outcome(
-    *,
-    outcome: ExecutionOutcome,
-    task: HumanEvalTask,
-) -> list[EvaluationCaseStatus]:
-    total_cases = _total_cases(task)
-    error_statuses = [EvaluationCaseStatus.ERROR] * total_cases
-    # Four parallel outcome predicates. Timeout and output-limit are things a
-    # candidate can provoke, and so is any hard kill (is_candidate_kill_outcome)
-    # or unexpected nonzero exit -- a candidate can produce any returncode via
-    # ``os._exit``. All of these are candidate-controlled *data*: they become
-    # case statuses, never batch aborts. SandboxError (raised at the sandbox
-    # boundary before candidate code runs) is the only propagating infra path.
-    if is_timeout_outcome(outcome):
-        return [EvaluationCaseStatus.TIMEOUT] * total_cases
-    if is_output_limit_outcome(outcome):
-        return error_statuses
-    if is_candidate_kill_outcome(outcome):
-        return error_statuses
-    if outcome.returncode != 0:  # was: raise EvaluationHarnessError
-        return error_statuses
-
-    # KNOWN LIMITATION (documented, not fixed here): stdout is shared with the
-    # candidate (sandbox_runner_script.py), so its contents are
-    # candidate-controlled data. Reclassifying malformed stdout to ERROR
-    # statuses contains the blast radius (one trace's record, not the whole
-    # batch), but does not make stdout trustworthy: a candidate can forge a
-    # valid-looking results array and ``os._exit(0)`` before the runner prints
-    # the real one. This forgery hole is baseline (the retired scoring path
-    # parses the same shared stdout); closing it needs a runner protocol change
-    # (a separate result channel or an authenticated sentinel), which is out of
-    # scope for this PR.
-    try:
-        raw_results = json.loads(outcome.stdout)
-    except json.JSONDecodeError:  # candidate shares the runner's stdout
-        return error_statuses
-    if not isinstance(raw_results, list):
-        return error_statuses
-
-    if task.parsed_tests is None:
-        raise ValueError("HumanEvalTask.parsed_tests is required")
-    expected_case_ids = {
-        case.case_id for case in task.parsed_tests.cases
-    }
-    seen_case_ids: set[str] = set()
-    adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
-    statuses: list[EvaluationCaseStatus] = []
-    for item in raw_results:
-        try:
-            result = adapter.validate_python(item)
-        except ValidationError:
-            return error_statuses
-        if (
-            result.case_id not in expected_case_ids
-            or result.case_id in seen_case_ids
-        ):
-            return error_statuses
-        seen_case_ids.add(result.case_id)
-        statuses.append(result.status)
-    return statuses
-
-
-def _passed_counts(
-    statuses_by_name: Mapping[str, list[EvaluationCaseStatus]],
-) -> dict[str, int]:
-    """Count PASSED statuses per function name.
-
-    Split out of ``_best_function_name`` so counting and max-selection are
-    independently testable and the per-function counts are a natural debugging
-    hook. Duplicate top-level function names (legal Python) collapse into a
-    single ``statuses_by_name`` key upstream, so their counts stack -- a
-    baseline quirk documented, not fixed (see ``_top_level_function_names``).
-    """
-
-    return {
-        function_name: sum(
-            status is EvaluationCaseStatus.PASSED for status in statuses
-        )
-        for function_name, statuses in statuses_by_name.items()
-    }
-
-
-# PARITY TWIN: this selector duplicates
-# ``dr_code.humaneval.task.select_best_function_name`` (and the coverage logic
-# in ``CodeTest.compute`` duplicates
-# ``EvaluationTaskResult.coverage_complete``). Both implementations stay live
-# while the old scoring path still runs; direct reuse is awkward because
-# task.py's selector takes ``EvaluationCaseResult`` objects while the operator
-# holds bare statuses (a gap the ``_passed_counts`` split widens). The guard is
-# a parity test (tests/metrics/test_operator_parity.py) pinning the two
-# selectors equal over the same synthetic status sets. RETIREMENT PLAN: when the
-# scoring path retires, the task.py copy goes with it and the parity test is
-# deleted. Any fix to the duplicate-name quirk must land in BOTH twins.
-def _best_function_name(
-    *,
-    function_names: list[str],
-    entry_point: str,
-    passed_counts: Mapping[str, int],
-) -> str | None:
-    if not function_names:
-        return None
-    return max(
-        function_names,
-        key=lambda function_name: (
-            passed_counts.get(function_name, 0),
-            function_name == entry_point,
-            -function_names.index(function_name),
-        ),
-    )

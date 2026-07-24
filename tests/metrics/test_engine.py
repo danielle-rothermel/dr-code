@@ -7,20 +7,24 @@ Covers the four engine promises (design L3) and the bind/plan/compute flow:
 * Absent ``on``/aux input ⇒ NOT_APPLICABLE record preserving the cause
   (missing key is still a wiring error — design L2);
 * operator exception ⇒ OPERATOR_FAILURE record attributed to the metric;
-* infrastructure ``SandboxError`` raises (fail-closed);
+* infrastructure ``SubprocessError`` raises (fail-closed);
 * candidate timeout is data, not infrastructure;
 * two-phase execution with content-hash request dedupe (X-S4);
 * determinism across fresh / deserialized / external traces (X-S2).
 
 ``dr_code.metrics`` is imported lazily inside each test. All execution goes
-through the injectable ``SandboxRunner`` seam — never a real container.
+through the injectable ``PythonSubprocessRunner`` seam.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import SandboxError, SandboxTimeoutError
+from dr_code.execution.subprocess import (
+    SubprocessError,
+    SubprocessOutputLimitError,
+    SubprocessTimeoutError,
+)
 from dr_code.trace import (
     Absent,
     CodeArtifact,
@@ -66,7 +70,7 @@ def test_missing_on_key_is_a_wiring_error_before_any_work(
     )
     definition = _definition([_q("text_stats", on="nonexistent")])
     with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
+        _extract(definition, trace, run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 0
 
 
@@ -77,7 +81,7 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
+        _extract(definition, trace, run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 0
 
 
@@ -90,7 +94,7 @@ def test_invalid_operator_settings_is_a_wiring_error(counting_runner) -> None:
         [_q("compressed_length", compression={"method": "gzip", "level": 99})]
     )  # gzip level out of range
     with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
+        _extract(definition, trace, run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 0
 
 
@@ -102,17 +106,17 @@ def test_missing_auxiliary_key_is_a_wiring_error(task, counting_runner) -> None:
     )
     definition = _definition([_q("code_test", on="input")])
     with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
+        _extract(definition, trace, run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 0
 
 
-def test_batch_wiring_error_runs_no_sandbox_work(task, counting_runner) -> None:
+def test_batch_wiring_error_runs_no_subprocess_work(task, counting_runner) -> None:
     bad = external_trace(
         {"input": TextArtifact(text="not code"), "output": TextArtifact(text="x")}
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
-        _extract_batch(definition, [bad, bad], run_in_sandbox=counting_runner)
+        _extract_batch(definition, [bad, bad], run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 0
 
 
@@ -238,19 +242,19 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
 
 
 # ===========================================================================
-# Infrastructure SandboxError raises; candidate timeout is data (L3).
+# Infrastructure errors raise; candidate terminations are data (L3).
 # ===========================================================================
 
-def test_infrastructure_sandbox_error_raises(task) -> None:
-    """A SandboxError is infra breakage — it raises, never becomes a record."""
+def test_infrastructure_subprocess_error_raises(task) -> None:
+    """A SubprocessError is infra breakage — it raises, never becomes a record."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
-    with pytest.raises(SandboxError):
+    with pytest.raises(SubprocessError):
         _extract(
             definition,
             trace,
-            run_in_sandbox=raising_runner(SandboxError("infra broke")),
+            run_in_subprocess=raising_runner(SubprocessError("infra broke")),
         )
 
 
@@ -274,22 +278,41 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
 
     monkeypatch.setattr(CodeTest, "execution_requests", no_requests)
     with pytest.raises(EngineInvariantError):
-        _extract(definition, trace, run_in_sandbox=local_runner)
+        _extract(definition, trace, run_in_subprocess=local_runner)
 
 
-def test_sandbox_timeout_is_candidate_data_not_infrastructure(task) -> None:
+def test_subprocess_timeout_is_candidate_data_not_infrastructure(task) -> None:
     """A candidate timeout is attributed to the candidate as data (timeout
-    cases), not a raised SandboxError (batch_runner attribution parity)."""
+    cases), not a raised SubprocessError (batch_runner attribution parity)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input", timeout_seconds=1.0)])
     record = _extract(
         definition,
         trace,
-        run_in_sandbox=raising_runner(SandboxTimeoutError("timed out")),
+        run_in_subprocess=raising_runner(SubprocessTimeoutError("timed out")),
     )[0]
     assert record.status.value == "measured"
     assert record.values["timeout_count"] == record.values["total_cases"]
+
+
+def test_subprocess_output_limit_is_candidate_data_not_infrastructure(
+    task,
+) -> None:
+    """Candidate output flooding becomes error cases, not an infra raise."""
+    candidate = "def add_one(x):\n    return x + 1\n"
+    trace = code_test_trace(candidate, task)
+    definition = _definition([_q("code_test", on="input")])
+    record = _extract(
+        definition,
+        trace,
+        run_in_subprocess=raising_runner(
+            SubprocessOutputLimitError("too much output")
+        ),
+    )[0]
+    assert record.status.value == "measured"
+    assert record.values["error_count"] == record.values["total_cases"]
+    assert record.values["timeout_count"] == 0
 
 
 # ===========================================================================
@@ -303,7 +326,7 @@ def test_batch_dedupes_identical_code_test_executions(
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
-    _extract_batch(definition, [trace, trace, trace], run_in_sandbox=counting_runner)
+    _extract_batch(definition, [trace, trace, trace], run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 1
 
 
@@ -311,7 +334,7 @@ def test_distinct_submissions_execute_separately(task, counting_runner) -> None:
     good = code_test_trace("def add_one(x):\n    return x + 1\n", task)
     bad = code_test_trace("def add_one(x):\n    return x - 1\n", task)
     definition = _definition([_q("code_test", on="input")])
-    _extract_batch(definition, [good, bad], run_in_sandbox=counting_runner)
+    _extract_batch(definition, [good, bad], run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 2
 
 
@@ -319,7 +342,7 @@ def test_batch_returns_one_record_tuple_per_trace(task, local_runner) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input", timeout_seconds=5.0)])
-    results = _extract_batch(definition, [trace, trace], run_in_sandbox=local_runner)
+    results = _extract_batch(definition, [trace, trace], run_in_subprocess=local_runner)
     assert isinstance(results, tuple)
     assert len(results) == 2
     for per_trace in results:
@@ -338,11 +361,11 @@ def test_prepopulated_execution_cache_skips_the_runner(
     definition = _definition([_q("code_test", on="input")])
 
     cache = InMemoryExecutionCache()
-    _extract(definition, trace, run_in_sandbox=counting_runner, execution_cache=cache)
+    _extract(definition, trace, run_in_subprocess=counting_runner, execution_cache=cache)
     assert counting_runner.call_count == 1
 
     counting_runner.calls.clear()
-    _extract(definition, trace, run_in_sandbox=counting_runner, execution_cache=cache)
+    _extract(definition, trace, run_in_subprocess=counting_runner, execution_cache=cache)
     assert counting_runner.call_count == 0
 
 
@@ -355,7 +378,7 @@ def test_pure_operators_never_call_the_runner(counting_runner) -> None:
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
     )
-    _extract_batch(definition, [trace, trace], run_in_sandbox=counting_runner)
+    _extract_batch(definition, [trace, trace], run_in_subprocess=counting_runner)
     assert counting_runner.call_count == 0
 
 
@@ -418,7 +441,7 @@ def test_code_test_record_values_exclude_timing(task, local_runner) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input", timeout_seconds=2.0)])
-    record = _extract(definition, trace, run_in_sandbox=local_runner)[0]
+    record = _extract(definition, trace, run_in_subprocess=local_runner)[0]
     assert "elapsed_seconds" not in record.values
 
 

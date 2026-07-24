@@ -7,10 +7,10 @@ from dataclasses import dataclass
 
 from pydantic import JsonValue
 
-from dr_code.humaneval.sandbox import (
-    SandboxError,
-    SandboxRunner,
-    run_python_in_sandbox,
+from dr_code.execution.subprocess import (
+    SubprocessError,
+    PythonSubprocessRunner,
+    run_python_subprocess,
 )
 from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
 from dr_code.metrics.engine.execution import (
@@ -109,7 +109,7 @@ def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
     *,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]:
     """Extract one record per question from one trace."""
@@ -117,7 +117,7 @@ def extract_metrics(
     return extract_metrics_batch(
         definition,
         (trace,),
-        run_in_sandbox=run_in_sandbox,
+        run_in_subprocess=run_in_subprocess,
         execution_cache=execution_cache,
     )[0]
 
@@ -126,7 +126,7 @@ def extract_metrics_batch(
     definition: MetricsDefinition,
     traces: Sequence[Trace],
     *,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[tuple[MetricRecord, ...], ...]:
     """Extract records after collecting work across every supplied trace."""
@@ -152,7 +152,7 @@ def extract_metrics_batch(
                     binding.value,
                     binding.auxiliary,
                 )
-            except (SandboxError, EngineInvariantError):
+            except (SubprocessError, EngineInvariantError):
                 raise
             except Exception as exc:
                 binding.planning_failure = exc
@@ -166,7 +166,7 @@ def extract_metrics_batch(
     )
     outcomes = run_requests(
         requests,
-        run_in_sandbox=run_in_sandbox,
+        run_in_subprocess=run_in_subprocess,
         cache=cache,
     )
     context = _EngineContext(views=ViewCache(), outcomes=outcomes)
@@ -291,7 +291,7 @@ def _compute_record(
             status=RecordStatus.MEASURED,
             values=result.to_values(),
         )
-    except (SandboxError, EngineInvariantError):
+    except (SubprocessError, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)
