@@ -1,79 +1,51 @@
-"""Named, frozen preprocessing definitions for the code-extraction pipeline.
+"""Named preprocessing definition for exhaustive HumanEval candidates.
 
-Each ``PreprocessingDefinition`` expresses one extraction path as atomic
-cleaning, candidate-generation, and selection steps over typed artifacts. The
-definitions are pure
-data — ordered ``StepSpec`` instances with explicit settings (no hidden
-defaults). Component identity is the explicit definition id and manual
-version; ordered steps and settings remain directly inspectable.
-
-The preprocessing definitions use string-aware smart-quote recovery, reject
-field-marker code representations, and drop whitespace-only candidates.
-
-``resolve_preprocessing_definition`` is an exact ``(definition_id, version)``
-lookup that raises ``ValueError`` for any pair not in the table.
-
-Step order and composition:
-
-1. ``normalize_text`` — its six atomic constituents, one step each, so each
-   is independently visible in the trace.
-2. ``candidate_blocks`` — the ``extract_candidates`` strategy ladder.
-3. Per-candidate cleaning — ``strip_code_fences``, ``textwrap.dedent``,
-   string-aware smart-quote recovery, ``drop_if_name``,
-   ``drop_after_last_return``, then ``infer_necessary_imports`` unbundled
-   into ``repair_import_lines`` + ``infer_missing_imports`` +
-   ``dedupe_imports``.
-4. The ``candidate_selection`` checks — plain-literal, code-repr,
-   compilable. Both best-effort and field-marker run all three.
-5. ``select_first`` fixes the candidate set down to one code value.
+The definition interprets decoder text without imposing an expected function
+name. It returns every distinct, compilable candidate containing at least one
+top-level function; applications may add name-aware policy or rely on tests.
 """
 
 from __future__ import annotations
 
-from types import MappingProxyType
 from typing import Final
 
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    FIELD_MARKER_NAME,
-    STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
-)
+from pydantic import JsonValue
+
 from dr_code.preprocessing.definition import (
     PreprocessingDefinition,
     StepSpec,
 )
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.steps.extract_candidates import DEFAULT_STRATEGIES
 
-#: Definition ids match ``code_parsing`` parser-profile coordinates.
-BEST_EFFORT_HUMANEVAL_DEFINITION_ID: Final[str] = (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID
+HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID: Final = (
+    "humaneval-function-candidates"
 )
-STRICT_FIELD_MARKER_DEFINITION_ID: Final[str] = (
-    STRICT_FIELD_MARKER_PARSER_PROFILE_ID
+DEFINITION_VERSION: Final = "0"
+SUPPORTED_DEFINITION_VERSIONS: Final[frozenset[str]] = frozenset(
+    {DEFINITION_VERSION}
 )
-BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION: Final[str] = "0"
-STRICT_FIELD_MARKER_DEFINITION_VERSION: Final[str] = "0"
 
 
 def _spec(
     instance_name: str,
     step: StepName,
-    **settings: object,
+    **settings: JsonValue,
 ) -> StepSpec:
-    """Build a ``StepSpec`` with the registered typed settings model."""
-    from dr_code.preprocessing.registry import REGISTRY
+    """Build one step instance through the settings validation boundary.
 
-    return StepSpec(
-        instance_name=instance_name,
-        step=step,
-        settings=REGISTRY[step.value].Settings.model_validate(settings),
+    ``StepSpec`` is constructed from a mapping so its ``before`` validator
+    resolves the registered step's concrete settings model — wrong-component
+    settings are rejected here, not at bind time.
+    """
+    return StepSpec.model_validate(
+        {
+            "instance_name": instance_name,
+            "step": step.value,
+            "settings": dict(settings),
+        }
     )
 
 
-#: ``normalize_text``'s constituents, one step per operation. Order matters:
-#: line endings, NFKC unicode, tab expansion, trailing-whitespace strip,
-#: blank-run collapse, then outer-blank trim.
 _TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
     _spec("normalize_line_endings", StepName.NORMALIZE_LINE_ENDINGS),
     _spec("normalize_unicode", StepName.NORMALIZE_UNICODE),
@@ -81,89 +53,55 @@ _TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
     _spec("strip_trailing_whitespace", StepName.STRIP_TRAILING_WHITESPACE),
     _spec("collapse_blank_runs", StepName.COLLAPSE_BLANK_RUNS),
     _spec("trim_outer_blanks", StepName.TRIM_OUTER_BLANKS),
+    _spec("require_nonblank_text", StepName.REQUIRE_NONBLANK_TEXT),
 )
 
-#: Per-candidate cleaning: strip fences, dedent, string-aware smart-quote
-#: recovery (so smart-delimited code compiles while quote *contents* survive),
-#: split on the ``if __name__`` guard, drop trailing prose after the last
-#: return, then repair / infer / dedupe imports.
 _CANDIDATE_CLEANING: Final[tuple[StepSpec, ...]] = (
     _spec("strip_fences", StepName.STRIP_FENCES),
     _spec("dedent", StepName.DEDENT_CANDIDATES),
     _spec("normalize_smart_quotes", StepName.NORMALIZE_SMART_QUOTES),
     _spec("split_on_name_guard", StepName.SPLIT_ON_NAME_GUARD),
-    _spec("drop_after_last_return", StepName.DROP_AFTER_LAST_RETURN),
+    _spec(
+        "expand_last_return_salvage",
+        StepName.EXPAND_LAST_RETURN_SALVAGE,
+    ),
     _spec("repair_import_lines", StepName.REPAIR_IMPORT_LINES),
-    _spec("infer_missing_imports", StepName.INFER_MISSING_IMPORTS),
     _spec("dedupe_imports", StepName.DEDUPE_IMPORTS),
 )
 
-
-#: best-effort: full normalization, the default extraction ladder,
-#: per-candidate cleaning, then all three selection filters (plain-literal,
-#: code-repr, compilable).
-BEST_EFFORT_DEFINITION: Final[PreprocessingDefinition] = (
-    PreprocessingDefinition(
-        definition_id=BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-        steps=(
-            *_TEXT_NORMALIZATION,
-            _spec(
-                "extract_candidates",
-                StepName.EXTRACT_CANDIDATES,
-                alternatives=list(DEFAULT_STRATEGIES),
-            ),
-            *_CANDIDATE_CLEANING,
-            _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),
-            _spec("filter_code_repr", StepName.FILTER_CODE_REPR),
-            _spec("filter_compilable", StepName.FILTER_COMPILABLE),
-            _spec("select_first", StepName.SELECT_FIRST),
+HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION: Final = PreprocessingDefinition(
+    definition_id=HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
+    version=DEFINITION_VERSION,
+    steps=(
+        *_TEXT_NORMALIZATION,
+        _spec("extract_candidates", StepName.EXTRACT_CANDIDATES),
+        *_CANDIDATE_CLEANING,
+        _spec(
+            "filter_nonblank_candidates",
+            StepName.FILTER_NONBLANK_CANDIDATES,
         ),
-    )
-)
-
-
-#: strict field-marker: extract the ``[[ ## code ## ]]`` value, then the same
-#: three selection filters as best-effort. The code-repr filter is included
-#: so a ``code = "..."`` marker payload is rejected (symmetrical with
-#: best-effort).
-FIELD_MARKER_DEFINITION: Final[PreprocessingDefinition] = (
-    PreprocessingDefinition(
-        definition_id=STRICT_FIELD_MARKER_DEFINITION_ID,
-        version=STRICT_FIELD_MARKER_DEFINITION_VERSION,
-        steps=(
-            _spec(
-                "field_marker_extract",
-                StepName.FIELD_MARKER_EXTRACT,
-                field_name=FIELD_MARKER_NAME,
-            ),
-            _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),
-            _spec("filter_code_repr", StepName.FILTER_CODE_REPR),
-            _spec("filter_compilable", StepName.FILTER_COMPILABLE),
-            _spec("select_first", StepName.SELECT_FIRST),
+        _spec("identify_candidates", StepName.IDENTIFY_CANDIDATES),
+        _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),
+        _spec("filter_code_repr", StepName.FILTER_CODE_REPR),
+        _spec("filter_compilable", StepName.FILTER_COMPILABLE),
+        _spec(
+            "filter_has_top_level_function",
+            StepName.FILTER_HAS_TOP_LEVEL_FUNCTION,
         ),
-    )
+        _spec("materialize_candidates", StepName.MATERIALIZE_CANDIDATES),
+        _spec("return_all", StepName.RETURN_ALL),
+    ),
 )
 
+_DEFINITIONS: Final = {
+    (
+        HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
+        DEFINITION_VERSION,
+    ): HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+}
 
-#: Lookup by (definition_id, version) — the resolver's single source of
-#: truth. Only the registered pairs resolve.
-_DEFINITIONS: Final = MappingProxyType(
-    {
-        (
-            BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-            BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-        ): BEST_EFFORT_DEFINITION,
-        (
-            STRICT_FIELD_MARKER_DEFINITION_ID,
-            STRICT_FIELD_MARKER_DEFINITION_VERSION,
-        ): FIELD_MARKER_DEFINITION,
-    }
-)
-
-#: Supported definition ids.
 SUPPORTED_DEFINITION_IDS: Final[frozenset[str]] = frozenset(
-    {BEST_EFFORT_HUMANEVAL_DEFINITION_ID, STRICT_FIELD_MARKER_DEFINITION_ID}
+    {HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID}
 )
 
 
@@ -172,12 +110,7 @@ def resolve_preprocessing_definition(
     definition_id: str,
     version: str,
 ) -> PreprocessingDefinition:
-    """Return the named ``PreprocessingDefinition`` for an id x version.
-
-    Keyword-only coordinates; an exact ``(definition_id, version)`` lookup
-    that raises ``ValueError`` for any pair not in the table. The returned
-    definition is frozen and shared — callers must never mutate it.
-    """
+    """Resolve an exact public definition coordinate without aliases."""
     definition = _DEFINITIONS.get((definition_id, version))
     if definition is None:
         raise ValueError(
@@ -188,12 +121,10 @@ def resolve_preprocessing_definition(
 
 
 __all__ = [
-    "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
-    "BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION",
-    "BEST_EFFORT_DEFINITION",
-    "FIELD_MARKER_DEFINITION",
-    "STRICT_FIELD_MARKER_DEFINITION_ID",
-    "STRICT_FIELD_MARKER_DEFINITION_VERSION",
+    "DEFINITION_VERSION",
+    "HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID",
+    "HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION",
     "SUPPORTED_DEFINITION_IDS",
+    "SUPPORTED_DEFINITION_VERSIONS",
     "resolve_preprocessing_definition",
 ]

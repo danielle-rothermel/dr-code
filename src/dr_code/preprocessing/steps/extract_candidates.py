@@ -1,178 +1,70 @@
-"""Extract code candidates from text via a first-success strategy ladder.
-
-The extraction ladder composes ``candidate_blocks``,
-``strip_markdown_wrappers``, and ``recover_escaped_python`` as an
-ordered strategy tuple in settings — first-success alternatives, not a
-sequence of pipeline steps. The ladder stays inside this one step; which
-rungs exist is data.
-"""
+"""Thin preprocessing adapter for modular candidate extraction."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from enum import StrEnum
-from types import MappingProxyType
-from typing import ClassVar, Final
+from collections import Counter
+from typing import ClassVar
 
-from dr_code.text_analysis import candidate_blocks, code_like_blocks
-from dr_code.text_transforms import (
-    recover_escaped_python,
-    strip_markdown_wrappers,
-)
+from dr_code.preprocessing.extraction import extract_candidate_drafts
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import (
-    AlternativesStep,
+    Step,
+    StepFailedError,
+    StepOutput,
     StepSettings,
 )
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
+    CandidateLineage,
     CodeCandidateSetArtifact,
     TextArtifact,
 )
 
 
-class ExtractionStrategy(StrEnum):
-    """The ladder's constituents, individually selectable per definition."""
-
-    FENCED_BLOCKS = "fenced_blocks"  # text_analysis.candidate_blocks
-    MARKDOWN_WRAPPER = "markdown_wrapper"  # strip_markdown_wrappers per block
-    ESCAPED_PYTHON = "escaped_python"  # recover_escaped_python, re-extract
-    ESCAPED_MARKDOWN_WRAPPER = (
-        "escaped_markdown_wrapper"  # unescape, then strip_markdown_wrappers
-    )
-
-
-#: ``(text: str) -> CodeCandidateSetArtifact | None`` — None means the
-#: strategy produced no candidates.
-ExtractionStrategyFn = Callable[[str], CodeCandidateSetArtifact | None]
-
-
-def _to_candidate_set(
-    blocks: list[str],
-) -> CodeCandidateSetArtifact | None:
-    """Apply ``code_like_blocks`` fan-out, drop whitespace-only blocks.
-
-    ``code_like_blocks`` filters prose blocks and splits anchored segments.
-    Returning ``None`` when no code-like candidate survives advances the
-    first-success ladder to its next strategy.
-    """
-    candidates = [block for block in code_like_blocks(blocks) if block.strip()]
-    if not candidates:
-        return None
-    return CodeCandidateSetArtifact(candidates=tuple(candidates))
-
-
-def _fenced_blocks(text: str) -> CodeCandidateSetArtifact | None:
-    """Fenced blocks when present, otherwise the first unfenced block."""
-    return _to_candidate_set(candidate_blocks(text))
-
-
-def _markdown_wrapper(text: str) -> CodeCandidateSetArtifact | None:
-    """Strip one markdown wrapper marker per line of each block."""
-    stripped = [
-        strip_markdown_wrappers(block) for block in candidate_blocks(text)
-    ]
-    return _to_candidate_set(stripped)
-
-
-def _escaped_python(text: str) -> CodeCandidateSetArtifact | None:
-    """Recover structurally escaped Python, then re-extract candidates."""
-    unescaped = recover_escaped_python(text)
-    if unescaped is None:
-        return None
-    return _to_candidate_set(candidate_blocks(unescaped))
-
-
-def _escaped_markdown_wrapper(
-    text: str,
-) -> CodeCandidateSetArtifact | None:
-    """Recover escaped Python, then strip a markdown wrapper per block.
-
-    The unescaped-then-plain rung (``escaped_python``) can miss code hidden
-    behind blockquote or list markers, so this strategy retries with
-    ``strip_markdown_wrappers`` applied to each block.
-    """
-    unescaped = recover_escaped_python(text)
-    if unescaped is None:
-        return None
-    stripped = [
-        strip_markdown_wrappers(block) for block in candidate_blocks(unescaped)
-    ]
-    return _to_candidate_set(stripped)
-
-
-STRATEGY_REGISTRY: Mapping[str, ExtractionStrategyFn] = MappingProxyType(
-    {
-        ExtractionStrategy.FENCED_BLOCKS.value: _fenced_blocks,
-        ExtractionStrategy.MARKDOWN_WRAPPER.value: _markdown_wrapper,
-        ExtractionStrategy.ESCAPED_PYTHON.value: _escaped_python,
-        ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER.value: (
-            _escaped_markdown_wrapper
-        ),
-    }
-)
-
-DEFAULT_STRATEGIES: Final = (
-    ExtractionStrategy.FENCED_BLOCKS,
-    ExtractionStrategy.MARKDOWN_WRAPPER,
-    ExtractionStrategy.ESCAPED_PYTHON,
-    ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER,
-)
-
-
-class ExtractCandidatesSettings(StepSettings):
-    """Ordered, first-success strategy tuple.
-
-    Conservative-first by the definition author's choice; the tuple is
-    part of definition identity — reordering is a new definition.
-    """
-
-    alternatives: tuple[ExtractionStrategy, ...] = DEFAULT_STRATEGIES
-
-
-class ExtractCandidates(AlternativesStep[ExtractCandidatesSettings]):
-    """Text -> CandidateSet: first-success ladder over an ordered tuple.
-
-    Resolves ``settings.alternatives`` through ``STRATEGY_REGISTRY``, in
-    order. First strategy returning a non-empty candidate set wins; its
-    name is recorded as ``facts["alternative"]``. All-fail raises
-    ``StepFailedError``.
-    """
+class ExtractCandidates(Step[StepSettings]):
+    """Emit every candidate draft with its complete ordered origin path."""
 
     NAME: ClassVar[StepName] = StepName.EXTRACT_CANDIDATES
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
-    Settings = ExtractCandidatesSettings
 
-    def alternatives(
-        self,
-    ) -> tuple[tuple[str, Callable[[Artifact], Artifact | None]], ...]:
-        return tuple(
-            (
-                strategy.value,
-                self._adapt(STRATEGY_REGISTRY[strategy.value]),
+    def apply(self, value: Artifact) -> StepOutput:
+        assert isinstance(value, TextArtifact)
+        drafts = extract_candidate_drafts(value.text)
+        operation_counts = Counter(
+            operation.kind
+            for draft in drafts
+            for operation in draft.origin.path
+        )
+        facts = {
+            "candidate_count": len(drafts),
+            "operation_counts": [
+                {"kind": kind, "count": count}
+                for kind, count in sorted(operation_counts.items())
+            ],
+            "paths": [
+                draft.origin.model_dump(mode="json") for draft in drafts
+            ],
+        }
+        if not drafts:
+            raise StepFailedError(
+                "no code candidates extracted",
+                failure_code=PreprocessingFailureCode.NO_CODE_CANDIDATES,
+                facts=facts,
             )
-            for strategy in self.settings.alternatives
+        return StepOutput(
+            value=CodeCandidateSetArtifact(
+                candidates=tuple(draft.source for draft in drafts),
+                lineage=tuple(
+                    CandidateLineage(origins=(draft.origin,))
+                    for draft in drafts
+                ),
+            ),
+            facts=facts,
         )
 
-    @staticmethod
-    def _adapt(
-        strategy_fn: ExtractionStrategyFn,
-    ) -> Callable[[Artifact], Artifact | None]:
-        def wrapped(artifact: Artifact) -> Artifact | None:
-            assert isinstance(artifact, TextArtifact)
-            return strategy_fn(artifact.text)
 
-        return wrapped
-
-
-__all__ = [
-    "DEFAULT_STRATEGIES",
-    "STRATEGY_REGISTRY",
-    "ExtractCandidates",
-    "ExtractCandidatesSettings",
-    "ExtractionStrategy",
-    "ExtractionStrategyFn",
-]
+__all__ = ("ExtractCandidates",)

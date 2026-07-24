@@ -7,7 +7,7 @@ why a submission scored zero without parsing error text.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import (
     BaseModel,
@@ -20,9 +20,11 @@ from pydantic import (
 
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
 from dr_code.humaneval.code_parsing import (
+    EMPTY_SUBMISSION_ERROR,
     CodeExtractionResult,
     extract_code_with_profile,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.execution.subprocess import (
     PythonSubprocessRunner,
     run_python_subprocess,
@@ -40,6 +42,7 @@ from dr_code.humaneval.task import (
     HumanEvalTask,
 )
 from dr_code.models import FrozenModel
+from dr_code.trace import OUTPUT_KEY, is_absent
 
 UNKNOWN_FAILURE_CLASS = "unknown"
 
@@ -178,11 +181,42 @@ def score_humaneval_submission(
     )
 
 
+#: Preprocessing failure codes that name a scoring outcome of their own.
+#: The pipeline decides a submission carries no top-level function while
+#: filtering candidates, so that verdict reaches scoring as a failure code
+#: rather than as an evaluation result. Any other failure code means the
+#: submission simply produced no usable candidate.
+_OUTCOME_BY_FAILURE_CODE: Final[
+    dict[PreprocessingFailureCode, SubmissionOutcome]
+] = {
+    PreprocessingFailureCode.DECODER_OUTPUT_BLANK: (
+        SubmissionOutcome.EMPTY_SUBMISSION
+    ),
+    PreprocessingFailureCode.NO_TOP_LEVEL_FUNCTION_CANDIDATE: (
+        SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
+    ),
+}
+
+
 def extraction_failure_outcome(
     extraction: CodeExtractionResult,
 ) -> SubmissionOutcome:
-    if extraction.extraction_error == "empty raw submission":
+    """Name why extraction produced no code, from the trace's failure code.
+
+    The preprocessing trace records a stable failure code for the step that
+    gave up; scoring reads that code rather than matching on error text.
+    """
+    if extraction.extraction_error == EMPTY_SUBMISSION_ERROR:
         return SubmissionOutcome.EMPTY_SUBMISSION
+    output = extraction.trace.value(OUTPUT_KEY)
+    if is_absent(output):
+        try:
+            code = PreprocessingFailureCode(output.failure_code)
+        except ValueError:
+            return SubmissionOutcome.EXTRACTION_FAILED
+        return _OUTCOME_BY_FAILURE_CODE.get(
+            code, SubmissionOutcome.EXTRACTION_FAILED
+        )
     return SubmissionOutcome.EXTRACTION_FAILED
 
 

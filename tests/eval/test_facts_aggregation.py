@@ -165,7 +165,7 @@ def test_lineage_step_and_step_version_are_set_together() -> None:
             operator=MetricName.TEXT_STATS,
             operator_version="1",
             on_key="output",
-            step="select_first",
+            step="return_all",
         )
 
 

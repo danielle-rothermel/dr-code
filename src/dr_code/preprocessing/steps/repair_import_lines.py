@@ -12,8 +12,9 @@ from dr_code.preprocessing.steps.base import CandidateMapStep
 class RepairImportLines(CandidateMapStep):
     """Repair structurally broken import lines in each candidate.
 
-    Wraps ``import_inference.repair_import_lines`` — the first constituent
-    of ``infer_necessary_imports``.
+    Wraps ``import_inference.repair_import_lines``: an import line that does
+    not parse is rewritten when trimming trailing junk or closing unbalanced
+    parentheses makes it parse, and dropped when neither does.
     """
 
     NAME: ClassVar[StepName] = StepName.REPAIR_IMPORT_LINES

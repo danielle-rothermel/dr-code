@@ -6,7 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final, get_args
 
+from pydantic import JsonValue
+
 from dr_code.trace.absent import Absent
+from dr_code.trace.facts import validate_step_facts
 from dr_code.trace.artifacts import Artifact
 from dr_code.trace.provenance import (
     EXTERNAL_PRODUCER,
@@ -42,14 +45,17 @@ class Trace:
     # flat namespace; must contain input & output
     values: Mapping[str, TraceValue]
     producer: TraceProducer
-    step_facts: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    step_facts: Mapping[str, Mapping[str, JsonValue]] = field(
+        default_factory=dict
+    )
     # step_facts: provenance recorded by steps (chosen alternative,
-    # rejection reasons, candidate counts) keyed by instance name —
-    # descriptive facts, never policy judgments
+    # rejection reasons, candidate counts, per-candidate inspections) keyed
+    # by instance name — descriptive facts, never policy judgments. Values
+    # are JSON, so a trace serializes losslessly.
 
     def __post_init__(self) -> None:
         """Validate RESERVED_KEYS ⊆ values; reject non-TraceValue
-        entries."""
+        entries and non-JSON step facts."""
         if not isinstance(self.producer, _TRACE_PRODUCER_TYPES):
             raise WiringError(
                 "trace producer must be an external or preprocessing "
@@ -66,6 +72,10 @@ class Trace:
                     f"value for key {key!r} is not a TraceValue: "
                     f"{type(val).__name__}"
                 )
+        try:
+            validate_step_facts(self.step_facts)
+        except ValueError as exc:
+            raise WiringError(str(exc)) from exc
 
     def value(self, key: str) -> TraceValue:
         """Missing key raises WiringError. Present-but-Absent returns the
@@ -80,7 +90,7 @@ class Trace:
 def external_trace(
     values: Mapping[str, TraceValue],
     *,
-    step_facts: Mapping[str, Mapping[str, str]] | None = None,
+    step_facts: Mapping[str, Mapping[str, JsonValue]] | None = None,
 ) -> Trace:
     """Boundary constructor for artifacts built outside dr-code:
     validates value types on the way in and stamps the external producer.

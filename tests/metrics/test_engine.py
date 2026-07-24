@@ -247,8 +247,16 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
     distinct from a missing key (which is a wiring error)."""
     trace = external_trace(
         {
-            "input": Absent(failed_step="extract", cause="no code"),
-            "output": Absent(failed_step="extract", cause="no code"),
+            "input": Absent(
+                failed_step="extract",
+                cause="no code",
+                failure_code="test.no_code",
+            ),
+            "output": Absent(
+                failed_step="extract",
+                cause="no code",
+                failure_code="test.no_code",
+            ),
         }
     )
     definition = _definition(
@@ -272,7 +280,11 @@ def test_absent_auxiliary_yields_not_applicable(task) -> None:
         {
             "input": code,
             "output": code,
-            "task": Absent(failed_step="load", cause="missing task"),
+            "task": Absent(
+                failed_step="load",
+                cause="missing task",
+                failure_code="test.missing_task",
+            ),
         }
     )
     definition = _definition([_q("code_test", on="input")])

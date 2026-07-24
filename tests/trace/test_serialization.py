@@ -10,9 +10,12 @@ from dr_code.trace import (
     OUTPUT_KEY,
     TRACE_SCHEMA_VERSION,
     Absent,
+    CandidateLineage,
+    CandidateOrigin,
     CodeArtifact,
     CodeCandidateSetArtifact,
     ComponentCoordinate,
+    ExtractionOperation,
     JsonArtifact,
     PreprocessingDefinitionCoordinate,
     PreprocessingTraceProducer,
@@ -25,18 +28,36 @@ from dr_code.trace import (
 )
 
 
+def _lineage(name: str) -> CandidateLineage:
+    """A minimal well-formed lineage for one candidate."""
+    return CandidateLineage(
+        origins=(
+            CandidateOrigin(
+                path=(
+                    ExtractionOperation(
+                        kind="response_representation",
+                        details={"name": name},
+                    ),
+                )
+            ),
+        )
+    )
+
+
 def _full_trace() -> Trace:
     return Trace(
         values={
             INPUT_KEY: TextArtifact(text="prompt"),
             OUTPUT_KEY: CodeArtifact(source="x = 1\n"),
             "candidates": CodeCandidateSetArtifact(
-                candidates=("a = 1\n", "b = 2\n")
+                candidates=("a = 1\n", "b = 2\n"),
+                lineage=(_lineage("first"), _lineage("second")),
             ),
             "payload": JsonArtifact(payload={"task": "HumanEval/0"}),
             "missing": Absent(
                 failed_step="parse",
                 cause="syntax error",
+                failure_code="test.syntax_error",
                 propagated_through=("score",),
             ),
         },

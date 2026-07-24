@@ -3,6 +3,13 @@
 An ``\\n`` inside a Python string literal and an escaped line break in a
 JSON-encoded payload look identical; recovery has to decode the structure
 without rewriting literal escapes in the code itself.
+
+This is the one home for escaped-newline behavioral coverage. The pipeline
+below is a deliberately minimal escaped-recovery ladder — normalization,
+extraction, fence stripping, salvage, import handling, and compilability —
+so a failure names the recovery behavior rather than a policy filter. The
+registered ``humaneval-function-candidates`` definition runs the same steps;
+cross-API agreement is asserted in ``test_parity``.
 """
 
 from __future__ import annotations
@@ -17,14 +24,22 @@ from dr_code.preprocessing.definition import (
     StepSpec,
 )
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.runner import (
-    run_external_preprocessing as run_preprocessing,
+from dr_code.preprocessing.runner import run_external_preprocessing
+from dr_code.trace import (
+    OUTPUT_KEY,
+    CodeCandidateSetArtifact,
+    TextArtifact,
+    is_absent,
 )
-from dr_code.trace import OUTPUT_KEY, CodeArtifact, TextArtifact, is_absent
 
 
 def _escaped_pipeline_definition() -> PreprocessingDefinition:
-    """Full normalization, extraction, and selection definition."""
+    """Full normalization, extraction, and compilability definition.
+
+    Import inference happens inside ``identify_candidates``, which already
+    holds each candidate's parsed tree; ``expand_last_return_salvage``
+    carries the trailing-return salvage behavior.
+    """
 
     def _spec(name: str, step: StepName) -> StepSpec:
         return StepSpec(instance_name=name, step=step)
@@ -42,31 +57,39 @@ def _escaped_pipeline_definition() -> PreprocessingDefinition:
             _spec("extract", StepName.EXTRACT_CANDIDATES),
             _spec("fences", StepName.STRIP_FENCES),
             _spec("split", StepName.SPLIT_ON_NAME_GUARD),
-            _spec("drop", StepName.DROP_AFTER_LAST_RETURN),
+            _spec("salvage", StepName.EXPAND_LAST_RETURN_SALVAGE),
             _spec("repair", StepName.REPAIR_IMPORT_LINES),
-            _spec("infer", StepName.INFER_MISSING_IMPORTS),
             _spec("dedupe", StepName.DEDUPE_IMPORTS),
+            _spec("identify", StepName.IDENTIFY_CANDIDATES),
             _spec("filter", StepName.FILTER_COMPILABLE),
-            _spec("select", StepName.SELECT_FIRST),
+            _spec("materialize", StepName.MATERIALIZE_CANDIDATES),
+            _spec("all", StepName.RETURN_ALL),
         ),
     )
 
 
-def _output_source(source: str) -> CodeArtifact:
-    trace = run_preprocessing(
+def _candidates(source: str) -> tuple[str, ...]:
+    trace = run_external_preprocessing(
         _escaped_pipeline_definition(), TextArtifact(text=source)
     )
     output = trace.value(OUTPUT_KEY)
-    assert isinstance(output, CodeArtifact)
-    return output
+    assert isinstance(output, CodeCandidateSetArtifact)
+    return output.candidates
+
+
+def _only_candidate(source: str) -> str:
+    """The single candidate an unambiguous escaped payload recovers to."""
+    candidates = _candidates(source)
+    assert len(candidates) == 1, candidates
+    return candidates[0]
 
 
 def test_escaped_pipeline_preserves_string_literal_escape() -> None:
     # A normal code candidate must retain the string-literal escape.
     source = 'def join_lines(lines):\n    return "\\n".join(lines)'
-    output = _output_source(source)
-    assert output.source == source
-    assert validate_python_source(output.source).compile_ok
+    recovered = _only_candidate(source)
+    assert recovered == source
+    assert validate_python_source(recovered).compile_ok
 
 
 @pytest.mark.parametrize(
@@ -84,10 +107,13 @@ def test_escaped_pipeline_preserves_string_literal_escape() -> None:
     ids=["escaped-fenced", "escaped-unfenced", "mixed", "json-string"],
 )
 def test_escaped_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
-    output = _output_source(source)
-    assert "def f():" in output.source
-    # Round-trip: recovery is only correct if the recovered code compiles.
-    assert validate_python_source(output.source).compile_ok
+    candidates = _candidates(source)
+    assert candidates
+    # Round-trip: recovery is only correct if every recovered candidate
+    # carries the function and compiles.
+    for candidate in candidates:
+        assert "def f():" in candidate
+        assert validate_python_source(candidate).compile_ok
 
 
 @pytest.mark.parametrize(
@@ -131,9 +157,9 @@ def test_escaped_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
 def test_escaped_pipeline_preserves_python_string_literals(
     source: str, expected: str
 ) -> None:
-    output = _output_source(source)
-    assert output.source == expected
-    assert validate_python_source(output.source).compile_ok
+    recovered = _only_candidate(source)
+    assert recovered == expected
+    assert validate_python_source(recovered).compile_ok
 
 
 def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
@@ -141,15 +167,15 @@ def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
         'def separators(values):\n    return "\\n".join(values), "\\t", "\\r"'
     )
     source = json.dumps(f"Intro\n```python\n{expected}\n```")
-    output = _output_source(source)
-    assert output.source == expected
-    assert validate_python_source(output.source).compile_ok
+    recovered = _only_candidate(source)
+    assert recovered == expected
+    assert validate_python_source(recovered).compile_ok
 
 
 def test_escaped_pipeline_prose_has_no_candidates() -> None:
     # Applying the fallback does not turn prose into code.
     source = r"Here is a discussion.\nThere is no implementation."
-    trace = run_preprocessing(
+    trace = run_external_preprocessing(
         _escaped_pipeline_definition(), TextArtifact(text=source)
     )
     assert is_absent(trace.value(OUTPUT_KEY))

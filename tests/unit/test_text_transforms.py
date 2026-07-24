@@ -6,11 +6,9 @@ import pytest
 
 from dr_code.text_transforms import (
     collapse_blank_runs,
-    drop_after_last_return,
     drop_if_name,
     normalize_line_endings,
     normalize_smart_quotes,
-    normalize_text,
     recover_escaped_python,
     strip_code_fences,
     strip_markdown_wrappers,
@@ -28,10 +26,8 @@ GARBAGE_INPUTS = (
 
 TOTAL_TRANSFORMS = (
     collapse_blank_runs,
-    drop_after_last_return,
     normalize_line_endings,
     normalize_smart_quotes,
-    normalize_text,
     strip_code_fences,
     strip_markdown_wrappers,
     strip_trailing_whitespace,
@@ -57,12 +53,6 @@ def test_strip_trailing_whitespace_per_line() -> None:
 
 def test_collapse_blank_runs_to_one_blank_line() -> None:
     assert collapse_blank_runs("a\n\n\n\nb") == "a\n\nb"
-
-
-def test_normalize_text_folds_crlf_tabs_unicode_and_blanks() -> None:
-    raw = "ｄｅｆ f():\r\n\treturn 1  \r\n\r\n\r\n\r\nx = 2\r\n"
-    out = normalize_text(raw)
-    assert out == "def f():\n    return 1\n\nx = 2"
 
 
 def test_wrap_then_strip_code_fences_round_trips() -> None:
@@ -127,9 +117,3 @@ def test_drop_if_name_splits_before_main_guard() -> None:
     assert drop_if_name(
         "def f():\n    return 1\nif __name__ == '__main__':"
     ) == ["def f():\n    return 1\n"]
-
-
-def test_drop_after_last_return_truncates_trailing_lines() -> None:
-    assert drop_after_last_return("def f():\n    return 1\nprint('x')") == (
-        "def f():\n    return 1"
-    )

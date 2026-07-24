@@ -6,13 +6,10 @@ import pytest
 
 from dr_code.text_analysis import (
     anchored_code_blocks,
-    candidate_blocks,
-    code_like_blocks,
     fence_marker,
     is_code_anchor_line,
     is_code_like_block,
     is_code_like_line,
-    split_by_fences,
 )
 
 GARBAGE_INPUTS = (
@@ -27,9 +24,7 @@ GARBAGE_INPUTS = (
     "analyze",
     (
         anchored_code_blocks,
-        candidate_blocks,
         is_code_like_block,
-        split_by_fences,
     ),
     ids=lambda fn: fn.__name__,
 )
@@ -65,30 +60,23 @@ def test_is_code_like_line_treats_blank_as_code_like() -> None:
     assert not is_code_like_line("This sentence is prose.")
 
 
-def test_split_by_fences_prefers_matching_closer_and_keeps_unmatched_fenced() -> (
-    None
-):
-    text = "before\n```python\nx = 1\n~~~\ny = 2\n```\nafter"
-
-    unfenced, fenced = split_by_fences(text)
-
-    assert unfenced == ["before", "after"]
-    assert fenced == ["x = 1\n~~~\ny = 2"]
-
-
-def test_candidate_blocks_prefers_fenced_blocks() -> None:
-    text = "before\n```python\nx = 1\n```\nafter"
-
-    assert candidate_blocks(text) == ["x = 1"]
-
-
 def test_anchored_code_blocks_starts_at_code_anchor() -> None:
     assert anchored_code_blocks("Here is code:\ndef f():\n    return 1") == [
         "def f():\n    return 1"
     ]
 
 
-def test_code_like_blocks_flattens_anchored_segments() -> None:
-    assert code_like_blocks(["prose\ndef f():\n    return 1"]) == [
-        "def f():\n    return 1"
+def test_anchored_code_blocks_split_functions_separated_by_prose() -> None:
+    assert anchored_code_blocks(
+        "def first():\n"
+        "    return 1\n"
+        "\n"
+        "This is an explanation, not Python.\n"
+        "\n"
+        "def second():\n"
+        "    return 2",
+        segment_prose=True,
+    ) == [
+        "def first():\n    return 1\n",
+        "def second():\n    return 2",
     ]

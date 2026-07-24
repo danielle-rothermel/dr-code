@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.steps.base import Step, StepOutput
+from dr_code.preprocessing.steps.base import Step, StepFailedError, StepOutput
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
@@ -14,12 +15,7 @@ from dr_code.trace import (
 
 
 class ReturnAll(Step):
-    """Keep all candidates; the deliberate "keep everything" cardinality knob.
-
-    Pairs with ``select_first``: definitions choose whether to collapse to
-    one ``Code`` or retain the full ``CodeCandidateSetArtifact``. Records
-    the surviving candidate count as a fact.
-    """
+    """Keep the complete ordered ``CodeCandidateSetArtifact`` unchanged."""
 
     NAME: ClassVar[StepName] = StepName.RETURN_ALL
     VERSION: ClassVar[str] = "0"
@@ -28,9 +24,18 @@ class ReturnAll(Step):
 
     def apply(self, value: Artifact) -> StepOutput:
         assert isinstance(value, CodeCandidateSetArtifact)
+        if not value.candidates:
+            raise StepFailedError(
+                "no candidate available to return",
+                failure_code=PreprocessingFailureCode.NO_CANDIDATES_TO_RETURN,
+                facts={"candidate_count": 0},
+            )
         return StepOutput(
             value=value,
-            facts={"candidate_count": str(len(value.candidates))},
+            facts={
+                "outcome_code": "function_candidates_extracted",
+                "candidate_count": len(value.candidates),
+            },
         )
 
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from typing import Final
 
 from dr_code.text_analysis import fence_marker
@@ -24,7 +23,6 @@ MARKDOWN_WRAPPER_RE: Final[re.Pattern[str]] = re.compile(
     r"^[ \t]*(?:>+[ \t]?|\d+[.)][ \t]?|[*+\-][ \t])"
 )
 BLANK_RUN_RE: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
-RETURN_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*return(?:\b|$)")
 PYTHON_ANCHOR_RE: Final[re.Pattern[str]] = re.compile(
     r"(?:def |async def |class |import |from |@|if __name__)"
 )
@@ -58,17 +56,6 @@ def strip_trailing_whitespace(source: str) -> str:
 def collapse_blank_runs(source: str) -> str:
     """Collapse runs of three or more newlines down to one blank line."""
     return BLANK_RUN_RE.sub("\n\n", source)
-
-
-def normalize_text(source: str, tab_width: int = DEFAULT_TAB_WIDTH) -> str:
-    """Canonical text cleanup: LF endings, NFKC, tabs expanded, trailing
-    whitespace stripped, blank runs collapsed, outer newlines trimmed."""
-    text = normalize_line_endings(source)
-    text = unicodedata.normalize("NFKC", text)
-    text = text.expandtabs(tab_width)
-    text = strip_trailing_whitespace(text)
-    text = collapse_blank_runs(text)
-    return text.strip("\n")
 
 
 def strip_code_fences(source: str) -> str:
@@ -265,24 +252,13 @@ def drop_if_name(text: str) -> list[str]:
     return splits
 
 
-def drop_after_last_return(text: str) -> str:
-    """Truncate `text` after its last `return` line; unchanged when none."""
-    lines = text.split(LINE_SEP)
-    for index in range(len(lines) - 1, -1, -1):
-        if RETURN_LINE_RE.match(lines[index]):
-            return LINE_SEP.join(lines[: index + 1])
-    return text
-
-
 __all__ = [
     "DEFAULT_TAB_WIDTH",
     "SMART_QUOTES",
     "collapse_blank_runs",
-    "drop_after_last_return",
     "drop_if_name",
     "normalize_line_endings",
     "normalize_smart_quotes",
-    "normalize_text",
     "strip_code_fences",
     "strip_markdown_wrappers",
     "strip_trailing_whitespace",

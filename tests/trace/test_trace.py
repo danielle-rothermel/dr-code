@@ -55,7 +55,11 @@ def test_trace_rejects_unvalidated_producer_payload() -> None:
 
 
 def test_value_distinguishes_causal_absence_from_missing_wiring() -> None:
-    absent = Absent(failed_step="parse", cause="syntax error")
+    absent = Absent(
+        failed_step="parse",
+        cause="syntax error",
+        failure_code="test.syntax_error",
+    )
     trace = Trace(
         values={
             INPUT_KEY: TextArtifact(text="input"),

@@ -7,17 +7,20 @@ steps take **no rng**: determinism is settings + input only.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import ClassVar, Generic, TypeVar, cast
 
+from pydantic import JsonValue
+
 from dr_code.models import FrozenModel
+from dr_code.preprocessing.failures import PreprocessingFailureCode
+from dr_code.preprocessing.names import StepName
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
     CodeCandidateSetArtifact,
 )
-from dr_code.preprocessing.names import StepName
 
 
 class StepSettings(FrozenModel):
@@ -38,9 +41,21 @@ class StepFailedError(Exception):
     raised at bind time).
     """
 
-    def __init__(self, cause: str) -> None:
+    def __init__(
+        self,
+        cause: str,
+        *,
+        failure_code: PreprocessingFailureCode,
+        facts: Mapping[str, JsonValue] | None = None,
+    ) -> None:
         super().__init__(cause)
-        self.cause = cause
+        if not isinstance(failure_code, PreprocessingFailureCode):
+            raise TypeError("failure_code must be a PreprocessingFailureCode")
+        self.cause: str = cause
+        self.failure_code = failure_code
+        self.facts: dict[str, JsonValue] = (
+            dict(facts) if facts is not None else {}
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +67,7 @@ class StepOutput:
     """
 
     value: Artifact
-    facts: Mapping[str, str] = field(default_factory=dict)
+    facts: Mapping[str, JsonValue] = field(default_factory=dict)
 
 
 class Step(Generic[SettingsT]):
@@ -102,37 +117,35 @@ class CandidateMapStep(Step[StepSettings]):
 
     def apply(self, value: Artifact) -> StepOutput:
         candidates = _candidate_set(value).candidates
+        candidate_set = _candidate_set(value)
         mapped: list[str] = []
-        for candidate in candidates:
+        lineage = []
+        for index, candidate in enumerate(candidates):
             result = self.apply_to_candidate(candidate)
             if isinstance(result, list):
                 mapped.extend(result)
+                lineage.extend(
+                    candidate_set.lineage[index].model_copy(
+                        update={"candidate_id": None}
+                    )
+                    for _ in result
+                )
             else:
                 mapped.append(result)
+                lineage.append(
+                    candidate_set.lineage[index].model_copy(
+                        update={"candidate_id": None}
+                    )
+                )
         return StepOutput(
-            value=CodeCandidateSetArtifact(candidates=tuple(mapped))
+            value=CodeCandidateSetArtifact(
+                candidates=tuple(mapped), lineage=tuple(lineage)
+            ),
+            facts={
+                "input_candidate_count": len(candidates),
+                "output_candidate_count": len(mapped),
+            },
         )
-
-
-class AlternativesStep(Step[SettingsT], Generic[SettingsT]):
-    """Ordered first-success ladder inside one step — never pipeline branches.
-
-    ``apply`` tries alternatives conservative-first; the winner's name is
-    recorded as ``facts["alternative"]``; all-fail raises
-    ``StepFailedError``.
-    """
-
-    def alternatives(
-        self,
-    ) -> tuple[tuple[str, Callable[[Artifact], Artifact | None]], ...]:
-        raise NotImplementedError
-
-    def apply(self, value: Artifact) -> StepOutput:
-        for name, strategy_fn in self.alternatives():
-            result = strategy_fn(value)
-            if result is not None:
-                return StepOutput(value=result, facts={"alternative": name})
-        raise StepFailedError("no alternative produced candidates")
 
 
 def _candidate_set(value: Artifact) -> CodeCandidateSetArtifact:
@@ -142,7 +155,6 @@ def _candidate_set(value: Artifact) -> CodeCandidateSetArtifact:
 
 
 __all__ = [
-    "AlternativesStep",
     "CandidateMapStep",
     "Step",
     "StepFailedError",

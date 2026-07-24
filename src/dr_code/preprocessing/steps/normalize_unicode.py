@@ -11,10 +11,7 @@ from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class NormalizeUnicode(Step):
-    """Apply NFKC Unicode normalization.
-
-    Lifted out of ``normalize_text`` as its own atomic step.
-    """
+    """Apply NFKC Unicode normalization to the whole text."""
 
     NAME: ClassVar[StepName] = StepName.NORMALIZE_UNICODE
     VERSION: ClassVar[str] = "0"

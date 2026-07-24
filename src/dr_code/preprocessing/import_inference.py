@@ -1,17 +1,19 @@
 """Infer, repair, and dedupe import lines for extracted code candidates.
 
-Public step bodies behind the ``repair_import_lines`` /
-``infer_missing_imports`` / ``dedupe_imports`` steps and the combined
-``humaneval.import_inference.infer_necessary_imports`` API. Names in
-``IMPORT_ALIAS_MAP`` are injected only when referenced and not bound anywhere
-in the candidate's syntax tree — a conservative rule, since injecting a wrong
-import is worse than skipping one.
+``repair_import_lines`` and ``dedupe_import_lines`` are the bodies behind the
+registered ``repair_import_lines`` and ``dedupe_imports`` steps. Inference
+itself is not a step: ``identify_candidates`` already holds each candidate's
+parsed tree, so it calls ``infer_missing_imports_from_tree`` directly. Names
+in ``IMPORT_ALIAS_MAP`` are injected only when referenced and not bound
+anywhere in the candidate's syntax tree — a conservative rule, since
+injecting a wrong import is worse than skipping one.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+import warnings
 from typing import Final
 
 IMPORT_ALIAS_MAP: Final[dict[str, str]] = {
@@ -52,16 +54,8 @@ IMPORT_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*(import |from )")
 TRAILING_JUNK_RE: Final[re.Pattern[str]] = re.compile(r"\s*(?:#|//|--|/\*).*$")
 
 
-def infer_missing_imports(source: str) -> str:
-    """Prepend imports for mapped names referenced but never bound.
-
-    Parses ``source``; for each ``IMPORT_ALIAS_MAP`` name referenced but not
-    bound anywhere in the tree, prepends its import statement. Unparseable
-    input passes through unchanged.
-    """
-    tree = _parse_or_none(source)
-    if tree is None:
-        return source
+def infer_missing_imports_from_tree(source: str, tree: ast.Module) -> str:
+    """Insert inferred imports using an already parsed source tree."""
 
     referenced = _collect_referenced_names(tree)
     bound = _collect_bound_names(tree)
@@ -72,7 +66,34 @@ def infer_missing_imports(source: str) -> str:
     ]
     if not imports:
         return source
-    return "\n".join(imports) + "\n" + source
+    import_block = "\n".join(imports) + "\n"
+    insertion_line = _inferred_import_insertion_line(tree)
+    if insertion_line == 0:
+        return import_block + source
+    lines = source.splitlines(keepends=True)
+    insertion_offset = sum(len(line) for line in lines[:insertion_line])
+    return source[:insertion_offset] + import_block + source[insertion_offset:]
+
+
+def _inferred_import_insertion_line(tree: ast.Module) -> int:
+    body = tree.body
+    index = 0
+    insertion_line = 0
+    if body and isinstance(body[0], ast.Expr):
+        value = body[0].value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            insertion_line = body[0].end_lineno or body[0].lineno
+            index = 1
+    while index < len(body):
+        statement = body[index]
+        if not (
+            isinstance(statement, ast.ImportFrom)
+            and statement.module == "__future__"
+        ):
+            break
+        insertion_line = statement.end_lineno or statement.lineno
+        index += 1
+    return insertion_line
 
 
 def repair_import_lines(source: str) -> tuple[str, bool]:
@@ -104,18 +125,20 @@ def dedupe_import_lines(source: str) -> str:
     return "\n".join(lines)
 
 
-def infer_necessary_imports(source: str) -> str:
-    """Repair, infer, then dedupe imports — the full pass in one call."""
-    repaired, _changed = repair_import_lines(source)
-    inferred = infer_missing_imports(repaired)
-    return dedupe_import_lines(inferred)
-
-
-def _parse_or_none(text: str) -> ast.AST | None:
-    try:
-        return ast.parse(text)
-    except SyntaxError:
-        return None
+def _parse_or_none(text: str) -> ast.Module | None:
+    # Structural cleaning does not own diagnostic facts. Later validation
+    # filters capture SyntaxWarning events into the trace, so suppress this
+    # earlier speculative parse instead of leaking duplicate diagnostics.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        try:
+            return ast.parse(text)
+        except (SyntaxError, ValueError, RecursionError):
+            return None
+        except MemoryError as exc:
+            if str(exc).startswith("Parser stack overflowed"):
+                return None
+            raise
 
 
 def _repair_import_line(line: str) -> str | None:
@@ -193,7 +216,6 @@ __all__ = [
     "IMPORT_LINE_RE",
     "TRAILING_JUNK_RE",
     "dedupe_import_lines",
-    "infer_missing_imports",
-    "infer_necessary_imports",
+    "infer_missing_imports_from_tree",
     "repair_import_lines",
 ]

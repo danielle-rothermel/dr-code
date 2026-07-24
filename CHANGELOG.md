@@ -2,6 +2,35 @@
 
 ## 2026-08-04
 
+- `dr_code.preprocessing` is the single parsing implementation. The registered
+  `humaneval-function-candidates` definition interprets decoder text
+  exhaustively — JSON envelopes, truncation repair, escaped-newline recovery,
+  fences, field markers, and singleton containers — and returns every
+  distinct, compilable candidate carrying a top-level function, in
+  conservative-first order. Each candidate carries a `CandidateLineage`
+  recording the ordered operations that produced it.
+- HumanEval parser profiles are candidate-selection policy over that one
+  pipeline, never a second extractor. A `CodeParserProfile` pairs its
+  registered coordinate with a `CandidateSelection`: the best-effort profile
+  takes the pipeline's first candidate, and the strict field-marker profile
+  takes the first candidate whose lineage starts at the `code` field marker.
+- Preprocessing traces are stamped with producer coordinates.
+  `run_preprocessing` resolves the canonical registered definition and
+  rejects a caller-built object claiming a registered coordinate;
+  `run_external_preprocessing` stamps external provenance. Typed step
+  settings project into the persisted coordinate through `coordinate_settings`
+  alone, and a golden test pins the complete producer JSON — every definition
+  id, instance name, registered component name, and setting name and value.
+- Scoring names why extraction produced no code by reading the trace's stable
+  `PreprocessingFailureCode` instead of matching on error text, so a
+  submission that compiles but declares no top-level function still scores as
+  `NO_TOP_LEVEL_FUNCTIONS`.
+- Dropped the trace and metric-record archive readers along with their
+  persisted fixtures. Trace deserialization validates structure only, so
+  previously stored traces load through the ordinary round-trip path.
+- `Trace.step_facts` carries JSON values, validated on construction, so steps
+  can record counts as numbers. `Absent` carries a required `failure_code` and
+  `CodeCandidateSetArtifact` a required `lineage` aligned with its candidates.
 - The evaluation kernel names every artifact by manual component coordinates:
   definition references, config references, question identity, task identity,
   and repeat identity are coordinate models compared by plain equality.

@@ -1,28 +1,49 @@
+"""HumanEval parser profiles as selection policy over one pipeline.
+
+A parser profile is a registered coordinate plus a candidate-selection
+policy — never a second parsing implementation. Every profile routes the
+raw submission through the registered ``humaneval-function-candidates``
+preprocessing definition; the definition is exhaustive and returns every
+compilable candidate carrying a top-level function, in conservative order.
+A profile then decides which single candidate a scoring caller receives.
+
+``CodeExtractionResult`` is the boundary shape scoring consumes. The full
+audit log of how a submission was parsed lives on the preprocessing
+``Trace`` (``values``, ``step_facts``, and each candidate's
+``CandidateLineage``), which the result carries as ``trace``.
+"""
+
 from __future__ import annotations
 
 import ast
-import re
 from enum import StrEnum
+from functools import lru_cache
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Final
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     PrivateAttr,
-    StrictBool,
     StrictInt,
     StrictStr,
 )
 
-from dr_code.code_analysis import validate_python_source_with_ast
 from dr_code.models import FrozenModel
-from dr_code.humaneval.code_extraction import (
-    ExtractionTraceNode,
-    TraceCheckVerdict,
-    TraceNodeKind,
-    apply_cleaning_with_trace,
+from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    BoundPreprocessingRunner,
+    bind_preprocessing,
+)
+from dr_code.preprocessing.extraction import RESPONSE_REPRESENTATION_OPERATION
+from dr_code.trace import (
+    OUTPUT_KEY,
+    CandidateLineage,
+    CodeCandidateSetArtifact,
+    TextArtifact,
+    Trace,
+    is_absent,
 )
 
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID = "humaneval-best-effort"
@@ -30,81 +51,52 @@ STRICT_FIELD_MARKER_PARSER_PROFILE_ID = "humaneval-field-marker"
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION = "0"
 STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION = "0"
 FIELD_MARKER_NAME = "code"
-FIELD_MARKER_RE = re.compile(
-    r"\[\[\s*##\s*(?P<field>[A-Za-z_][A-Za-z0-9_]*)\s*##\s*\]\]"
+
+#: Response representation the field-marker profile admits. Extraction emits
+#: it under this exact name; the strict profile keeps only candidates whose
+#: lineage starts there.
+FIELD_MARKER_REPRESENTATION: Final = "field_marker_code"
+
+EMPTY_SUBMISSION_ERROR: Final = "empty raw submission"
+NO_FIELD_MARKER_ERROR: Final = (
+    f"missing field marker for {FIELD_MARKER_NAME!r}"
 )
 
 
-class ExtractionMethod(StrEnum):
-    FENCED_CODE = "fenced_code"
-    CLEANED_CANDIDATE = "cleaned_candidate"
-    BARE_PYTHON = "bare_python"
-    FIELD_MARKER = "field_marker"
+class CandidateSelection(StrEnum):
+    """How a profile narrows the pipeline's candidates to at most one."""
+
+    #: Take the pipeline's first candidate — its most conservative reading.
+    FIRST = "first"
+    #: Take the first candidate extracted from the ``code`` field marker.
+    FIRST_FIELD_MARKER = "first_field_marker"
 
 
 class CodeParserProfile(FrozenModel):
-    profile_id: StrictStr
-    version: StrictStr
+    """Registered parser coordinate and its candidate-selection policy.
 
-
-class CandidateStatus(StrEnum):
-    SELECTED = "selected"
-    REJECTED = "rejected"
-    NOT_REACHED = "not_reached"
-
-
-class CandidateSelectionTrace(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    index: StrictInt
-    source: StrictStr
-    status: CandidateStatus
-    compile_ok: StrictBool | None = None
-    rejection_reason: StrictStr | None = None
-    checks: list[ExtractionTraceNode] = Field(default_factory=list)
-
-
-class ExtractionTrace(BaseModel):
-    """How one submission was parsed, split into contract vs. diagnostic.
-
-    Product contract (stable; downstream consumers may depend on them):
-        `profile`, `extraction_method`, `selected_candidate_index`,
-        `extraction_error`. These name the *outcome* of parsing (which
-        profile ran, which method won, why nothing was selected) and are the
-        fields callers should assert against.
-
-    Diagnostic / internal (may change between versions without notice):
-        `roots` and each `CandidateSelectionTrace`'s per-node structure,
-        `rationale`. The node `name`s mirror the pipeline's transform and
-        check steps one-to-one, so they shift whenever the pipeline is
-        refactored. Treat them as a human-debuggable audit log, not an API:
-        do not pin node names, node counts, or child ordering.
+    ``selection`` defaults to the most conservative policy so a caller can
+    name a coordinate without restating its policy; the registered profile
+    is still authoritative, since ``extract_code_with_profile`` compares the
+    whole object against the registry before running.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
-    profile: CodeParserProfile
-    roots: list[ExtractionTraceNode]
-    candidates: list[CandidateSelectionTrace]
-    selected_candidate_index: StrictInt | None = None
-    extraction_method: ExtractionMethod | None = None
-    rationale: StrictStr
-    extraction_error: StrictStr | None = None
+    profile_id: StrictStr
+    version: StrictStr
+    selection: CandidateSelection = CandidateSelection.FIRST
 
 
 class CodeExtractionResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
     _parsed_candidate: ast.Module | None = PrivateAttr(default=None)
 
     raw_submission: StrictStr | None
     extracted_code: StrictStr | None
-    extraction_method: ExtractionMethod | None
     candidate_count: StrictInt
     selected_candidate_index: StrictInt | None = None
-    compile_ok: bool
-    compile_error: StrictStr | None = None
     extraction_error: StrictStr | None = None
-    trace: ExtractionTrace
+    profile: CodeParserProfile
+    trace: Trace
     metadata: dict[StrictStr, Any] = Field(default_factory=dict)
 
     @property
@@ -119,10 +111,12 @@ class CodeExtractionResult(BaseModel):
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE = CodeParserProfile(
     profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
     version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
+    selection=CandidateSelection.FIRST,
 )
 STRICT_FIELD_MARKER_PARSER_PROFILE = CodeParserProfile(
     profile_id=STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
     version=STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION,
+    selection=CandidateSelection.FIRST_FIELD_MARKER,
 )
 
 _PARSER_PROFILES = MappingProxyType(
@@ -164,540 +158,154 @@ def _registered_parser_profile(
     return registered
 
 
+@lru_cache(maxsize=1)
+def _pipeline() -> BoundPreprocessingRunner:
+    """Bind the one registered definition once for every profile."""
+    return bind_preprocessing(HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION)
+
+
+def _from_field_marker(lineage: CandidateLineage) -> bool:
+    """Whether any origin of this candidate starts at the ``code`` marker."""
+    return any(
+        origin.path[0].kind == RESPONSE_REPRESENTATION_OPERATION
+        and origin.path[0].details.get("name") == FIELD_MARKER_REPRESENTATION
+        for origin in lineage.origins
+    )
+
+
+def _select_candidate(
+    candidates: CodeCandidateSetArtifact,
+    *,
+    selection: CandidateSelection,
+) -> int | None:
+    """Apply the profile's selection policy to the pipeline's output.
+
+    The pipeline emits candidates in conservative-first order, so every
+    policy here is a first-match scan; a profile narrows which candidates
+    are admissible, never how they were parsed.
+    """
+    for index, lineage in enumerate(candidates.lineage):
+        if selection is CandidateSelection.FIRST:
+            return index
+        if selection is CandidateSelection.FIRST_FIELD_MARKER:
+            if _from_field_marker(lineage):
+                return index
+    return None
+
+
+def _selection_error(
+    *,
+    raw_submission: str,
+    selection: CandidateSelection,
+    trace: Trace,
+) -> str:
+    """Name why a completed pipeline yielded no candidate for this profile."""
+    if not raw_submission.strip():
+        return EMPTY_SUBMISSION_ERROR
+    output = trace.value(OUTPUT_KEY)
+    if is_absent(output):
+        return output.cause
+    if selection is CandidateSelection.FIRST_FIELD_MARKER:
+        return NO_FIELD_MARKER_ERROR
+    return "no compilable extracted candidate"
+
+
 def extract_code_with_profile(
     raw_submission: str,
     *,
     profile: CodeParserProfile,
 ) -> CodeExtractionResult:
+    """Extract one candidate under an exact registered parser profile."""
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
     profile = _registered_parser_profile(profile)
-    if profile.profile_id == BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID:
-        return extract_best_effort_code(raw_submission, profile=profile)
-    if profile.profile_id == STRICT_FIELD_MARKER_PARSER_PROFILE_ID:
-        return extract_strict_field_marker_code(
-            raw_submission,
-            profile=profile,
-        )
-    raise ValueError(f"unsupported parser profile id: {profile.profile_id}")
+    trace = _pipeline().run(TextArtifact(text=raw_submission))
+    output = trace.value(OUTPUT_KEY)
 
-
-def extract_best_effort_code(
-    raw_submission: str,
-    *,
-    profile: CodeParserProfile = BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-) -> CodeExtractionResult:
-    if not isinstance(raw_submission, str):
-        raise TypeError("raw_submission must be str")
-    profile = _registered_parser_profile(profile)
-    cleaning = apply_cleaning_with_trace(
-        raw_submission,
-        apply_dedent=True,
-    )
-    if not raw_submission.strip():
-        trace = build_extraction_trace(
-            profile=profile,
-            roots=cleaning.roots,
-            candidates=[],
-            rationale="empty raw submission",
-            extraction_error="empty raw submission",
-        )
-        return extraction_failure(
+    if is_absent(output):
+        return _extraction_result(
             raw_submission=raw_submission,
+            profile=profile,
+            trace=trace,
             candidate_count=0,
-            error="empty raw submission",
-            trace=trace,
-        )
-
-    candidates = cleaning.candidates
-    if not candidates:
-        trace = build_extraction_trace(
-            profile=profile,
-            roots=cleaning.roots,
-            candidates=[],
-            rationale="no code candidates extracted",
-            extraction_error="no code candidates extracted",
-        )
-        return extraction_failure(
-            raw_submission=raw_submission,
-            candidate_count=0,
-            error="no code candidates extracted",
-            trace=trace,
-        )
-
-    first_compile_error: str | None = None
-    selected_index: int | None = None
-    selected_candidate: str | None = None
-    selected_parsed_candidate: ast.Module | None = None
-    selected_extraction_method: ExtractionMethod | None = None
-    candidate_traces: list[CandidateSelectionTrace] = []
-    for index, candidate in enumerate(candidates):
-        if selected_index is not None:
-            candidate_traces.append(
-                CandidateSelectionTrace(
-                    index=index,
-                    source=candidate,
-                    status=CandidateStatus.NOT_REACHED,
-                )
-            )
-            continue
-
-        candidate_trace, parsed_candidate = candidate_selection(
-            candidate,
-            index=index,
-        )
-        candidate_traces.append(candidate_trace)
-        if candidate_trace.status is CandidateStatus.REJECTED:
-            first_compile_error = (
-                first_compile_error or candidate_trace.rejection_reason
-            )
-            continue
-
-        selected_index = index
-        selected_candidate = candidate
-        selected_parsed_candidate = parsed_candidate
-        selected_extraction_method = selected_method(
-            raw_submission=raw_submission,
-            candidate=candidate,
-        )
-
-    if selected_index is not None and selected_candidate is not None:
-        method = (
-            selected_extraction_method or ExtractionMethod.CLEANED_CANDIDATE
-        )
-        rationale = selection_rationale(
-            selected_candidate_index=selected_index,
-            extraction_method=method,
-        )
-        trace = build_extraction_trace(
-            profile=profile,
-            roots=cleaning.roots,
-            candidates=candidate_traces,
-            selected_candidate_index=selected_index,
-            extraction_method=method,
-            rationale=rationale,
-        )
-        result = CodeExtractionResult(
-            raw_submission=raw_submission,
-            extracted_code=selected_candidate,
-            extraction_method=method,
-            candidate_count=len(candidates),
-            selected_candidate_index=selected_index,
-            compile_ok=True,
-            compile_error=None,
-            trace=trace,
-            metadata={
-                "candidate_count": len(candidates),
-                "selected_candidate_index": selected_index,
-            },
-        )
-        result._parsed_candidate = selected_parsed_candidate
-        return result
-
-    trace = build_extraction_trace(
-        profile=profile,
-        roots=cleaning.roots,
-        candidates=candidate_traces,
-        rationale=failure_rationale(
-            error="no compilable extracted candidate",
-            compile_error=first_compile_error,
-        ),
-        extraction_error="no compilable extracted candidate",
-    )
-    return extraction_failure(
-        raw_submission=raw_submission,
-        candidate_count=len(candidates),
-        error="no compilable extracted candidate",
-        compile_error=first_compile_error,
-        trace=trace,
-        metadata={
-            "candidate_count": len(candidates),
-        },
-    )
-
-
-def extract_strict_field_marker_code(
-    raw_submission: str,
-    *,
-    profile: CodeParserProfile = STRICT_FIELD_MARKER_PARSER_PROFILE,
-) -> CodeExtractionResult:
-    if not isinstance(raw_submission, str):
-        raise TypeError("raw_submission must be str")
-    profile = _registered_parser_profile(profile)
-    field_value = field_marker_value(
-        raw_submission,
-        field_name=FIELD_MARKER_NAME,
-    )
-    roots = strict_field_marker_roots(
-        raw_submission=raw_submission,
-        field_value=field_value,
-    )
-    if field_value is None:
-        error = f"missing field marker for {FIELD_MARKER_NAME!r}"
-        trace = build_extraction_trace(
-            profile=profile,
-            roots=roots,
-            candidates=[],
-            rationale=error,
-            extraction_error=error,
-        )
-        return extraction_failure(
-            raw_submission=raw_submission,
-            candidate_count=0,
-            error=error,
-            trace=trace,
-        )
-    candidate = field_value.strip()
-    if not candidate:
-        error = "empty field-marker code"
-        trace = build_extraction_trace(
-            profile=profile,
-            roots=roots,
-            candidates=[],
-            rationale=error,
-            extraction_error=error,
-        )
-        return extraction_failure(
-            raw_submission=raw_submission,
-            candidate_count=1,
-            error=error,
-            trace=trace,
-        )
-    candidate_trace, parsed_candidate = candidate_selection(
-        candidate,
-        index=0,
-        include_code_repr_check=False,
-    )
-    if candidate_trace.status is CandidateStatus.REJECTED:
-        error = (
-            "field-marker code is not compilable"
-            if candidate_trace.compile_ok is False
-            else candidate_trace.rejection_reason
-            or "field-marker code is rejected"
-        )
-        trace = build_extraction_trace(
-            profile=profile,
-            roots=roots,
-            candidates=[candidate_trace],
-            rationale=failure_rationale(
-                error=error,
-                compile_error=(
-                    candidate_trace.rejection_reason
-                    if candidate_trace.compile_ok is False
-                    else None
-                ),
+            selected_index=None,
+            error=_selection_error(
+                raw_submission=raw_submission,
+                selection=profile.selection,
+                trace=trace,
             ),
-            extraction_error=error,
         )
-        return extraction_failure(
+
+    assert isinstance(output, CodeCandidateSetArtifact)
+    selected_index = _select_candidate(output, selection=profile.selection)
+    if selected_index is None:
+        return _extraction_result(
             raw_submission=raw_submission,
-            candidate_count=1,
-            error=error,
-            compile_error=(
-                candidate_trace.rejection_reason
-                if candidate_trace.compile_ok is False
-                else None
-            ),
+            profile=profile,
             trace=trace,
+            candidate_count=len(output.candidates),
+            selected_index=None,
+            error=_selection_error(
+                raw_submission=raw_submission,
+                selection=profile.selection,
+                trace=trace,
+            ),
         )
-    trace = build_extraction_trace(
-        profile=profile,
-        roots=roots,
-        candidates=[candidate_trace],
-        selected_candidate_index=0,
-        extraction_method=ExtractionMethod.FIELD_MARKER,
-        rationale=selection_rationale(
-            selected_candidate_index=0,
-            extraction_method=ExtractionMethod.FIELD_MARKER,
-        ),
-    )
-    result = CodeExtractionResult(
+
+    selected = output.candidates[selected_index]
+    result = _extraction_result(
         raw_submission=raw_submission,
-        extracted_code=candidate,
-        extraction_method=ExtractionMethod.FIELD_MARKER,
-        candidate_count=1,
-        selected_candidate_index=0,
-        compile_ok=True,
+        profile=profile,
         trace=trace,
-        metadata={
-            "candidate_count": 1,
-            "selected_candidate_index": 0,
-            "field_name": FIELD_MARKER_NAME,
-        },
+        candidate_count=len(output.candidates),
+        selected_index=selected_index,
+        extracted_code=selected,
     )
-    result._parsed_candidate = parsed_candidate
+    # The pipeline already filtered to compilable candidates, so this parse
+    # only rebuilds the tree the evaluation harness reuses.
+    result._parsed_candidate = ast.parse(selected)
     return result
 
 
-def build_extraction_trace(
+def _extraction_result(
     *,
+    raw_submission: str,
     profile: CodeParserProfile,
-    roots: list[ExtractionTraceNode],
-    candidates: list[CandidateSelectionTrace],
-    rationale: str,
-    selected_candidate_index: int | None = None,
-    extraction_method: ExtractionMethod | None = None,
-    extraction_error: str | None = None,
-) -> ExtractionTrace:
-    return ExtractionTrace(
-        profile=profile,
-        roots=roots,
-        candidates=candidates,
-        selected_candidate_index=selected_candidate_index,
-        extraction_method=extraction_method,
-        rationale=rationale,
-        extraction_error=extraction_error,
-    )
-
-
-def trace_candidate_selection(
-    candidate: str,
-    *,
-    index: int,
-    include_code_repr_check: bool = True,
-) -> CandidateSelectionTrace:
-    trace, _ = candidate_selection(
-        candidate,
-        index=index,
-        include_code_repr_check=include_code_repr_check,
-    )
-    return trace
-
-
-def candidate_selection(
-    candidate: str,
-    *,
-    index: int,
-    include_code_repr_check: bool = True,
-) -> tuple[CandidateSelectionTrace, ast.Module | None]:
-    checks: list[ExtractionTraceNode] = []
-    validated = validate_python_source_with_ast(candidate)
-    validation = validated.validation
-    parsed_module = validated.tree
-    if not validation.compile_ok:
-        reason = validation.compile_error or "candidate does not compile"
-        checks.append(check_node("compile_validation", False, reason=reason))
-        return (
-            CandidateSelectionTrace(
-                index=index,
-                source=candidate,
-                status=CandidateStatus.REJECTED,
-                compile_ok=False,
-                rejection_reason=reason,
-                checks=checks,
-            ),
-            parsed_module,
-        )
-    checks.append(check_node("compile_validation", True))
-
-    if is_plain_literal_module(candidate, parsed_module=parsed_module):
-        reason = "plain literal modules are not valid HumanEval code"
-        checks.append(check_node("plain_literal_module", False, reason=reason))
-        return (
-            CandidateSelectionTrace(
-                index=index,
-                source=candidate,
-                status=CandidateStatus.REJECTED,
-                compile_ok=True,
-                rejection_reason=reason,
-                checks=checks,
-            ),
-            parsed_module,
-        )
-    checks.append(check_node("plain_literal_module", True))
-
-    if include_code_repr_check:
-        if is_code_repr_assignment(candidate, parsed_module=parsed_module):
-            reason = "code repr assignments are not valid HumanEval code"
-            checks.append(
-                check_node("code_repr_assignment", False, reason=reason)
-            )
-            return (
-                CandidateSelectionTrace(
-                    index=index,
-                    source=candidate,
-                    status=CandidateStatus.REJECTED,
-                    compile_ok=True,
-                    rejection_reason=reason,
-                    checks=checks,
-                ),
-                parsed_module,
-            )
-        checks.append(check_node("code_repr_assignment", True))
-
-    return (
-        CandidateSelectionTrace(
-            index=index,
-            source=candidate,
-            status=CandidateStatus.SELECTED,
-            compile_ok=True,
-            checks=checks,
-        ),
-        parsed_module,
-    )
-
-
-def check_node(
-    check_name: str,
-    passed: bool,
-    *,
-    reason: str | None = None,
-) -> ExtractionTraceNode:
-    return ExtractionTraceNode(
-        kind=TraceNodeKind.CHECK,
-        name=check_name,
-        check_name=check_name,
-        verdict=TraceCheckVerdict.PASS if passed else TraceCheckVerdict.FAIL,
-        reason=reason,
-    )
-
-
-def selection_rationale(
-    *,
-    selected_candidate_index: int,
-    extraction_method: ExtractionMethod,
-) -> str:
-    return (
-        f"candidate {selected_candidate_index} selected via "
-        f"{extraction_method.value}: first candidate passing parser checks"
-    )
-
-
-def failure_rationale(
-    *,
-    error: str,
-    compile_error: str | None,
-) -> str:
-    if compile_error:
-        return f"{error} ({compile_error})"
-    return error
-
-
-def strict_field_marker_roots(
-    *,
-    raw_submission: str,
-    field_value: str | None,
-) -> list[ExtractionTraceNode]:
-    marker_present = field_value is not None
-    marker_node = check_node(
-        "field_marker_present",
-        marker_present,
-        reason=(
-            None
-            if marker_present
-            else f"missing field marker for {FIELD_MARKER_NAME!r}"
-        ),
-    )
-    if field_value is None:
-        return [marker_node]
-
-    extract_node = ExtractionTraceNode(
-        kind=TraceNodeKind.TRANSFORM,
-        name="field_marker_extract",
-        before_text=raw_submission,
-        after_text=field_value,
-    )
-    strip_node = ExtractionTraceNode(
-        kind=TraceNodeKind.TRANSFORM,
-        name="field_marker_strip",
-        before_text=field_value,
-        after_text=field_value.strip(),
-    )
-    extract_node.children = [strip_node]
-    marker_node.children = [extract_node]
-    return [marker_node]
-
-
-def field_marker_value(raw_submission: str, *, field_name: str) -> str | None:
-    matches = list(FIELD_MARKER_RE.finditer(raw_submission))
-    for index, match in enumerate(matches):
-        if match.group("field") != field_name:
-            continue
-        start = match.end()
-        end = matches[index + 1].start() if index + 1 < len(matches) else None
-        return raw_submission[start:end]
-    return None
-
-
-def selected_method(
-    *,
-    raw_submission: str,
-    candidate: str,
-) -> ExtractionMethod:
-    if "```" in raw_submission or "~~~" in raw_submission:
-        return ExtractionMethod.FENCED_CODE
-    if raw_submission.strip() == candidate.strip():
-        return ExtractionMethod.BARE_PYTHON
-    return ExtractionMethod.CLEANED_CANDIDATE
-
-
-def is_plain_literal_module(
-    source: str,
-    *,
-    parsed_module: ast.Module | None = None,
-) -> bool:
-    if parsed_module is None:
-        try:
-            parsed_module = ast.parse(source)
-        except (SyntaxError, ValueError):
-            return False
-    tree = parsed_module
-    if len(tree.body) != 1:
-        return False
-    stmt = tree.body[0]
-    if not isinstance(stmt, ast.Expr):
-        return False
-    return isinstance(stmt.value, ast.Dict | ast.List | ast.Set | ast.Tuple)
-
-
-def is_code_repr_assignment(
-    source: str,
-    *,
-    parsed_module: ast.Module | None = None,
-) -> bool:
-    if parsed_module is None:
-        try:
-            parsed_module = ast.parse(source)
-        except (SyntaxError, ValueError):
-            return False
-    tree = parsed_module
-    if len(tree.body) != 1:
-        return False
-    statement = tree.body[0]
-    if not isinstance(statement, ast.Assign):
-        return False
-    if len(statement.targets) != 1:
-        return False
-    target = statement.targets[0]
-    if not isinstance(target, ast.Name) or target.id != FIELD_MARKER_NAME:
-        return False
-    return isinstance(statement.value, ast.Constant) and isinstance(
-        statement.value.value,
-        str,
-    )
-
-
-def extraction_failure(
-    *,
-    raw_submission: str | None,
+    trace: Trace,
     candidate_count: int,
-    error: str,
-    trace: ExtractionTrace,
-    compile_error: str | None = None,
-    metadata: dict[str, Any] | None = None,
+    selected_index: int | None,
+    extracted_code: str | None = None,
+    error: str | None = None,
 ) -> CodeExtractionResult:
     return CodeExtractionResult(
         raw_submission=raw_submission,
-        extracted_code=None,
-        extraction_method=None,
+        extracted_code=extracted_code,
         candidate_count=candidate_count,
-        selected_candidate_index=None,
-        compile_ok=False,
-        compile_error=compile_error,
+        selected_candidate_index=selected_index,
         extraction_error=error,
+        profile=profile,
         trace=trace,
         metadata={
-            **(metadata or {}),
             "candidate_count": candidate_count,
+            "selected_candidate_index": selected_index,
         },
     )
+
+
+__all__ = [
+    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
+    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
+    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION",
+    "EMPTY_SUBMISSION_ERROR",
+    "FIELD_MARKER_NAME",
+    "FIELD_MARKER_REPRESENTATION",
+    "NO_FIELD_MARKER_ERROR",
+    "STRICT_FIELD_MARKER_PARSER_PROFILE",
+    "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
+    "STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION",
+    "CandidateSelection",
+    "CodeExtractionResult",
+    "CodeParserProfile",
+    "extract_code_with_profile",
+    "resolve_parser_profile",
+]

@@ -3,7 +3,7 @@
 Deserialization is deliberately permissive: ``deserialize_trace`` and the
 trace models validate structure only — schema version, value shapes, and
 producer discriminators — and never check producer coordinates against the
-live component registries. Archived traces stay loadable after the
+live component registries. Previously stored traces stay loadable after the
 registries move on; semantic validity against the current pipeline is
 enforced at use time by the runner's resolve-and-compare guard.
 """
@@ -11,6 +11,8 @@ enforced at use time by the runner's resolve-and-compare guard.
 from __future__ import annotations
 
 from typing import Final, Literal
+
+from pydantic import JsonValue
 
 from dr_code.models import FrozenModel
 from dr_code.trace.absent import Absent
@@ -30,7 +32,7 @@ class SerializedTrace(FrozenModel):
     schema_version: Literal[2]
     producer: TraceProducer
     values: dict[str, Artifact | Absent]
-    step_facts: dict[str, dict[str, str]] = {}
+    step_facts: dict[str, dict[str, JsonValue]] = {}
 
 
 def serialize_trace(trace: Trace) -> SerializedTrace:

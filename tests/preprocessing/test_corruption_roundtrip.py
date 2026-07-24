@@ -1,7 +1,7 @@
 """Corruption round-trips over the frozen recipe set.
 
 Applying each ``dr_code.synthetic`` recipe to clean HumanEval-shaped code and
-running the best-effort current definition partitions the recipes empirically
+running it through the best-effort profile partitions the recipes empirically
 (verified across seeds 0, 1, 7, 42, 1234):
 
 * ``RECOVERABLE`` — formatting / noise / import / wrapper pathologies the
@@ -24,10 +24,10 @@ running the best-effort current definition partitions the recipes empirically
     equivalent.
 
   Exempting these from the *equivalence* assertion is correct behaviour, not a
-  gap. For every exempted recipe we still assert something meaningful:
-  **output parity with ``extract_code_with_profile``**. Both APIs must give up
-  or return the same non-equivalent source. No exempted recipe sits in an
-  assertion-free bucket.
+  gap. For every exempted recipe we still assert something meaningful: the
+  profile either gives up, or returns a candidate the pipeline actually
+  produced and that is genuinely not equivalent to ground truth. No exempted
+  recipe sits in an assertion-free bucket.
 """
 
 from __future__ import annotations
@@ -38,17 +38,21 @@ import pytest
 
 from dr_code.code_analysis import equivalent
 from dr_code.humaneval.code_parsing import (
+    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
     extract_code_with_profile,
-    resolve_parser_profile,
 )
 from dr_code.preprocessing import (
-    resolve_preprocessing_definition,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
     run_preprocessing,
 )
 from dr_code.synthetic.corruption_recipes import RECIPES_BY_NAME, apply_recipe
-from dr_code.trace import CodeArtifact, TextArtifact, is_absent
+from dr_code.trace import (
+    OUTPUT_KEY,
+    CodeCandidateSetArtifact,
+    TextArtifact,
+    is_absent,
+)
 
-BEST_EFFORT_ID = "humaneval-best-effort"
 SEED = 0
 
 CLEAN = (
@@ -61,8 +65,8 @@ CLEAN = (
     "    return np.array([total, total])\n"
 )
 
-#: Recipes whose corruption the best-effort current definition undoes, recovering
-#: code equivalent to the original at every tested seed.
+#: Recipes whose corruption the best-effort profile undoes, recovering code
+#: equivalent to the original at every tested seed.
 RECOVERABLE_RECIPES = [
     "clean",
     "fenced_tagged",
@@ -102,23 +106,21 @@ def _corrupt(recipe_name: str) -> str:
     return apply_recipe(recipe, CLEAN, random.Random(SEED)).corrupted_source
 
 
-def _best_effort_current():
-    return resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="0"
-    )
+def _pipeline_candidates(raw: str) -> tuple[str, ...]:
+    """Every candidate the shared pipeline produces, before selection."""
+    output = run_preprocessing(
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION, TextArtifact(text=raw)
+    ).value(OUTPUT_KEY)
+    if is_absent(output):
+        return ()
+    assert isinstance(output, CodeCandidateSetArtifact)
+    return output.candidates
 
 
-def _run_best_effort(raw: str):
-    return run_preprocessing(
-        _best_effort_current(), TextArtifact(text=raw)
-    ).value("output")
-
-
-def _parser_best_effort(raw: str) -> str | None:
-    profile = resolve_parser_profile(
-        parser_profile_id=BEST_EFFORT_ID, parser_version="0"
-    )
-    return extract_code_with_profile(raw, profile=profile).extracted_code
+def _best_effort(raw: str) -> str | None:
+    return extract_code_with_profile(
+        raw, profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE
+    ).extracted_code
 
 
 # --- recoverable recipes round-trip to equivalent code ---------------
@@ -128,11 +130,11 @@ def _parser_best_effort(raw: str) -> str | None:
 def test_best_effort_recovers_corruption_to_equivalent(
     recipe_name: str,
 ) -> None:
-    recovered = _run_best_effort(_corrupt(recipe_name))
-    assert isinstance(recovered, CodeArtifact), (
-        f"{recipe_name}: expected recovered CodeArtifact, got {recovered!r}"
+    recovered = _best_effort(_corrupt(recipe_name))
+    assert recovered is not None, (
+        f"{recipe_name}: expected recovered code, got no candidate"
     )
-    assert equivalent(CLEAN, recovered.source), (
+    assert equivalent(CLEAN, recovered), (
         f"{recipe_name}: recovered code is not equivalent to the original"
     )
 
@@ -141,32 +143,34 @@ def test_best_effort_recovers_corruption_to_equivalent(
 
 
 @pytest.mark.parametrize("recipe_name", NON_RECOVERABLE_RECIPES)
-def test_non_recoverable_matches_parser_output(recipe_name: str) -> None:
+def test_non_recoverable_gives_up_or_returns_a_pipeline_candidate(
+    recipe_name: str,
+) -> None:
     # No extraction pipeline can recover equivalence here, so we assert the
-    # fallback contract: preprocessing and parsing both give up, or both
-    # extract the same non-equivalent source.
+    # fallback contract: the profile gives up, or it returns a candidate the
+    # pipeline genuinely produced.
     raw = _corrupt(recipe_name)
-    parser = _parser_best_effort(raw)
-    preprocessing = _run_best_effort(raw)
-    source = None if is_absent(preprocessing) else preprocessing.source
-    assert source == parser, (
-        f"{recipe_name}: preprocessing diverged from parser — "
-        f"parser={parser!r} preprocessing={source!r}"
+    extracted = _best_effort(raw)
+    candidates = _pipeline_candidates(raw)
+    if extracted is None:
+        return
+    assert extracted in candidates, (
+        f"{recipe_name}: selection returned source the pipeline never produced"
     )
-    # And when it does recover code, that code is genuinely not equivalent —
-    # confirming the exemption is warranted, not a masked recoverable case.
-    if source is not None:
-        assert not equivalent(CLEAN, source), (
-            f"{recipe_name}: unexpectedly recovered equivalent code; "
-            f"it should be reclassified as recoverable"
-        )
+    # And that code is genuinely not equivalent — confirming the exemption
+    # is warranted, not a masked recoverable case.
+    assert not equivalent(CLEAN, extracted), (
+        f"{recipe_name}: unexpectedly recovered equivalent code; "
+        f"it should be reclassified as recoverable"
+    )
 
 
-def test_inline_backticks_yields_absent() -> None:
+def test_inline_backticks_yields_no_candidate() -> None:
     # The strongest give-up case: inline backticks destroy all code-like
-    # structure, so no candidate survives and the run is Absent.
-    out = _run_best_effort(_corrupt("inline_backticks"))
-    assert is_absent(out)
+    # structure, so no candidate survives at all.
+    raw = _corrupt("inline_backticks")
+    assert _pipeline_candidates(raw) == ()
+    assert _best_effort(raw) is None
 
 
 # --- the partition covers every recipe, with no overlap --------------

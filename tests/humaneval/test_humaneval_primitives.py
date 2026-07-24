@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 import json
 import signal
 import subprocess
@@ -30,7 +31,6 @@ from dr_code.execution.subprocess import (
     SubprocessTimeoutError,
     run_python_subprocess,
 )
-from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -44,13 +44,20 @@ from dr_code.humaneval.sampling import (
     load_human_eval_rows,
     sample_human_eval_tasks_from_rows,
 )
+from dr_code.humaneval.code_parsing import (
+    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+    extract_code_with_profile,
+)
 from dr_code.humaneval.scoring import (
     CompletedScore,
     HarnessFailure,
     SubmissionOutcome,
     evaluation_outcome,
+    extraction_failure_outcome,
     score_humaneval_submission,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
+from dr_code.trace import OUTPUT_KEY, is_absent
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
     EvaluationHarnessError,
@@ -83,6 +90,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION",
+    "CandidateSelection",
     "CodeExtractionResult",
     "CodeParserProfile",
     "CompletedScore",
@@ -362,41 +370,6 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
     dumped = parsed.model_dump(mode="json")
     assert "tree" not in dumped
     assert "doc" in dumped["comments"]
-
-
-@pytest.mark.parametrize(
-    ("source", "expected_fragment"),
-    [
-        ("```python\ndef add_one(x):\n    return x + 1\n```", "def add_one"),
-        ("> def add_one(x):\n>     return x + 1", "def add_one"),
-        (
-            "    def add_one(x):\n        return x + 1\n",
-            "def add_one",
-        ),
-        (
-            "def add_one(x):\n    return x + 1\nprint('trailing')\n",
-            "return x + 1",
-        ),
-        (
-            "def add_one(x):\n"
-            "    return x + 1\n"
-            "if __name__ == '__main__':\n"
-            "    print(add_one(1))\n",
-            "def add_one",
-        ),
-    ],
-)
-def test_apply_cleaning_extracts_known_submission_shapes(
-    source: str,
-    expected_fragment: str,
-) -> None:
-    candidates = apply_cleaning(source, apply_dedent=True)
-
-    assert candidates
-    assert expected_fragment in candidates[0]
-    assert validate_python_source(candidates[0]).compile_ok
-    assert "if __name__" not in candidates[0]
-    assert "print('trailing')" not in candidates[0]
 
 
 def test_evaluation_passes_when_best_function_passes(
@@ -794,6 +767,106 @@ def test_score_humaneval_submission_reports_empty_submission() -> None:
     assert result.evaluation is None
 
 
+# --- extraction_failure_outcome names every failed extraction -------------
+
+
+@pytest.mark.parametrize(
+    ("raw_submission", "expected_failure_code", "expected_outcome"),
+    [
+        (
+            "",
+            PreprocessingFailureCode.DECODER_OUTPUT_BLANK,
+            SubmissionOutcome.EMPTY_SUBMISSION,
+        ),
+        (
+            "   \n\n \t\n",
+            PreprocessingFailureCode.DECODER_OUTPUT_BLANK,
+            SubmissionOutcome.EMPTY_SUBMISSION,
+        ),
+        (
+            "x = 1\ny = 2\n",
+            PreprocessingFailureCode.NO_TOP_LEVEL_FUNCTION_CANDIDATE,
+            SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS,
+        ),
+        (
+            "class A:\n    pass\n",
+            PreprocessingFailureCode.NO_TOP_LEVEL_FUNCTION_CANDIDATE,
+            SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS,
+        ),
+        (
+            "Just an explanation, no code at all.\n",
+            PreprocessingFailureCode.NO_CODE_CANDIDATES,
+            SubmissionOutcome.EXTRACTION_FAILED,
+        ),
+        (
+            "def f(:\n",
+            PreprocessingFailureCode.NO_COMPILABLE_CANDIDATE,
+            SubmissionOutcome.EXTRACTION_FAILED,
+        ),
+        (
+            'code = "def f(): pass"\n',
+            PreprocessingFailureCode.CODE_REPR_ONLY,
+            SubmissionOutcome.EXTRACTION_FAILED,
+        ),
+    ],
+    ids=[
+        "empty",
+        "whitespace_only",
+        "no_top_level_function",
+        "class_only",
+        "prose_only",
+        "uncompilable",
+        "code_repr_only",
+    ],
+)
+def test_extraction_failure_outcome_names_each_failure_code(
+    raw_submission: str,
+    expected_failure_code: PreprocessingFailureCode,
+    expected_outcome: SubmissionOutcome,
+) -> None:
+    extraction = extract_code_with_profile(
+        raw_submission,
+        profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+    )
+
+    assert extraction.extracted_code is None
+    output = extraction.trace.value(OUTPUT_KEY)
+    assert is_absent(output)
+    # Pin the trace's failure code as well as the outcome, so a pipeline
+    # that starts reporting a different code fails here rather than silently
+    # remapping onto the same outcome.
+    assert output.failure_code == expected_failure_code.value
+    assert extraction_failure_outcome(extraction) is expected_outcome
+
+
+def test_extraction_failure_outcome_falls_back_on_unknown_failure_code() -> (
+    None
+):
+    # A failure code outside the closed vocabulary — the shape a future
+    # pipeline version could emit against today's scoring code.
+    extraction = extract_code_with_profile(
+        "Just an explanation, no code at all.\n",
+        profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+    )
+    output = extraction.trace.value(OUTPUT_KEY)
+    assert is_absent(output)
+
+    unknown_code = "not_a_registered_failure_code"
+    assert unknown_code not in set(PreprocessingFailureCode)
+    values = dict(extraction.trace.values)
+    values[OUTPUT_KEY] = output.model_copy(
+        update={"failure_code": unknown_code}
+    )
+    unknown = extraction.model_copy(
+        update={"trace": dataclasses.replace(extraction.trace, values=values)}
+    )
+
+    assert (
+        extraction_failure_outcome(unknown)
+        is SubmissionOutcome.EXTRACTION_FAILED
+    )
+
+
 def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -806,19 +879,6 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.coverage_complete is False
     assert result.failures == []
     assert result.status_counts == {"passed": 1}
-
-
-def test_apply_cleaning_returns_empty_for_blank_input() -> None:
-    assert apply_cleaning("") == []
-    assert apply_cleaning("   \n\t  ") == []
-
-
-def test_apply_cleaning_supports_tilde_fences() -> None:
-    source = "~~~python\ndef add_one(x):\n    return x + 1\n~~~"
-    candidates = apply_cleaning(source, apply_dedent=True)
-
-    assert candidates
-    assert "def add_one" in candidates[0]
 
 
 def test_validate_python_source_reports_syntax_errors() -> None:

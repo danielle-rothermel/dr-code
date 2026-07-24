@@ -1,197 +1,112 @@
-"""Named preprocessing definitions and the resolver contract.
-
-Contract for ``dr_code.preprocessing.definitions``: frozen
-``PreprocessingDefinition`` instances for the best-effort and field-marker
-extraction paths, plus a ``resolve_preprocessing_definition`` that
-is an exact ``(definition_id, version)`` lookup — keyword-only, returns the
-matching frozen definition, and raises ``ValueError`` for any pair not in
-the table.
-"""
+"""Public exhaustive preprocessing definition and resolver contract."""
 
 from __future__ import annotations
 
 import pytest
 
 from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
     PreprocessingDefinition,
     bind_definition,
     resolve_preprocessing_definition,
 )
 from dr_code.preprocessing.definitions import (
-    BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-    BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-    STRICT_FIELD_MARKER_DEFINITION_ID,
-    STRICT_FIELD_MARKER_DEFINITION_VERSION,
+    DEFINITION_VERSION,
+    SUPPORTED_DEFINITION_IDS,
+    SUPPORTED_DEFINITION_VERSIONS,
 )
-from dr_code.preprocessing.steps.extract_candidates import (
-    ExtractCandidatesSettings,
-    ExtractionStrategy,
-)
+from dr_code.preprocessing.registry import REGISTRY
 
-BEST_EFFORT_ID = BEST_EFFORT_HUMANEVAL_DEFINITION_ID
-FIELD_MARKER_ID = STRICT_FIELD_MARKER_DEFINITION_ID
-
-_SUPPORTED_PAIRS = [
-    (BEST_EFFORT_ID, BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION),
-    (FIELD_MARKER_ID, STRICT_FIELD_MARKER_DEFINITION_VERSION),
-]
+DEFINITION_ID = HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID
+VERSION = DEFINITION_VERSION
 
 
-# --- resolution returns the matching definition ----------------------
+def _resolve() -> PreprocessingDefinition:
+    return resolve_preprocessing_definition(
+        definition_id=DEFINITION_ID,
+        version=VERSION,
+    )
+
+
+def test_only_function_candidate_definition_is_supported() -> None:
+    assert SUPPORTED_DEFINITION_IDS == frozenset({DEFINITION_ID})
+    assert SUPPORTED_DEFINITION_VERSIONS == frozenset({VERSION})
+    assert _resolve() == HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION
 
 
 @pytest.mark.parametrize(
-    "definition_id, version",
-    _SUPPORTED_PAIRS,
-    ids=["best-effort", "field-marker"],
+    "definition_id,version",
+    [
+        (DEFINITION_ID, "1"),
+        ("unknown", VERSION),
+    ],
 )
-def test_resolve_returns_named_definition(
-    definition_id: str, version: str
+def test_removed_and_unknown_coordinates_do_not_alias(
+    definition_id: str,
+    version: str,
 ) -> None:
-    definition = resolve_preprocessing_definition(
-        definition_id=definition_id, version=version
-    )
-    assert isinstance(definition, PreprocessingDefinition)
-    assert definition.definition_id == definition_id
-    assert definition.version == version
+    with pytest.raises(ValueError):
+        resolve_preprocessing_definition(
+            definition_id=definition_id,
+            version=version,
+        )
 
 
 def test_resolver_is_keyword_only() -> None:
     with pytest.raises(TypeError):
-        resolve_preprocessing_definition(  # type: ignore[misc]
-            BEST_EFFORT_ID, BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION
-        )
+        resolve_preprocessing_definition(DEFINITION_ID, VERSION)  # type: ignore[misc]
 
 
-# --- the resolver raises on every non-registered pair ----------------
+def test_definition_is_stable_and_bindable() -> None:
+    definition = _resolve()
+    assert definition.definition_id == DEFINITION_ID
+    assert definition.version == VERSION
+    # Resolution is by coordinate, so the resolver returns an equal
+    # canonical definition every time.
+    assert definition == _resolve()
+    assert bind_definition(definition)
 
 
-@pytest.mark.parametrize(
-    "definition_id, version",
-    [
-        (FIELD_MARKER_ID, "1"),
-        (BEST_EFFORT_ID, "1"),
-        ("does-not-exist", BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION),
-        (BEST_EFFORT_ID, "99"),
-        (FIELD_MARKER_ID, "99"),
-        ("bogus", "bogus"),
-    ],
-    ids=[
-        "off-menu-field-marker-version",
-        "off-menu-best-effort-version",
-        "unknown-id",
-        "best-effort-unknown-version",
-        "field-marker-unknown-version",
-        "all-unknown",
-    ],
-)
-def test_resolve_rejects_non_registered_pair(
-    definition_id: str, version: str
-) -> None:
-    with pytest.raises(ValueError):
-        resolve_preprocessing_definition(
-            definition_id=definition_id, version=version
-        )
-
-
-# --- resolved definitions are frozen and distinct --------------------
-
-
-def test_resolved_definitions_are_frozen() -> None:
-    definition = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
+def test_definition_orders_exhaustion_cleaning_and_structural_filters() -> (
+    None
+):
+    names = [step.instance_name for step in _resolve().steps]
+    assert names.index("require_nonblank_text") < names.index(
+        "extract_candidates"
     )
-    with pytest.raises(Exception):
-        definition.definition_id = "other"  # type: ignore[misc]
-
-
-def test_resolution_is_stable() -> None:
-    a = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
+    assert names.index("extract_candidates") < names.index("strip_fences")
+    assert names.index("dedupe_imports") < names.index(
+        "filter_nonblank_candidates"
     )
-    b = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
+    assert names.index("filter_nonblank_candidates") < names.index(
+        "identify_candidates"
     )
-    assert a == b
-
-
-def test_named_definitions_are_mutually_distinct() -> None:
-    be = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-    )
-    fm = resolve_preprocessing_definition(
-        definition_id=FIELD_MARKER_ID,
-        version=STRICT_FIELD_MARKER_DEFINITION_VERSION,
-    )
-    assert be != fm
-
-
-# --- filter chains are symmetrical between the two definitions -------
-
-
-def test_best_effort_and_field_marker_share_filter_chain_order() -> None:
-    # Both definitions run the same filter chain in the same order:
-    # plain-literal -> code-repr -> compilable.
-    be = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-    )
-    fm = resolve_preprocessing_definition(
-        definition_id=FIELD_MARKER_ID,
-        version=STRICT_FIELD_MARKER_DEFINITION_VERSION,
-    )
-    filter_chain = [
+    assert names[-6:] == [
         "filter_plain_literal",
         "filter_code_repr",
         "filter_compilable",
+        "filter_has_top_level_function",
+        "materialize_candidates",
+        "return_all",
     ]
-    be_filters = [s.step for s in be.steps if s.step in filter_chain]
-    fm_filters = [s.step for s in fm.steps if s.step in filter_chain]
-    assert be_filters == filter_chain
-    assert fm_filters == filter_chain
+    assert len(names) == 23
+    assert {spec.step for spec in _resolve().steps} == set(REGISTRY)
 
 
-# --- best-effort carries the smart-quote step and the fourth rung ----
-
-
-def test_best_effort_includes_smart_quote_step() -> None:
-    be = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
+def test_extraction_step_carries_no_settings() -> None:
+    # Extraction is exhaustive: it has no alternatives knob to configure,
+    # so its persisted coordinate carries an empty settings projection.
+    extract = next(
+        step
+        for step in _resolve().steps
+        if step.instance_name == "extract_candidates"
     )
-    assert "normalize_smart_quotes" in [s.step for s in be.steps]
+    assert extract.settings.model_dump() == {}
 
 
-def test_best_effort_extraction_ladder_has_fourth_rung() -> None:
-    be = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-    )
-    extract = next(s for s in be.steps if s.step == "extract_candidates")
-    assert isinstance(extract.settings, ExtractCandidatesSettings)
-    assert extract.settings.alternatives == (
-        ExtractionStrategy.FENCED_BLOCKS,
-        ExtractionStrategy.MARKDOWN_WRAPPER,
-        ExtractionStrategy.ESCAPED_PYTHON,
-        ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER,
-    )
-
-
-# --- resolved definitions are bindable and kind-correct --------------
-
-
-@pytest.mark.parametrize(
-    "definition_id, version",
-    _SUPPORTED_PAIRS,
-    ids=["best-effort", "field-marker"],
-)
-def test_named_definition_binds(definition_id: str, version: str) -> None:
-    definition = resolve_preprocessing_definition(
-        definition_id=definition_id, version=version
-    )
-    bound = bind_definition(definition)
-    assert bound, "a named definition must have at least one step"
+def test_every_step_in_the_definition_is_registered() -> None:
+    # Binding resolves each spec through the registry, so an unregistered
+    # step name could never reach a run.
+    for spec in _resolve().steps:
+        assert spec.step.value in REGISTRY

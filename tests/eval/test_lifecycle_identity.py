@@ -63,7 +63,7 @@ def _components():
         steps=(
             PreprocessingStepTemplate(
                 instance_name="sf",
-                step="select_first",
+                step="return_all",
             ),
         ),
     ).materialize()
@@ -122,7 +122,7 @@ def test_resolved_step_and_operator_versions_are_materialized() -> None:
         preprocessing.definition_coordinate()
         .steps[0]
         .component.registered_name
-        == "select_first"
+        == "return_all"
     )
     assert (
         preprocessing.definition_coordinate().steps[0].component.version == "0"
@@ -300,33 +300,92 @@ def test_metric_question_binding_is_named_by_its_triple() -> None:
 
 
 def test_preprocessing_settings_normalize_recursively() -> None:
-    forward = PreprocessingStepTemplate(
-        instance_name="extract",
-        step="extract_candidates",
-        settings={"alternatives": ["fenced_blocks", "escaped_python"]},
-    )
-    reverse = PreprocessingStepTemplate(
-        instance_name="extract",
-        step="extract_candidates",
-        settings={"alternatives": ["fenced_blocks", "escaped_python"]},
-    )
+    # ``PreprocessingStepTemplate`` normalizes its settings without consulting
+    # the registry; ``PreprocessingTemplate`` validates every step against the
+    # registry in a model validator, so registry validation is
+    # construction-time, not materialize-time. This test covers the
+    # normalization boundary on its own, sequence values included.
+    def _step(value: object) -> PreprocessingStepTemplate:
+        return PreprocessingStepTemplate(
+            instance_name="tabs",
+            step="expand_tabs",
+            settings={"tab_width": value},
+        )
 
-    assert forward == reverse
-    assert forward.settings == (
+    forward = _step(2)
+    assert forward == _step(2)
+
+    # A sequence-valued setting normalizes recursively, nested arrays and
+    # mixed scalar types included, and is order-sensitive.
+    nested = _step([1, [2, "three"], 4])
+    assert nested.settings == (
         (
-            "alternatives",
-            JsonArray(items=("fenced_blocks", "escaped_python")),
+            "tab_width",
+            JsonArray(
+                items=(1, JsonArray(items=(2, "three")), 4),
+            ),
         ),
     )
+    assert nested == _step([1, [2, "three"], 4])
+    assert nested != _step([1, [2, "three"], 4.0])
+    assert nested != _step([[2, "three"], 1, 4])
+
+    # A sequence reaching the template through a variable default normalizes
+    # the same way, so the variables path shares one normalization rule.
+    templated = PreprocessingTemplate(
+        definition_id="pre",
+        version="1",
+        steps=(
+            PreprocessingStepTemplate(
+                instance_name="tabs",
+                step="expand_tabs",
+                settings={"tab_width": VariableReference(variable="widths")},
+            ),
+        ),
+        variables=(
+            VariableSpec(
+                name="widths",
+                default=[1, [2, "three"], 4],
+                has_default=True,
+            ),
+        ),
+    )
+    assert templated.variables[0].default == JsonArray(
+        items=(1, JsonArray(items=(2, "three")), 4),
+    )
+
+    # Template identity over a step whose settings the registry validates at
+    # construction time.
+    def _tabs() -> PreprocessingStepTemplate:
+        return PreprocessingStepTemplate(
+            instance_name="tabs",
+            step="expand_tabs",
+            settings={"tab_width": 2},
+        )
+
     assert PreprocessingTemplate(
         definition_id="pre",
         version="1",
-        steps=(forward,),
+        steps=(_tabs(),),
     ) == PreprocessingTemplate(
         definition_id="pre",
         version="1",
-        steps=(reverse,),
+        steps=(_tabs(),),
     )
+
+    # Registry validation really is construction-time: an unknown step is
+    # rejected before anything is materialized.
+    with pytest.raises(ValidationError):
+        PreprocessingTemplate(
+            definition_id="pre",
+            version="1",
+            steps=(
+                PreprocessingStepTemplate(
+                    instance_name="nope",
+                    step="no_such_step",
+                ),
+            ),
+        )
 
 
 @pytest.mark.parametrize("invalid", [math.inf, math.nan, {"values": {1, 2}}])
@@ -336,7 +395,7 @@ def test_preprocessing_settings_reject_non_json_values(
     with pytest.raises(StrictJsonError):
         PreprocessingStepTemplate(
             instance_name="extract",
-            step="select_first",
+            step="return_all",
             settings={"invalid": invalid},
         )
 
@@ -562,19 +621,15 @@ def test_normalized_settings_are_hashable_and_round_trip() -> None:
         version="1",
         steps=(
             PreprocessingStepTemplate(
-                instance_name="extract",
-                step="extract_candidates",
-                settings={"alternatives": ["fenced_blocks", "escaped_python"]},
+                instance_name="tabs",
+                step="expand_tabs",
+                settings={"tab_width": 2},
             ),
         ),
     )
-    alternatives = (
-        preprocessing.materialize().definition.steps[0].settings.alternatives
-    )
-    assert tuple(str(item) for item in alternatives) == (
-        "fenced_blocks",
-        "escaped_python",
-    )
+    config = preprocessing.materialize()
+    assert config.definition.steps[0].settings.tab_width == 2
+    assert type(config).model_validate_json(config.model_dump_json()) == config
 
 
 def test_substitution_rejects_concrete_metric_question_collisions() -> None:

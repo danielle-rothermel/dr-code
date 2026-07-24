@@ -167,7 +167,7 @@ class EvaluationTaskResult(BaseModel):
     total_cases: int
     results: list[EvaluationCaseResult] = Field(default_factory=list)
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def best_function_name(self) -> str | None:
         return select_best_function_name(
@@ -176,7 +176,7 @@ class EvaluationTaskResult(BaseModel):
             results=self.results,
         )
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def failures(self) -> list[EvaluationCaseResult]:
         best_function_name = self.best_function_name
@@ -189,7 +189,7 @@ class EvaluationTaskResult(BaseModel):
             and result.status is not EvaluationCaseStatus.PASSED
         ]
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def coverage_complete(self) -> bool:
         best_function_name = self.best_function_name
@@ -201,7 +201,7 @@ class EvaluationTaskResult(BaseModel):
         )
         return len(function_results) == self.total_cases
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def passed(self) -> bool:
         best_function_name = self.best_function_name
@@ -218,7 +218,7 @@ class EvaluationTaskResult(BaseModel):
             for result in function_results
         )
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def status_counts(self) -> dict[str, int]:
         best_function_name = self.best_function_name
