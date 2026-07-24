@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="doc.css">
+<title>dr-code · The code-evaluation contract this repo owns</title>
+<style>
+  /* Page-local tokens. Purple (--anchor) = main-point accents (.key/.must);
+     blue (--accent) = term links (.term-ref), matching doc.css link hue. */
+  .term-name { font-weight: 600; }
+  dfn.term-name { font-style: normal; }
+  .must { color: var(--anchor); font-weight: 600; }
+  .term-ref { color: var(--accent); text-decoration: underline; text-decoration-style: dashed; text-underline-offset: 2px; }
+  td ul { margin: 0; padding-left: 18px; }
+  td li { margin-bottom: 4px; }
+  td li:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<main class="wide">
+
+<h1>The dr-code code-evaluation contract</h1>
+<p class="dek">A reference for the terms and guarantees that bind dr-code.</p>
+<div class="byline">dr-code · 2026-07-24</div>
+
+<p>This is the vocabulary of the code-evaluation contract dr-code implements: the <span class="key">terms</span>, the <span class="key">guarantees</span> that bind this repo, what is in and out of <span class="key">scope</span>, and the <span class="key">mapping</span> from each term to the names exported by <a href="https://github.com/danielle-rothermel/dr-code/blob/main/src/dr_code/eval/__init__.py"><code>dr_code.eval</code></a>.</p>
+
+<div class="section-head" id="terms"><h2>Terms</h2></div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Term</th><th>Definition</th></tr></thead>
+  <tbody>
+    <tr><td><dfn class="term-name" id="term-definition">Definition</dfn></td><td>A versioned template that declares assignable variables and their constraints and produces one or more configs from them. It is the sole owner of its namesake config: a config is only ever built by assigning that definition's variables.</td></tr>
+    <tr><td><dfn class="term-name" id="term-config">Config</dfn></td><td>A complete validated instance built by assigning every required variable of exactly one <a class="term-ref" href="#term-definition">definition</a>. It carries a typed reference back to its owning definition plus its own <a class="term-ref" href="#term-identity-hash">identity hash</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-variable">Variable</dfn></td><td>One declared assignable slot on a <a class="term-ref" href="#term-definition">definition</a>, with optional allowed values and an optional default; a variable with neither is required and unconstrained.</td></tr>
+    <tr><td><dfn class="term-name" id="term-materialize">Materialize</dfn></td><td>The single operation that builds a validated <a class="term-ref" href="#term-config">config</a> from a <a class="term-ref" href="#term-definition">definition</a>: assigning every required <a class="term-ref" href="#term-variable">variable</a>, filling defaults, and rejecting unknown, missing, or out-of-range values.</td></tr>
+    <tr><td><dfn class="term-name" id="term-payload">Payload</dfn></td><td>The complete collection of fields that determine an object's identity, selected as finite JSON-safe data with no runtime or storage state; the input to an <a class="term-ref" href="#term-identity-hash">identity hash</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-lineage">Lineage</dfn></td><td>The chain of provenance and version references a value carries, so a measured value traces back to the exact operator, step, and config that produced it.</td></tr>
+    <tr><td><dfn class="term-name" id="term-unit">Unit</dfn></td><td>The explicit measurement unit a measured value must carry; an empty unit is rejected.</td></tr>
+    <tr><td><dfn class="term-name" id="term-zero-denominator">Zero-Denominator</dfn></td><td>The explicit state of a ratio whose reference length is zero, represented by a declared sentinel and kept distinct from a value of zero.</td></tr>
+    <tr><td><dfn class="term-name" id="term-identity-hash">Identity Hash</dfn></td><td>The full 64-character lowercase SHA-256 hash of the canonical identity JSON of a <a class="term-ref" href="#term-definition">definition</a> or <a class="term-ref" href="#term-config">config</a> <a class="term-ref" href="#term-payload">payload</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-variable-spec">Variable Spec</dfn></td><td>The declared form of one <a class="term-ref" href="#term-variable">variable</a>: its name, its allowed type or values, and whether it is required, resolved against an assignment when a <a class="term-ref" href="#term-definition">definition</a> is <a class="term-ref" href="#term-materialize">materialized</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-definition-reference">Definition Reference</dfn></td><td>A typed reference to an owning <a class="term-ref" href="#term-definition">definition</a>, carrying that definition's schema name, version, and <a class="term-ref" href="#term-identity-hash">identity hash</a>, so a <a class="term-ref" href="#term-config">config</a> names the exact definition and identity it was <a class="term-ref" href="#term-materialize">materialized</a> from.</td></tr>
+    <tr><td><dfn class="term-name" id="term-task">Task</dfn></td><td>A dataset-specific unit of work with a stable identity that supplies the generation inputs, evaluation inputs, and reference material an evaluation consumes.</td></tr>
+    <tr><td><dfn class="term-name" id="term-humaneval-task">HumanEval Task</dfn></td><td>A dataset-specific <a class="term-ref" href="#term-task">task</a> with validated HumanEval fields and a stable identity over its dataset-defining fields, computed here as a task <a class="term-ref" href="#term-identity-hash">identity hash</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-task-set">Task Set</dfn></td><td>A versioned manifest holding either an ordered collection of dataset-specific task identities or a deterministic selection rule, plus a dataset revision, where the ordering and selection semantics all determine its identity.</td></tr>
+    <tr><td><dfn class="term-name" id="term-repeat">Repeat</dfn></td><td>One deliberate independent observation of a <a class="term-ref" href="#term-task">task</a> and static configuration under a <a class="term-ref" href="#term-repeat-plan">repeat plan</a>, distinct from every transport invocation, semantic retry, and provider attempt.</td></tr>
+    <tr><td><dfn class="term-name" id="term-repeat-id">Repeat ID</dfn></td><td>The stable identity of one <a class="term-ref" href="#term-repeat">repeat</a> slot in a <a class="term-ref" href="#term-repeat-plan">repeat plan</a>, identified by task identity and index; an optional RNG seed is slot data associated with the observation, never part of the slot identity and never a retry attempt number.</td></tr>
+    <tr><td><dfn class="term-name" id="term-repeat-plan">Repeat Plan</dfn></td><td>A deterministic ordered plan enumerating a fixed count of <a class="term-ref" href="#term-repeat">repeat</a> slots for each selected task identity; its identity covers the task identities and count but excludes per-slot seeds.</td></tr>
+    <tr><td><dfn class="term-name" id="term-sampling-definition">Sampling Definition</dfn></td><td>A versioned, variable-bearing <a class="term-ref" href="#term-definition">definition</a> that declares <a class="term-ref" href="#term-task-set">task set</a> and <a class="term-ref" href="#term-repeat-plan">repeat plan</a> variables and <a class="term-ref" href="#term-materialize">materializes</a> a sampling config.</td></tr>
+    <tr><td><dfn class="term-name" id="term-sampling-config">Sampling Config</dfn></td><td>A complete validated <a class="term-ref" href="#term-config">config</a> <a class="term-ref" href="#term-materialize">materialized</a> from one <a class="term-ref" href="#term-sampling-definition">sampling definition</a>, naming a <a class="term-ref" href="#term-task-set">task set</a> and <a class="term-ref" href="#term-repeat-plan">repeat plan</a> identity; its <a class="term-ref" href="#term-definition-reference">definition reference</a> and <a class="term-ref" href="#term-identity-hash">identity hash</a> identify its owner.</td></tr>
+    <tr><td><dfn class="term-name" id="term-preprocessing-definition">Preprocessing Definition</dfn></td><td>A versioned, variable-bearing <a class="term-ref" href="#term-definition">definition</a> that declares ordered preprocessing steps and <a class="term-ref" href="#term-materialize">materializes</a> a preprocessing config, resolving each step's version from the registry so a step version bump changes the config identity even when the step list is unchanged.</td></tr>
+    <tr><td><dfn class="term-name" id="term-preprocessing-config">Preprocessing Config</dfn></td><td>A complete validated <a class="term-ref" href="#term-config">config</a> <a class="term-ref" href="#term-materialize">materialized</a> from one <a class="term-ref" href="#term-preprocessing-definition">preprocessing definition</a>, whose identity folds in the resolved step versions; its <a class="term-ref" href="#term-definition-reference">definition reference</a> and <a class="term-ref" href="#term-identity-hash">identity hash</a> identify its owner.</td></tr>
+    <tr><td><dfn class="term-name" id="term-metric-question">Metric Question</dfn></td><td>One declared metric family bound to a trace key with settings, resolved to an operator version at <a class="term-ref" href="#term-materialize">materialization</a>, determining a single extraction operation within a <a class="term-ref" href="#term-metric-extraction-definition">metric extraction definition</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-metric-extraction-definition">Metric Extraction Definition</dfn></td><td>A versioned, variable-bearing <a class="term-ref" href="#term-definition">definition</a> that declares ordered <a class="term-ref" href="#term-metric-question">metric questions</a> and <a class="term-ref" href="#term-materialize">materializes</a> a metric extraction config, resolving each operator's version from the registry.</td></tr>
+    <tr><td><dfn class="term-name" id="term-metric-extraction-config">Metric Extraction Config</dfn></td><td>A complete validated <a class="term-ref" href="#term-config">config</a> <a class="term-ref" href="#term-materialize">materialized</a> from one <a class="term-ref" href="#term-metric-extraction-definition">metric extraction definition</a>, whose identity includes the resolved operator versions; its <a class="term-ref" href="#term-definition-reference">definition reference</a> and <a class="term-ref" href="#term-identity-hash">identity hash</a> identify its owner.</td></tr>
+    <tr><td><dfn class="term-name" id="term-evaluation-procedure-definition">Evaluation Procedure Definition</dfn></td><td>A versioned, variable-bearing <a class="term-ref" href="#term-definition">definition</a> that composes a <a class="term-ref" href="#term-preprocessing-config">preprocessing config</a> and a <a class="term-ref" href="#term-metric-extraction-config">metric extraction config</a> with failure-semantics variables and <a class="term-ref" href="#term-materialize">materializes</a> an evaluation procedure config.</td></tr>
+    <tr><td><dfn class="term-name" id="term-evaluation-procedure-config">Evaluation Procedure Config</dfn></td><td>A complete validated <a class="term-ref" href="#term-config">config</a> <a class="term-ref" href="#term-materialize">materialized</a> from one <a class="term-ref" href="#term-evaluation-procedure-definition">evaluation procedure definition</a>, whose identity folds in the component config identities and hence the resolved operator and step versions; its <a class="term-ref" href="#term-definition-reference">definition reference</a> and <a class="term-ref" href="#term-identity-hash">identity hash</a> identify its owner.</td></tr>
+    <tr><td><dfn class="term-name" id="term-aggregation-definition">Aggregation Definition</dfn></td><td>A versioned, variable-bearing <a class="term-ref" href="#term-definition">definition</a> that declares reduction, missing-data, and <a class="term-ref" href="#term-zero-denominator">zero-denominator</a> variables and <a class="term-ref" href="#term-materialize">materializes</a> an aggregation config.</td></tr>
+    <tr><td><dfn class="term-name" id="term-aggregation-config">Aggregation Config</dfn></td><td>A complete validated <a class="term-ref" href="#term-config">config</a> <a class="term-ref" href="#term-materialize">materialized</a> from one <a class="term-ref" href="#term-aggregation-definition">aggregation definition</a>; its <a class="term-ref" href="#term-definition-reference">definition reference</a> and <a class="term-ref" href="#term-identity-hash">identity hash</a> identify its owner and its assignment drives <a class="term-ref" href="#term-aggregation-output">aggregation</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-eval-definition">Eval Definition</dfn></td><td>A versioned, variable-bearing composite <a class="term-ref" href="#term-definition">definition</a> that declares <a class="term-ref" href="#term-sampling-config">sampling config</a>, <a class="term-ref" href="#term-evaluation-procedure-config">evaluation procedure config</a>, and <a class="term-ref" href="#term-aggregation-config">aggregation config</a> variables and <a class="term-ref" href="#term-materialize">materializes</a> an eval config.</td></tr>
+    <tr><td><dfn class="term-name" id="term-eval-config">Eval Config</dfn></td><td>A complete validated composite <a class="term-ref" href="#term-config">config</a> <a class="term-ref" href="#term-materialize">materialized</a> from one <a class="term-ref" href="#term-eval-definition">eval definition</a>; its <a class="term-ref" href="#term-identity-hash">identity hash</a> covers all three component config identities.</td></tr>
+    <tr><td><dfn class="term-name" id="term-python-source">Python Source</dfn></td><td>The role of a text value read as Python source; a thin typed wrapper that records the interpretation without asserting the source compiles.</td></tr>
+    <tr><td><dfn class="term-name" id="term-code-candidate">Code Candidate</dfn></td><td>One <a class="term-ref" href="#term-python-source">Python source</a> candidate at a stable ordered position with its extraction <a class="term-ref" href="#term-lineage">lineage</a>, carried as a typed value rather than a bare string.</td></tr>
+    <tr><td><dfn class="term-name" id="term-code-candidate-set">Code Candidate Set</dfn></td><td>A present ordered collection of zero or more <a class="term-ref" href="#term-code-candidate">code candidates</a> with aligned positions and <a class="term-ref" href="#term-lineage">lineage</a>; an empty set means preprocessing ran and no candidate survived, which is a valid outcome and not a failure.</td></tr>
+    <tr><td><dfn class="term-name" id="term-code-artifact">Code Artifact</dfn></td><td>A <a class="term-ref" href="#term-python-source">Python source</a> value validated by a compile check at construction, so source that does not compile cannot inhabit the type; the source string is canonical and the parsed view is derived on demand.</td></tr>
+    <tr><td><dfn class="term-name" id="term-operator-lineage">Operator Lineage</dfn></td><td>The resolved operator and step version identity attached to a <a class="term-ref" href="#term-metric-fact">metric fact</a>, plus the <a class="term-ref" href="#term-evaluation-procedure-config">evaluation procedure config</a> identity, so a measured value traces to the exact extraction operator and step that produced it.</td></tr>
+    <tr><td><dfn class="term-name" id="term-applicability">Applicability</dfn></td><td>The explicit applicable or not-applicable state carried by a <a class="term-ref" href="#term-metric-fact">metric fact</a>, kept distinct from a measured value of zero and from an operator failure.</td></tr>
+    <tr><td><dfn class="term-name" id="term-metric-fact">Metric Fact</dfn></td><td>A measured named value with an explicit <a class="term-ref" href="#term-unit">unit</a>, an <a class="term-ref" href="#term-applicability">applicability</a> state, and <a class="term-ref" href="#term-operator-lineage">operator lineage</a>.</td></tr>
+    <tr><td><dfn class="term-name" id="term-metric-record">Metric Record</dfn></td><td>The answer to one <a class="term-ref" href="#term-metric-question">metric question</a>, carrying its own status and exactly one of: one or more <a class="term-ref" href="#term-metric-fact">metric facts</a>, an explicit not-applicable state with an absence mode and cause, or an operator-failure state with a type and message.</td></tr>
+    <tr><td><dfn class="term-name" id="term-score">Score</dfn></td><td>A named value deterministically derived from <a class="term-ref" href="#term-metric-fact">metric facts</a> under one <a class="term-ref" href="#term-evaluation-procedure-config">evaluation procedure config</a>, retaining the config identity and the source fact names it was derived from.</td></tr>
+    <tr><td><dfn class="term-name" id="term-compression-reference-artifact">Compression Reference Artifact</dfn></td><td>An immutable byte value used as a compression denominator, whose identity is the hash of its bytes and which is independent of any dataset field or experiment-specific selection rule.</td></tr>
+    <tr><td><dfn class="term-name" id="term-compression-reference-key">Compression Reference Key</dfn></td><td>A stable typed key that resolves to one <a class="term-ref" href="#term-compression-reference-artifact">compression reference artifact</a>; an unbound key resolves to an explicit error rather than a default, distinct from a resolved but empty artifact.</td></tr>
+    <tr><td><dfn class="term-name" id="term-aggregation-output">Aggregation Output</dfn></td><td>The deterministic result of applying one <a class="term-ref" href="#term-aggregation-config">aggregation config</a> to an explicitly complete input collection, carrying a numeric value, an explicit status covering missing-data, not-applicable, and <a class="term-ref" href="#term-zero-denominator">zero-denominator</a> outcomes, and the contributing counts, with no lifecycle result, authority, orchestration, objective, or reward semantics.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="section-head" id="guarantees"><h2>Guarantees</h2></div>
+
+<div class="callout">
+  <strong>Definition-Owned Configs, Each Carrying Its Full Identity.</strong> A <a class="term-ref" href="#term-config">config</a> is only ever built by <a class="term-ref" href="#term-materialize">materializing</a> exactly one <a class="term-ref" href="#term-definition">definition</a>, and it carries that definition's reference plus its own full <a class="term-ref" href="#term-identity-hash">identity hash</a>, so a config always names the exact definition and identity it came from.
+</div>
+<ul>
+  <li><a class="term-ref" href="#term-materialize">Materializes</a> a <a class="term-ref" href="#term-config">config</a> only from a <span class="key">complete validated assignment</span> of every required <a class="term-ref" href="#term-variable">variable</a>, filling defaults and rejecting unknown, missing, or out-of-range values.</li>
+  <li><span class="must">Computes the</span> <a class="term-ref" href="#term-identity-hash">identity hash</a> as the full <span class="key">64-character lowercase SHA-256</span> hash over a caller-selected <a class="term-ref" href="#term-payload">payload</a> of finite JSON-safe fields.</li>
+  <li><span class="must">Folds resolved operator and step versions</span> into the <a class="term-ref" href="#term-metric-extraction-config">metric extraction</a> and <a class="term-ref" href="#term-evaluation-procedure-config">evaluation procedure</a> config identities, so a version bump changes identity even when the declared question or step list is unchanged.</li>
+  <li>The <a class="term-ref" href="#term-eval-config">eval config</a> <a class="term-ref" href="#term-identity-hash">identity hash</a> <span class="key">covers all three</span> component config identities.</li>
+  <li><span class="must">Rejects</span> <a class="term-ref" href="#term-python-source">Python source</a> that does not compile at <a class="term-ref" href="#term-code-artifact">code artifact</a> construction, so invalid source cannot inhabit the type.</li>
+  <li>An <span class="key">empty</span> <a class="term-ref" href="#term-code-candidate-set">code candidate set</a> is a valid outcome, never treated as a preprocessing failure.</li>
+  <li><span class="must">Requires an explicit</span> <a class="term-ref" href="#term-unit">unit</a> on every <a class="term-ref" href="#term-metric-fact">metric fact</a> and <a class="term-ref" href="#term-score">score</a>, and keeps <a class="term-ref" href="#term-applicability">applicability</a> distinct from a measured value of zero.</li>
+  <li>A <a class="term-ref" href="#term-metric-record">metric record</a> populates <span class="key">exactly one</span> of measured facts, an explicit not-applicable state, or an operator-failure state.</li>
+  <li><span class="must">Returns</span> the explicit <a class="term-ref" href="#term-zero-denominator">zero-denominator</a> sentinel rather than dividing by zero, and never coerces it to a number.</li>
+  <li>Treats an optional RNG seed as <a class="term-ref" href="#term-repeat">repeat</a> slot data, <span class="key">never</span> part of a <a class="term-ref" href="#term-repeat-id">repeat ID</a> or <a class="term-ref" href="#term-repeat-plan">repeat plan</a> identity.</li>
+  <li><a class="term-ref" href="#term-aggregation-output">Aggregation</a> is a <span class="key">pure deterministic function</span> over an explicitly complete input collection: the same config and same ordered inputs always produce the same output, with no lifecycle, authority, orchestration, objective, or reward semantics.</li>
+</ul>
+
+<div class="section-head" id="scope"><h2>In vs. Out of Scope</h2></div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>In scope</th><th>Out of scope</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>
+        <ul>
+          <li>The six <a class="term-ref" href="#term-definition">definition</a> and <a class="term-ref" href="#term-config">config</a> pairs and their <a class="term-ref" href="#term-identity-hash">identity hashes</a></li>
+          <li>Dataset-specific <a class="term-ref" href="#term-task">task</a> identities, <a class="term-ref" href="#term-task-set">task set</a> manifests, and <a class="term-ref" href="#term-repeat-plan">repeat plans</a></li>
+          <li>Typed <a class="term-ref" href="#term-code-candidate">code candidates</a> and compile-valid <a class="term-ref" href="#term-code-artifact">code artifacts</a></li>
+          <li><a class="term-ref" href="#term-metric-fact">Metric facts</a>, <a class="term-ref" href="#term-metric-record">records</a>, and derived <a class="term-ref" href="#term-score">scores</a></li>
+          <li>Generic <a class="term-ref" href="#term-compression-reference-key">compression reference</a> keys and artifacts</li>
+          <li>Pure <a class="term-ref" href="#term-aggregation-output">aggregation</a> outputs</li>
+        </ul>
+      </td>
+      <td>
+        <ul>
+          <li>Experiment policy and authority</li>
+          <li>Optimization, objectives, and rewards</li>
+          <li>Orchestration and scheduling</li>
+          <li>Dataset field selection and experiment-specific reference rules</li>
+          <li>Storage and persistence of results</li>
+          <li>The canonical JSON rendering and hashing mechanism itself, owned by the storage layer</li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="section-head" id="exported-names"><h2>Exported Names</h2></div>
+
+<p class="aside">Each row maps a term, or a group of supporting exports, to names in <a href="https://github.com/danielle-rothermel/dr-code/blob/main/src/dr_code/eval/__init__.py"><code>dr_code.eval.__all__</code></a>. Every exported name appears exactly once in the names column; there are no aliases or alternate spellings. The <a class="term-ref" href="#term-definition">definition</a>, <a class="term-ref" href="#term-config">config</a>, <a class="term-ref" href="#term-variable">variable</a>, <a class="term-ref" href="#term-materialize">materialize</a>, <a class="term-ref" href="#term-payload">payload</a>, <a class="term-ref" href="#term-lineage">lineage</a>, and <a class="term-ref" href="#term-unit">unit</a> rows name concepts carried by the typed exports below rather than exports of their own. Rows follow Terms order, with the <a class="term-ref" href="#term-zero-denominator">zero-denominator</a> sentinel row placed beside the outputs that return it and the <a class="term-ref" href="#term-identity-hash">identity hash</a> row last as the storage boundary shared by every definition and config.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Term</th><th>Exported names</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><a class="term-ref" href="#term-variable-spec">Variable Spec</a></td>
+      <td><code>VariableSpec</code>, <code>VariableError</code>, <code>resolve_assignment</code></td>
+      <td><code>resolve_assignment</code> validates an assignment against a definition's specs and fills defaults; an unknown, missing, or out-of-range value raises <code>VariableError</code>.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-definition-reference">Definition Reference</a></td>
+      <td><code>DefinitionRef</code></td>
+      <td>Every config exposes one, carrying the owning definition's schema name, version, and <a class="term-ref" href="#term-identity-hash">identity hash</a>.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-humaneval-task">HumanEval Task</a></td>
+      <td><code>humaneval_task_identity</code>, <code>humaneval_task_identity_payload</code></td>
+      <td>The identity is a hash over the dataset-defining fields only; the <a class="term-ref" href="#term-task">task</a> role itself has no generic superclass and no export in this package.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-task-set">Task Set</a></td>
+      <td><code>TaskSet</code>, <code>SelectionRule</code></td>
+      <td>A <code>TaskSet</code> carries exactly one of an ordered identity list or a <code>SelectionRule</code>; ordering and selection both determine its identity.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-repeat">Repeat</a></td>
+      <td><code>Repeat</code>, <code>RepeatId</code>, <code>RepeatPlan</code>, <code>RepeatProvenanceRow</code>, <code>repeat_plan_from_provenance</code></td>
+      <td><code>repeat_plan_from_provenance</code> reconstructs a <a class="term-ref" href="#term-repeat-plan">repeat plan</a> from generation-corpus <code>RepeatProvenanceRow</code> records; seeds are carried as slot data, never identity.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-sampling-definition">Sampling Definition</a></td>
+      <td><code>SamplingDefinition</code>, <code>SamplingConfig</code></td>
+      <td><code>SamplingDefinition.materialize</code> is the sole builder of a <code>SamplingConfig</code>.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-preprocessing-definition">Preprocessing Definition</a></td>
+      <td><code>PreprocessingDefinition</code>, <code>PreprocessingConfig</code>, <code>PreprocessingStepBinding</code></td>
+      <td>A <code>PreprocessingStepBinding</code> is one ordered step instance; <code>materialize</code> resolves each step's version into the config identity.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-metric-extraction-definition">Metric Extraction Definition</a></td>
+      <td><code>MetricExtractionDefinition</code>, <code>MetricExtractionConfig</code>, <code>MetricQuestionBinding</code>, <code>resolved_operator_version</code>, <code>resolved_step_version</code></td>
+      <td>A <code>MetricQuestionBinding</code> is one <a class="term-ref" href="#term-metric-question">metric question</a>; <code>resolved_operator_version</code> and <code>resolved_step_version</code> read the registered implementation versions folded into config identities.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-evaluation-procedure-definition">Evaluation Procedure Definition</a></td>
+      <td><code>EvaluationProcedureDefinition</code>, <code>EvaluationProcedureConfig</code></td>
+      <td><code>materialize</code> composes a <a class="term-ref" href="#term-preprocessing-config">preprocessing config</a> and a <a class="term-ref" href="#term-metric-extraction-config">metric extraction config</a> into the procedure config identity.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-aggregation-definition">Aggregation Definition</a></td>
+      <td><code>AggregationDefinition</code>, <code>AggregationConfig</code></td>
+      <td>The config assignment drives reduction, missing-data, and <a class="term-ref" href="#term-zero-denominator">zero-denominator</a> behavior at <a class="term-ref" href="#term-aggregation-output">aggregation</a> time.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-eval-definition">Eval Definition</a></td>
+      <td><code>EvalDefinition</code>, <code>EvalConfig</code></td>
+      <td>The composite whose <code>EvalConfig</code> identity covers the sampling, evaluation procedure, and aggregation config identities.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-python-source">Python Source</a></td>
+      <td><code>PythonSource</code></td>
+      <td>Records that a string is read as Python source, with no compilation guarantee.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-code-candidate">Code Candidate</a></td>
+      <td><code>CodeCandidate</code></td>
+      <td>One ordered candidate with a stable position and extraction <a class="term-ref" href="#term-lineage">lineage</a>.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-code-candidate-set">Code Candidate Set</a></td>
+      <td><code>CodeCandidateSet</code></td>
+      <td>The ordered collection type over <code>CodeCandidate</code>, including the empty case.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-code-artifact">Code Artifact</a></td>
+      <td><code>CodeArtifact</code>, <code>CodeCompilationError</code></td>
+      <td>Construction compiles the source; source that will not compile raises <code>CodeCompilationError</code>, carrying the originating syntax error.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-operator-lineage">Operator Lineage</a></td>
+      <td><code>OperatorLineage</code></td>
+      <td>The resolved operator and step version identity plus the procedure config identity, attached to a <a class="term-ref" href="#term-metric-fact">metric fact</a>.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-applicability">Applicability</a></td>
+      <td><code>Applicability</code></td>
+      <td>The applicable or not-applicable state, distinct from a value of zero.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-metric-fact">Metric Fact</a></td>
+      <td><code>MetricFact</code></td>
+      <td>Carries an explicit <a class="term-ref" href="#term-unit">unit</a>, an <a class="term-ref" href="#term-applicability">applicability</a> state, and <a class="term-ref" href="#term-operator-lineage">operator lineage</a>.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-metric-record">Metric Record</a></td>
+      <td><code>MetricRecord</code>, <code>AbsenceMode</code></td>
+      <td><code>AbsenceMode</code> names the distinguishable reasons a measurement is absent; only a causal preprocessing failure on a present input is a preprocessing failure, the others staying explicitly distinct.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-score">Score</a></td>
+      <td><code>Score</code></td>
+      <td>Derived from <a class="term-ref" href="#term-metric-fact">metric facts</a> under one <a class="term-ref" href="#term-evaluation-procedure-config">evaluation procedure config</a>, retaining the source fact names.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-compression-reference-artifact">Compression Reference Artifact</a></td>
+      <td><code>CompressionReferenceArtifact</code></td>
+      <td>The immutable bytes used as a denominator, identified by the hash of those bytes.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-compression-reference-key">Compression Reference Key</a></td>
+      <td><code>CompressionReferenceKey</code>, <code>CompressionReferenceResolver</code>, <code>ReferenceResolutionError</code>, <code>compression_ratio</code></td>
+      <td><code>CompressionReferenceResolver</code> resolves a key to its artifact, raising <code>ReferenceResolutionError</code> for an unbound key; <code>compression_ratio</code> returns the <a class="term-ref" href="#term-zero-denominator">zero-denominator</a> sentinel when the reference length is zero.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-zero-denominator">Zero-Denominator</a></td>
+      <td><code>ZERO_DENOMINATOR</code></td>
+      <td><code>ZERO_DENOMINATOR</code> is the sentinel value <code>compression_ratio</code> and <code>aggregate</code> return for the <a class="term-ref" href="#term-zero-denominator">zero-denominator</a> state.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-aggregation-output">Aggregation Output</a></td>
+      <td><code>AggregationOutput</code>, <code>AggregationInput</code>, <code>AggregationStatus</code>, <code>aggregate</code></td>
+      <td><code>aggregate</code> reduces a tuple of <code>AggregationInput</code> slots under a config into an <code>AggregationOutput</code> whose <code>AggregationStatus</code> spells out ok, missing-data, not-applicable, and zero-denominator outcomes.</td>
+    </tr>
+    <tr>
+      <td><a class="term-ref" href="#term-identity-hash">Identity Hash</a></td>
+      <td><code>identity_hash_for</code></td>
+      <td>The single boundary to the storage layer: it builds the identity document over a caller-selected <a class="term-ref" href="#term-payload">payload</a> and returns the full 64-character hash. Each definition and config exposes an <code>identity_hash</code> method built on it.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="colophon">
+  <p><strong>Scope.</strong> This sheet is the authoritative statement of the code-evaluation contract dr-code implements. Exported names match <code>src/dr_code/eval/__init__.py</code>.</p>
+</div>
+
+</main>
+</body>
+</html>

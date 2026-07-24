@@ -1,5 +1,11 @@
 # dr-code
 
+The [vocabulary sheet](https://danielle-rothermel.github.io/dr-code/)
+(source: `.defs/vocab.html`) is the authoritative statement of the
+code-evaluation contract this repo implements: the terms, the
+guarantees, what is in and out of scope, and the mapping from each term
+to the exported names.
+
 ## Preprocessing boundary
 
 Preprocessing extracts structurally usable code from text. A definition may
