@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import datetime, timezone
+import hashlib
 import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
+import dr_code.corpus.stable_files as stable_files_module
 from dr_code.execution import run_subprocess
 import dr_code.viewer.database as viewer_database
 from dr_code.viewer.database import (
@@ -18,7 +25,13 @@ from dr_code.viewer.database import (
     ViewerDatabase,
     database_owner_lock_path,
 )
-from dr_code.viewer.domain import InvalidQueryError, Verdict
+from dr_code.viewer.domain import (
+    InvalidQueryError,
+    InvalidTaskAnnotationError,
+    RunDescriptor,
+    Verdict,
+)
+from viewer.helpers import write_bundle
 
 CORPUS = "a" * 64
 OUTPUT = "b" * 64
@@ -45,6 +58,21 @@ def _create_unversioned_schema(path: Path) -> None:
     with duckdb.connect(str(path)) as connection:
         for statement in viewer_database._LEGACY_SCHEMA:
             connection.execute(statement)
+
+
+def _create_persisted_schema(
+    path: Path,
+    statements: tuple[str, ...],
+    schema_version: int | None,
+) -> None:
+    with duckdb.connect(str(path)) as connection:
+        for statement in statements:
+            connection.execute(statement)
+        if schema_version is not None:
+            connection.execute(viewer_database._VIEWER_SCHEMA)
+            connection.execute(
+                "INSERT INTO viewer_schema VALUES (?)", [schema_version]
+            )
 
 
 def _database_snapshot(
@@ -84,6 +112,414 @@ def test_database_owner_lock_path_is_canonical(tmp_path: Path) -> None:
         database_owner_lock_path(":memory:")
 
 
+def _task_identity(task_id: str) -> str:
+    return hashlib.sha256(task_id.encode()).hexdigest()
+
+
+def _with_membership(
+    descriptor: RunDescriptor,
+    path: Path,
+    task_ids: list[str],
+) -> RunDescriptor:
+    pq.write_table(
+        pa.table(
+            {
+                "task_id": task_ids,
+                "task_identity": [
+                    _task_identity(task_id) for task_id in task_ids
+                ],
+            }
+        ),
+        path,
+        row_group_size=127,
+    )
+    return replace(
+        descriptor,
+        candidate_membership_path=path,
+        artifact_sha256={
+            **descriptor.artifact_sha256,
+            "candidate_membership": hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest(),
+        },
+    )
+
+
+def _create_existing_database(path: Path) -> None:
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            CREATE TABLE runs (
+                run_id VARCHAR PRIMARY KEY,
+                label VARCHAR NOT NULL,
+                descriptor_json VARCHAR NOT NULL,
+                manifest_sha256 VARCHAR NOT NULL,
+                corpus_sha256 VARCHAR NOT NULL,
+                definition_id VARCHAR NOT NULL,
+                registered_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
+            );
+            CREATE TABLE annotations (
+                corpus_sha256 VARCHAR NOT NULL,
+                sample_id VARCHAR NOT NULL,
+                decoder_output_sha256 VARCHAR NOT NULL,
+                verdict VARCHAR CHECK (
+                    verdict IN ('should_be_parseable', 'expected_no_code')
+                ),
+                note VARCHAR,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+                PRIMARY KEY (
+                    corpus_sha256, sample_id, decoder_output_sha256
+                )
+            );
+            CREATE TABLE tags (
+                tag_id VARCHAR PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                normalized_name VARCHAR NOT NULL UNIQUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
+            );
+            CREATE TABLE annotation_tags (
+                corpus_sha256 VARCHAR NOT NULL,
+                sample_id VARCHAR NOT NULL,
+                decoder_output_sha256 VARCHAR NOT NULL,
+                tag_id VARCHAR NOT NULL REFERENCES tags(tag_id),
+                PRIMARY KEY (
+                    corpus_sha256, sample_id, decoder_output_sha256, tag_id
+                )
+            )
+            """
+        )
+
+
+def _create_legacy_task_tables(
+    connection: duckdb.DuckDBPyConnection,
+) -> None:
+    connection.execute(
+        """
+        CREATE TABLE registered_tasks (
+            run_id VARCHAR NOT NULL,
+            dataset_id VARCHAR NOT NULL,
+            task_id VARCHAR NOT NULL,
+            PRIMARY KEY (run_id, dataset_id, task_id)
+        );
+        CREATE TABLE task_annotations (
+            dataset_id VARCHAR NOT NULL,
+            task_id VARCHAR NOT NULL,
+            origin VARCHAR NOT NULL,
+            PRIMARY KEY (dataset_id, task_id)
+        );
+        CREATE TABLE task_annotation_tags (
+            dataset_id VARCHAR NOT NULL,
+            task_id VARCHAR NOT NULL,
+            tag_id VARCHAR NOT NULL,
+            PRIMARY KEY (dataset_id, task_id, tag_id)
+        )
+        """
+    )
+
+
+def test_existing_database_reopens_and_registers_runs(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "viewer.duckdb"
+    _create_existing_database(path)
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        dataset_id="dataset/current",
+        task_namespace="CurrentTask",
+        with_evaluation=False,
+    )
+
+    with ViewerDatabase(path) as database:
+        database.register_runs([descriptor])
+        columns = [
+            row[1]
+            for row in database.connection.execute(
+                "PRAGMA table_info('runs')"
+            ).fetchall()
+        ]
+        stored = database.connection.execute(
+            "SELECT descriptor_json FROM runs WHERE run_id = ?",
+            [descriptor.run_id],
+        ).fetchone()
+
+    assert "dataset_id" not in columns
+    assert stored is not None
+    assert '"dataset_id":"dataset/current"' in stored[0]
+
+
+def test_run_registration_uses_authenticated_membership_snapshot(
+    tmp_path: Path,
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        dataset_id="dataset/current",
+        task_namespace="CurrentTask",
+    )
+
+    with ViewerDatabase(":memory:") as database:
+        database.register_runs([descriptor])
+        registrations = database.connection.execute(
+            """
+            SELECT dataset_id, task_id, task_identity
+            FROM registered_tasks
+            ORDER BY task_id
+            """
+        ).fetchall()
+
+    assert registrations == [
+        ("dataset/current", "CurrentTask/5", _task_identity("CurrentTask/5")),
+        ("dataset/current", "CurrentTask/6", _task_identity("CurrentTask/6")),
+    ]
+
+
+def test_run_registration_rejects_membership_mutated_after_admission(
+    tmp_path: Path,
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        dataset_id="dataset/current",
+        task_namespace="CurrentTask",
+    )
+    membership_path = descriptor.candidate_membership_path
+    assert membership_path is not None
+
+    with ViewerDatabase(":memory:") as database:
+        database.register_runs([descriptor])
+        before_runs = database.connection.execute(
+            "SELECT * EXCLUDE (registered_at) FROM runs ORDER BY run_id"
+        ).fetchall()
+        before_tasks = database.connection.execute(
+            "SELECT * FROM registered_tasks ORDER BY run_id, task_id"
+        ).fetchall()
+
+        membership_path.write_bytes(b"mutated after descriptor admission")
+        with pytest.raises(
+            InvalidQueryError,
+            match="candidate membership does not match authenticated descriptor",
+        ):
+            database.register_runs([descriptor])
+
+        assert (
+            database.connection.execute(
+                "SELECT * EXCLUDE (registered_at) FROM runs ORDER BY run_id"
+            ).fetchall()
+            == before_runs
+        )
+        assert (
+            database.connection.execute(
+                "SELECT * FROM registered_tasks ORDER BY run_id, task_id"
+            ).fetchall()
+            == before_tasks
+        )
+
+
+def test_run_registration_rejects_membership_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    descriptor = write_bundle(tmp_path / "bundle")
+    descriptor = replace(
+        descriptor,
+        artifact_sha256={
+            **descriptor.artifact_sha256,
+            "candidate_membership": "0" * 64,
+        },
+    )
+
+    with ViewerDatabase(":memory:") as database:
+        with pytest.raises(
+            InvalidQueryError,
+            match="candidate membership does not match authenticated descriptor",
+        ):
+            database.register_runs([descriptor])
+
+        assert (
+            database.connection.execute("SELECT * FROM runs").fetchall() == []
+        )
+        assert (
+            database.connection.execute(
+                "SELECT * FROM registered_tasks"
+            ).fetchall()
+            == []
+        )
+
+
+def test_run_registration_uses_captured_bytes_after_same_path_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        dataset_id="dataset/current",
+        task_namespace="CurrentTask",
+    )
+    membership_path = descriptor.candidate_membership_path
+    assert membership_path is not None
+    replacement_path = tmp_path / "replacement-membership.parquet"
+    replacement_task_id = "Replacement/1"
+    pq.write_table(
+        pa.table(
+            {
+                "task_id": [replacement_task_id],
+                "task_identity": [_task_identity(replacement_task_id)],
+            }
+        ),
+        replacement_path,
+    )
+    copy_and_hash = stable_files_module._copy_and_hash
+    replaced = False
+
+    def replace_after_capture(
+        source: Path,
+        destination: Path,
+        *,
+        label: str,
+        max_bytes: int | None = None,
+    ) -> stable_files_module.StableFile:
+        nonlocal replaced
+        captured = copy_and_hash(
+            source,
+            destination,
+            label=label,
+            max_bytes=max_bytes,
+        )
+        if source == membership_path and not replaced:
+            replaced = True
+            replacement_path.replace(membership_path)
+        return captured
+
+    monkeypatch.setattr(
+        stable_files_module, "_copy_and_hash", replace_after_capture
+    )
+    with ViewerDatabase(":memory:") as database:
+        database.register_runs([descriptor])
+        task_ids = database.connection.execute(
+            "SELECT task_id FROM registered_tasks ORDER BY task_id"
+        ).fetchall()
+
+    assert replaced
+    assert task_ids == [("CurrentTask/5",), ("CurrentTask/6",)]
+
+
+def test_inexact_historical_task_schema_is_rejected_without_mutation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "viewer.duckdb"
+    _create_existing_database(path)
+    with duckdb.connect(str(path)) as connection:
+        _create_legacy_task_tables(connection)
+        connection.execute(
+            """
+            INSERT INTO registered_tasks(run_id, dataset_id, task_id)
+            VALUES ('run', 'dataset', 'Task/1')
+            """
+        )
+    before = _database_snapshot(path)
+
+    with pytest.raises(
+        DatabaseSchemaError,
+        match="task_annotation_tags is malformed",
+    ):
+        ViewerDatabase(path)
+
+    assert _database_snapshot(path) == before
+
+
+def test_task_registration_stays_bounded_for_high_cardinality_membership(
+    tmp_path: Path,
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        dataset_id="dataset/current",
+    )
+    task_ids = [f"Task/{index:05d}" for index in range(5_000)]
+    membership_path = tmp_path / "high-cardinality-membership.parquet"
+    descriptor = _with_membership(
+        descriptor,
+        membership_path,
+        task_ids,
+    )
+    assert pq.ParquetFile(membership_path).num_row_groups > 1
+
+    with ViewerDatabase(":memory:") as database:
+        connection = database.connection
+
+        class NoRegistrationFetchall:
+            registration_select = False
+
+            def execute(
+                self,
+                query: str,
+                parameters: object = None,
+            ) -> duckdb.DuckDBPyConnection | NoRegistrationFetchall:
+                if parameters is None:
+                    result = connection.execute(query)
+                else:
+                    result = connection.execute(query, parameters)
+                self.registration_select = (
+                    query.lstrip().startswith("SELECT DISTINCT")
+                    and "task_id" in query
+                )
+                return self if self.registration_select else result
+
+            def fetchall(self) -> object:
+                if self.registration_select:
+                    raise AssertionError(
+                        "task registration must not fetch all task IDs"
+                    )
+                return connection.fetchall()
+
+            def to_arrow_reader(self, batch_size: int) -> pa.RecordBatchReader:
+                return connection.to_arrow_reader(batch_size)
+
+        proxy = NoRegistrationFetchall()
+        database._connection = cast(  # noqa: SLF001
+            duckdb.DuckDBPyConnection, proxy
+        )
+        try:
+            database.register_runs([descriptor])
+        finally:
+            database._connection = connection  # noqa: SLF001
+        count = connection.execute(
+            "SELECT count(*) FROM registered_tasks"
+        ).fetchone()
+
+    assert count == (len(task_ids),)
+
+
+@pytest.mark.parametrize(
+    "invalid_task_id",
+    [" late-invalid ", "\tlate-invalid", "late-invalid\n"],
+)
+def test_task_registration_rejects_invalid_task_id_in_late_row_group(
+    tmp_path: Path,
+    invalid_task_id: str,
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        dataset_id="dataset/current",
+    )
+    task_ids = [f"Task/{index:05d}" for index in range(2_000)]
+    task_ids.append(invalid_task_id)
+    membership_path = tmp_path / "invalid-membership.parquet"
+    descriptor = _with_membership(
+        descriptor,
+        membership_path,
+        task_ids,
+    )
+    assert pq.ParquetFile(membership_path).num_row_groups > 1
+
+    with ViewerDatabase(":memory:") as database:
+        with pytest.raises(
+            InvalidTaskAnnotationError, match="surrounded by whitespace"
+        ):
+            database.register_runs([descriptor])
+        count = database.connection.execute(
+            "SELECT count(*) FROM registered_tasks"
+        ).fetchone()
+
+    assert count == (0,)
+
+
 def test_current_schema_and_annotations_survive_restart(
     tmp_path: Path,
 ) -> None:
@@ -105,13 +541,7 @@ def test_current_schema_and_annotations_survive_restart(
             ).fetchall()
         }
         assert table_names == {
-            "annotation_tags",
-            "annotations",
-            "archived_annotation_tags",
-            "archived_annotations",
-            "archived_tags",
-            "runs",
-            "tags",
+            *viewer_database._SCHEMA_TABLES,
             "viewer_schema",
         }
         assert database.connection.execute(
@@ -181,6 +611,620 @@ def test_complete_unversioned_legacy_schema_is_admitted(
     assert annotation is not None
     assert annotation.note == "preserve me"
     assert version == [(viewer_database._SCHEMA_VERSION,)]
+
+
+def test_exact_annotation_archive_v2_migrates_without_rewriting_archive_data(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "annotation-archive-v2.duckdb"
+    _create_persisted_schema(
+        path,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO annotations(
+                corpus_sha256, sample_id, decoder_output_sha256, note
+            ) VALUES (?, 'active', ?, 'keep active')
+            """,
+            [CORPUS, OUTPUT],
+        )
+        connection.execute(
+            """
+            INSERT INTO archived_annotations(
+                corpus_sha256, sample_id, decoder_output_sha256,
+                verdict, note, created_at, updated_at, archive_reason,
+                source_schema_version
+            ) VALUES (
+                ?, 'archived', ?, 'expected_no_code', 'keep archived',
+                current_timestamp, current_timestamp, 'reason', 1
+            )
+            """,
+            [CORPUS, "c" * 64],
+        )
+        connection.execute(
+            """
+            INSERT INTO archived_annotation_tags(
+                corpus_sha256, sample_id, decoder_output_sha256,
+                tag_id, tag_name, normalized_tag_name, archive_reason,
+                source_schema_version
+            ) VALUES (
+                ?, 'archived', ?, 'archived-tag', 'Archived tag',
+                'archived tag', 'reason', 1
+            )
+            """,
+            [CORPUS, "c" * 64],
+        )
+        connection.execute(
+            """
+            INSERT INTO archived_tags(
+                tag_id, name, normalized_name, created_at, archive_reason,
+                source_schema_version
+            ) VALUES (
+                'archived-tag', 'Archived tag', 'archived tag',
+                current_timestamp, 'reason', 1
+            )
+            """
+        )
+
+    with ViewerDatabase(path) as database:
+        active = database.get_annotation(CORPUS, "active", OUTPUT)
+        archive = database.connection.execute(
+            """
+            SELECT
+                annotation.sample_id,
+                link.tag_id,
+                tag.name,
+                annotation.archive_reason,
+                annotation.source_schema_version
+            FROM archived_annotations AS annotation
+            JOIN archived_annotation_tags AS link USING (
+                corpus_sha256, sample_id, decoder_output_sha256
+            )
+            JOIN archived_tags AS tag USING (tag_id)
+            """
+        ).fetchall()
+        version = database.connection.execute(
+            "SELECT schema_version FROM viewer_schema"
+        ).fetchall()
+
+    assert active is not None
+    assert active.note == "keep active"
+    assert archive == [
+        ("archived", "archived-tag", "Archived tag", "reason", 1)
+    ]
+    assert version == [(viewer_database._SCHEMA_VERSION,)]
+
+
+@pytest.mark.parametrize(
+    "schema_version",
+    [
+        None,
+        viewer_database._LEGACY_SCHEMA_VERSION,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+    ],
+)
+def test_exact_pre_identity_task_schema_archives_every_task_row(
+    tmp_path: Path,
+    schema_version: int | None,
+) -> None:
+    path = tmp_path / f"task-{schema_version}.duckdb"
+    created_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    updated_at = datetime(2026, 2, 3, 4, 5, 6, tzinfo=timezone.utc)
+    created_at_us = int(created_at.timestamp() * 1_000_000)
+    updated_at_us = int(updated_at.timestamp() * 1_000_000)
+    _create_persisted_schema(
+        path,
+        viewer_database._TASK_ANNOTATION_DATABASE_SCHEMA,
+        schema_version,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO tags(tag_id, name, normalized_name, created_at)
+            VALUES ('task-tag', 'Task tag', 'task tag', ?)
+            """,
+            [created_at],
+        )
+        connection.execute(
+            """
+            INSERT INTO registered_tasks(run_id, dataset_id, task_id)
+            VALUES ('run', 'dataset', 'Task/1')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotations(
+                dataset_id, task_id, origin, category, note, provenance,
+                created_at, updated_at
+            ) VALUES (
+                'dataset', 'Task/1', 'machine', 'review', 'keep task',
+                '{"model":"legacy"}', ?, ?
+            )
+            """,
+            [created_at, updated_at],
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotation_tags(dataset_id, task_id, tag_id)
+            VALUES ('dataset', 'Task/1', 'task-tag')
+            """
+        )
+
+    with ViewerDatabase(path) as database:
+        active_counts = tuple(
+            database.connection.execute(
+                f"SELECT count(*) FROM {table}"
+            ).fetchone()[0]
+            for table in (
+                "registered_tasks",
+                "task_annotations",
+                "task_annotation_tags",
+            )
+        )
+        registrations = database.connection.execute(
+            """
+            SELECT
+                run_id, dataset_id, task_id, archive_reason,
+                source_schema_version
+            FROM archived_registered_tasks
+            """
+        ).fetchall()
+        annotations = database.connection.execute(
+            """
+            SELECT
+                dataset_id, task_id, origin, category, note, provenance,
+                epoch_us(created_at), epoch_us(updated_at), archive_reason,
+                source_schema_version
+            FROM archived_task_annotations
+            """
+        ).fetchall()
+        links = database.connection.execute(
+            """
+            SELECT
+                dataset_id, task_id, tag_id, tag_name, normalized_tag_name,
+                epoch_us(tag_created_at), archive_reason,
+                source_schema_version
+            FROM archived_task_annotation_tags
+            """
+        ).fetchall()
+        version = database.connection.execute(
+            "SELECT schema_version FROM viewer_schema"
+        ).fetchall()
+
+    source_version = schema_version or viewer_database._LEGACY_SCHEMA_VERSION
+    reason = "missing_authenticated_task_identity"
+    assert active_counts == (0, 0, 0)
+    assert registrations == [
+        ("run", "dataset", "Task/1", reason, source_version)
+    ]
+    assert annotations == [
+        (
+            "dataset",
+            "Task/1",
+            "machine",
+            "review",
+            "keep task",
+            '{"model":"legacy"}',
+            created_at_us,
+            updated_at_us,
+            reason,
+            source_version,
+        )
+    ]
+    assert links == [
+        (
+            "dataset",
+            "Task/1",
+            "task-tag",
+            "Task tag",
+            "task tag",
+            created_at_us,
+            reason,
+            source_version,
+        )
+    ]
+    assert version == [(viewer_database._SCHEMA_VERSION,)]
+
+
+def test_exact_v3_archives_pre_identity_tasks_and_preserves_archive_data(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "schema-v3.duckdb"
+    timestamp = datetime(2026, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
+    timestamp_us = int(timestamp.timestamp() * 1_000_000)
+    _create_persisted_schema(
+        path,
+        viewer_database._SCHEMA_V3,
+        viewer_database._PRE_IDENTITY_TASK_SCHEMA_VERSION,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO archived_annotations(
+                corpus_sha256, sample_id, decoder_output_sha256,
+                verdict, note, created_at, updated_at, archive_reason,
+                source_schema_version
+            ) VALUES (
+                ?, 'already-archived', ?, NULL, 'preserve archive', ?, ?,
+                'historical_reason', 2
+            )
+            """,
+            [CORPUS, OUTPUT, timestamp, timestamp],
+        )
+        connection.execute(
+            """
+            INSERT INTO registered_tasks(run_id, dataset_id, task_id)
+            VALUES ('run-v3', 'dataset', 'Task/v3')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotations(
+                dataset_id, task_id, origin, category, note, provenance,
+                created_at, updated_at
+            ) VALUES (
+                'dataset', 'Task/v3', 'human', NULL, 'preserve task', NULL,
+                ?, ?
+            )
+            """,
+            [timestamp, timestamp],
+        )
+
+    with ViewerDatabase(path) as database:
+        archived_annotation = database.connection.execute(
+            """
+            SELECT
+                corpus_sha256, sample_id, decoder_output_sha256,
+                verdict, note, epoch_us(created_at), epoch_us(updated_at),
+                archive_reason, source_schema_version
+            FROM archived_annotations
+            """
+        ).fetchall()
+        archived_task = database.connection.execute(
+            """
+            SELECT
+                dataset_id, task_id, origin, category, note, provenance,
+                epoch_us(created_at), epoch_us(updated_at), archive_reason,
+                source_schema_version
+            FROM archived_task_annotations
+            """
+        ).fetchall()
+        archived_registration = database.connection.execute(
+            """
+            SELECT run_id, dataset_id, task_id, source_schema_version
+            FROM archived_registered_tasks
+            """
+        ).fetchall()
+        version = database.connection.execute(
+            "SELECT schema_version FROM viewer_schema"
+        ).fetchall()
+
+    assert archived_annotation == [
+        (
+            CORPUS,
+            "already-archived",
+            OUTPUT,
+            None,
+            "preserve archive",
+            timestamp_us,
+            timestamp_us,
+            "historical_reason",
+            2,
+        )
+    ]
+    assert archived_task == [
+        (
+            "dataset",
+            "Task/v3",
+            "human",
+            None,
+            "preserve task",
+            None,
+            timestamp_us,
+            timestamp_us,
+            "missing_authenticated_task_identity",
+            viewer_database._PRE_IDENTITY_TASK_SCHEMA_VERSION,
+        )
+    ]
+    assert archived_registration == [
+        (
+            "run-v3",
+            "dataset",
+            "Task/v3",
+            viewer_database._PRE_IDENTITY_TASK_SCHEMA_VERSION,
+        )
+    ]
+    assert version == [(viewer_database._SCHEMA_VERSION,)]
+
+
+@pytest.mark.parametrize(
+    "schema_version",
+    [
+        viewer_database._LEGACY_SCHEMA_VERSION,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+    ],
+)
+def test_historical_authenticated_task_signature_preserves_active_rows(
+    tmp_path: Path,
+    schema_version: int,
+) -> None:
+    path = tmp_path / f"authenticated-task-{schema_version}.duckdb"
+    task_identity = _task_identity("Task/1")
+    _create_persisted_schema(
+        path,
+        viewer_database._AUTHENTICATED_TASK_ANNOTATION_DATABASE_SCHEMA,
+        schema_version,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO tags(tag_id, name, normalized_name)
+            VALUES ('task-tag', 'Task tag', 'task tag')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO registered_tasks(
+                run_id, dataset_id, task_id, task_identity
+            ) VALUES ('run', 'dataset', 'Task/1', ?)
+            """,
+            [task_identity],
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotations(
+                dataset_id, task_id, task_identity, origin, category, note
+            ) VALUES ('dataset', 'Task/1', ?, 'human', 'review', 'keep task')
+            """,
+            [task_identity],
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotation_tags(
+                dataset_id, task_id, task_identity, tag_id
+            ) VALUES ('dataset', 'Task/1', ?, 'task-tag')
+            """,
+            [task_identity],
+        )
+
+    with ViewerDatabase(path) as database:
+        annotation = database.get_task_annotation(
+            "dataset", "Task/1", task_identity
+        )
+        registrations = database.connection.execute(
+            """
+            SELECT run_id, dataset_id, task_id, task_identity
+            FROM registered_tasks
+            """
+        ).fetchall()
+        archive_count = database.connection.execute(
+            "SELECT count(*) FROM archived_task_annotations"
+        ).fetchone()
+        version = database.connection.execute(
+            "SELECT schema_version FROM viewer_schema"
+        ).fetchall()
+
+    assert annotation is not None
+    assert annotation.note == "keep task"
+    assert [tag.name for tag in annotation.tags] == ["Task tag"]
+    assert registrations == [("run", "dataset", "Task/1", task_identity)]
+    assert archive_count == (0,)
+    assert version == [(viewer_database._SCHEMA_VERSION,)]
+
+
+def test_malformed_v3_task_signature_is_rejected_without_mutation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "malformed-v3.duckdb"
+    _create_persisted_schema(
+        path,
+        viewer_database._SCHEMA_V3,
+        viewer_database._PRE_IDENTITY_TASK_SCHEMA_VERSION,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute("ALTER TABLE task_annotations ADD extra VARCHAR")
+    before = _database_snapshot(path)
+
+    with pytest.raises(
+        DatabaseSchemaError,
+        match="historical composed schema is malformed",
+    ):
+        ViewerDatabase(path)
+
+    assert _database_snapshot(path) == before
+
+
+def test_malformed_annotation_archive_v2_is_rejected_without_mutation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "malformed-v2.duckdb"
+    _create_persisted_schema(
+        path,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute("ALTER TABLE archived_tags ADD extra VARCHAR")
+    before = _database_snapshot(path)
+
+    with pytest.raises(
+        DatabaseSchemaError, match="archived_tags is malformed"
+    ):
+        ViewerDatabase(path)
+
+    assert _database_snapshot(path) == before
+
+
+def test_annotation_archive_v2_fault_rolls_back_schema_and_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "rollback-v2.duckdb"
+    _create_persisted_schema(
+        path,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+    )
+    before = _database_snapshot(path)
+    original_validate = viewer_database._validate_table_schema
+
+    def fail_during_final_validation(
+        connection: duckdb.DuckDBPyConnection,
+        table: str,
+        schema: tuple[str, ...] = viewer_database._SCHEMA,
+    ) -> None:
+        original_validate(connection, table, schema)
+        if table == "task_annotations" and schema == viewer_database._SCHEMA:
+            raise RuntimeError("injected final-schema validation fault")
+
+    monkeypatch.setattr(
+        viewer_database,
+        "_validate_table_schema",
+        fail_during_final_validation,
+    )
+
+    with pytest.raises(RuntimeError, match="final-schema validation fault"):
+        ViewerDatabase(path)
+
+    assert _database_snapshot(path) == before
+
+
+def test_v3_task_archive_fault_rolls_back_rows_schema_and_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "rollback-v3.duckdb"
+    _create_persisted_schema(
+        path,
+        viewer_database._SCHEMA_V3,
+        viewer_database._PRE_IDENTITY_TASK_SCHEMA_VERSION,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO registered_tasks(run_id, dataset_id, task_id)
+            VALUES ('run', 'dataset', 'Task/1')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotations(dataset_id, task_id, origin, note)
+            VALUES ('dataset', 'Task/1', 'human', 'must roll back')
+            """
+        )
+    before = _database_snapshot(path)
+    original_validate = viewer_database._validate_table_schema
+
+    def fail_during_final_validation(
+        connection: duckdb.DuckDBPyConnection,
+        table: str,
+        schema: tuple[str, ...] = viewer_database._SCHEMA,
+    ) -> None:
+        original_validate(connection, table, schema)
+        if (
+            table == "archived_task_annotations"
+            and schema == viewer_database._SCHEMA
+        ):
+            raise RuntimeError("injected task-archive validation fault")
+
+    monkeypatch.setattr(
+        viewer_database,
+        "_validate_table_schema",
+        fail_during_final_validation,
+    )
+
+    with pytest.raises(RuntimeError, match="task-archive validation fault"):
+        ViewerDatabase(path)
+
+    assert _database_snapshot(path) == before
+
+
+def test_pre_identity_task_tag_snapshot_survives_tag_archival(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "task-tag-conflict.duckdb"
+    _create_persisted_schema(
+        path,
+        viewer_database._TASK_ANNOTATION_DATABASE_SCHEMA,
+        viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+    )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO tags(tag_id, name, normalized_name)
+            VALUES ('invalid-tag', ?, ?)
+            """,
+            ["x" * 101, "x" * 101],
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotations(dataset_id, task_id, origin)
+            VALUES ('dataset', 'Task/1', 'human')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO task_annotation_tags(dataset_id, task_id, tag_id)
+            VALUES ('dataset', 'Task/1', 'invalid-tag')
+            """
+        )
+
+    with ViewerDatabase(path) as database:
+        archived_link = database.connection.execute(
+            """
+            SELECT
+                dataset_id, task_id, tag_id, tag_name, normalized_tag_name,
+                archive_reason, source_schema_version
+            FROM archived_task_annotation_tags
+            """
+        ).fetchall()
+        archived_task = database.connection.execute(
+            """
+            SELECT dataset_id, task_id, archive_reason, source_schema_version
+            FROM archived_task_annotations
+            """
+        ).fetchall()
+        archived_tag = database.connection.execute(
+            "SELECT tag_id, name, archive_reason FROM archived_tags"
+        ).fetchall()
+        active_counts = tuple(
+            database.connection.execute(
+                f"SELECT count(*) FROM {table}"
+            ).fetchone()[0]
+            for table in (
+                "tags",
+                "task_annotations",
+                "task_annotation_tags",
+            )
+        )
+
+    reason = "missing_authenticated_task_identity"
+    assert archived_link == [
+        (
+            "dataset",
+            "Task/1",
+            "invalid-tag",
+            "x" * 101,
+            "x" * 101,
+            reason,
+            viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+        )
+    ]
+    assert archived_task == [
+        (
+            "dataset",
+            "Task/1",
+            reason,
+            viewer_database._ANNOTATION_ARCHIVE_SCHEMA_VERSION,
+        )
+    ]
+    assert archived_tag == [
+        ("invalid-tag", "x" * 101, "tag_name_is_out_of_contract")
+    ]
+    assert active_counts == (0, 0, 0)
 
 
 def test_v1_outliers_are_archived_with_complete_annotation_closure(
@@ -263,7 +1307,9 @@ def test_v1_outliers_are_archived_with_complete_annotation_closure(
         ).fetchone() == (0,)
 
 
-def test_v2_outlier_is_archived_before_active_reads(tmp_path: Path) -> None:
+def test_current_outlier_is_archived_before_active_reads(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "current.duckdb"
     with ViewerDatabase(path):
         pass
@@ -474,6 +1520,9 @@ def test_archive_reason_literals_and_unicode_scalar_classification() -> None:
     assert {
         reason.name: reason.value for reason in viewer_database._ArchiveReason
     } == {
+        "MISSING_AUTHENTICATED_TASK_IDENTITY": (
+            "missing_authenticated_task_identity"
+        ),
         "NOTE_EXCEEDS_MAX_LENGTH": "note_exceeds_max_length",
         "NOTE_IS_NOT_UNICODE_SCALAR": "note_is_not_unicode_scalar",
         "NORMALIZED_TAG_NAME_IS_NOT_CANONICAL": (

@@ -35,6 +35,9 @@ from dr_code.corpus.run_descriptor import (
 from dr_code.execution.subprocess import run_python_subprocess
 from dr_code.eval import identity_hash_for
 from dr_code.synthetic.humaneval_loader import packaged_snapshot_bytes
+from dr_code.humaneval.sampling import (
+    DEFAULT_HUMAN_EVAL_DATASET_NAME,
+)
 from dr_code.viewer.analytics import ViewerAnalytics
 from dr_code.viewer.database import ViewerDatabase
 from dr_code.viewer.domain import (
@@ -167,6 +170,7 @@ def test_helper_bundle_facts_are_admitted_as_canonical_waterfall(
     }
 
     assert descriptor.run_id == "fixture-run"
+    assert descriptor.dataset_id == "fixture"
     assert descriptor.preprocessing_schema_version == 4
     assert descriptor.has_evaluation
     assert descriptor.corpus_path.is_absolute()
@@ -240,6 +244,7 @@ def test_descriptor_uses_one_captured_preprocessing_manifest(
     )
     admitted = RunDescriptor.from_paths(
         label="race",
+        dataset_id=original.dataset_id,
         corpus_path=original.corpus_path,
         preprocessing=source_manifest.parent,
     )
@@ -319,6 +324,7 @@ def test_descriptor_uses_one_captured_evaluation_pointer(
     )
     admitted = RunDescriptor.from_paths(
         label="race",
+        dataset_id=original.dataset_id,
         corpus_path=original.corpus_path,
         preprocessing=original.preprocessing_manifest_path.parent,
         candidate_evaluation=original_evaluation,
@@ -395,6 +401,7 @@ def test_descriptor_rejects_stale_schema_and_forged_question_identity(
         with pytest.raises(RunValidationError, match=expected):
             RunDescriptor.from_paths(
                 label="bad",
+                dataset_id=descriptor.dataset_id,
                 corpus_path=descriptor.corpus_path,
                 preprocessing=descriptor.preprocessing_manifest_path.parent,
                 candidate_evaluation=bundle / "evaluation",
@@ -433,6 +440,7 @@ def test_descriptor_translates_unknown_metric_to_validation_error(
     with pytest.raises(RunValidationError, match="coordinates are invalid"):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=descriptor.preprocessing_manifest_path.parent,
             candidate_evaluation=bundle / "evaluation",
@@ -449,6 +457,7 @@ def test_descriptor_generation_survives_bundle_relocation(
 
     after = RunDescriptor.from_paths(
         label="relocated",
+        dataset_id=before.dataset_id,
         corpus_path=relocated / "corpus.parquet",
         preprocessing=relocated / "run",
         candidate_evaluation=relocated / "evaluation",
@@ -485,6 +494,7 @@ def test_descriptor_rejects_candidate_duplicate_across_row_groups(
     ):
         RunDescriptor.from_paths(
             label="duplicate",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=manifest_path.parent,
         )
@@ -539,6 +549,7 @@ def test_real_schema_six_producer_flows_through_analysis_and_viewer(
 
     descriptor = RunDescriptor.from_paths(
         label="producer",
+        dataset_id=DEFAULT_HUMAN_EVAL_DATASET_NAME,
         corpus_path=corpus,
         preprocessing=preprocessing,
         candidate_evaluation=evaluation,
@@ -555,6 +566,7 @@ def test_real_schema_six_producer_flows_through_analysis_and_viewer(
         == produced_manifest["evaluation_identity"]
     )
     analysis = analyze_preprocessing_corpus(
+        dataset_id=DEFAULT_HUMAN_EVAL_DATASET_NAME,
         corpus_path=corpus,
         run_dir=preprocessing,
         candidate_evaluation=evaluation,
@@ -587,6 +599,7 @@ def test_descriptor_file_has_one_exact_relative_path_contract(
         json.dumps(
             {
                 "label": "relative",
+                "dataset_id": "fixture",
                 "corpus": "corpus.parquet",
                 "preprocessing": "run",
                 "candidate_evaluation": "evaluation",
@@ -628,6 +641,91 @@ def test_descriptor_rejects_noncanonical_fields(
         RunDescriptor.from_file(descriptor_path)
 
 
+def test_descriptor_requires_explicit_dataset_id_for_preprocessing_only(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    write_bundle(bundle, with_evaluation=False)
+    descriptor_path = bundle / "descriptor.json"
+    descriptor_path.write_text(
+        json.dumps(
+            {
+                "label": "run",
+                "corpus": "corpus.parquet",
+                "preprocessing": "run",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        RunValidationError, match="requires string 'dataset_id'"
+    ):
+        RunDescriptor.from_file(descriptor_path)
+
+
+def test_descriptor_authenticates_explicit_evaluation_dataset_id(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    descriptor = write_bundle(
+        bundle,
+        dataset_id="evalplus/humanevalplus",
+        task_namespace="HumanEval",
+    )
+
+    assert descriptor.dataset_id == "evalplus/humanevalplus"
+    with pytest.raises(
+        RunValidationError, match="does not match authenticated"
+    ):
+        RunDescriptor.from_paths(
+            label="wrong dataset",
+            dataset_id="other/dataset",
+            corpus_path=descriptor.corpus_path,
+            preprocessing=descriptor.preprocessing_manifest_path.parent,
+            candidate_evaluation=bundle / "evaluation",
+        )
+
+
+def test_descriptor_rejects_surrounding_dataset_id_whitespace(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle"
+    descriptor = write_bundle(bundle)
+
+    with pytest.raises(RunValidationError, match="surrounding whitespace"):
+        RunDescriptor.from_paths(
+            label="wrong explicit identity",
+            dataset_id=" fixture ",
+            corpus_path=descriptor.corpus_path,
+            preprocessing=descriptor.preprocessing_manifest_path.parent,
+            candidate_evaluation=bundle / "evaluation",
+        )
+
+    def add_authenticated_whitespace(staged: Path) -> None:
+        manifest_path = staged / "candidate_evaluation_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["dataset"]["dataset_id"] = " fixture "
+        manifest["evaluation_identity"] = candidate_evaluation_identity(
+            {
+                field: manifest[field]
+                for field in CANDIDATE_EVALUATION_COORDINATE_FIELDS
+            }
+        )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    _rewrite_current_generation(bundle, add_authenticated_whitespace)
+
+    with pytest.raises(RunValidationError, match="surrounding whitespace"):
+        RunDescriptor.from_paths(
+            label="wrong authenticated identity",
+            dataset_id="fixture",
+            corpus_path=descriptor.corpus_path,
+            preprocessing=descriptor.preprocessing_manifest_path.parent,
+            candidate_evaluation=bundle / "evaluation",
+        )
+
+
 def test_descriptor_rejects_incomplete_relation_hashes(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle"
     write_bundle(bundle, with_evaluation=False)
@@ -639,6 +737,7 @@ def test_descriptor_rejects_incomplete_relation_hashes(tmp_path: Path) -> None:
     with pytest.raises(RunValidationError, match="hashes are incomplete"):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id="fixture",
             corpus_path=bundle / "corpus.parquet",
             preprocessing=bundle / "run",
         )
@@ -655,6 +754,7 @@ def test_descriptor_rejects_current_artifact_hash_mismatch(
     with pytest.raises(RunValidationError, match="hash"):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id="fixture",
             corpus_path=bundle / "corpus.parquet",
             preprocessing=bundle / "run",
             candidate_evaluation=bundle / "evaluation",
@@ -711,6 +811,7 @@ def test_descriptor_rejects_noncanonical_schema_six_manifest(
     with pytest.raises(RunValidationError):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=descriptor.preprocessing_manifest_path.parent,
             candidate_evaluation=bundle / "evaluation",
@@ -734,6 +835,7 @@ def test_descriptor_rejects_duplicate_json_keys(tmp_path: Path) -> None:
     with pytest.raises(RunValidationError, match="not valid JSON"):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=descriptor.preprocessing_manifest_path.parent,
         )
@@ -791,6 +893,7 @@ def test_descriptor_reconciles_all_preprocessing_manifest_claims(
     with pytest.raises(RunValidationError, match=message):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id="fixture",
             corpus_path=descriptor.corpus_path,
             preprocessing=manifest_path.parent,
         )
@@ -809,6 +912,7 @@ def test_descriptor_rejects_non_finite_manifest_json(tmp_path: Path) -> None:
     with pytest.raises(RunValidationError, match="not valid JSON"):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id="fixture",
             corpus_path=descriptor.corpus_path,
             preprocessing=manifest_path.parent,
         )
@@ -825,6 +929,7 @@ def test_descriptor_rejects_noncurrent_schema(tmp_path: Path) -> None:
     with pytest.raises(RunValidationError, match="requires schema_version 4"):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id="fixture",
             corpus_path=bundle / "corpus.parquet",
             preprocessing=bundle / "run",
         )
@@ -850,6 +955,7 @@ def test_descriptor_rejects_stale_preprocessing_source_coordinates(
     ):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=manifest_path.parent,
         )
@@ -895,6 +1001,7 @@ def test_descriptor_reconciles_evaluation_manifest_summaries(
     with pytest.raises(RunValidationError, match=message):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id="fixture",
             corpus_path=descriptor.corpus_path,
             preprocessing=descriptor.preprocessing_manifest_path.parent,
             candidate_evaluation=bundle / "evaluation",
@@ -949,6 +1056,7 @@ def test_descriptor_rejects_hash_consistent_evaluation_contradictions(
     with pytest.raises(RunValidationError, match=message):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=descriptor.preprocessing_manifest_path.parent,
             candidate_evaluation=bundle / "evaluation",
@@ -981,6 +1089,7 @@ def test_descriptor_rejects_hash_consistent_arbitrary_evaluation_key(
     ):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=descriptor.preprocessing_manifest_path.parent,
             candidate_evaluation=bundle / "evaluation",
@@ -1024,6 +1133,7 @@ def test_descriptor_rejects_hash_consistent_result_contract_violations(
     with pytest.raises(RunValidationError, match=message):
         RunDescriptor.from_paths(
             label="bad",
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=descriptor.preprocessing_manifest_path.parent,
             candidate_evaluation=bundle / "evaluation",

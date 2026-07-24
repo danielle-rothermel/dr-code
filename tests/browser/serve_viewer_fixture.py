@@ -123,6 +123,7 @@ def main() -> None:
         _expand_review_group(initial)
         descriptor = RunDescriptor.from_paths(
             label="Browser smoke",
+            dataset_id=initial.dataset_id,
             corpus_path=initial.corpus_path,
             preprocessing=initial.preprocessing_manifest_path.parent,
         )

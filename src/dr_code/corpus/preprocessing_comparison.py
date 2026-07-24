@@ -26,7 +26,7 @@ from dr_code.corpus.run_descriptor import (
 )
 
 
-COMPARISON_SCHEMA_VERSION: Final = 1
+COMPARISON_SCHEMA_VERSION: Final = 2
 SUMMARY_FILENAME: Final = "comparison_summary.json"
 MANIFEST_FILENAME: Final = "comparison_manifest.json"
 _SEMANTIC_RESULT_FIELDS: Final = (
@@ -205,6 +205,7 @@ class _StreamingSummary:
         results = "evaluation_result_changes"
         return {
             "schema_version": COMPARISON_SCHEMA_VERSION,
+            "dataset_id": before.dataset_id,
             "corpus_rows": self.corpus_rows,
             samples: {
                 **self._change_counts(samples),
@@ -278,6 +279,7 @@ class _StreamingSummary:
 
 def compare_preprocessing_runs(
     *,
+    dataset_id: str,
     corpus_path: Path | str,
     before_run: Path | str,
     after_run: Path | str,
@@ -300,12 +302,14 @@ def compare_preprocessing_runs(
     with (
         _load_descriptor(
             label="before",
+            dataset_id=dataset_id,
             corpus=corpus,
             preprocessing=before_run,
             evaluation=before_evaluation,
         ) as before_descriptor,
         _load_descriptor(
             label="after",
+            dataset_id=dataset_id,
             corpus=corpus,
             preprocessing=after_run,
             evaluation=after_evaluation,
@@ -393,6 +397,7 @@ def _compare_admitted_runs(
 def _load_descriptor(
     *,
     label: str,
+    dataset_id: str,
     corpus: Path,
     preprocessing: Path | str,
     evaluation: Path | str | None,
@@ -400,6 +405,7 @@ def _load_descriptor(
     try:
         with admitted_run_descriptor(
             label=label,
+            dataset_id=dataset_id,
             corpus_path=corpus,
             preprocessing=preprocessing,
             candidate_evaluation=evaluation,
@@ -1109,6 +1115,7 @@ def _semantic_coordinates(descriptor: RunDescriptor) -> Mapping[str, object]:
 def _run_manifest_value(descriptor: RunDescriptor) -> dict[str, object]:
     return {
         "run_id": descriptor.run_id,
+        "dataset_id": descriptor.dataset_id,
         "preprocessing_schema_version": descriptor.preprocessing_schema_version,
         "preprocessing_manifest_sha256": (
             descriptor.preprocessing_manifest_sha256

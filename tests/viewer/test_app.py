@@ -52,6 +52,7 @@ def _run(run_id: str = "baseline") -> RunSummary:
     return RunSummary(
         run_id=run_id,
         label=run_id.title(),
+        dataset_id="evalplus/humanevalplus",
         manifest_sha256="c" * 64,
         corpus_sha256=_DIGEST,
         definition_id="functions-v1",
@@ -137,6 +138,8 @@ class FakeService:
         del run_id
         return ExampleDetail(
             sample_id=sample_id,
+            dataset_id="evalplus/humanevalplus",
+            task_identity="e" * 64,
             corpus_sha256=_DIGEST,
             decoder_output_sha256=_OUTPUT_DIGEST,
             context={"task_id": "HumanEval/1", "nested": {"ignored": True}},

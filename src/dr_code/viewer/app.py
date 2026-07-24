@@ -37,6 +37,8 @@ from dr_code.viewer.domain import (
     Failures as DomainFailures,
     IncompatibleRunsError,
     InvalidQueryError,
+    InvalidTaskAnnotationError,
+    MachineTaskAnnotationWriteResult,
     Page as DomainPage,
     ReviewPage as DomainReviewPage,
     RunComparison as DomainRunComparison,
@@ -44,11 +46,15 @@ from dr_code.viewer.domain import (
     RunSummary as DomainRunSummary,
     RunValidationError,
     Tag as DomainTag,
+    TaskAnnotation as DomainTaskAnnotation,
+    TaskAnnotationProvenance as DomainTaskAnnotationProvenance,
+    TaskNotFoundError,
     Verdict as DomainVerdict,
     ViewerError,
     Waterfall as DomainWaterfall,
     normalize_annotation_tag_ids,
     normalize_tag_name,
+    task_annotation_provenance_json,
     validate_annotation_note,
 )
 
@@ -56,6 +62,11 @@ Scalar = str | int | float | bool | None
 Verdict = Literal["should_be_parseable", "expected_no_code"]
 Unit = Literal["sample", "candidate"]
 Sha256Path = Annotated[str, ApiPath(pattern=r"^[0-9a-f]{64}$")]
+TaskIdentityQuery = Annotated[str, Query(min_length=1, max_length=256)]
+TaskIdentitySha256Query = Annotated[
+    str,
+    Query(pattern=r"^[0-9a-f]{64}$"),
+]
 
 
 class ViewerAssetsError(RuntimeError):
@@ -71,6 +82,7 @@ class ResponseModel(BaseModel):
 class RunSummary(ResponseModel):
     run_id: str
     label: str
+    dataset_id: str
     manifest_sha256: str
     corpus_sha256: str
     definition_id: str
@@ -167,6 +179,8 @@ class Annotation(ResponseModel):
 
 
 class ExampleDetail(ResponseModel):
+    dataset_id: str | None
+    task_identity: str | None
     corpus_sha256: str
     sample_id: str
     decoder_output_sha256: str | None
@@ -228,6 +242,38 @@ class AnnotationExport(ResponseModel):
     tags: list[str]
 
 
+class TaskIdentity(ResponseModel):
+    dataset_id: str = Field(min_length=1, max_length=256)
+    task_id: str = Field(min_length=1, max_length=256)
+    task_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class TaskAnnotationProvenance(ResponseModel):
+    model: str | None
+    taxonomy_version: str | None
+    repeats: int | None
+    agreement: float | None
+    extra: dict[str, JsonValue]
+
+
+class TaskAnnotation(ResponseModel):
+    identity: TaskIdentity
+    origin: Literal["human", "machine"]
+    category: str | None
+    note: str | None
+    tags: list[Tag]
+    provenance: TaskAnnotationProvenance | None
+
+
+class TaskAnnotationExport(ResponseModel):
+    identity: TaskIdentity
+    origin: Literal["human", "machine"]
+    category: str | None
+    note: str | None
+    tags: list[str]
+    provenance: TaskAnnotationProvenance | None
+
+
 class CreateTagRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -256,6 +302,17 @@ class PutAnnotationRequest(BaseModel):
     @classmethod
     def tags_are_distinct_and_in_contract(cls, value: list[str]) -> list[str]:
         return list(normalize_annotation_tag_ids(value))
+
+
+class PutTaskAnnotationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str | None = Field(default=None, max_length=256)
+    note: str | None = Field(default=None, max_length=10_000)
+    tag_ids: list[Annotated[str, Field(min_length=1, max_length=256)]] = Field(
+        default_factory=list,
+        max_length=100,
+    )
 
 
 class ViewerService(Protocol):
@@ -327,11 +384,51 @@ class ViewerService(Protocol):
 
     def export_annotations(self) -> Sequence[dict[str, object]]: ...
 
+    def get_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+    ) -> DomainTaskAnnotation | None: ...
+
+    def put_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+        *,
+        category: str | None = None,
+        note: str | None = None,
+        tag_ids: Sequence[str] = (),
+    ) -> DomainTaskAnnotation: ...
+
+    def put_machine_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+        *,
+        category: str | None,
+        note: str | None = None,
+        tag_ids: Sequence[str] = (),
+        provenance: DomainTaskAnnotationProvenance,
+    ) -> MachineTaskAnnotationWriteResult: ...
+
+    def delete_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+    ) -> bool: ...
+
+    def export_task_annotations(self) -> Sequence[dict[str, object]]: ...
+
 
 def _run(value: DomainRunSummary) -> RunSummary:
     return RunSummary(
         run_id=value.run_id,
         label=value.label,
+        dataset_id=value.dataset_id,
         manifest_sha256=value.manifest_sha256,
         corpus_sha256=value.corpus_sha256,
         definition_id=value.definition_id,
@@ -437,6 +534,28 @@ def _annotation(value: DomainAnnotation) -> Annotation:
     )
 
 
+def _task_annotation(value: DomainTaskAnnotation) -> TaskAnnotation:
+    provenance = value.provenance
+    return TaskAnnotation(
+        identity=TaskIdentity(
+            dataset_id=value.identity.dataset_id,
+            task_id=value.identity.task_id,
+            task_identity=value.identity.task_identity,
+        ),
+        origin=value.origin.value,
+        category=value.category,
+        note=value.note,
+        tags=[_tag(tag) for tag in value.tags],
+        provenance=(
+            TaskAnnotationProvenance.model_validate(
+                task_annotation_provenance_json(provenance)
+            )
+            if provenance is not None
+            else None
+        ),
+    )
+
+
 def _detail(value: DomainExampleDetail) -> ExampleDetail:
     context = {
         key: item
@@ -453,6 +572,8 @@ def _detail(value: DomainExampleDetail) -> ExampleDetail:
         )
         candidates.append(Candidate.model_validate(payload))
     return ExampleDetail(
+        dataset_id=value.dataset_id,
+        task_identity=value.task_identity,
         corpus_sha256=value.corpus_sha256,
         sample_id=value.sample_id,
         decoder_output_sha256=value.decoder_output_sha256,
@@ -759,6 +880,71 @@ def create_app(
             for item in service.export_annotations()
         ]
 
+    @application.get(
+        "/api/task-annotations/export",
+        response_model=list[TaskAnnotationExport],
+    )
+    async def export_task_annotations() -> list[TaskAnnotationExport]:
+        return [
+            TaskAnnotationExport.model_validate(item)
+            for item in service.export_task_annotations()
+        ]
+
+    @application.get(
+        "/api/task-annotations",
+        response_model=TaskAnnotation,
+    )
+    async def get_task_annotation(
+        dataset_id: TaskIdentityQuery,
+        task_id: TaskIdentityQuery,
+        task_identity: TaskIdentitySha256Query,
+    ) -> TaskAnnotation:
+        result = service.get_task_annotation(
+            dataset_id,
+            task_id,
+            task_identity,
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Not Found")
+        return _task_annotation(result)
+
+    @application.put(
+        "/api/task-annotations",
+        response_model=TaskAnnotation,
+    )
+    async def put_task_annotation(
+        dataset_id: TaskIdentityQuery,
+        task_id: TaskIdentityQuery,
+        task_identity: TaskIdentitySha256Query,
+        request: PutTaskAnnotationRequest,
+    ) -> TaskAnnotation:
+        return _task_annotation(
+            service.put_task_annotation(
+                dataset_id,
+                task_id,
+                task_identity,
+                category=request.category,
+                note=request.note,
+                tag_ids=request.tag_ids,
+            )
+        )
+
+    @application.delete(
+        "/api/task-annotations",
+        status_code=204,
+    )
+    async def delete_task_annotation(
+        dataset_id: TaskIdentityQuery,
+        task_id: TaskIdentityQuery,
+        task_identity: TaskIdentitySha256Query,
+    ) -> Response:
+        service.delete_task_annotation(
+            dataset_id,
+            task_id,
+            task_identity,
+        )
+        return Response(status_code=204)
+
     frontend = (
         static_dir.expanduser().resolve()
         if static_dir is not None
@@ -787,6 +973,8 @@ def _install_error_handlers(application: FastAPI) -> None:
     """Translate domain errors without making the domain depend on FastAPI."""
     status_by_type = {
         RunNotFoundError: 404,
+        TaskNotFoundError: 404,
+        InvalidTaskAnnotationError: 422,
         InvalidQueryError: 400,
         IncompatibleRunsError: 409,
     }

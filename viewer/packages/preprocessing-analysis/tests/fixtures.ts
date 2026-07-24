@@ -9,11 +9,13 @@ import type {
   PreprocessingApi,
   RunSummary,
   Tag,
+  TaskAnnotation,
   WaterfallResponse,
 } from "../src/api";
 
 export const baselineRun: RunSummary = {
   corpus_sha256: "corpus-baseline-0123456789",
+  dataset_id: "evalplus/humanevalplus",
   definition_id: "preprocessing",
   has_evaluation: false,
   label: "Baseline",
@@ -36,6 +38,7 @@ export const detail: ExampleDetail = {
   cause: "syntax error",
   context: { source_kind: "fixture" },
   corpus_sha256: baselineRun.corpus_sha256,
+  dataset_id: baselineRun.dataset_id,
   decoder_output_sha256: "output-sha",
   failed_step: "compile",
   failure_code: "syntax_error",
@@ -44,6 +47,7 @@ export const detail: ExampleDetail = {
   raw_decoder_output: "```python\ndef broken(:\n```",
   rejections: [{ details_json: "{}", reason_code: "syntax_error", step_name: "compile" }],
   sample_id: "sample-1",
+  task_identity: "a".repeat(64),
 };
 
 export const examples: ExamplesResponse = {
@@ -105,11 +109,24 @@ export const comparison: CompareResponse = {
 
 export function fakeApi(overrides: Partial<PreprocessingApi> = {}): PreprocessingApi {
   const saved: Annotation = { note: null, tags: [], verdict: "should_be_parseable" };
+  const savedTask: TaskAnnotation = {
+    category: null,
+    identity: {
+      dataset_id: baselineRun.dataset_id,
+      task_id: "HumanEval/1",
+      task_identity: "a".repeat(64),
+    },
+    note: null,
+    origin: "human",
+    provenance: null,
+    tags: [],
+  };
   const tag: Tag = { name: "markdown fence", tag_id: "tag-1" };
   return {
     compare: vi.fn().mockResolvedValue(comparison),
     createTag: vi.fn().mockResolvedValue(tag),
     deleteAnnotation: vi.fn().mockResolvedValue(undefined),
+    deleteTaskAnnotation: vi.fn().mockResolvedValue(undefined),
     getExample: vi.fn().mockResolvedValue(detail),
     getExamples: vi.fn().mockResolvedValue(examples),
     getFailures: vi.fn().mockResolvedValue(failures),
@@ -121,8 +138,10 @@ export function fakeApi(overrides: Partial<PreprocessingApi> = {}): Preprocessin
     }),
     getRuns: vi.fn().mockResolvedValue([baselineRun, candidateRun]),
     getTags: vi.fn().mockResolvedValue([]),
+    getTaskAnnotation: vi.fn().mockResolvedValue(null),
     getWaterfall: vi.fn().mockResolvedValue(waterfall),
     putAnnotation: vi.fn().mockResolvedValue(saved),
+    putTaskAnnotation: vi.fn().mockResolvedValue(savedTask),
     ...overrides,
   };
 }

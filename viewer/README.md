@@ -155,12 +155,16 @@ application.
 ## Dynamic preprocessing application
 
 Create one JSON descriptor per immutable run. Its fields are exact: `label`,
-`corpus`, `preprocessing`, and optional `candidate_evaluation`. Relative paths
-are resolved from the descriptor:
+`dataset_id`, `corpus`, `preprocessing`, and optional
+`candidate_evaluation`. `dataset_id` is the canonical dataset namespace for
+every `task_id` in the corpus. When candidate evaluation is present it must
+match the authenticated evaluation manifest. Relative paths are resolved from
+the descriptor:
 
 ```json
 {
   "label": "candidate",
+  "dataset_id": "evalplus/humanevalplus",
   "corpus": "../data/corpus.parquet",
   "preprocessing": "../data/preprocessing/candidate",
   "candidate_evaluation": "../data/evaluations/candidate"

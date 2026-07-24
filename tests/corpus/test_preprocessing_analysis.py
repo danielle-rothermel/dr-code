@@ -13,6 +13,7 @@ import pytest
 import dr_code.corpus.preprocessing_analysis as analysis_module
 from dr_code.corpus.preprocessing_artifacts import PROJECTED_ARTIFACT_SCHEMAS
 from dr_code.corpus.preprocessing_analysis import (
+    ANALYSIS_SCHEMA_VERSION,
     PreprocessingAnalysisArtifacts,
     TABLE_SCHEMAS,
     analyze_preprocessing_corpus,
@@ -28,6 +29,7 @@ def test_analysis_writes_compact_authenticated_artifacts(
     output = tmp_path / "analysis"
 
     artifacts = analyze_preprocessing_corpus(
+        dataset_id=descriptor.dataset_id,
         corpus_path=descriptor.corpus_path,
         run_dir=descriptor.preprocessing_manifest_path.parent,
         candidate_evaluation=descriptor.evaluation_root_path,
@@ -43,6 +45,20 @@ def test_analysis_writes_compact_authenticated_artifacts(
         expected_files
     )
     summary = json.loads(artifacts.summary_path.read_text(encoding="utf-8"))
+    assert summary["schema_version"] == ANALYSIS_SCHEMA_VERSION == 3
+    assert set(summary) == {"schema_version", "run", "counts"}
+    assert set(summary["run"]) == {
+        "run_id",
+        "label",
+        "dataset_id",
+        "corpus_sha256",
+        "preprocessing_manifest_sha256",
+        "preprocessing_definition_identity",
+        "candidate_evaluation_manifest_sha256",
+        "candidate_evaluation_generation_id",
+        "candidate_evaluation_pointer_sha256",
+        "completed_at",
+    }
     assert summary["counts"] == {
         "samples": 9,
         "final_candidates": 2,
@@ -52,27 +68,86 @@ def test_analysis_writes_compact_authenticated_artifacts(
     }
     assert "tables" not in summary
     manifest = json.loads(artifacts.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == ANALYSIS_SCHEMA_VERSION == 3
+    assert set(manifest) == {
+        "schema_version",
+        "complete",
+        "inputs",
+        "summary",
+        "tables",
+    }
     assert manifest["complete"] is True
-    assert set(manifest["tables"]) == set(TABLE_SCHEMAS)
+    assert set(manifest["inputs"]) == {
+        "dataset",
+        "corpus",
+        "preprocessing",
+        "candidate_evaluation",
+    }
+    assert set(manifest["inputs"]["dataset"]) == {"dataset_id"}
+    assert set(manifest["inputs"]["corpus"]) == {"sha256", "schema_hex"}
+    assert set(manifest["inputs"]["preprocessing"]) == {
+        "manifest_sha256",
+        "identity",
+        "schema_version",
+        "definition_identity",
+        "artifacts",
+    }
+    assert set(manifest["inputs"]["preprocessing"]["artifacts"]) == {
+        "results",
+        "candidates",
+        "step_facts",
+        "rejections",
+    }
+    assert set(manifest["inputs"]["candidate_evaluation"]) == {
+        "schema_version",
+        "generation_id",
+        "pointer_sha256",
+        "manifest_sha256",
+        "coordinates",
+    }
+    assert set(manifest["summary"]) == {"filename", "sha256"}
+    assert set(manifest["tables"]) == {
+        "outcomes",
+        "failures",
+        "candidate_multiplicity",
+        "candidate_origins",
+        "evaluation_outcomes",
+    }
     for name, schema in TABLE_SCHEMAS.items():
         parquet = pq.ParquetFile(artifacts.table_paths[name])
         assert parquet.schema_arrow.equals(schema)
+        assert set(manifest["tables"][name]) == {
+            "filename",
+            "rows",
+            "sha256",
+            "schema_hex",
+        }
         assert len(manifest["tables"][name]["sha256"]) == 64
 
 
 def test_analysis_is_deterministic_and_append_only(tmp_path: Path) -> None:
     descriptor = write_bundle(tmp_path / "bundle", with_evaluation=False)
     first = analyze_preprocessing_corpus(
+        dataset_id=descriptor.dataset_id,
         corpus_path=descriptor.corpus_path,
         run_dir=descriptor.preprocessing_manifest_path.parent,
         output_dir=tmp_path / "first",
     )
     second = analyze_preprocessing_corpus(
+        dataset_id=descriptor.dataset_id,
         corpus_path=descriptor.corpus_path,
         run_dir=descriptor.preprocessing_manifest_path.parent,
         output_dir=tmp_path / "second",
     )
 
+    first_manifest = json.loads(
+        first.manifest_path.read_text(encoding="utf-8")
+    )
+    assert set(first_manifest["inputs"]) == {
+        "dataset",
+        "corpus",
+        "preprocessing",
+    }
     assert first.summary_path.read_bytes() == second.summary_path.read_bytes()
     assert (
         first.manifest_path.read_bytes() == second.manifest_path.read_bytes()
@@ -84,10 +159,58 @@ def test_analysis_is_deterministic_and_append_only(tmp_path: Path) -> None:
         )
     with pytest.raises(FileExistsError):
         analyze_preprocessing_corpus(
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             run_dir=descriptor.preprocessing_manifest_path.parent,
             output_dir=first.output_dir,
         )
+
+
+def test_analysis_identity_includes_preprocessing_only_dataset(
+    tmp_path: Path,
+) -> None:
+    descriptor = write_bundle(
+        tmp_path / "bundle",
+        with_evaluation=False,
+    )
+    first = analyze_preprocessing_corpus(
+        dataset_id="dataset/one",
+        corpus_path=descriptor.corpus_path,
+        run_dir=descriptor.preprocessing_manifest_path.parent,
+        output_dir=tmp_path / "dataset-one",
+    )
+    second = analyze_preprocessing_corpus(
+        dataset_id="dataset/two",
+        corpus_path=descriptor.corpus_path,
+        run_dir=descriptor.preprocessing_manifest_path.parent,
+        output_dir=tmp_path / "dataset-two",
+    )
+    first_manifest = json.loads(
+        first.manifest_path.read_text(encoding="utf-8")
+    )
+    second_manifest = json.loads(
+        second.manifest_path.read_text(encoding="utf-8")
+    )
+    first_summary = json.loads(first.summary_path.read_text(encoding="utf-8"))
+    second_summary = json.loads(
+        second.summary_path.read_text(encoding="utf-8")
+    )
+
+    assert first_manifest["inputs"]["dataset"] == {"dataset_id": "dataset/one"}
+    assert second_manifest["inputs"]["dataset"] == {
+        "dataset_id": "dataset/two"
+    }
+    assert first_summary["run"]["dataset_id"] == "dataset/one"
+    assert second_summary["run"]["dataset_id"] == "dataset/two"
+    assert (
+        first.manifest_path.read_bytes() != second.manifest_path.read_bytes()
+    )
+    assert first.summary_path.read_bytes() != second.summary_path.read_bytes()
+    assert all(
+        first.table_paths[name].read_bytes()
+        == second.table_paths[name].read_bytes()
+        for name in TABLE_SCHEMAS
+    )
 
 
 def test_concurrent_analysis_publication_preserves_one_complete_output(
@@ -109,6 +232,7 @@ def test_concurrent_analysis_publication_preserves_one_complete_output(
     def publish(descriptor: RunDescriptor) -> PreprocessingAnalysisArtifacts:
         barrier.wait()
         return analyze_preprocessing_corpus(
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             run_dir=descriptor.preprocessing_manifest_path.parent,
             output_dir=destination,
@@ -192,6 +316,7 @@ def test_analysis_streams_batches_and_accepts_complete_zero_row_run(
         ),
     )
     artifacts = analyze_preprocessing_corpus(
+        dataset_id=descriptor.dataset_id,
         corpus_path=corpus_path,
         run_dir=run,
         output_dir=tmp_path / "analysis",
@@ -237,6 +362,7 @@ def test_analysis_holds_admitted_relations_through_publication(
 
     monkeypatch.setattr(analysis_module, "_summarize", replace_then_summarize)
     artifacts = analyze_preprocessing_corpus(
+        dataset_id=original.dataset_id,
         corpus_path=original.corpus_path,
         run_dir=original.preprocessing_manifest_path.parent,
         output_dir=tmp_path / "analysis",

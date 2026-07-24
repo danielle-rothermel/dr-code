@@ -15,6 +15,11 @@ The application provides three views:
 
 ## Run the complete local application
 
+Each descriptor includes a required `dataset_id` alongside `label`, `corpus`,
+`preprocessing`, and optional `candidate_evaluation`. For example,
+`"dataset_id": "evalplus/humanevalplus"` is independent of task IDs such as
+`"HumanEval/0"`.
+
 From the repository root, register one or more explicit run descriptors with the
 viewer command:
 

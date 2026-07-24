@@ -20,6 +20,9 @@ app = typer.Typer(
 
 @app.command()
 def run(
+    dataset_id: str = typer.Option(
+        ..., "--dataset-id", help="Canonical dataset identity."
+    ),
     corpus_path: Path = typer.Option(
         ..., "--corpus", exists=True, dir_okay=False
     ),
@@ -37,6 +40,7 @@ def run(
 ) -> None:
     """Validate and summarize one completed preprocessing run."""
     artifacts = analyze_preprocessing_corpus(
+        dataset_id=dataset_id,
         corpus_path=corpus_path,
         run_dir=run_dir,
         output_dir=output_dir,

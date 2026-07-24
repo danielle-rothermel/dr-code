@@ -40,10 +40,15 @@ from dr_code.viewer.domain import (
     RunNotFoundError,
     RunSummary,
     Tag,
+    TaskAnnotation,
+    TaskAnnotationProvenance,
+    TaskNotFoundError,
+    MachineTaskAnnotationWriteResult,
     Verdict,
     Waterfall,
     WaterfallStage,
     validate_sha256,
+    validate_task_identity,
 )
 
 
@@ -851,6 +856,79 @@ class ViewerAnalytics:
     def export_annotations(self) -> list[dict[str, object]]:
         return self._database.export_annotations()
 
+    def get_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+    ) -> TaskAnnotation | None:
+        self._validate_task_target(dataset_id, task_id, task_identity)
+        return self._database.get_task_annotation(
+            dataset_id,
+            task_id,
+            task_identity,
+        )
+
+    def put_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+        *,
+        category: str | None = None,
+        note: str | None = None,
+        tag_ids: Iterable[str] = (),
+    ) -> TaskAnnotation:
+        """Persist browser input as human state with cleared provenance."""
+        self._validate_task_target(dataset_id, task_id, task_identity)
+        return self._database.put_task_annotation(
+            dataset_id,
+            task_id,
+            task_identity,
+            category=category,
+            note=note,
+            tag_ids=tag_ids,
+        )
+
+    def put_machine_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+        *,
+        category: str | None,
+        note: str | None = None,
+        tag_ids: Iterable[str] = (),
+        provenance: TaskAnnotationProvenance,
+    ) -> MachineTaskAnnotationWriteResult:
+        """Expose the protected atomic path for internal machine producers."""
+        self._validate_task_target(dataset_id, task_id, task_identity)
+        return self._database.put_machine_task_annotation(
+            dataset_id,
+            task_id,
+            task_identity,
+            category=category,
+            note=note,
+            tag_ids=tag_ids,
+            provenance=provenance,
+        )
+
+    def delete_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+    ) -> bool:
+        self._validate_task_target(dataset_id, task_id, task_identity)
+        return self._database.delete_task_annotation(
+            dataset_id,
+            task_id,
+            task_identity,
+        )
+
+    def export_task_annotations(self) -> list[dict[str, object]]:
+        return self._database.export_task_annotations()
+
     @property
     def _connection(self) -> duckdb.DuckDBPyConnection:
         return self._database.connection
@@ -865,6 +943,7 @@ class ViewerAnalytics:
         return RunSummary(
             run_id=descriptor.run_id,
             label=descriptor.label,
+            dataset_id=descriptor.dataset_id,
             manifest_sha256=descriptor.preprocessing_manifest_sha256,
             corpus_sha256=descriptor.corpus_sha256,
             definition_id=descriptor.definition_id,
@@ -1070,8 +1149,25 @@ class ViewerAnalytics:
             if has_context_fields
             else {}
         )
+        task_id = context.get("task_id")
+        task_identity = (
+            self._database.task_identity_for_run(
+                descriptor.run_id,
+                descriptor.dataset_id,
+                task_id,
+            )
+            if descriptor.evaluation_coordinates is not None
+            and isinstance(task_id, str)
+            else None
+        )
         return ExampleDetail(
             sample_id=sample_id,
+            dataset_id=(
+                descriptor.dataset_id
+                if descriptor.evaluation_coordinates is not None
+                else None
+            ),
+            task_identity=task_identity,
             corpus_sha256=descriptor.corpus_sha256,
             decoder_output_sha256=decoder_output_sha256,
             context=context,
@@ -1140,6 +1236,10 @@ class ViewerAnalytics:
             raise IncompatibleRunsError(
                 "runs use different corpus fingerprints"
             )
+        if baseline.dataset_id != candidate.dataset_id:
+            raise IncompatibleRunsError(
+                "runs use different dataset identities"
+            )
         if baseline.has_evaluation != candidate.has_evaluation:
             raise IncompatibleRunsError(
                 "runs expose different evaluation waterfall stages"
@@ -1201,6 +1301,24 @@ class ViewerAnalytics:
         raise InvalidQueryError(
             "annotation sample and decoder output are not present in a "
             "registered run for this corpus"
+        )
+
+    def _validate_task_target(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+    ) -> None:
+        identity = validate_task_identity(
+            dataset_id,
+            task_id,
+            task_identity,
+        )
+        if self._database.task_is_registered(identity):
+            return
+        raise TaskNotFoundError(
+            "task identity is not present in any registered candidate "
+            "evaluation"
         )
 
 

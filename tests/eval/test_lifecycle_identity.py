@@ -98,11 +98,11 @@ def _components():
 def test_configs_have_stable_full_sha256_identities() -> None:
     expected = (
         "df81e5ad266c408bfc17ca576ce0e5febdb91b2e02e6ee4c298b1168936b641f",
-        "c3c853046ccd3f3f9c3d0e3a5abeebd92c20e13af39c49e459ca94d963b2f2da",
-        "3f8d24dcfc75388652fa2b2dfae5d06c970c7982df86fd8048f245990735a9e0",
-        "31f6d994bb6abce53e50344cf17ffae7d7c2429b8f943f4523578ce2147495eb",
+        "fe5e257c46f5a1273d022fbcc3308b91100764cc7c7b1d1cf6bf293fa136f82b",
+        "169952a574f5597e1e2ddb1f013c22f8aced5e4d7ae9efcc466eb5a3bc5763fd",
+        "eed70e9dcd9de16c1b6c6ffb863b515432a8eee665af3ca709cd7d6a2dc78a73",
         "373b234c512b09f897fc42107cb7f6d7b848c5f6a48e4dc70d0ba39727e3522b",
-        "25a73672a00ba9da7e05b053950027419bcea7f3e5f99f07347c3285821cda03",
+        "3cc0b07a13c6eacd4869e93ade2b6f9be98d1385c031b445a3753b2118b9c517",
     )
     actual = tuple(item.config_identity_hash for item in _components())
     assert actual == expected
@@ -116,7 +116,7 @@ def test_resolved_step_and_operator_versions_are_materialized() -> None:
             "return_all",
             "return_all",
             "1",
-            "fc170a4bb5d18650f78fced0674f5ad90c7eb0e25da5e2e0de5337c796fee8e3",
+            "6e7964faeb8510608818714d5e6f85c28e2b4445ee50ca03fcb08a144e52693e",
         ),
     )
     assert metric.resolved_operator_versions == (
@@ -124,7 +124,7 @@ def test_resolved_step_and_operator_versions_are_materialized() -> None:
             metric.questions[0].identity_hash(),
             "code_leakage",
             "2",
-            "afbe0990f1ae71893b082f31953dd9a451dd658d45c551b120f17723c2a78c33",
+            "18433d2398e963be5d0d90a3432ee6321b4a2acdd1eb01c4185cc1c60ce98ce3",
         ),
     )
     assert procedure.preprocessing_config_hash == (

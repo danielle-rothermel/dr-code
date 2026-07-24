@@ -6,7 +6,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
+body { margin: 0; min-width: 0; }
 button, input, select, textarea { color: inherit; font: inherit; }
 button, select, input[type="checkbox"], input[type="radio"] { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
@@ -155,6 +155,14 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .review-diagnostics, .review-candidates { border-top: 1px solid #ddd3c5; margin-top: 22px; padding-top: 18px; }
 .annotation-rail { background: #f2ede4; border-left: 1px solid #d4cabb; min-width: 0; padding: 22px; }
 .annotation-editor { min-width: 0; }
+.annotation-editor > input { min-width: 0; width: 100%; }
+.task-annotation-editor { border-top: 1px solid #d4cabb; margin-top: 24px; padding-top: 24px; }
+.task-annotation-identity, .machine-annotation-notice { color: #776d5f; font-size: .82rem; line-height: 1.45; }
+.task-annotation-identity { overflow-wrap: anywhere; }
+.page-task-annotations { background: #f2ede4; border: 1px solid #d4cabb; margin-bottom: 20px; padding: 22px; }
+.page-task-annotations > h3 { font-family: Georgia, serif; font-weight: 500; margin-top: 0; }
+.page-task-annotation-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.page-task-annotation-grid .task-annotation-editor { margin-top: 0; }
 .annotation-editor fieldset { border: 0; margin: 22px 0; padding: 0; }
 .annotation-editor legend { font-size: .72rem; font-weight: 800; letter-spacing: .08em; margin-bottom: 8px; text-transform: uppercase; }
 .verdict-options { display: flex; gap: 12px; }
@@ -187,8 +195,12 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 }
 
 @media (max-width: 620px) {
+  main { padding-left: 16px; padding-right: 16px; }
+  .surface-heading { align-items: start; flex-direction: column; }
   .review-toolbar { grid-template-columns: 1fr; }
   .metadata-field, .metadata-field--compact, .metadata-field--half { grid-column: 1 / -1; }
+  .page-task-annotations { padding: 16px; }
+  .page-task-annotation-grid { grid-template-columns: minmax(0, 1fr); }
   .surface { padding: 20px; }
   .review-example-main, .annotation-rail { padding: 18px; }
   .create-tag > div { align-items: stretch; flex-direction: column; }

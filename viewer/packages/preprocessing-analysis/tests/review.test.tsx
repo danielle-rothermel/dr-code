@@ -604,4 +604,202 @@ describe("Review", () => {
     window.dispatchEvent(cleanEvent);
     expect(cleanEvent.defaultPrevented).toBe(false);
   });
+
+  it("mounts one authoritative task editor for repeated task identities", async () => {
+    const repeated = [
+      example("sample-1", {
+        context: { task_id: "HumanEval/0" },
+        dataset_id: "evalplus/humanevalplus",
+      }),
+      example("sample-2", {
+        context: { task_id: "HumanEval/0" },
+        dataset_id: "evalplus/humanevalplus",
+      }),
+    ];
+    const getTaskAnnotation = vi.fn().mockResolvedValue(null);
+    const putTaskAnnotation = vi.fn(async (identity, input) => ({
+      category: input.category,
+      identity,
+      note: input.note,
+      origin: "human" as const,
+      provenance: null,
+      tags: [],
+    }));
+    const api = fakeApi({
+      getReviewExamples: vi.fn().mockResolvedValue({
+        items: repeated,
+        limit: 10,
+        offset: 0,
+        total: 2,
+      }),
+      getTaskAnnotation,
+      putTaskAnnotation,
+    });
+    render(
+      <Review
+        api={api}
+        onTagCreated={vi.fn()}
+        runId="baseline"
+        tags={[]}
+      />,
+    );
+
+    await findCard("sample-1");
+    expect(getCard("sample-2")).toBeTruthy();
+    await waitFor(() => expect(getTaskAnnotation).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByRole("heading", { name: "Task annotation" }))
+      .toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText("Task note"), {
+      target: { value: "one shared draft" },
+    });
+    fireEvent.blur(screen.getByLabelText("Task note"));
+    await waitFor(() => expect(putTaskAnnotation).toHaveBeenCalledTimes(1));
+    expect(putTaskAnnotation).toHaveBeenCalledWith(
+      {
+        dataset_id: "evalplus/humanevalplus",
+        task_id: "HumanEval/0",
+        task_identity: "a".repeat(64),
+      },
+      expect.objectContaining({ note: "one shared draft" }),
+    );
+  });
+
+  it("keeps changed task content in separate task editors", async () => {
+    const getTaskAnnotation = vi.fn().mockResolvedValue(null);
+    const api = fakeApi({
+      getReviewExamples: vi.fn().mockResolvedValue({
+        items: [
+          example("sample-1", {
+            context: { task_id: "HumanEval/0" },
+            task_identity: "a".repeat(64),
+          }),
+          example("sample-2", {
+            context: { task_id: "HumanEval/0" },
+            task_identity: "b".repeat(64),
+          }),
+        ],
+        limit: 10,
+        offset: 0,
+        total: 2,
+      }),
+      getTaskAnnotation,
+    });
+
+    render(
+      <Review
+        api={api}
+        onTagCreated={vi.fn()}
+        runId="baseline"
+        tags={[]}
+      />,
+    );
+
+    await waitFor(() => expect(getTaskAnnotation).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByRole("heading", { name: "Task annotation" }))
+      .toHaveLength(2);
+    expect(
+      getTaskAnnotation.mock.calls.map(([identity]) => identity.task_identity),
+    ).toEqual(["a".repeat(64), "b".repeat(64)]);
+  });
+
+  it("does not offer task annotations without authenticated task identity", async () => {
+    const getTaskAnnotation = vi.fn().mockResolvedValue(null);
+    const api = fakeApi({
+      getReviewExamples: vi.fn().mockResolvedValue({
+        items: [
+          example("sample-1", {
+            context: { task_id: "HumanEval/0" },
+            task_identity: null,
+          }),
+        ],
+        limit: 10,
+        offset: 0,
+        total: 1,
+      }),
+      getTaskAnnotation,
+    });
+
+    render(
+      <Review
+        api={api}
+        onTagCreated={vi.fn()}
+        runId="baseline"
+        tags={[]}
+      />,
+    );
+
+    await findCard("sample-1");
+    expect(
+      screen.queryByRole("heading", { name: "Task annotation" }),
+    ).toBeNull();
+    expect(getTaskAnnotation).not.toHaveBeenCalled();
+  });
+
+  it("flushes every unique page task editor on navigation and unmount", async () => {
+    const firstPage = [
+      example("sample-1", {
+        context: { task_id: "HumanEval/0" },
+        dataset_id: "evalplus/humanevalplus",
+      }),
+      example("sample-2", {
+        context: { task_id: "HumanEval/1" },
+        dataset_id: "evalplus/humanevalplus",
+      }),
+    ];
+    const putTaskAnnotation = vi.fn(async (identity, input) => ({
+      category: input.category,
+      identity,
+      note: input.note,
+      origin: "human" as const,
+      provenance: null,
+      tags: [],
+    }));
+    const getReviewExamples = vi.fn(async (_runId, query) => ({
+      items: query.offset === 0 ? firstPage : [
+        example("sample-11", {
+          context: { task_id: "HumanEval/2" },
+          dataset_id: "evalplus/humanevalplus",
+        }),
+      ],
+      limit: query.limit,
+      offset: query.offset,
+      total: 11,
+    }));
+    const api = fakeApi({ getReviewExamples, putTaskAnnotation });
+    const view = render(
+      <Review
+        api={api}
+        onTagCreated={vi.fn()}
+        runId="baseline"
+        tags={[]}
+      />,
+    );
+    await waitFor(() => expect(screen.getAllByLabelText("Task note"))
+      .toHaveLength(2));
+    for (const [index, input] of screen.getAllByLabelText("Task note").entries()) {
+      fireEvent.change(input, { target: { value: `draft-${index}` } });
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await findCard("sample-11");
+    expect(putTaskAnnotation).toHaveBeenCalledTimes(2);
+    expect(
+      new Set(
+        putTaskAnnotation.mock.calls.map(([identity]) => identity.task_id),
+      ),
+    ).toEqual(new Set(["HumanEval/0", "HumanEval/1"]));
+
+    await waitFor(() => {
+      expect(
+        (screen.getAllByLabelText("Task note")[0] as HTMLTextAreaElement)
+          .disabled,
+      ).toBe(false);
+    });
+    fireEvent.change(screen.getAllByLabelText("Task note")[0], {
+      target: { value: "unmount draft" },
+    });
+    view.unmount();
+    await waitFor(() => expect(putTaskAnnotation).toHaveBeenCalledTimes(3));
+  });
 });

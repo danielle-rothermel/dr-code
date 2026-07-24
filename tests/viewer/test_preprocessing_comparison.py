@@ -16,6 +16,7 @@ import pytest
 
 import dr_code.corpus.preprocessing_comparison as comparison_module
 from dr_code.corpus.preprocessing_comparison import (
+    COMPARISON_SCHEMA_VERSION,
     PreprocessingComparisonArtifacts,
     PreprocessingComparisonError,
     compare_preprocessing_runs,
@@ -36,12 +37,14 @@ def test_comparison_is_deterministic_and_schema_pinned(tmp_path: Path) -> None:
         no_code_causes=("changed", "alternate", None),
     )
     first = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
         output_dir=tmp_path / "comparison-one",
     )
     second = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -60,11 +63,171 @@ def test_comparison_is_deterministic_and_schema_pinned(tmp_path: Path) -> None:
     changed = next(row for row in transitions if row["sample_id"] == "no-code")
     assert changed["semantic_result_changed"] is True
     assert changed["changed_fields"] == ["cause"]
+    summary = json.loads(first.summary_path.read_text(encoding="utf-8"))
+    assert summary["schema_version"] == COMPARISON_SCHEMA_VERSION == 2
+    assert set(summary) == {
+        "schema_version",
+        "dataset_id",
+        "corpus_rows",
+        "sample_outcome_transitions",
+        "candidate_changes",
+        "provenance_path_deltas",
+        "evaluation",
+        "reconciliation",
+    }
+    assert set(summary["sample_outcome_transitions"]) == {
+        "identity_rows",
+        "changed_identity_rows",
+        "by_change",
+        "output_identity_changed_count",
+        "outcome_changed_count",
+        "semantic_result_changed_count",
+        "transitions",
+    }
+    assert all(
+        set(transition) == {"before_outcome", "after_outcome", "count"}
+        for transition in summary["sample_outcome_transitions"]["transitions"]
+    )
+    assert set(summary["candidate_changes"]) == {
+        "identity_rows",
+        "changed_identity_rows",
+        "by_change",
+        "before_count",
+        "after_count",
+        "count_delta",
+    }
+    assert set(summary["provenance_path_deltas"]) == {
+        "identity_rows",
+        "changed_identity_rows",
+        "by_change",
+        "before_count",
+        "after_count",
+        "net_count_delta",
+    }
+    assert set(summary["evaluation"]) == {
+        "included",
+        "membership_changes",
+        "result_changes",
+        "coordinates",
+    }
+    assert set(summary["evaluation"]["membership_changes"]) == {
+        "identity_rows",
+        "changed_identity_rows",
+        "by_change",
+        "before_count",
+        "after_count",
+        "count_delta",
+    }
+    assert set(summary["evaluation"]["result_changes"]) == {
+        "identity_rows",
+        "changed_identity_rows",
+        "by_change",
+    }
+    assert summary["evaluation"]["coordinates"] is None
+    assert set(summary["reconciliation"]) == {
+        "sample_identity_rows",
+        "sample_rows_match_corpus",
+        "candidate_before_count",
+        "candidate_after_count",
+        "provenance_before_count",
+        "provenance_after_count",
+        "evaluation_membership_before_count",
+        "evaluation_membership_after_count",
+        "evaluation_result_identity_rows",
+    }
     manifest = json.loads(first.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == COMPARISON_SCHEMA_VERSION == 2
+    assert set(manifest) == {
+        "schema_version",
+        "complete",
+        "corpus_sha256",
+        "corpus_rows",
+        "before",
+        "after",
+        "relations",
+        "summary",
+    }
     assert manifest["complete"] is True
+    for run in (manifest["before"], manifest["after"]):
+        assert set(run) == {
+            "run_id",
+            "dataset_id",
+            "preprocessing_schema_version",
+            "preprocessing_manifest_sha256",
+            "artifact_sha256",
+            "evaluation_manifest_sha256",
+        }
+        assert set(run["artifact_sha256"]) == {
+            "results",
+            "candidates",
+            "step_facts",
+            "rejections",
+        }
+    assert set(manifest["relations"]) == {
+        "sample_outcome_transitions",
+        "candidate_changes",
+        "provenance_path_deltas",
+        "evaluation_membership_changes",
+        "evaluation_result_changes",
+    }
     assert all(
         {"filename", "row_count", "sha256", "schema"} == set(coordinates)
         for coordinates in manifest["relations"].values()
+    )
+    assert set(manifest["summary"]) == {"filename", "sha256"}
+
+
+def test_comparison_identity_includes_preprocessing_only_dataset(
+    tmp_path: Path,
+) -> None:
+    before = write_bundle(
+        tmp_path / "before", run_id="before", with_evaluation=False
+    )
+    after = write_bundle(
+        tmp_path / "after",
+        run_id="after",
+        corpus_path=before.corpus_path,
+        with_evaluation=False,
+    )
+    first = compare_preprocessing_runs(
+        dataset_id="dataset/one",
+        corpus_path=before.corpus_path,
+        before_run=before.preprocessing_manifest_path.parent,
+        after_run=after.preprocessing_manifest_path.parent,
+        output_dir=tmp_path / "dataset-one",
+    )
+    second = compare_preprocessing_runs(
+        dataset_id="dataset/two",
+        corpus_path=before.corpus_path,
+        before_run=before.preprocessing_manifest_path.parent,
+        after_run=after.preprocessing_manifest_path.parent,
+        output_dir=tmp_path / "dataset-two",
+    )
+    first_manifest = json.loads(
+        first.manifest_path.read_text(encoding="utf-8")
+    )
+    second_manifest = json.loads(
+        second.manifest_path.read_text(encoding="utf-8")
+    )
+    first_summary = json.loads(first.summary_path.read_text(encoding="utf-8"))
+    second_summary = json.loads(
+        second.summary_path.read_text(encoding="utf-8")
+    )
+
+    assert first_manifest["before"]["dataset_id"] == "dataset/one"
+    assert first_manifest["after"]["dataset_id"] == "dataset/one"
+    assert second_manifest["before"]["dataset_id"] == "dataset/two"
+    assert second_manifest["after"]["dataset_id"] == "dataset/two"
+    assert first_summary["dataset_id"] == "dataset/one"
+    assert second_summary["dataset_id"] == "dataset/two"
+    assert (
+        first.manifest_path.read_bytes() != second.manifest_path.read_bytes()
+    )
+    assert first.summary_path.read_bytes() != second.summary_path.read_bytes()
+    assert all(
+        first.relation_paths[name].read_bytes()
+        == second.relation_paths[name].read_bytes()
+        for name in first.relation_paths
     )
 
 
@@ -79,6 +242,7 @@ def test_comparison_includes_optional_evaluation_relations(
     )
 
     artifacts = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -131,6 +295,7 @@ def test_comparison_holds_admitted_relations_through_publication(
         comparison_module, "_comparison_store", replace_then_open
     )
     artifacts = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -184,6 +349,7 @@ def test_comparison_spills_and_streams_many_small_batches(
         )
 
     artifacts = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -353,6 +519,7 @@ def test_comparison_refuses_existing_output_and_one_sided_evaluation(
 
     with pytest.raises(FileExistsError):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -362,6 +529,7 @@ def test_comparison_refuses_existing_output_and_one_sided_evaluation(
         PreprocessingComparisonError, match="supplied together"
     ):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -390,6 +558,7 @@ def test_comparison_rejects_different_corpora(tmp_path: Path) -> None:
         PreprocessingComparisonError, match="fingerprint mismatch"
     ):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -432,6 +601,7 @@ def test_comparison_rejects_source_changed_under_unchanged_candidate_id(
         match="candidate_id is not content-derived",
     ):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -467,6 +637,7 @@ def test_concurrent_comparison_publication_preserves_one_complete_output(
     ) -> PreprocessingComparisonArtifacts:
         barrier.wait()
         return compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,

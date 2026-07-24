@@ -150,6 +150,8 @@ def write_bundle(
     root: Path,
     *,
     run_id: str = "fixture-run",
+    dataset_id: str = "fixture",
+    task_namespace: str = "Task",
     corpus_path: Path | None = None,
     with_evaluation: bool = True,
     no_code_causes: tuple[str | None, str | None, str | None] = (
@@ -161,7 +163,16 @@ def write_bundle(
     root.mkdir()
     corpus = corpus_path or root / "corpus.parquet"
     if corpus_path is None:
-        _write(corpus, CORPUS_SCHEMA, CORPUS_ROWS)
+        corpus_rows = [
+            (
+                sample_id,
+                f"{task_namespace}/{task_id.rsplit('/', 1)[1]}",
+                source_kind,
+                decoder_output,
+            )
+            for sample_id, task_id, source_kind, decoder_output in CORPUS_ROWS
+        ]
+        _write(corpus, CORPUS_SCHEMA, corpus_rows)
     run = root / "run"
     run.mkdir()
 
@@ -254,21 +265,23 @@ def write_bundle(
             _membership(
                 "pass",
                 PASS_CANDIDATE_ID,
-                "Task/5",
-                _evaluation_key("Task/5", PASS_SOURCE),
+                f"{task_namespace}/5",
+                _evaluation_key(f"{task_namespace}/5", PASS_SOURCE),
                 PASS_SOURCE,
             ),
             _membership(
                 "fail",
                 FAIL_CANDIDATE_ID,
-                "Task/6",
-                _evaluation_key("Task/6", FAIL_SOURCE),
+                f"{task_namespace}/6",
+                _evaluation_key(f"{task_namespace}/6", FAIL_SOURCE),
                 FAIL_SOURCE,
             ),
         ]
         evaluation_results = [
-            _evaluation_result("Task/5", PASS_SOURCE, "passed"),
-            _evaluation_result("Task/6", FAIL_SOURCE, "tests_failed"),
+            _evaluation_result(f"{task_namespace}/5", PASS_SOURCE, "passed"),
+            _evaluation_result(
+                f"{task_namespace}/6", FAIL_SOURCE, "tests_failed"
+            ),
         ]
         preprocessing_coordinates = {
             "identity": preprocessing_run_identity(manifest),
@@ -289,7 +302,7 @@ def write_bundle(
             "runner_identity": RUNNER_IDENTITY,
             "runtime_identity": RUNTIME_IDENTITY,
             "dataset": {
-                "dataset_id": "fixture",
+                "dataset_id": dataset_id,
                 "split": "test",
                 "hf_revision": "fixture",
             },
@@ -362,6 +375,7 @@ def write_bundle(
         switch_current(evaluation, generation)
     return RunDescriptor.from_paths(
         label=run_id,
+        dataset_id=dataset_id,
         corpus_path=corpus,
         preprocessing=run,
         candidate_evaluation=evaluation,
