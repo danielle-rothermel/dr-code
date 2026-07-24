@@ -122,23 +122,27 @@ def register(app: typer.Typer) -> None:
         try:
             pi_lane = PiLane.for_lane(lane, model=model)
         except ValueError as error:
-            raise typer.BadParameter(str(error), param_hint="--lane") from error
+            raise typer.BadParameter(
+                str(error), param_hint="--lane"
+            ) from error
 
         # Import here to keep the CLI import light and match viewer wiring.
-        from dr_code.viewer.cli import build_service
+        from dr_code.viewer.analytics import ViewerAnalytics
+        from dr_code.viewer.database import ViewerDatabase
+        from dr_code.viewer.domain import RunDescriptor
 
         try:
-            service = build_service(
-                [(label, descriptor_path.resolve())], database_path
+            run_descriptor = RunDescriptor.from_file(
+                descriptor_path.resolve(), label=label
+            )
+            analytics = ViewerAnalytics(
+                ViewerDatabase(database_path), [run_descriptor]
             )
         except (OSError, ValueError, duckdb.Error) as error:
             raise typer.BadParameter(str(error), param_hint="--run") from error
 
-        descriptor = service.list_runs()[0]
-        run_descriptor = service._runs[descriptor.run_id]  # noqa: SLF001
-
         summary = run_classification(
-            service,
+            analytics,
             run_descriptor,
             pi_lane,
             detail_path=detail_path,
