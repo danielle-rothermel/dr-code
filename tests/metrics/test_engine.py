@@ -32,11 +32,16 @@ from dr_code.trace import (
     TraceProducer,
     WiringError,
     deserialize_trace,
-    external_trace,
     serialize_trace,
 )
 
-from metrics.helpers import code_test_trace, raising_runner
+from metrics.helpers import (
+    code_test_trace,
+    evaluation_procedure,
+    procedure_trace,
+    raising_runner,
+    external_trace,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -45,17 +50,18 @@ from metrics.helpers import code_test_trace, raising_runner
 
 
 def _definition(questions) -> object:
-    from dr_code.metrics import MetricsDefinition
+    from dr_code.eval import MetricExtractionDefinition
 
-    return MetricsDefinition(
+    return MetricExtractionDefinition(
         definition_id="def", version="1", questions=tuple(questions)
     )
 
 
 def _q(metric_name: str, on: str = "input", **settings) -> object:
-    from dr_code.metrics import MetricName, MetricQuestion
+    from dr_code.eval import MetricQuestionBinding
+    from dr_code.metrics import MetricName
 
-    return MetricQuestion(
+    return MetricQuestionBinding(
         metric=MetricName(metric_name), on=on, settings=settings
     )
 
@@ -93,14 +99,65 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
 
 def test_invalid_operator_settings_is_a_wiring_error(counting_runner) -> None:
     """compressed_length requires a valid compression config; bad settings wire."""
+    with pytest.raises(ValueError):
+        _definition(
+            [
+                _q(
+                    "compressed_length",
+                    compression={"method": "gzip", "level": 99},
+                )
+            ]
+        )
+    assert counting_runner.call_count == 0
+
+
+def test_stale_resolved_operator_version_is_rejected_before_execution(
+    counting_runner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.metrics import MetricName, extract_metrics
+    from dr_code.metrics.registry import REGISTRY
+
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
-    definition = _definition(
-        [_q("compressed_length", compression={"method": "gzip", "level": 99})]
-    )  # gzip level out of range
-    with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_subprocess=counting_runner)
+    definition = _definition([_q("text_stats")])
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+    monkeypatch.setattr(operator_cls, "VERSION", "new-live-version")
+
+    with pytest.raises(ValueError, match="stale resolved operator versions"):
+        extract_metrics(
+            trace,
+            metric_extraction=metric_extraction,
+            evaluation_procedure=procedure,
+            run_in_subprocess=counting_runner,
+        )
+    assert counting_runner.call_count == 0
+
+
+def test_stale_resolved_operator_count_is_rejected_before_execution(
+    counting_runner,
+) -> None:
+    from dr_code.metrics import extract_metrics
+
+    trace = external_trace(
+        {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
+    )
+    definition = _definition([_q("text_stats")])
+    metric_extraction = definition.materialize().model_copy(
+        update={"resolved_operator_versions": ()}
+    )
+    procedure = evaluation_procedure(definition, metric_extraction)
+
+    with pytest.raises(ValueError, match="stale resolved operator versions"):
+        extract_metrics(
+            trace,
+            metric_extraction=metric_extraction,
+            evaluation_procedure=procedure,
+            run_in_subprocess=counting_runner,
+        )
     assert counting_runner.call_count == 0
 
 
@@ -160,11 +217,51 @@ def test_one_record_per_question_in_declaration_order() -> None:
     )
     records = _extract(definition, trace)
     assert len(records) == 3
-    assert [r.metric.value for r in records] == [
+    assert [r.question for r in records] == [
         "text_stats",
         "code_leakage",
         "ast_stats",
     ]
+
+
+def test_same_metric_and_key_with_different_settings_have_distinct_identity() -> (
+    None
+):
+    questions = (
+        _q(
+            "compressed_length",
+            compression={"method": "gzip", "level": 1},
+        ),
+        _q(
+            "compressed_length",
+            compression={"method": "gzip", "level": 9},
+        ),
+    )
+    definition = _definition(questions)
+    records = _extract(
+        definition,
+        external_trace(
+            {
+                "input": TextArtifact(text="identity-sensitive"),
+                "output": TextArtifact(text="identity-sensitive"),
+            }
+        ),
+    )
+
+    assert [record.question for record in records] == [
+        "compressed_length",
+        "compressed_length",
+    ]
+    concrete_questions = definition.materialize().questions
+    assert [record.question_identity_hash for record in records] == [
+        question.identity_hash() for question in concrete_questions
+    ]
+    assert len({record.question_identity_hash for record in records}) == 2
+    assert all(
+        fact.lineage.question_identity_hash == record.question_identity_hash
+        for record in records
+        for fact in record.facts
+    )
 
 
 def test_no_questions_yields_no_records() -> None:
@@ -190,9 +287,9 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
     assert len(records) == 2
     for record in records:
         assert record.status.value == "not_applicable"
-        assert record.absence_failed_step == "extract"
-        assert record.absence_cause == "no code"
-        assert record.values == {}
+        assert record.absence_mode.value == "preprocessing_failure"
+        assert record.absence_cause == "extract: no code"
+        assert record.fact_values() == {}
 
 
 def test_absent_auxiliary_yields_not_applicable(task) -> None:
@@ -210,7 +307,8 @@ def test_absent_auxiliary_yields_not_applicable(task) -> None:
     definition = _definition([_q("code_test", on="input")])
     record = _extract(definition, trace)[0]
     assert record.status.value == "not_applicable"
-    assert record.absence_failed_step == "load"
+    assert record.absence_mode.value == "preprocessing_failure"
+    assert record.absence_cause == "load: missing task"
 
 
 # ===========================================================================
@@ -245,7 +343,39 @@ def test_operator_exception_becomes_an_operator_failure_record(
     assert record.status.value == "operator_failure"
     assert record.failure_type == "ValueError"
     assert record.failure_message == "operator bug"
-    assert record.metric is MetricName.TEXT_STATS
+    assert record.question == MetricName.TEXT_STATS
+
+
+def test_operator_exception_with_empty_message_is_a_failure_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.registry import REGISTRY
+
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+
+    def boom(self, value, aux, ctx):  # noqa: ANN001
+        raise ValueError
+
+    monkeypatch.setattr(operator_cls, "compute", boom)
+    definition = _definition([_q("text_stats")])
+    record = _extract(
+        definition,
+        external_trace(
+            {
+                "input": TextArtifact(text="hi"),
+                "output": TextArtifact(text="hi"),
+            }
+        ),
+    )[0]
+
+    assert record.status.value == "operator_failure"
+    assert record.failure_type == "ValueError"
+    assert record.failure_message == ""
+    assert (
+        record.question_identity_hash
+        == definition.questions[0].identity_hash()
+    )
 
 
 def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> (
@@ -269,8 +399,8 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
     definition = _definition([_q("ast_stats", on="input")])
     record = _extract(definition, trace)[0]
     assert record.status.value == "operator_failure"
-    assert record.metric is MetricName.AST_STATS
-    assert record.values == {}
+    assert record.question == MetricName.AST_STATS
+    assert record.fact_values() == {}
 
 
 # ===========================================================================
@@ -328,7 +458,10 @@ def test_subprocess_timeout_is_candidate_data_not_infrastructure(task) -> None:
         run_in_subprocess=raising_runner(SubprocessTimeoutError("timed out")),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["timeout_count"] == record.values["total_cases"]
+    assert (
+        record.fact_values()["timeout_count"]
+        == record.fact_values()["total_cases"]
+    )
 
 
 def test_subprocess_output_limit_is_candidate_data_not_infrastructure(
@@ -346,8 +479,11 @@ def test_subprocess_output_limit_is_candidate_data_not_infrastructure(
         ),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["error_count"] == record.values["total_cases"]
-    assert record.values["timeout_count"] == 0
+    assert (
+        record.fact_values()["error_count"]
+        == record.fact_values()["total_cases"]
+    )
+    assert record.fact_values()["timeout_count"] == 0
 
 
 # ===========================================================================
@@ -474,7 +610,11 @@ def test_external_trace_matches_preprocessing_producer_trace() -> None:
     preprocessing = Trace(
         values=values,
         producer=TraceProducer(
-            producer_id="pre", version="v1", definition_hash="abc"
+            producer_id="pre",
+            version="v1",
+            definition_hash="a" * 64,
+            preprocessing_config_hash="b" * 64,
+            implementation_hash="c" * 64,
         ),
     )
     definition = _definition(
@@ -483,11 +623,11 @@ def test_external_trace_matches_preprocessing_producer_trace() -> None:
 
     def answer(record):
         return (
-            record.metric,
-            record.metric_version,
+            record.question,
+            record.facts[0].lineage.operator_version,
             record.on_key,
             record.status,
-            tuple(sorted(record.values.items())),
+            tuple(sorted(record.fact_values().items())),
         )
 
     assert [answer(r) for r in _extract(definition, external)] == [
@@ -504,7 +644,7 @@ def test_code_test_record_values_exclude_timing(task, local_runner) -> None:
         [_q("code_test", on="input", timeout_seconds=2.0)]
     )
     record = _extract(definition, trace, run_in_subprocess=local_runner)[0]
-    assert "elapsed_seconds" not in record.values
+    assert "elapsed_seconds" not in record.fact_values()
 
 
 # ---------------------------------------------------------------------------
@@ -515,10 +655,24 @@ def test_code_test_record_values_exclude_timing(task, local_runner) -> None:
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
-    return extract_metrics(definition, trace, **kwargs)
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    return extract_metrics(
+        procedure_trace(trace, procedure),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
+        **kwargs,
+    )
 
 
 def _extract_batch(definition, traces, **kwargs):
     from dr_code.metrics import extract_metrics_batch
 
-    return extract_metrics_batch(definition, traces, **kwargs)
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    return extract_metrics_batch(
+        tuple(procedure_trace(trace, procedure) for trace in traces),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
+        **kwargs,
+    )

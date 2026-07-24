@@ -3,8 +3,12 @@ from __future__ import annotations
 import pytest
 
 from dr_code.code_analysis import validate_python_source
-from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.import_inference import infer_necessary_imports
+from dr_code.preprocessing import (
+    BEST_EFFORT_V2_DEFINITION,
+    run_preprocessing,
+)
+from dr_code.trace import CodeArtifact, TextArtifact
 
 
 @pytest.mark.parametrize(
@@ -158,9 +162,14 @@ def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     assert "import random" not in result
 
 
-def test_apply_cleaning_infers_imports_for_compilable_candidate() -> None:
+def test_canonical_preprocessing_infers_imports_for_compilable_candidate() -> (
+    None
+):
     source = "```python\ndef f(x):\n    return np.array([x])\n```"
-    candidates = apply_cleaning(source, apply_dedent=True)
-    assert candidates
-    assert candidates[0].startswith("import numpy as np")
-    assert validate_python_source(candidates[0]).compile_ok
+    output = run_preprocessing(
+        BEST_EFFORT_V2_DEFINITION.materialize(),
+        TextArtifact(text=source),
+    ).value("output")
+    assert isinstance(output, CodeArtifact)
+    assert output.source.startswith("import numpy as np")
+    assert validate_python_source(output.source).compile_ok

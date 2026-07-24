@@ -11,7 +11,6 @@ from dr_code.metrics.engine.execution import (
 )
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.records import MetricScalar
 from dr_code.models import FrozenModel
 from dr_code.trace import (
     Artifact,
@@ -31,7 +30,7 @@ SettingsT = TypeVar("SettingsT", bound=OperatorSettings)
 class OperatorResult(FrozenModel):
     """Typed operator output; flattened to record values at the record boundary."""
 
-    def to_values(self) -> dict[str, MetricScalar]:
+    def to_values(self) -> dict[str, float | int | str | bool | None]:
         return self.model_dump(mode="python")
 
 
@@ -50,6 +49,7 @@ class MetricOperator(Generic[SettingsT]):
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     ACCEPTED_INPUTS: ClassVar[frozenset[ArtifactKind]]
+    FACT_UNITS: ClassVar[Mapping[str, str]]
     Settings: ClassVar[type[OperatorSettings]] = OperatorSettings
 
     def __init__(self, settings: SettingsT) -> None:
@@ -59,8 +59,25 @@ class MetricOperator(Generic[SettingsT]):
     def accepted_input_kinds(cls) -> frozenset[ArtifactKind]:
         return getattr(cls, "ACCEPTED_INPUTS", frozenset({cls.INPUT}))
 
+    @classmethod
+    def fact_unit(cls, name: str) -> str:
+        """Return the explicit unit for one result field."""
+
+        try:
+            return cls.FACT_UNITS[name]
+        except KeyError as exc:
+            raise ValueError(
+                f"{cls.NAME} has no declared unit for fact {name!r}"
+            ) from exc
+
     def auxiliary_keys(self) -> tuple[str, ...]:
         return ()
+
+    def undefined_fact_reason(self, name: str) -> str:
+        """Explain why one declared fact has no value for this observation."""
+
+        _ = name
+        return "operator did not define this value for the observation"
 
     def accepted_auxiliary_kinds(
         self,

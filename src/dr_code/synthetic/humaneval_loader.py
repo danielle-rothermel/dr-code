@@ -97,6 +97,7 @@ def save_snapshot(
         [task.model_dump(mode="json") for task in tasks],
         snapshot_path=snap,
         dataset_name=HF_DATASET_ID,
+        dataset_split=HF_SPLIT,
         hf_revision=HF_REVISION,
     )
 

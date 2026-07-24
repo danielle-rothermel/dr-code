@@ -85,6 +85,16 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     VERSION = "1"
     INPUT = ArtifactKind.CODE
     Settings = CodeTestSettings
+    FACT_UNITS = {
+        "total_cases": "case",
+        "passed_count": "case",
+        "failed_count": "case",
+        "error_count": "case",
+        "timeout_count": "case",
+        "coverage_complete": "boolean",
+        "function_count": "function",
+        "best_function_name": "name",
+    }
 
     def auxiliary_keys(self) -> tuple[str, ...]:
         return (self.settings.task_key,)

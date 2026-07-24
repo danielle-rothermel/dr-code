@@ -50,6 +50,19 @@ class CompressedLength(MetricOperator[CompressedLengthSettings]):
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
     Settings = CompressedLengthSettings
+    FACT_UNITS = {
+        "compressed_bytes": "byte",
+        "representation_bytes": "byte",
+        "ratio_to_reference": "ratio",
+        "percent_reduction": "percent",
+    }
+
+    def undefined_fact_reason(self, name: str) -> str:
+        if name in {"ratio_to_reference", "percent_reduction"}:
+            if self.settings.reference_key is None:
+                return "no compression reference was configured"
+            return "compression reference has zero representation bytes"
+        return super().undefined_fact_reason(name)
 
     def auxiliary_keys(self) -> tuple[str, ...]:
         if self.settings.reference_key is None:
@@ -68,7 +81,7 @@ class CompressedLength(MetricOperator[CompressedLengthSettings]):
         value: Artifact,
         aux: Mapping[str, Artifact],
         ctx: EngineContext,
-    ) -> CompressedLengthResult:
+    ) -> CompressedLengthResult | CompressedLengthWithReferenceResult:
         _ = ctx
         compression = self.settings.compression
         representation = artifact_text(value).encode("utf-8")

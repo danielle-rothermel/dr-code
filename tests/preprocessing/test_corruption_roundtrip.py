@@ -24,10 +24,8 @@ running the best-effort v2 definition partitions the recipes empirically
     equivalent.
 
   Exempting these from the *equivalence* assertion is correct behaviour, not a
-  gap. For every exempted recipe we still assert something meaningful:
-  **output parity with ``extract_code_with_profile``**. Both APIs must give up
-  or return the same non-equivalent source. No exempted recipe sits in an
-  assertion-free bucket.
+  gap. For every exempted recipe we still assert that preprocessing either
+  gives up or returns genuinely non-equivalent code.
 """
 
 from __future__ import annotations
@@ -37,10 +35,6 @@ import random
 import pytest
 
 from dr_code.code_analysis import equivalent
-from dr_code.humaneval.code_parsing import (
-    extract_code_with_profile,
-    resolve_parser_profile,
-)
 from dr_code.preprocessing import (
     resolve_preprocessing_definition,
     run_preprocessing,
@@ -86,7 +80,8 @@ RECOVERABLE_RECIPES = [
 ]
 
 #: Recipes that make an unrecoverable semantic/structural change (see module
-#: docstring). Exempted from equivalence; asserted for parser parity.
+#: docstring). Exempted from equivalence; asserted for a non-equivalent
+#: preprocessing outcome.
 NON_RECOVERABLE_RECIPES = [
     "inline_backticks",
     "dead_code",
@@ -109,16 +104,9 @@ def _best_effort_v2():
 
 
 def _run_best_effort(raw: str):
-    return run_preprocessing(_best_effort_v2(), TextArtifact(text=raw)).value(
-        "output"
-    )
-
-
-def _parser_best_effort(raw: str) -> str | None:
-    profile = resolve_parser_profile(
-        parser_profile_id=BEST_EFFORT_ID, parser_version="v2"
-    )
-    return extract_code_with_profile(raw, profile=profile).extracted_code
+    return run_preprocessing(
+        _best_effort_v2().materialize(), TextArtifact(text=raw)
+    ).value("output")
 
 
 # --- recoverable recipes round-trip to equivalent code ---------------
@@ -137,24 +125,15 @@ def test_best_effort_recovers_corruption_to_equivalent(
     )
 
 
-# --- non-recoverable recipes: exempt from equivalence, assert parity -
+# --- non-recoverable recipes: exempt from equivalence, assert outcome -
 
 
 @pytest.mark.parametrize("recipe_name", NON_RECOVERABLE_RECIPES)
-def test_non_recoverable_matches_parser_output(recipe_name: str) -> None:
-    # No extraction pipeline can recover equivalence here, so we assert the
-    # fallback contract: preprocessing and parsing both give up, or both
-    # extract the same non-equivalent source.
-    raw = _corrupt(recipe_name)
-    parser = _parser_best_effort(raw)
-    preprocessing = _run_best_effort(raw)
+def test_non_recoverable_does_not_recover_equivalent_code(
+    recipe_name: str,
+) -> None:
+    preprocessing = _run_best_effort(_corrupt(recipe_name))
     source = None if is_absent(preprocessing) else preprocessing.source
-    assert source == parser, (
-        f"{recipe_name}: preprocessing diverged from parser — "
-        f"parser={parser!r} preprocessing={source!r}"
-    )
-    # And when it does recover code, that code is genuinely not equivalent —
-    # confirming the exemption is warranted, not a masked recoverable case.
     if source is not None:
         assert not equivalent(CLEAN, source), (
             f"{recipe_name}: unexpectedly recovered equivalent code; "

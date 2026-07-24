@@ -15,7 +15,6 @@ import pytest
 from dr_code.preprocessing import (
     PreprocessingDefinition,
     bind_definition,
-    preprocessing_definition_hash,
     resolve_preprocessing_definition,
 )
 from dr_code.preprocessing.definitions import (
@@ -110,7 +109,7 @@ def test_resolved_definitions_are_hashable() -> None:
         definition_id=BEST_EFFORT_ID, version=V2
     )
     assert isinstance(hash(definition), int)
-    assert isinstance(preprocessing_definition_hash(definition), str)
+    assert isinstance(definition.identity_hash(), str)
 
 
 def test_resolution_is_stable() -> None:
@@ -121,7 +120,7 @@ def test_resolution_is_stable() -> None:
         definition_id=BEST_EFFORT_ID, version=V2
     )
     assert a == b
-    assert preprocessing_definition_hash(a) == preprocessing_definition_hash(b)
+    assert a.identity_hash() == b.identity_hash()
 
 
 def test_named_definitions_are_mutually_distinct() -> None:
@@ -172,12 +171,12 @@ def test_best_effort_extraction_ladder_has_fourth_rung() -> None:
         definition_id=BEST_EFFORT_ID, version=V2
     )
     extract = next(s for s in be.steps if s.step == "extract_candidates")
-    assert extract.settings["alternatives"] == [
+    assert dict(extract.settings)["alternatives"] == (
         "fenced_blocks",
         "markdown_wrapper",
         "escaped_python",
         "escaped_markdown_wrapper",
-    ]
+    )
 
 
 # --- resolved definitions are bindable and kind-correct --------------
@@ -192,5 +191,5 @@ def test_named_definition_binds(definition_id: str, version: str) -> None:
     definition = resolve_preprocessing_definition(
         definition_id=definition_id, version=version
     )
-    bound = bind_definition(definition)
+    bound = bind_definition(definition.materialize())
     assert bound, "a named definition must have at least one step"

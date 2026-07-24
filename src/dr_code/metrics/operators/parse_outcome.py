@@ -25,6 +25,10 @@ class ParseOutcome(MetricOperator[OperatorSettings]):
     VERSION = "1"
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
+    FACT_UNITS = {
+        "parse_ok": "boolean",
+        "parse_error": "diagnostic",
+    }
 
     def compute(
         self,

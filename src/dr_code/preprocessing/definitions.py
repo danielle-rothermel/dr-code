@@ -2,13 +2,9 @@
 
 Each ``PreprocessingDefinition`` expresses one extraction path as atomic
 cleaning, candidate-generation, and selection steps over typed artifacts. The
-definitions are pure
-data — ordered ``StepSpec`` instances with explicit settings (no hidden
+definitions are pure data: ordered step bindings with explicit settings (no hidden
 defaults); adding a step or changing a setting is a new definition whose
 identity is the content hash.
-
-The preprocessing definitions use string-aware smart-quote recovery, reject
-field-marker code representations, and drop whitespace-only candidates.
 
 ``resolve_preprocessing_definition`` is an exact ``(definition_id, version)``
 lookup that raises ``ValueError`` for any pair not in the table.
@@ -40,13 +36,13 @@ from dr_code.humaneval.code_parsing import (
     PARSER_PROFILE_VERSION,
     STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
 )
-from dr_code.preprocessing.definition import (
+from dr_code.eval.lifecycle import (
     PreprocessingDefinition,
-    StepSpec,
+    PreprocessingStepBinding,
 )
 from dr_code.preprocessing.names import StepName
 
-#: Definition ids match ``code_parsing`` parser-profile coordinates.
+#: Definition ids match HumanEval parser-profile coordinates.
 BEST_EFFORT_HUMANEVAL_DEFINITION_ID: Final[str] = (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID
 )
@@ -73,19 +69,19 @@ def _spec(
     instance_name: str,
     step: StepName,
     **settings: JsonValue,
-) -> StepSpec:
-    """Build a ``StepSpec``; settings pass through as JSON values."""
-    return StepSpec(
+) -> PreprocessingStepBinding:
+    """Build one canonical preprocessing step binding."""
+    return PreprocessingStepBinding(
         instance_name=instance_name,
-        step=step,
-        settings=dict(settings),
+        step=step.value,
+        settings=tuple(sorted(settings.items())),
     )
 
 
 #: ``normalize_text``'s constituents, one step per operation. Order matters:
 #: line endings, NFKC unicode, tab expansion, trailing-whitespace strip,
 #: blank-run collapse, then outer-blank trim.
-_TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
+_TEXT_NORMALIZATION: Final[tuple[PreprocessingStepBinding, ...]] = (
     _spec("normalize_line_endings", StepName.NORMALIZE_LINE_ENDINGS),
     _spec("normalize_unicode", StepName.NORMALIZE_UNICODE),
     _spec("expand_tabs", StepName.EXPAND_TABS),
@@ -98,7 +94,7 @@ _TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
 #: recovery (so smart-delimited code compiles while quote *contents* survive),
 #: split on the ``if __name__`` guard, drop trailing prose after the last
 #: return, then repair / infer / dedupe imports.
-_CANDIDATE_CLEANING: Final[tuple[StepSpec, ...]] = (
+_CANDIDATE_CLEANING: Final[tuple[PreprocessingStepBinding, ...]] = (
     _spec("strip_fences", StepName.STRIP_FENCES),
     _spec("dedent", StepName.DEDENT_CANDIDATES),
     _spec("normalize_smart_quotes", StepName.NORMALIZE_SMART_QUOTES),

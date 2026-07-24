@@ -11,10 +11,10 @@ inference, and deduplication logic used by preprocessing and HumanEval parsing.
 
 from __future__ import annotations
 
-from dr_code.preprocessing.definition import (
+from dr_code.eval.lifecycle import (
+    PreprocessingConfig,
     PreprocessingDefinition,
-    StepSpec,
-    preprocessing_definition_hash,
+    PreprocessingStepBinding,
 )
 from dr_code.preprocessing.definitions import (
     BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
@@ -60,7 +60,9 @@ __all__ = [
     "BoundStep",
     "CandidateMapStep",
     "ExtractionStrategy",
+    "PreprocessingConfig",
     "PreprocessingDefinition",
+    "PreprocessingStepBinding",
     "REGISTRY",
     "STRATEGY_REGISTRY",
     "Step",
@@ -68,9 +70,7 @@ __all__ = [
     "StepName",
     "StepOutput",
     "StepSettings",
-    "StepSpec",
     "bind_definition",
-    "preprocessing_definition_hash",
     "resolve_preprocessing_definition",
     "run_preprocessing",
 ]

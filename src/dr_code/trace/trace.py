@@ -8,7 +8,12 @@ from typing import Final, get_args
 
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
-from dr_code.trace.provenance import EXTERNAL_PRODUCER, TraceProducer
+from dr_code.trace.observation import SampleIdentity
+from dr_code.trace.provenance import (
+    EXTERNAL_PRODUCER_ID,
+    ExternalSource,
+    TraceProducer,
+)
 
 INPUT_KEY: Final = "input"
 OUTPUT_KEY: Final = "output"
@@ -36,6 +41,7 @@ class Trace:
     values: Mapping[str, TraceValue]
     producer: TraceProducer
     step_facts: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    sample_identity: SampleIdentity | None = None
     # step_facts: provenance recorded by steps (chosen alternative,
     # rejection reasons, candidate counts) keyed by instance name —
     # descriptive facts, never policy judgments
@@ -68,13 +74,21 @@ class Trace:
 def external_trace(
     values: Mapping[str, TraceValue],
     *,
+    source: ExternalSource,
     step_facts: Mapping[str, Mapping[str, str]] | None = None,
+    sample_identity: SampleIdentity | None = None,
 ) -> Trace:
-    """Boundary constructor for artifacts built outside dr-code:
-    validates value types on the way in and stamps the external producer.
+    """Boundary constructor for artifacts built outside dr-code.
+
+    Validates value types on the way in and stamps the producer with the
+    caller's authenticated external source.
     """
     return Trace(
         values=dict(values),
-        producer=EXTERNAL_PRODUCER,
+        producer=TraceProducer(
+            producer_id=EXTERNAL_PRODUCER_ID,
+            external_source=source,
+        ),
         step_facts=dict(step_facts) if step_facts is not None else {},
+        sample_identity=sample_identity,
     )
