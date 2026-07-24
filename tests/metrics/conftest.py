@@ -5,14 +5,14 @@ wires up pytest fixtures discovered from this directory. Metrics symbols are
 imported by the tests that exercise them; shared fixtures depend only on
 ``dr_code.trace``, ``dr_code.humaneval.*``, and ``metrics.helpers``.
 
-Nothing here touches a real container runtime.
+Execution is injected through host-process runner fakes.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import SandboxRunner
+from dr_code.execution.subprocess import PythonSubprocessRunner
 from dr_code.humaneval.task import HumanEvalTask
 
 from metrics.helpers import (
@@ -40,12 +40,12 @@ def failing_submission() -> str:
 
 
 @pytest.fixture
-def local_runner() -> SandboxRunner:
-    """Injectable host-interpreter runner (no OCI container)."""
+def local_runner() -> PythonSubprocessRunner:
+    """Injectable host-interpreter runner."""
     return _local_runner()
 
 
 @pytest.fixture
-def counting_runner(local_runner: SandboxRunner) -> CountingRunner:
+def counting_runner(local_runner: PythonSubprocessRunner) -> CountingRunner:
     """A counting wrapper around the local runner (observes at-most-once)."""
     return CountingRunner(local_runner)

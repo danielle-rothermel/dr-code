@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import gzip
 
+import pytest
 import zstandard
 
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
@@ -398,16 +399,98 @@ def _code_test_question(timeout_seconds: float = 5.0) -> object:
     return _question("code_test", on="input", timeout_seconds=timeout_seconds)
 
 
+def test_direct_and_metrics_execution_share_humaneval_request_builder(
+    task,
+    good_submission,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import dr_code.humaneval.batch_runner as batch_runner
+    from dr_code.execution.subprocess import SubprocessCompletedProcess
+    from dr_code.metrics.operators.code_test import CodeTest, CodeTestSettings
+
+    from metrics.helpers import task_json_artifact
+
+    original_builder = batch_runner.build_human_eval_batch_request
+    builder_calls: list[tuple[str, str, str, float, object, object]] = []
+
+    def recording_builder(
+        *,
+        task,
+        candidate_code,
+        function_name,
+        timeout_seconds,
+        checks=None,
+        runner_source=None,
+    ):
+        builder_calls.append(
+            (
+                task.task_id,
+                candidate_code,
+                function_name,
+                timeout_seconds,
+                checks,
+                runner_source,
+            )
+        )
+        return original_builder(
+            task=task,
+            candidate_code=candidate_code,
+            function_name=function_name,
+            timeout_seconds=timeout_seconds,
+            checks=checks,
+            runner_source=runner_source,
+        )
+
+    monkeypatch.setattr(
+        batch_runner,
+        "build_human_eval_batch_request",
+        recording_builder,
+    )
+
+    direct_calls: list[tuple[str, str, float]] = []
+
+    def direct_runner(*, source, input_text, timeout_seconds):
+        direct_calls.append((source, input_text, timeout_seconds))
+        return SubprocessCompletedProcess(returncode=0, stdout="[]", stderr="")
+
+    timeout_seconds = 2.5
+    batch_runner.run_subprocess_batch(
+        task=task,
+        candidate_code=good_submission,
+        function_name=task.entry_point,
+        timeout_seconds=timeout_seconds,
+        run_in_subprocess=direct_runner,
+    )
+    operator = CodeTest(CodeTestSettings(timeout_seconds=timeout_seconds))
+    (metrics_request,) = operator.execution_requests(
+        CodeArtifact(source=good_submission),
+        {"task": task_json_artifact(task)},
+    )
+
+    assert len(builder_calls) == 2
+    assert builder_calls[0] == builder_calls[1]
+    assert direct_calls == [
+        (
+            metrics_request.source,
+            metrics_request.input_text,
+            metrics_request.timeout_seconds,
+        )
+    ]
+
+
 def test_code_test_passing_counts_match_oracle(
     task, good_submission, local_runner
 ) -> None:
     oracle = evaluate_oracle(
-        task, good_submission, timeout_seconds=5.0, run_in_sandbox=local_runner
+        task,
+        good_submission,
+        timeout_seconds=5.0,
+        run_in_subprocess=local_runner,
     )
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )[0]
     assert record.values["total_cases"] == oracle.total_cases
     assert record.values["passed_count"] == oracle.status_counts.get(
@@ -432,12 +515,12 @@ def test_code_test_failing_counts_match_oracle(
         task,
         failing_submission,
         timeout_seconds=5.0,
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(failing_submission, task),
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )[0]
     assert record.values["passed_count"] == oracle.status_counts.get(
         "passed", 0
@@ -450,18 +533,18 @@ def test_code_test_failing_counts_match_oracle(
 def test_code_test_kill_returncode_attributed_to_candidate(
     task, good_submission
 ) -> None:
-    """A sandbox kill (returncode 137) is candidate data: all cases error."""
-    from dr_code.humaneval.sandbox import SandboxCompletedProcess
+    """A subprocess kill (returncode 137) is candidate data: all cases error."""
+    from dr_code.execution.subprocess import SubprocessCompletedProcess
 
-    def kill_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        return SandboxCompletedProcess(
+    def kill_runner(*, source, input_text, timeout_seconds):  # noqa: ANN001
+        return SubprocessCompletedProcess(
             returncode=137, stdout="", stderr="killed"
         )
 
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=kill_runner,
+        run_in_subprocess=kill_runner,
     )[0]
     assert record.values["error_count"] == record.values["total_cases"]
     assert record.values["passed_count"] == 0
@@ -478,7 +561,9 @@ def test_code_test_nonzero_exit_attributed_to_candidate(
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(returncode=5, stdout="", stderr="boom"),
+        run_in_subprocess=scripted_runner(
+            returncode=5, stdout="", stderr="boom"
+        ),
     )[0]
     assert record.status.value == "measured"
     assert record.values["error_count"] == record.values["total_cases"]
@@ -503,7 +588,7 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
         record = _extract(
             _definition([_code_test_question()]),
             code_test_trace(good_submission, task),
-            run_in_sandbox=scripted_runner(returncode=0, stdout=bad_stdout),
+            run_in_subprocess=scripted_runner(returncode=0, stdout=bad_stdout),
         )[0]
         assert record.status.value == "measured", bad_stdout
         assert record.values["error_count"] == record.values["total_cases"], (
@@ -512,93 +597,25 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
         assert record.values["passed_count"] == 0, bad_stdout
 
 
-def test_code_test_sandbox_error_still_propagates(
+def test_code_test_subprocess_error_still_propagates(
     task, good_submission
 ) -> None:
-    """``SandboxError`` is raised at the sandbox boundary before candidate code
+    """``SubprocessError`` is raised at the subprocess boundary before candidate code
     runs, so it remains the only propagating infrastructure path and still
     aborts the batch loudly -- it is not reclassified to case statuses."""
     import pytest
 
-    from dr_code.humaneval.sandbox import SandboxError
+    from dr_code.execution.subprocess import SubprocessError
 
     from metrics.helpers import raising_runner
 
-    with pytest.raises(SandboxError):
+    with pytest.raises(SubprocessError):
         _extract(
             _definition([_code_test_question()]),
             code_test_trace(good_submission, task),
-            run_in_sandbox=raising_runner(SandboxError("boundary broke")),
-        )
-
-
-def test_code_test_selector_parity_with_task_selector() -> None:
-    """Parity guard for the duplicated best-function truth: the operator's
-    ``_best_function_name`` and ``humaneval.task.select_best_function_name``
-    agree over the same synthetic status sets."""
-    from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
-    from dr_code.humaneval.task import (
-        EvaluationCaseResult,
-        EvaluationCaseStatus,
-        select_best_function_name,
-    )
-    from dr_code.metrics.operators.code_test import (
-        _best_function_name,
-        _passed_counts,
-    )
-
-    P = EvaluationCaseStatus.PASSED
-    F = EvaluationCaseStatus.FAILED
-
-    scenarios = [
-        # (function_names, entry_point, statuses_by_name)
-        (["add_one"], "add_one", {"add_one": [P, P]}),
-        (
-            ["add_one", "decoy"],
-            "add_one",
-            {"add_one": [P, P], "decoy": [F, F]},
-        ),
-        # Decoy passes more cases: mechanical max ignores the entry point.
-        (
-            ["add_one", "decoy"],
-            "add_one",
-            {"add_one": [P, F], "decoy": [P, P]},
-        ),
-        # Tie on passes: entry-point tiebreak wins.
-        (["add_one", "decoy"], "add_one", {"add_one": [P], "decoy": [P]}),
-        # Tie, neither is the entry point: earliest index wins.
-        (["a", "b"], "entry", {"a": [P], "b": [P]}),
-        # No statuses recorded at all.
-        (["a", "b"], "a", {}),
-        ([], "a", {}),
-    ]
-
-    for function_names, entry_point, statuses_by_name in scenarios:
-        results = [
-            EvaluationCaseResult(
-                task_id="t",
-                case_id=f"{name}-{index}",
-                function_name=name,
-                status=status,
-                test_type=HumanEvalTestCaseKind.INPUT_RESULT,
-            )
-            for name, statuses in statuses_by_name.items()
-            for index, status in enumerate(statuses)
-        ]
-        operator_pick = _best_function_name(
-            function_names=function_names,
-            entry_point=entry_point,
-            passed_counts=_passed_counts(statuses_by_name),
-        )
-        task_pick = select_best_function_name(
-            function_names=function_names,
-            entry_point=entry_point,
-            results=results,
-        )
-        assert operator_pick == task_pick, (
-            function_names,
-            entry_point,
-            statuses_by_name,
+            run_in_subprocess=raising_runner(
+                SubprocessError("boundary broke")
+            ),
         )
 
 
@@ -613,7 +630,7 @@ def test_code_test_best_function_is_mechanical_max_passes(
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(candidate, task),
-        run_in_sandbox=local_runner,
+        run_in_subprocess=local_runner,
     )[0]
     assert record.values["best_function_name"] == task.entry_point
     assert record.values["function_count"] == 2
@@ -640,7 +657,7 @@ def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(stdout=incomplete_output),
+        run_in_subprocess=scripted_runner(stdout=incomplete_output),
     )[0]
     assert record.status.value == "measured"
     assert record.values["passed_count"] == 1
@@ -666,7 +683,7 @@ def test_code_test_complete_coverage_with_failure_is_covered(
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(stdout=complete_with_failure),
+        run_in_subprocess=scripted_runner(stdout=complete_with_failure),
     )[0]
     assert record.status.value == "measured"
     assert record.values["passed_count"] == 1

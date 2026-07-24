@@ -4,24 +4,23 @@ Covers ``ExecutionOutcome`` boundary fields, the ``ExecutionCache`` protocol,
 and observable request deduplication with at-most-once execution per cache
 lifetime. Cache keys remain a private implementation detail.
 
-These tests run without a container: a counting fake runner stands in for the
-injected ``SandboxRunner``.
+A counting fake runner stands in for the injected ``PythonSubprocessRunner``.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import (
-    SandboxCompletedProcess,
-    SandboxError,
+from dr_code.execution.subprocess import (
+    SubprocessCompletedProcess,
+    SubprocessError,
 )
 
 
 def _request(
     *,
     source: str = "print('hi')",
-    input_json: str = "{}",
+    input_text: str = "{}",
     timeout_seconds: float = 1.0,
     computation_id: str = "humaneval-runner@0",
 ):
@@ -29,7 +28,7 @@ def _request(
 
     return ExecutionRequest(
         source=source,
-        input_json=input_json,
+        input_text=input_text,
         timeout_seconds=timeout_seconds,
         computation_id=computation_id,
     )
@@ -53,9 +52,9 @@ class _CountingRunner:
         self.calls = 0
         self._stdout = stdout
 
-    def __call__(self, *, source, input_json, timeout_seconds):  # noqa: ANN001
+    def __call__(self, *, source, input_text, timeout_seconds):  # noqa: ANN001
         self.calls += 1
-        return SandboxCompletedProcess(
+        return SubprocessCompletedProcess(
             returncode=0, stdout=self._stdout, stderr=""
         )
 
@@ -68,13 +67,13 @@ def _run(requests, *, runner=None, cache=None):
 
     return run_requests(
         requests,
-        run_in_sandbox=runner or _CountingRunner(),
+        run_in_subprocess=runner or _CountingRunner(),
         cache=cache or InMemoryExecutionCache(),
     )
 
 
 # ===========================================================================
-# ExecutionOutcome — SandboxCompletedProcess fields, frozen.
+# ExecutionOutcome — SubprocessCompletedProcess fields, frozen.
 # ===========================================================================
 
 
@@ -151,7 +150,7 @@ def test_run_requests_dedupes_identical_requests() -> None:
     ("field", "first", "second"),
     [
         ("source", "a", "b"),
-        ("input_json", "{}", '{"x":1}'),
+        ("input_text", "{}", '{"x":1}'),
         ("timeout_seconds", 1.0, 2.0),
         ("computation_id", "runner-a", "runner-b"),
     ],
@@ -195,7 +194,7 @@ def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
     """A runner exception propagates; the failing outcome is never stored."""
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
-    def raising(*, source, input_json, timeout_seconds):  # noqa: ANN001
+    def raising(*, source, input_text, timeout_seconds):  # noqa: ANN001
         raise RuntimeError("runner exploded")
 
     cache = InMemoryExecutionCache()
@@ -210,10 +209,10 @@ def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
 
 
 def test_run_requests_sandbox_error_propagates() -> None:
-    """SandboxError infrastructure failures propagate through run_requests."""
+    """SubprocessError infrastructure failures propagate through run_requests."""
 
-    def infra(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        raise SandboxError("infra failed")
+    def infra(*, source, input_text, timeout_seconds):  # noqa: ANN001
+        raise SubprocessError("infra failed")
 
-    with pytest.raises(SandboxError):
+    with pytest.raises(SubprocessError):
         _run([_request()], runner=infra)

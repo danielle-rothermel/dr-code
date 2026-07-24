@@ -7,7 +7,7 @@ synthetic corruption datasets.
 The package provides four current boundaries:
 
 - `dr_code.humaneval` parses submissions, resolves the current HumanEval
-  profiles, and evaluates candidate code in the configured OCI sandbox.
+  profiles, and executes candidate code in bounded Python subprocesses.
 - `dr_code.preprocessing` binds registered, named steps into ordered
   definitions and emits typed traces with step artifacts, causal absences,
   facts, and producer coordinates.
@@ -75,12 +75,24 @@ entries. Synthetic samples nest a structured semantic coordinate containing
 the HumanEval task id, generation seed, and complete recipe coordinate. The
 plain `sample_id` is only a concise display label.
 
-Cryptographic digests are used only for the immutable OCI image coordinate and
-private execution-cache mechanics. The cache key is not a public API or
+Cryptographic digests are used only for private execution-cache mechanics. The cache key is not a public API or
 provenance coordinate, and tests prove reuse and alias resistance through
 observable outcomes and call counts. Synthetic RNG initialization supplies the
 stable serialization of the structured sample coordinate directly to Python's
 product-owned random generator.
+
+## Python execution
+
+`dr_code.execution.run_python_subprocess` runs Python source in a fresh
+`sys.executable -I` process with bounded text input, a shared stdout/stderr
+limit, a wall-clock deadline, and process-group cleanup. HumanEval uses this
+primitive through an injectable batch-runner interface.
+
+This execution boundary provides no operating-system containment. Candidate
+code has the worker's filesystem, credential, process, and network permissions.
+Process-group cleanup cannot guarantee termination of descendants that detach
+from the group. Run evaluations only on disposable workers whose permissions,
+network access, resources, and lifetime are constrained externally.
 
 ## Development
 

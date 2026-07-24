@@ -1,14 +1,17 @@
-# Standalone program executed inside the sandbox container via
-# ``python -I -c <source>``. It reads one JSON line from stdin and prints a
+# Standalone program executed in a fresh process via ``python -I -c``.
+# It reads one JSON value from stdin and writes a
 # JSON list of case results. It must stay dependency-free (no ``dr_code``
-# imports) because it runs in a locked-down, interpreter-isolated container,
-# and it must NEVER be imported by host code: it has top-level side effects
-# (it reads stdin at import time). The host reads this file's text via
-# ``importlib.resources`` and executes it as a string; it does not import it.
+# imports), and it must NEVER be imported by host code: it has top-level side
+# effects. Python-level untrusted stdout is redirected to bounded stderr;
+# direct file descriptor writes can still reach the JSON protocol stream.
 import json
+import sys
 import time
 import traceback
 
+protocol_stdout = sys.stdout
+sys.stdout = sys.stderr
+setattr(sys, "__stdout__", sys.stderr)
 payload = json.loads(input())
 
 FIELD_LIMIT = 8000
@@ -26,6 +29,12 @@ def assertion(actual, expected, atol=0):
         assert abs(actual - expected) <= atol
     else:
         assert actual == expected
+
+
+def emit_results(results):
+    protocol_stdout.write(json.dumps(results))
+    protocol_stdout.write("\n")
+    protocol_stdout.flush()
 
 
 def build_namespace():
@@ -98,7 +107,7 @@ except BaseException:
                 "elapsed_seconds": 0.0,
             }
         )
-    print(json.dumps(results))
+    emit_results(results)
     raise SystemExit(0)
 
 results = []
@@ -148,4 +157,4 @@ for check in payload["checks"]:
                 "elapsed_seconds": time.perf_counter() - started_at,
             }
         )
-print(json.dumps(results))
+emit_results(results)
