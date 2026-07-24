@@ -32,7 +32,7 @@ def assertion(actual, expected, atol=0):
 
 
 def emit_results(results):
-    protocol_stdout.write(json.dumps(results))
+    protocol_stdout.write(json.dumps(results, allow_nan=False))
     protocol_stdout.write("\n")
     protocol_stdout.flush()
 

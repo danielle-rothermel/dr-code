@@ -14,5 +14,9 @@ def stable_hash(model: BaseModel) -> str:
     hash field-order-proof; same hashing family as
     synthetic.dataset_builder._seed_for.
     """
-    blob = json.dumps(model.model_dump(mode="json"), sort_keys=True)
+    blob = json.dumps(
+        model.model_dump(mode="json"),
+        sort_keys=True,
+        allow_nan=False,
+    )
     return hashlib.blake2b(blob.encode()).hexdigest()

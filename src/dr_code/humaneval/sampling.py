@@ -150,9 +150,12 @@ def human_eval_overrides_digest(
         for task_id, override in sorted(active_overrides.items())
     }
     return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
     ).hexdigest()
 
 

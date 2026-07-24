@@ -2,9 +2,13 @@
   "name": "dr-code-viewer-workspace",
   "private": true,
   "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @dr-code/preprocessing-analysis test:e2e"
   }
 }

@@ -1217,14 +1217,18 @@ def _validate_result(
             or result["propagated_through"] is not None
         ):
             raise CorpusRunError("successful result has inconsistent fields")
-    elif (
-        result["outcome_code"] is not None
-        or result["failure_code"] != outcome
-        or not isinstance(result["failed_step"], str)
-        or not isinstance(result["cause"], str)
-        or not isinstance(result["propagated_through"], list)
-    ):
-        raise CorpusRunError("failed result has inconsistent fields")
+    else:
+        if (
+            result["outcome_code"] is not None
+            or result["failure_code"] != outcome
+            or not isinstance(result["failed_step"], str)
+            or (
+                result["cause"] is not None
+                and not isinstance(result["cause"], str)
+            )
+            or not isinstance(result["propagated_through"], list)
+        ):
+            raise CorpusRunError("failed result has inconsistent fields")
     return sample_id, count, outcome
 
 
@@ -1684,7 +1688,15 @@ def _write_manifest(directory: Path, manifest: Mapping[str, object]) -> None:
     destination = directory / "manifest.json"
     temporary = directory / ".manifest.json.tmp"
     with temporary.open("w", encoding="utf-8") as stream:
-        stream.write(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+        stream.write(
+            json.dumps(
+                manifest,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            )
+            + "\n"
+        )
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, destination)
@@ -1795,4 +1807,8 @@ def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
-__all__ = ["CorpusRunError", "run_preprocessing_corpus"]
+__all__ = [
+    "CorpusRunError",
+    "run_preprocessing_corpus",
+    "validate_preprocessing_relations",
+]
