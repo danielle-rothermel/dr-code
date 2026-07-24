@@ -157,8 +157,7 @@ class ViewerAnalytics:
 
     def list_runs(self) -> tuple[RunSummary, ...]:
         return tuple(
-            self._summary(descriptor)
-            for descriptor in self._runs.values()
+            self._summary(descriptor) for descriptor in self._runs.values()
         )
 
     def waterfall(self, run_id: str) -> Waterfall:
@@ -681,8 +680,7 @@ class ViewerAnalytics:
             (
                 "lost:output_present",
                 "Decoder output missing",
-                baseline_corpus_rows
-                - baseline_stages["output_present"].count,
+                baseline_corpus_rows - baseline_stages["output_present"].count,
                 candidate_corpus_rows
                 - candidate_stages["output_present"].count,
                 baseline_corpus_rows,

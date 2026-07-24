@@ -250,9 +250,7 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
     remaining_error = _signal_process_group(process.pid)
     if remaining_error is None or process.returncode != -signal.SIGKILL:
         return
-    raise _process_group_signaling_error(
-        remaining_error
-    ) from remaining_error
+    raise _process_group_signaling_error(remaining_error) from remaining_error
 
 
 def _signal_process_group(process_group_id: int) -> OSError | None:
