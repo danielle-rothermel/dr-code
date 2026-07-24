@@ -296,9 +296,7 @@ def _statuses_from_outcome(
 
     if task.parsed_tests is None:
         raise ValueError("HumanEvalTask.parsed_tests is required")
-    expected_case_ids = {
-        case.case_id for case in task.parsed_tests.cases
-    }
+    expected_case_ids = {case.case_id for case in task.parsed_tests.cases}
     seen_case_ids: set[str] = set()
     adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
     statuses: list[EvaluationCaseStatus] = []

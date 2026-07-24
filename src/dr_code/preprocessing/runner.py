@@ -125,9 +125,7 @@ def bind_definition(
         instance_name = spec.instance_name
 
         if instance_name in seen_names:
-            raise WiringError(
-                f"duplicate instance name: {instance_name!r}"
-            )
+            raise WiringError(f"duplicate instance name: {instance_name!r}")
         seen_names.add(instance_name)
 
         step_cls = REGISTRY.get(spec.step.value)
@@ -138,8 +136,7 @@ def bind_definition(
             settings = step_cls.Settings.model_validate(spec.settings)
         except ValidationError as exc:
             raise WiringError(
-                f"invalid settings for step {spec.step.value!r}: "
-                f"{exc}"
+                f"invalid settings for step {spec.step.value!r}: {exc}"
             ) from exc
 
         step = step_cls(settings)

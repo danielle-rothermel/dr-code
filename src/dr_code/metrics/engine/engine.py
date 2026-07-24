@@ -198,9 +198,7 @@ def _bind_questions(
             raise WiringError(
                 f"invalid settings for metric {question.metric}: {exc}"
             ) from exc
-        bindings.append(
-            _QuestionBinding(question=question, operator=operator)
-        )
+        bindings.append(_QuestionBinding(question=question, operator=operator))
     return tuple(bindings)
 
 

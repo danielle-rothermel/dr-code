@@ -51,8 +51,7 @@ class Trace:
         missing = RESERVED_KEYS - self.values.keys()
         if missing:
             raise WiringError(
-                "trace missing reserved key(s): "
-                + ", ".join(sorted(missing))
+                "trace missing reserved key(s): " + ", ".join(sorted(missing))
             )
         for key, val in self.values.items():
             if not isinstance(val, _TRACE_VALUE_TYPES):

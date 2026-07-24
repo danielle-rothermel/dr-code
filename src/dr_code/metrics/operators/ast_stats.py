@@ -108,29 +108,19 @@ class AstStats(MetricOperator[OperatorSettings]):
                 isinstance(node, ast.AsyncFunctionDef)
                 for node in all_functions
             ),
-            lambda_count=sum(
-                isinstance(node, ast.Lambda) for node in nodes
-            ),
-            class_count=sum(
-                isinstance(node, ast.ClassDef) for node in nodes
-            ),
+            lambda_count=sum(isinstance(node, ast.Lambda) for node in nodes),
+            class_count=sum(isinstance(node, ast.ClassDef) for node in nodes),
             import_count=sum(
-                isinstance(node, ast.Import | ast.ImportFrom)
-                for node in nodes
+                isinstance(node, ast.Import | ast.ImportFrom) for node in nodes
             ),
             ast_node_count=len(nodes),
-            statement_count=sum(
-                isinstance(node, ast.stmt) for node in nodes
-            ),
+            statement_count=sum(isinstance(node, ast.stmt) for node in nodes),
             branch_count=sum(
                 isinstance(node, _BRANCH_NODES) for node in nodes
             ),
-            return_count=sum(
-                isinstance(node, ast.Return) for node in nodes
-            ),
+            return_count=sum(isinstance(node, ast.Return) for node in nodes),
             yield_count=sum(
-                isinstance(node, ast.Yield | ast.YieldFrom)
-                for node in nodes
+                isinstance(node, ast.Yield | ast.YieldFrom) for node in nodes
             ),
             call_count=sum(isinstance(node, ast.Call) for node in nodes),
             assignment_count=sum(
@@ -166,8 +156,7 @@ class AstStats(MetricOperator[OperatorSettings]):
                 node.returns is not None for node in all_functions
             ),
             docstring_function_count=sum(
-                ast.get_docstring(node) is not None
-                for node in all_functions
+                ast.get_docstring(node) is not None for node in all_functions
             ),
             total_function_body_statement_count=sum(
                 len(node.body) for node in all_functions
@@ -206,9 +195,7 @@ def _function_line_span(
 
 def _max_branch_depth(node: ast.AST, *, current_depth: int = 0) -> int:
     next_depth = (
-        current_depth + 1
-        if isinstance(node, _BRANCH_NODES)
-        else current_depth
+        current_depth + 1 if isinstance(node, _BRANCH_NODES) else current_depth
     )
     child_depth = max(
         (

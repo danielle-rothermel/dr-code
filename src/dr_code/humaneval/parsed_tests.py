@@ -380,9 +380,7 @@ def parse_human_eval_tests(test_str: str) -> ParsedTests:
     inputs = _literal_assignment(check_node, "inputs")
     results_value = _find_assignment_value(check_node, "results")
     assertion_call = _find_assertion_call(check_node)
-    tolerance = (
-        _assertion_tolerance(assertion_call) if assertion_call else 0
-    )
+    tolerance = _assertion_tolerance(assertion_call) if assertion_call else 0
     support_code = support_code_without_check(tree)
     candidate_arg_name = check_node.args.args[0].arg
 
@@ -396,9 +394,7 @@ def parse_human_eval_tests(test_str: str) -> ParsedTests:
             )
         if assertion_call is None:
             loop_node = _find_for_loop(check_node)
-            index_name, input_name, expected_name = _for_loop_names(
-                loop_node
-            )
+            index_name, input_name, expected_name = _for_loop_names(loop_node)
             assert_statement = _find_assert_statement(check_node)
             cases = [
                 InputExpressionTestCase(
