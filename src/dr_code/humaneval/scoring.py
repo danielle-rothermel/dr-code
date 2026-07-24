@@ -24,9 +24,9 @@ from dr_code.humaneval.code_parsing import (
     CodeParserProfile,
     extract_code_with_profile,
 )
-from dr_code.humaneval.sandbox import (
-    SandboxRunner,
-    run_python_in_sandbox,
+from dr_code.execution.subprocess import (
+    PythonSubprocessRunner,
+    run_python_subprocess,
 )
 from dr_code.humaneval.task import (
     EvaluationHarnessError,
@@ -104,7 +104,7 @@ def score_humaneval_submission(
     task: HumanEvalTask,
     parser_profile: CodeParserProfile,
     timeout_seconds: float,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
 ) -> HumanEvalSubmissionScore:
     """Score one submission under a parser profile."""
     if not isinstance(raw_submission, str):
@@ -130,7 +130,7 @@ def score_humaneval_submission(
             candidate_code=extraction.extracted_code,
             timeout_seconds=timeout_seconds,
             candidate_ast=extraction.parsed_candidate,
-            run_in_sandbox=run_in_sandbox,
+            run_in_subprocess=run_in_subprocess,
         )
     except EvaluationHarnessError as exc:
         return HarnessFailure(

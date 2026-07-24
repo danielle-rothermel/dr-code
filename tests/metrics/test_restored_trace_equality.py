@@ -8,7 +8,7 @@ that promise across the three producer origins and the cache-hit path.
 
 from __future__ import annotations
 
-from dr_code.humaneval.sandbox import SandboxCompletedProcess
+from dr_code.execution.subprocess import SubprocessCompletedProcess
 from dr_code.trace import (
     CodeArtifact,
     TextArtifact,
@@ -79,8 +79,8 @@ def _extract(definition, trace, **kwargs):
     return extract_metrics(definition, trace, **kwargs)
 
 
-def _stub_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
-    return SandboxCompletedProcess(returncode=0, stdout="[]", stderr="")
+def _stub_runner(*, source, input_text, timeout_seconds):  # noqa: ANN001
+    return SubprocessCompletedProcess(returncode=0, stdout="[]", stderr="")
 
 
 # ===========================================================================
@@ -158,9 +158,9 @@ def test_code_test_record_equal_across_fresh_and_restored(task) -> None:
     restored = deserialize_trace(serialize_trace(fresh))
     definition = _code_test_definition()
     assert _answer(
-        _extract(definition, fresh, run_in_sandbox=_stub_runner)[0]
+        _extract(definition, fresh, run_in_subprocess=_stub_runner)[0]
     ) == _answer(
-        _extract(definition, restored, run_in_sandbox=_stub_runner)[0]
+        _extract(definition, restored, run_in_subprocess=_stub_runner)[0]
     )
 
 
@@ -174,7 +174,7 @@ def test_batch_over_identical_traces_yields_equal_record_sets(task) -> None:
     record_sets = extract_metrics_batch(
         definition,
         [fresh, restored, fresh],
-        run_in_sandbox=_stub_runner,
+        run_in_subprocess=_stub_runner,
     )
     answers = [[_answer(r) for r in records] for records in record_sets]
     assert answers[0] == answers[1] == answers[2]
