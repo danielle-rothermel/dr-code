@@ -56,26 +56,23 @@ class FilterCodeRepr(Step):
             validated = validate_python_source_with_ast(candidate)
             validation = validated.validation
             candidate_id = value.lineage_at(index).candidate_id
-            if (
-                validated.tree is not None
-                and _is_code_repr_assignment(validated.tree)
+            if validated.tree is not None and _is_code_repr_assignment(
+                validated.tree
             ):
                 rejection: dict[str, JsonValue] = {
-                        "input_index": index,
-                        "reason_code": "code_repr_assignment",
-                        "parse_ok": validation.parse_ok,
-                        "parse_error": validation.parse_error,
-                        "compile_ok": validation.compile_ok,
-                        "compile_error": validation.compile_error,
+                    "input_index": index,
+                    "reason_code": "code_repr_assignment",
+                    "parse_ok": validation.parse_ok,
+                    "parse_error": validation.parse_error,
+                    "compile_ok": validation.compile_ok,
+                    "compile_error": validation.compile_error,
                 }
                 if candidate_id is not None:
                     rejection["candidate_id"] = candidate_id
                 rejections.append(rejection)
             else:
                 survivors.append(candidate)
-                survivor_record: dict[str, JsonValue] = {
-                    "input_index": index
-                }
+                survivor_record: dict[str, JsonValue] = {"input_index": index}
                 if candidate_id is not None:
                     survivor_record["candidate_id"] = candidate_id
                 survivor_records.append(survivor_record)

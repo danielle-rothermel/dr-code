@@ -51,7 +51,9 @@ from dr_code.preprocessing.steps.normalize_unicode import (
 from dr_code.preprocessing.steps.repair_import_lines import (
     RepairImportLines,
 )
-from dr_code.preprocessing.steps.require_nonblank_text import RequireNonblankText
+from dr_code.preprocessing.steps.require_nonblank_text import (
+    RequireNonblankText,
+)
 from dr_code.preprocessing.steps.return_all import ReturnAll
 from dr_code.preprocessing.steps.select_first import SelectFirst
 from dr_code.preprocessing.steps.split_on_name_guard import (

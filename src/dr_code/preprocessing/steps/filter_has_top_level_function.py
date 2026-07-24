@@ -68,7 +68,9 @@ class FilterHasTopLevelFunction(Step):
             functions = [
                 statement
                 for statement in validated.tree.body
-                if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef)
+                if isinstance(
+                    statement, ast.FunctionDef | ast.AsyncFunctionDef
+                )
             ]
             function_names = [function.name for function in functions]
             async_function_names = [
