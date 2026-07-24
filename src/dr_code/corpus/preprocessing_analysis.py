@@ -22,7 +22,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pydantic import ValidationError
 
-from dr_code.metrics.definition import MetricsDefinition, metrics_definition_hash
+from dr_code.metrics.definition import (
+    MetricsDefinition,
+    metrics_definition_hash,
+)
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.policy_example import derive_outcome
 from dr_code.metrics.records import MetricRecord, RecordStatus
@@ -387,9 +390,7 @@ def _read_candidate_evaluation(
             "candidate results contain unreferenced evaluation_key: "
             + min(unreferenced)
         )
-    _validate_evaluation_coordinates(
-        manifest, memberships, evaluation_results
-    )
+    _validate_evaluation_coordinates(manifest, memberships, evaluation_results)
     return CandidateEvaluation(
         memberships=memberships,
         results=evaluation_results,
@@ -403,7 +404,9 @@ def _read_candidate_evaluation(
 def _required_optional_file(value: Path | str, label: str) -> Path:
     path = Path(value).expanduser().resolve()
     if not path.is_file():
-        raise PreprocessingAnalysisError(f"{label} file does not exist: {path}")
+        raise PreprocessingAnalysisError(
+            f"{label} file does not exist: {path}"
+        )
     return path
 
 
@@ -610,9 +613,7 @@ def _validate_evaluation_coordinates(
             )
 
 
-def _manifest_required_str(
-    manifest: Mapping[str, object], field: str
-) -> str:
+def _manifest_required_str(manifest: Mapping[str, object], field: str) -> str:
     value = manifest.get(field)
     if not isinstance(value, str) or not value:
         raise PreprocessingAnalysisError(
@@ -765,9 +766,7 @@ def _validate_candidate_test_result(
             + evaluation_key
         )
     facts = {
-        key: value
-        for key, value in integer_facts.items()
-        if value is not None
+        key: value for key, value in integer_facts.items() if value is not None
     }
     if len(facts) != len(integer_facts) or not isinstance(
         coverage_complete, bool
@@ -1752,7 +1751,10 @@ def _sample_best_test_outcomes(
         categories[membership.sample_id].append(
             evaluation.results[membership.evaluation_key].category
         )
-    priority = {category: index for index, category in enumerate(_EVALUATION_CATEGORIES)}
+    priority = {
+        category: index
+        for index, category in enumerate(_EVALUATION_CATEGORIES)
+    }
     return {
         sample_id: min(values, key=lambda value: priority[value])
         for sample_id, values in categories.items()
@@ -1797,7 +1799,9 @@ def _test_success_by_multiplicity(
 ) -> list[dict[str, object]]:
     counts: Counter[tuple[int, str]] = Counter()
     for sample_id, category in sample_outcomes.items():
-        counts[(preprocessing_results[sample_id].final_candidate_count, category)] += 1
+        counts[
+            (preprocessing_results[sample_id].final_candidate_count, category)
+        ] += 1
     rows: list[dict[str, object]] = []
     for multiplicity in sorted({value for value, _ in counts}):
         rows.append(
@@ -1945,7 +1949,9 @@ def _build_failure_examples(
                 "nonblank zero-candidate result has no terminal failure: "
                 + sample_id
             )
-        grouped_ids[(result.failure_code, result.failed_step)].append(sample_id)
+        grouped_ids[(result.failure_code, result.failed_step)].append(
+            sample_id
+        )
 
     selected = sorted(
         sample_id
@@ -2155,9 +2161,7 @@ def _build_evaluation_examples(
         key=_candidate_example_rank,
     )
     selected = sorted(required, key=_candidate_example_rank)
-    selected.extend(
-        diverse[: _EVALUATION_EXAMPLE_LIMIT - len(selected)]
-    )
+    selected.extend(diverse[: _EVALUATION_EXAMPLE_LIMIT - len(selected)])
     categories_by_key: dict[CandidateKey, list[str]] = defaultdict(list)
     for category, candidate_key in chosen.items():
         if candidate_key in selected:
@@ -2387,9 +2391,12 @@ def _write_failure_examples(
         failure_code = group.failure_code
         failed_step = group.failed_step
         examples = group.examples
-        group_path = "group-" + hashlib.sha256(
-            "\0".join(group_identity).encode()
-        ).hexdigest()[:20]
+        group_path = (
+            "group-"
+            + hashlib.sha256("\0".join(group_identity).encode()).hexdigest()[
+                :20
+            ]
+        )
         if group_path in seen_group_paths:
             raise PreprocessingAnalysisError(
                 "failure browser group artifact path collision"
@@ -2544,9 +2551,7 @@ def _viewer_payload(
             "test_success_by_preprocessing_outcome": tables[
                 "test_success_by_preprocessing_outcome"
             ],
-            "test_success_by_dimension": tables[
-                "test_success_by_dimension"
-            ],
+            "test_success_by_dimension": tables["test_success_by_dimension"],
             "examples": evaluation_examples,
         }
     return payload
