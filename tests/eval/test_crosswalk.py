@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import inspect
 
-from dr_serialize import build_identity_document, identity_hash
+from dr_serialize import build_identity_document, identity_document_hash
 
 from dr_code.eval import identity as identity_module
 from dr_code.eval.code import CodeArtifact, CodeCandidate, PythonSource
@@ -28,10 +28,10 @@ def test_identity_flows_through_dr_serialize() -> None:
     # The single identity seam composes dr-serialize's document + hash.
     source = inspect.getsource(identity_module.identity_hash_for)
     assert "build_identity_document" in source
-    assert "identity_hash" in source
+    assert "identity_document_hash" in source
     # And the imported symbols are exactly dr-serialize's.
     assert identity_module.build_identity_document is build_identity_document
-    assert identity_module.identity_hash is identity_hash
+    assert identity_module.identity_document_hash is identity_document_hash
 
 
 def test_schema_names_are_dr_code_owned() -> None:

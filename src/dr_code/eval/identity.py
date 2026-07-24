@@ -14,7 +14,7 @@ from typing import cast
 from dr_serialize import (
     Jsonable,
     build_identity_document,
-    identity_hash,
+    identity_document_hash,
 )
 
 # Owning-domain schema names. dr-code owns this namespace; whetstone and
@@ -68,7 +68,7 @@ def identity_hash_for(
         schema_version=schema_version,
         payload=cast(Jsonable, payload),
     )
-    return identity_hash(document)
+    return identity_document_hash(document)
 
 
 __all__ = [
