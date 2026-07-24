@@ -212,9 +212,7 @@ def _load_existing(
 def _write_details(detail_path: Path, records: list[ItemRecord]) -> None:
     detail_path.parent.mkdir(parents=True, exist_ok=True)
     ordered = sorted(records, key=lambda record: record.item_id)
-    lines = [
-        record.model_dump_json(exclude_none=False) for record in ordered
-    ]
+    lines = [record.model_dump_json(exclude_none=False) for record in ordered]
     detail_path.write_text(
         "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
     )
@@ -250,9 +248,9 @@ def run_classification(
     items = [*parse_items, *test_items]
 
     existing = (
-        {} if force else _load_existing(
-            detail_path, taxonomy_version=TAXONOMY_VERSION
-        )
+        {}
+        if force
+        else _load_existing(detail_path, taxonomy_version=TAXONOMY_VERSION)
     )
     pending = [item for item in items if item.item_id not in existing]
     skipped = len(items) - len(pending)
@@ -289,9 +287,7 @@ def run_classification(
         model=lane.model,
     )
 
-    aggregates = [
-        _aggregate_from_record(record) for record in ordered_records
-    ]
+    aggregates = [_aggregate_from_record(record) for record in ordered_records]
     label_distribution = _label_distribution(ordered_records)
     typed_failures = sum(record.failed_repeats for record in ordered_records)
     agreements = [a.agreement for a in aggregates if a.agreement is not None]

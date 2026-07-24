@@ -51,7 +51,7 @@ _PARSE_LABELS: Final = (
             "natural boundary."
         ),
         example=(
-            'def rescale_to_unit(numbers: List[float]) elements), apply a '
+            "def rescale_to_unit(numbers: List[float]) elements), apply a "
             "linear transform ... (garbled, truncated mid-signature)"
         ),
     ),
@@ -79,7 +79,7 @@ _PARSE_LABELS: Final = (
     TaxonomyLabel(
         name="json-wrapped-code",
         definition=(
-            "The output is a JSON/structured envelope (e.g. {\"code\": ...}) "
+            'The output is a JSON/structured envelope (e.g. {"code": ...}) '
             "carrying a nonempty expression or snippet rather than a bare "
             "Python function definition. If the envelope's code payload is "
             "explicitly empty, prefer empty-code instead."

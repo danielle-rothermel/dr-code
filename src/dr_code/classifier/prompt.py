@@ -28,8 +28,10 @@ _KIND_NOUN: Final = {
 def build_prompt(kind: FailureKind, text: str) -> str:
     """Build the classification prompt for one failure item."""
     labels = ", ".join(label_names(kind))
-    body = text if len(text) <= _MAX_TEXT_CHARS else (
-        text[:_MAX_TEXT_CHARS] + "\n...[truncated for classification]"
+    body = (
+        text
+        if len(text) <= _MAX_TEXT_CHARS
+        else (text[:_MAX_TEXT_CHARS] + "\n...[truncated for classification]")
     )
     return (
         "You are classifying "

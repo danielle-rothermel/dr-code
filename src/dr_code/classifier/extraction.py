@@ -92,7 +92,9 @@ def _dataset_id(task_id: str | None) -> str | None:
 def _corpus_has_task_id(descriptor: RunDescriptor) -> bool:
     import pyarrow.parquet as pq
 
-    return "task_id" in pq.ParquetFile(descriptor.corpus_path).schema_arrow.names
+    return (
+        "task_id" in pq.ParquetFile(descriptor.corpus_path).schema_arrow.names
+    )
 
 
 def extract_parse_failures(
