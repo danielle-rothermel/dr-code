@@ -43,7 +43,9 @@ _HUMANEVAL_IDENTITY_FIELDS = (
 def humaneval_task_identity_payload(task: HumanEvalTask) -> dict[str, str]:
     """The complete identity payload for one HumanEval task."""
 
-    return {field: getattr(task, field) for field in _HUMANEVAL_IDENTITY_FIELDS}
+    return {
+        field: getattr(task, field) for field in _HUMANEVAL_IDENTITY_FIELDS
+    }
 
 
 def humaneval_task_identity(task: HumanEvalTask) -> str:

@@ -38,7 +38,9 @@ class CompressionReferenceKey(FrozenModel):
     @classmethod
     def _reject_empty(cls, value: str) -> str:
         if value == "":
-            raise ValueError("compression reference key parts must be non-empty")
+            raise ValueError(
+                "compression reference key parts must be non-empty"
+            )
         return value
 
     def identity_payload(self) -> dict[str, str]:
@@ -101,7 +103,9 @@ class CompressionReferenceResolver(FrozenModel):
     but empty artifact (zero denominator).
     """
 
-    bindings: tuple[tuple[CompressionReferenceKey, CompressionReferenceArtifact], ...] = ()
+    bindings: tuple[
+        tuple[CompressionReferenceKey, CompressionReferenceArtifact], ...
+    ] = ()
 
     @classmethod
     def from_mapping(

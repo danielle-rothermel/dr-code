@@ -57,9 +57,7 @@ def resolve_assignment(
     spec_by_name = {spec.name: spec for spec in specs}
     unknown = set(assignment) - set(spec_by_name)
     if unknown:
-        raise VariableError(
-            "unknown variables: " + ", ".join(sorted(unknown))
-        )
+        raise VariableError("unknown variables: " + ", ".join(sorted(unknown)))
 
     resolved: dict[str, JsonValue] = {}
     for spec in specs:

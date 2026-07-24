@@ -25,7 +25,9 @@ def resolved_operator_version(metric_name: str) -> str:
 
     operator = METRIC_REGISTRY.get(metric_name)
     if operator is None:
-        raise UnknownOperatorError(f"no operator registered for {metric_name!r}")
+        raise UnknownOperatorError(
+            f"no operator registered for {metric_name!r}"
+        )
     return str(operator.VERSION)
 
 

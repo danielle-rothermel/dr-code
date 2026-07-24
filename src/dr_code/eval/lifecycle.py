@@ -205,7 +205,11 @@ class PreprocessingDefinition(FrozenModel):
     ) -> PreprocessingConfig:
         resolved = resolve_assignment(self.variables, assignment or {})
         resolved_steps = tuple(
-            (binding.instance_name, binding.step, resolved_step_version(binding.step))
+            (
+                binding.instance_name,
+                binding.step,
+                resolved_step_version(binding.step),
+            )
             for binding in self.steps
         )
         return PreprocessingConfig._create(
@@ -354,7 +358,9 @@ class EvaluationProcedureDefinition(FrozenModel):
     definition_id: str
     version: str
     variables: tuple[VariableSpec, ...] = (
-        VariableSpec(name="zero_denominator", allowed=("not_applicable", "error")),
+        VariableSpec(
+            name="zero_denominator", allowed=("not_applicable", "error")
+        ),
     )
 
     def identity_hash(self) -> str:
