@@ -79,8 +79,8 @@ RECOVERABLE_RECIPES = [
     "extra_type_annotations",
 ]
 
-#: Recipes that make an unrecoverable semantic/structural change (see module
-#: docstring). Exempted from equivalence; asserted for old-pipeline parity.
+#: Recipes that make an unrecoverable semantic or structural change.
+#: Exempted from equivalence and covered by their direct corruption tests.
 NON_RECOVERABLE_RECIPES = [
     "inline_backticks",
     "dead_code",

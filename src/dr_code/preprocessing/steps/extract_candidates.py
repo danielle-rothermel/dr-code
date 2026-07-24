@@ -62,7 +62,7 @@ _FIELD_MARKER_RE: Final[re.Pattern[str]] = re.compile(
 
 
 def _code_like_candidates(blocks: list[str]) -> list[str]:
-    """Refine blocks exactly as the legacy extraction path did."""
+    """Refine blocks through code-like anchored segmentation."""
     return [block for block in code_like_blocks(blocks) if block.strip()]
 
 

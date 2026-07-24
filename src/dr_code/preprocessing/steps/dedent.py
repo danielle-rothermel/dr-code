@@ -10,12 +10,7 @@ from dr_code.preprocessing.steps.base import CandidateMapStep
 
 
 class Dedent(CandidateMapStep):
-    """``textwrap.dedent`` each candidate.
-
-    Exists for parity with the old pipeline even though the current
-    default behavior is ``apply_dedent=False``; default definitions are
-    out of scope here.
-    """
+    """Apply ``textwrap.dedent`` to each candidate."""
 
     NAME: ClassVar[StepName] = StepName.DEDENT_CANDIDATES
     VERSION: ClassVar[str] = "1"

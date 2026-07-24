@@ -264,3 +264,14 @@ def test_pipeline_dedupes_after_cleaning_and_retains_all_origins() -> None:
         _origin("normalized_raw_response", "fenced_blocks"),
         _origin("normalized_raw_response", "markdown_wrapper"),
     )
+
+
+def test_pipeline_supports_tilde_fences() -> None:
+    trace = run_preprocessing(
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+        TextArtifact(text="~~~python\ndef add_one(x):\n    return x + 1\n~~~"),
+    )
+    output = trace.value("output")
+
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert output.candidates == ("def add_one(x):\n    return x + 1",)

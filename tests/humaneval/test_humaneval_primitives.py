@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +21,6 @@ from dr_code.humaneval.batch_runner import (
     run_subprocess_batch,
     runner_script,
 )
-from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -36,6 +36,7 @@ from dr_code.humaneval.scoring import (
     CandidateHarnessFailure,
     CompletedCandidateScore,
     CompletedScore,
+    HarnessFailure,
     SubmissionOutcome,
     evaluation_outcome,
     score_humaneval_submission,
@@ -66,6 +67,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "EvaluationCaseStatus",
     "EvaluationCaseSummary",
     "EvaluationTaskSummary",
+    "HarnessFailure",
     "HUMANEVAL_SCORING_PROFILE_ID",
     "HUMANEVAL_SCORING_PROFILE_VERSION",
     "HarnessFailureCause",
@@ -315,43 +317,6 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
     assert "doc" in dumped["comments"]
 
 
-@pytest.mark.parametrize(
-    ("source", "expected_fragment"),
-    [
-        ("```python\ndef add_one(x):\n    return x + 1\n```", "def add_one"),
-        ("> def add_one(x):\n>     return x + 1", "def add_one"),
-        (
-            "    def add_one(x):\n        return x + 1\n",
-            "def add_one",
-        ),
-        (
-            "def add_one(x):\n"
-            "    return x + 1\n"
-            "print('trailing')\n",
-            "return x + 1",
-        ),
-        (
-            "def add_one(x):\n"
-            "    return x + 1\n"
-            "if __name__ == '__main__':\n"
-            "    print(add_one(1))\n",
-            "def add_one",
-        ),
-    ],
-)
-def test_apply_cleaning_extracts_known_submission_shapes(
-    source: str,
-    expected_fragment: str,
-) -> None:
-    candidates = apply_cleaning(source, apply_dedent=True)
-
-    assert candidates
-    assert expected_fragment in candidates[0]
-    assert validate_python_source(candidates[0]).compile_ok
-    assert "if __name__" not in candidates[0]
-    assert "print('trailing')" not in candidates[0]
-
-
 def test_evaluation_passes_when_best_function_passes(
     local_runner: SandboxRunner,
 ) -> None:
@@ -577,7 +542,10 @@ def test_score_humaneval_submission_returns_harness_failure() -> None:
         run_in_sandbox=_stub_runner(stdout="not-json"),
     )
 
+    assert isinstance(result, HarnessFailure)
+    assert result.kind == "harness_failure"
     assert result.outcome is SubmissionOutcome.HARNESS_FAILURE
+    assert not hasattr(result, "score")
     candidate = result.candidates[0]
     assert isinstance(candidate, CandidateHarnessFailure)
     assert candidate.failure_class == "unknown"
@@ -609,10 +577,126 @@ def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
         run_in_sandbox=broken_sandbox,
     )
 
+    assert isinstance(result, HarnessFailure)
     assert result.outcome is SubmissionOutcome.HARNESS_FAILURE
+    assert not hasattr(result, "score")
     candidate = result.candidates[0]
     assert isinstance(candidate, CandidateHarnessFailure)
     assert candidate.cause.exception_type == "SandboxError"
+
+
+def test_completed_score_rejects_harness_failure_outcome() -> None:
+    result = score_humaneval_submission(
+        raw_submission="def add_one(x):\n    return x + 1\n",
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_sandbox=_stub_runner(stdout="not-json"),
+    )
+    assert isinstance(result, HarnessFailure)
+
+    with pytest.raises(ValueError, match="harness failure cannot carry a score"):
+        CompletedScore(
+            raw_submission=result.raw_submission,
+            preprocessing=result.preprocessing,
+            candidates=result.candidates,
+            outcome=SubmissionOutcome.HARNESS_FAILURE,
+            score=0.0,
+        )
+
+
+def test_harness_failure_is_unscored_when_no_candidate_passes() -> None:
+    def mixed_runner(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess:
+        candidate_code = json.loads(input_json)["candidate_code"]
+        if "return x + 2" in candidate_code:
+            return SandboxCompletedProcess(
+                returncode=0,
+                stdout="not-json",
+                stderr="",
+            )
+        return SandboxCompletedProcess(
+            returncode=0,
+            stdout=(
+                '[{"case_id": "case_0", "status": "failed"}, '
+                '{"case_id": "case_1", "status": "failed"}]'
+            ),
+            stderr="",
+        )
+
+    result = score_humaneval_submission(
+        raw_submission=(
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x\n"
+            "```\n"
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x + 2\n"
+            "```\n"
+        ),
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_sandbox=mixed_runner,
+    )
+
+    assert isinstance(result, HarnessFailure)
+    assert [type(candidate) for candidate in result.candidates] == [
+        CompletedCandidateScore,
+        CandidateHarnessFailure,
+    ]
+    assert not hasattr(result, "score")
+
+
+def test_passing_candidate_makes_mixed_harness_result_determinate() -> None:
+    def mixed_runner(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess:
+        candidate_code = json.loads(input_json)["candidate_code"]
+        if "return x + 2" in candidate_code:
+            return SandboxCompletedProcess(
+                returncode=0,
+                stdout="not-json",
+                stderr="",
+            )
+        return SandboxCompletedProcess(
+            returncode=0,
+            stdout=(
+                '[{"case_id": "case_0", "status": "passed"}, '
+                '{"case_id": "case_1", "status": "passed"}]'
+            ),
+            stderr="",
+        )
+
+    result = score_humaneval_submission(
+        raw_submission=(
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x + 1\n"
+            "```\n"
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x + 2\n"
+            "```\n"
+        ),
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_sandbox=mixed_runner,
+    )
+
+    assert isinstance(result, CompletedScore)
+    assert result.outcome is SubmissionOutcome.PASSED
+    assert result.score == 1.0
+    assert [type(candidate) for candidate in result.candidates] == [
+        CompletedCandidateScore,
+        CandidateHarnessFailure,
+    ]
 
 
 def test_score_humaneval_submission_reports_empty_submission() -> None:
@@ -709,19 +793,6 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.coverage_complete is False
     assert result.failures == []
     assert result.status_counts == {"passed": 1}
-
-
-def test_apply_cleaning_returns_empty_for_blank_input() -> None:
-    assert apply_cleaning("") == []
-    assert apply_cleaning("   \n\t  ") == []
-
-
-def test_apply_cleaning_supports_tilde_fences() -> None:
-    source = "~~~python\ndef add_one(x):\n    return x + 1\n~~~"
-    candidates = apply_cleaning(source, apply_dedent=True)
-
-    assert candidates
-    assert "def add_one" in candidates[0]
 
 
 def test_validate_python_source_reports_syntax_errors() -> None:

@@ -28,6 +28,25 @@ def _run(raw: str):
             "def f():\n    return 1",
         ),
         (
+            "> def wrapped():\n>     return 1",
+            "def wrapped():\n    return 1",
+        ),
+        (
+            "    def indented():\n        return 1\n",
+            "def indented():\n    return 1",
+        ),
+        (
+            "def trimmed():\n    return 1\nprint('trailing')\n",
+            "def trimmed():\n    return 1",
+        ),
+        (
+            "def guarded():\n"
+            "    return 1\n"
+            "if __name__ == '__main__':\n"
+            "    print(guarded())\n",
+            "def guarded():\n    return 1",
+        ),
+        (
             json.dumps({"code": "def from_json():\n    return 2\n"}),
             "def from_json():\n    return 2",
         ),

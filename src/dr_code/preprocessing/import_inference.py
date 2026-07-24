@@ -1,11 +1,10 @@
 """Infer, repair, and dedupe import lines for extracted code candidates.
 
 Public step bodies behind the ``repair_import_lines`` /
-``infer_missing_imports`` / ``dedupe_imports`` steps, and behind the old
-pipeline's ``humaneval.import_inference.infer_necessary_imports`` (which now
-delegates here). Names in ``IMPORT_ALIAS_MAP`` are injected only when
-referenced and not bound anywhere in the candidate's syntax tree — a
-conservative rule, since injecting a wrong import is worse than skipping one.
+``infer_missing_imports`` / ``dedupe_imports`` steps. Names in
+``IMPORT_ALIAS_MAP`` are injected only when referenced and not bound anywhere
+in the candidate's syntax tree — a conservative rule, since injecting a wrong
+import is worse than skipping one.
 """
 
 from __future__ import annotations

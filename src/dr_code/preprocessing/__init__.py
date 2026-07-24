@@ -6,8 +6,8 @@ runner produces a ``Trace`` from the ``dr_code.trace`` boundary-contract
 package.
 
 Core functions (``text_transforms``, ``text_analysis``, ``code_analysis``)
-are reused as-is as step bodies; import inference lives here in
-``preprocessing.import_inference`` and the old pipeline delegates to it.
+are reused as-is as step bodies; import inference is owned by
+``preprocessing.import_inference``.
 """
 
 from __future__ import annotations

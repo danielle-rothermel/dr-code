@@ -3,8 +3,14 @@ from __future__ import annotations
 import pytest
 
 from dr_code.code_analysis import validate_python_source
-from dr_code.humaneval.code_extraction import apply_cleaning
-from dr_code.humaneval.import_inference import infer_necessary_imports
+from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    bind_preprocessing,
+)
+from dr_code.preprocessing.import_inference import infer_necessary_imports
+from dr_code.trace import CodeCandidateSetArtifact, TextArtifact
+
+RUNNER = bind_preprocessing(HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION)
 
 
 @pytest.mark.parametrize(
@@ -132,10 +138,7 @@ def test_infer_necessary_imports_repairs_trailing_comment_on_import_line() -> (
 
 def test_infer_necessary_imports_repairs_unbalanced_import_parens() -> None:
     source = (
-        "from typing import (List, Dict\n"
-        "\n"
-        "def f():\n"
-        "    return List[int]\n"
+        "from typing import (List, Dict\n\ndef f():\n    return List[int]\n"
     )
     result = infer_necessary_imports(source)
     assert "from typing import (List, Dict)" in result
@@ -161,9 +164,10 @@ def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     assert "import random" not in result
 
 
-def test_apply_cleaning_infers_imports_for_compilable_candidate() -> None:
+def test_official_pipeline_infers_imports_for_compilable_candidate() -> None:
     source = "```python\ndef f(x):\n    return np.array([x])\n```"
-    candidates = apply_cleaning(source, apply_dedent=True)
-    assert candidates
-    assert candidates[0].startswith("import numpy as np")
-    assert validate_python_source(candidates[0]).compile_ok
+    output = RUNNER.run(TextArtifact(text=source)).value("output")
+
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert output.candidates[0].startswith("import numpy as np")
+    assert validate_python_source(output.candidates[0]).compile_ok

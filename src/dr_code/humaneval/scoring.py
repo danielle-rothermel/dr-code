@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -12,6 +12,7 @@ from pydantic import (
     StrictBool,
     StrictInt,
     StrictStr,
+    model_validator,
 )
 
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
@@ -102,8 +103,31 @@ class CompletedScore(BaseModel):
     outcome: SubmissionOutcome
     score: float
 
+    @model_validator(mode="after")
+    def _reject_indeterminate_score(self) -> Self:
+        if self.outcome is SubmissionOutcome.HARNESS_FAILURE:
+            raise ValueError("harness failure cannot carry a score")
+        return self
 
-HumanEvalSubmissionScore = CompletedScore
+
+class HarnessFailure(BaseModel):
+    """Candidate evidence for a submission whose score is indeterminate."""
+
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    kind: Literal["harness_failure"] = "harness_failure"
+    raw_submission: str
+    preprocessing: Trace
+    candidates: tuple[HumanEvalCandidateScore, ...]
+    outcome: Literal[SubmissionOutcome.HARNESS_FAILURE] = (
+        SubmissionOutcome.HARNESS_FAILURE
+    )
+
+
+HumanEvalSubmissionScore = Annotated[
+    CompletedScore | HarnessFailure,
+    Field(discriminator="kind"),
+]
 
 
 class EvaluationAggregateMetrics(BaseModel):
@@ -183,6 +207,12 @@ def score_humaneval_submission(
         )
     candidates = tuple(candidates_list)
     outcome = submission_outcome(candidates)
+    if outcome is SubmissionOutcome.HARNESS_FAILURE:
+        return HarnessFailure(
+            raw_submission=raw_submission,
+            preprocessing=preprocessing,
+            candidates=candidates,
+        )
     return CompletedScore(
         raw_submission=raw_submission,
         preprocessing=preprocessing,
@@ -328,6 +358,7 @@ __all__ = [
     "CompletedCandidateScore",
     "CompletedScore",
     "EvaluationAggregateMetrics",
+    "HarnessFailure",
     "HarnessFailureCause",
     "HumanEvalCandidateScore",
     "HumanEvalSubmissionScore",
