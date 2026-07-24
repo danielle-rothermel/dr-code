@@ -58,7 +58,7 @@ EvaluationProcedureConfigHash = Annotated[
 ]
 FactScalar: TypeAlias = StrictFiniteFloat | StrictInt | StrictStr | StrictBool
 FactValue: TypeAlias = FactScalar | None
-METRIC_RECORD_SCHEMA_VERSION: Final = 2
+METRIC_RECORD_SCHEMA_VERSION: Final = 3
 SCORE_SCHEMA_VERSION: Final = 1
 
 
@@ -206,7 +206,7 @@ class RecordStatus(StrEnum):
 class MetricRecord(FrozenModel):
     """Exactly one answer shape for one metric question."""
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     question: str
     question_identity_hash: str
     on_key: str
@@ -218,6 +218,7 @@ class MetricRecord(FrozenModel):
     facts: tuple[MetricFact, ...] = ()
     absence_mode: AbsenceMode | None = None
     absence_cause: str | None = None
+    failure_code: str | None = None
     failure_type: str | None = None
     failure_message: str | None = None
 
@@ -240,7 +241,9 @@ class MetricRecord(FrozenModel):
                 "input key, and settings"
             )
         has_absence = (
-            self.absence_mode is not None or self.absence_cause is not None
+            self.absence_mode is not None
+            or self.absence_cause is not None
+            or self.failure_code is not None
         )
         has_failure = (
             self.failure_type is not None or self.failure_message is not None
@@ -297,9 +300,13 @@ class MetricRecord(FrozenModel):
         if self.facts:
             raise ValueError("non-measured records cannot carry facts")
         if self.status is RecordStatus.NOT_APPLICABLE:
-            if self.absence_mode is None or not self.absence_cause:
+            if (
+                self.absence_mode is None
+                or not self.absence_cause
+                or not self.failure_code
+            ):
                 raise ValueError(
-                    "not-applicable records require an absence mode and cause"
+                    "not-applicable records require an absence mode, cause, and failure code"
                 )
             if has_failure:
                 raise ValueError(
@@ -354,6 +361,7 @@ class MetricRecord(FrozenModel):
         operator: OperatorCoordinates,
         absence_mode: AbsenceMode,
         cause: str,
+        failure_code: str,
         sample_identity: SampleIdentity | None = None,
     ) -> Self:
         return cls(
@@ -368,6 +376,7 @@ class MetricRecord(FrozenModel):
             status=RecordStatus.NOT_APPLICABLE,
             absence_mode=absence_mode,
             absence_cause=cause,
+            failure_code=failure_code,
         )
 
     @classmethod

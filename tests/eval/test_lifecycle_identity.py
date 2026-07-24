@@ -63,8 +63,8 @@ def _components():
         version="1",
         steps=(
             PreprocessingStepBinding(
-                instance_name="sf",
-                step="select_first",
+                instance_name="return_all",
+                step="return_all",
             ),
         ),
     ).materialize()
@@ -98,11 +98,11 @@ def _components():
 def test_configs_have_stable_full_sha256_identities() -> None:
     expected = (
         "df81e5ad266c408bfc17ca576ce0e5febdb91b2e02e6ee4c298b1168936b641f",
-        "d295d18890031092195910d0aae5071c3482b5ed552853e50f69012e0fafffb3",
-        "0825482d454b4e8d9b834c3c3f47bc3283a0469176138b10aeb20cd6a6dcc80c",
-        "c03019a9af82b268ac98334240361d57006d7637f708d261d681f2533d94eb94",
+        "45d8216aa28ae089fb2509dd0774ba5746d1bcedbde222531c1f10e41f8935dc",
+        "b3a9919af7f96378b74bfe0867522a347e6b15238df528a94ccf8609343fbdc0",
+        "826aee15cb9aac2e282430e6ff0bc1aff9b7b4a50ab86ef3e04f28db02f8168b",
         "373b234c512b09f897fc42107cb7f6d7b848c5f6a48e4dc70d0ba39727e3522b",
-        "0c062a0357307b25fd69823ccab1253971e716fc5c59c383d3d303999446ff89",
+        "3e15f007ce63c5802dc7fbdf1047df679600acb74726bdea50850d3bcc85c590",
     )
     actual = tuple(item.config_identity_hash for item in _components())
     assert actual == expected
@@ -113,18 +113,18 @@ def test_resolved_step_and_operator_versions_are_materialized() -> None:
     _, preprocessing, metric, procedure, _, _ = _components()
     assert preprocessing.resolved_step_versions == (
         (
-            "sf",
-            "select_first",
+            "return_all",
+            "return_all",
             "1",
-            "95cf60e3b8529c6dc6f7b889ed200c9df0c5a3c6a0ad5ced9e39e7e4a4f931cb",
+            "cafe88fab8e82e21be767e8e9686384dedc285ddbe5e3d041b815983ddc7c63a",
         ),
     )
     assert metric.resolved_operator_versions == (
         (
-            "0de9c1d49cf0e80c13e19a784b74a721c435b032a9797807104c301d7d5415ca",
+            metric.questions[0].identity_hash(),
             "code_leakage",
             "2",
-            "3f5b984c9193f2ed1cd4c1258ed0da0d19355bdf9d9bc57ee3cd9578a3045e20",
+            "e37ae145f3a790cddd33807f524bd08dc52bd3fffebdafab7c32d9f72e16a908",
         ),
     )
     assert procedure.preprocessing_config_hash == (
@@ -269,18 +269,7 @@ def test_preprocessing_settings_use_recursive_canonical_json() -> None:
             ("fenced_blocks", "escaped_python"),
         ),
     )
-    assert (
-        PreprocessingDefinition(
-            definition_id="pre",
-            version="1",
-            steps=(forward,),
-        ).identity_hash()
-        == PreprocessingDefinition(
-            definition_id="pre",
-            version="1",
-            steps=(reverse,),
-        ).identity_hash()
-    )
+    assert forward.model_dump_json() == reverse.model_dump_json()
 
 
 @pytest.mark.parametrize("invalid", [math.inf, math.nan, {"values": {1, 2}}])
@@ -290,7 +279,7 @@ def test_preprocessing_settings_reject_non_json_values(
     with pytest.raises(StrictJsonError):
         PreprocessingStepBinding(
             instance_name="extract",
-            step="select_first",
+            step="return_all",
             settings={"invalid": invalid},
         )
 
@@ -594,18 +583,12 @@ def test_identity_json_is_deeply_immutable_and_round_trips() -> None:
         task_names.append("b")
     assert type(config).model_validate_json(config.model_dump_json()) == config
 
-    preprocessing = PreprocessingDefinition(
-        definition_id="pre",
-        version="1",
-        steps=(
-            PreprocessingStepBinding(
-                instance_name="extract",
-                step="extract_candidates",
-                settings={"alternatives": ["fenced_blocks", "escaped_python"]},
-            ),
-        ),
+    preprocessing = PreprocessingStepBinding(
+        instance_name="extract",
+        step="extract_candidates",
+        settings={"alternatives": ["fenced_blocks", "escaped_python"]},
     )
-    alternatives = dict(preprocessing.steps[0].settings)["alternatives"]
+    alternatives = dict(preprocessing.settings)["alternatives"]
     with pytest.raises(AttributeError):
         alternatives.append("raw_text")
 

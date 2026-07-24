@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from typing import Final, Literal
 
+from pydantic import JsonValue, model_validator
+
 from dr_code.models import FrozenModel
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
+from dr_code.trace.facts import validate_step_facts
 from dr_code.trace.provenance import TraceProducer
 from dr_code.trace.trace import Trace
 from dr_code.trace.observation import SampleIdentity
 
-TRACE_SCHEMA_VERSION: Final = 3
+TRACE_SCHEMA_VERSION: Final = 4
 
 
 class SerializedTrace(FrozenModel):
@@ -20,11 +23,16 @@ class SerializedTrace(FrozenModel):
     schemas.
     """
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     producer: TraceProducer
     sample_identity: SampleIdentity | None = None
     values: dict[str, Artifact | Absent]
-    step_facts: dict[str, dict[str, str]] = {}
+    step_facts: dict[str, dict[str, JsonValue]] = {}
+
+    @model_validator(mode="after")
+    def _validate_facts_are_json_lossless(self) -> SerializedTrace:
+        validate_step_facts(self.step_facts)
+        return self
 
 
 def serialize_trace(trace: Trace) -> SerializedTrace:

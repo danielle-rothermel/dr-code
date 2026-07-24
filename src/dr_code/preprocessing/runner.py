@@ -12,14 +12,19 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from pydantic import JsonValue
+
 from dr_code.eval.lifecycle import PreprocessingConfig
 from dr_code.eval.tasks import SampleIdentity
+from dr_code.preprocessing.decoder_output import normalize_decoder_output
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.trace import (
     Absent,
     Artifact,
     ArtifactKind,
     CodeArtifact,
     CodeCandidateSetArtifact,
+    IdentifiedCandidateSetArtifact,
     JsonArtifact,
     TextArtifact,
     Trace,
@@ -35,6 +40,7 @@ _KIND_TYPES = {
     ArtifactKind.TEXT: TextArtifact,
     ArtifactKind.CODE: CodeArtifact,
     ArtifactKind.CODE_CANDIDATE_SET: CodeCandidateSetArtifact,
+    ArtifactKind.IDENTIFIED_CANDIDATE_SET: IdentifiedCandidateSetArtifact,
     ArtifactKind.JSON: JsonArtifact,
 }
 
@@ -45,6 +51,89 @@ class BoundStep:
 
     instance_name: str
     step: Step
+
+
+@dataclass(frozen=True, slots=True)
+class BoundPreprocessingRunner:
+    """A preprocessing definition resolved once and reusable for many inputs."""
+
+    bound_steps: tuple[BoundStep, ...]
+    input_kind: ArtifactKind | None
+    producer: TraceProducer
+
+    def run(
+        self,
+        input_value: Artifact,
+        *,
+        sample_identity: SampleIdentity | None = None,
+    ) -> Trace:
+        """Run the bound steps over one input and return its full trace."""
+        if self.input_kind is not None:
+            expected_type = _KIND_TYPES[self.input_kind]
+            if not isinstance(input_value, expected_type):
+                raise WiringError(
+                    f"input artifact kind {type(input_value).__name__!r} "
+                    f"does not match first step input "
+                    f"{self.input_kind.value!r}"
+                )
+
+        validation_facts: dict[str, JsonValue] | None = None
+        if isinstance(input_value, TextArtifact):
+            normalized = normalize_decoder_output(input_value.text)
+            input_value = TextArtifact(text=normalized.text)
+            if not normalized.is_valid:
+                validation_facts = {
+                    "text_character_count": len(input_value.text),
+                    **normalized.facts,
+                }
+
+        values: dict[str, Artifact | Absent] = {"input": input_value}
+        step_facts: dict[str, dict[str, JsonValue]] = {}
+
+        if validation_facts is None:
+            current: Artifact | Absent = input_value
+        else:
+            current = Absent(
+                failed_step="validate_decoder_output",
+                cause="decoder output contains unsupported characters",
+                failure_code=PreprocessingFailureCode.DECODER_OUTPUT_INVALID.value,
+            )
+            step_facts["validate_decoder_output"] = validation_facts
+        for bound in self.bound_steps:
+            if is_absent(current):
+                current = Absent(
+                    failed_step=current.failed_step,
+                    cause=current.cause,
+                    failure_code=current.failure_code,
+                    propagated_through=(
+                        *current.propagated_through,
+                        bound.instance_name,
+                    ),
+                )
+            else:
+                try:
+                    output = bound.step.apply(current)
+                except StepFailedError as exc:
+                    current = Absent(
+                        failed_step=bound.instance_name,
+                        cause=exc.cause,
+                        failure_code=exc.failure_code.value,
+                    )
+                    if exc.facts:
+                        step_facts[bound.instance_name] = dict(exc.facts)
+                else:
+                    current = output.value
+                    if output.facts:
+                        step_facts[bound.instance_name] = dict(output.facts)
+            values[bound.instance_name] = current
+
+        values["output"] = current
+        return Trace(
+            values=values,
+            producer=self.producer,
+            step_facts=step_facts,
+            sample_identity=sample_identity,
+        )
 
 
 def bind_definition(
@@ -92,69 +181,15 @@ def bind_definition(
     return tuple(bound)
 
 
-def run_preprocessing(
+def bind_preprocessing(
     config: PreprocessingConfig,
-    input_value: Artifact,
-    *,
-    sample_identity: SampleIdentity | None = None,
-) -> Trace:
-    """Run a definition as a single mechanical fold over its steps.
-
-      value = input_value
-      for bound in bind_definition(config):
-          value or Absent -> run step / skip-and-propagate
-          record value under bound.instance_name; merge facts
-
-    ``StepFailedError`` -> ``Absent`` (failed_step=instance_name, cause);
-    downstream steps record the same ``Absent`` with
-    ``propagated_through`` extended. Always completes: the trace has
-    ``input``, one value per instance name, and ``output``.
-    """
+) -> BoundPreprocessingRunner:
+    """Bind one concrete config once for repeated preprocessing calls."""
     config = PreprocessingConfig.model_validate(
         config.model_dump(mode="python")
     )
     bound_steps = bind_definition(config)
-
-    if bound_steps:
-        first_input_kind = bound_steps[0].step.INPUT
-        expected_type = _KIND_TYPES[first_input_kind]
-        if not isinstance(input_value, expected_type):
-            raise WiringError(
-                f"input artifact kind {type(input_value).__name__!r} "
-                f"does not match first step input "
-                f"{first_input_kind.value!r}"
-            )
-
-    values: dict[str, Artifact | Absent] = {"input": input_value}
-    step_facts: dict[str, dict[str, str]] = {}
-
-    current: Artifact | Absent = input_value
-    for bound in bound_steps:
-        if is_absent(current):
-            current = Absent(
-                failed_step=current.failed_step,
-                cause=current.cause,
-                propagated_through=(
-                    *current.propagated_through,
-                    bound.instance_name,
-                ),
-            )
-        else:
-            try:
-                output = bound.step.apply(current)
-            except StepFailedError as exc:
-                current = Absent(
-                    failed_step=bound.instance_name,
-                    cause=exc.cause,
-                )
-            else:
-                current = output.value
-                if output.facts:
-                    step_facts[bound.instance_name] = dict(output.facts)
-        values[bound.instance_name] = current
-
-    values["output"] = current
-
+    input_kind = bound_steps[0].step.INPUT if bound_steps else None
     producer = TraceProducer(
         producer_id=config.definition_ref.definition_id,
         version=config.definition_ref.version,
@@ -162,12 +197,30 @@ def run_preprocessing(
         preprocessing_config_hash=config.config_identity_hash,
         implementation_hash=config.implementation_hash,
     )
-    return Trace(
-        values=values,
+    return BoundPreprocessingRunner(
+        bound_steps=bound_steps,
+        input_kind=input_kind,
         producer=producer,
-        step_facts=step_facts,
+    )
+
+
+def run_preprocessing(
+    config: PreprocessingConfig,
+    input_value: Artifact,
+    *,
+    sample_identity: SampleIdentity | None = None,
+) -> Trace:
+    """Run one concrete preprocessing config once."""
+    return bind_preprocessing(config).run(
+        input_value,
         sample_identity=sample_identity,
     )
 
 
-__all__ = ["BoundStep", "bind_definition", "run_preprocessing"]
+__all__ = [
+    "BoundPreprocessingRunner",
+    "BoundStep",
+    "bind_definition",
+    "bind_preprocessing",
+    "run_preprocessing",
+]

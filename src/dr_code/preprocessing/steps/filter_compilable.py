@@ -1,50 +1,79 @@
-"""Keep only candidates that compile."""
+"""Keep only identified candidates that compile."""
 
 from __future__ import annotations
 
 from typing import ClassVar
 
-from dr_code.code_analysis import validate_python_source_with_ast
+from pydantic import JsonValue
+
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.steps.base import Step, StepOutput
+from dr_code.preprocessing.steps.base import Step, StepFailedError, StepOutput
+from dr_code.preprocessing.steps.filter_plain_literal import (
+    _diagnostics,
+    _record,
+)
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
-    CodeCandidateSetArtifact,
+    CandidateInspection,
+    IdentifiedCandidateSetArtifact,
 )
 
 
 class FilterCompilable(Step):
-    """Keep candidates where ``validate_python_source_with_ast`` compiles.
-
-    Rejections become facts (``{"rejected_0": "SyntaxError: ..."}``) —
-    recorded facts, not quality judgments. An empty survivor set is data;
-    the absence surfaces at ``select_first``.
-    """
+    """Keep candidates whose stored inspection compiled successfully."""
 
     NAME: ClassVar[StepName] = StepName.FILTER_COMPILABLE
-    VERSION: ClassVar[str] = "1"
-    INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
-    OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
+    VERSION: ClassVar[str] = "4"
+    INPUT: ClassVar[ArtifactKind] = ArtifactKind.IDENTIFIED_CANDIDATE_SET
+    OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.IDENTIFIED_CANDIDATE_SET
 
     def apply(self, value: Artifact) -> StepOutput:
-        assert isinstance(value, CodeCandidateSetArtifact)
-        survivors: list[str] = []
-        facts: dict[str, str] = {}
+        assert isinstance(value, IdentifiedCandidateSetArtifact)
+        survivors = []
+        survivor_records: list[dict[str, JsonValue]] = []
+        rejections: list[dict[str, JsonValue]] = []
         for index, candidate in enumerate(value.candidates):
-            validated = validate_python_source_with_ast(candidate)
-            if validated.validation.compile_ok:
+            inspection = candidate.inspection
+            diagnostics = {
+                **_record(index, candidate.lineage.candidate_id),
+                **_diagnostics(inspection),
+            }
+            if inspection.compile_ok:
                 survivors.append(candidate)
+                survivor_records.append(diagnostics)
             else:
-                reason = (
-                    validated.validation.compile_error
-                    or "candidate does not compile"
+                rejections.append(
+                    {
+                        **diagnostics,
+                        "reason_code": _compile_reason(inspection),
+                    }
                 )
-                facts[f"rejected_{index}"] = reason
+        facts: dict[str, JsonValue] = {
+            "input_candidate_count": len(value.candidates),
+            "survivor_candidate_count": len(survivors),
+            "survivors": survivor_records,
+            "rejections": rejections,
+        }
+        if not survivors:
+            raise StepFailedError(
+                "no candidate compiled",
+                failure_code=PreprocessingFailureCode.NO_COMPILABLE_CANDIDATE,
+                facts=facts,
+            )
         return StepOutput(
-            value=CodeCandidateSetArtifact(candidates=tuple(survivors)),
+            value=IdentifiedCandidateSetArtifact(candidates=tuple(survivors)),
             facts=facts,
         )
+
+
+def _compile_reason(inspection: CandidateInspection) -> str:
+    if inspection.parser_stack_overflow:
+        return "parser_stack_overflow"
+    if inspection.parser_recursion_overflow:
+        return "parser_recursion_overflow"
+    return "not_compilable"
 
 
 __all__ = ["FilterCompilable"]

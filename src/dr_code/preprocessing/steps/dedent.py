@@ -10,10 +10,7 @@ from dr_code.preprocessing.steps.base import CandidateMapStep
 
 
 class Dedent(CandidateMapStep):
-    """``textwrap.dedent`` each candidate.
-
-    Definitions choose whether this step participates in candidate cleaning.
-    """
+    """Apply ``textwrap.dedent`` to each candidate."""
 
     NAME: ClassVar[StepName] = StepName.DEDENT_CANDIDATES
     VERSION: ClassVar[str] = "1"

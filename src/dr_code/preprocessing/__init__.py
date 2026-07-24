@@ -5,8 +5,7 @@ The runner applies those operations and records their artifacts, absences,
 facts, and producer identity in a ``dr_code.trace.Trace``.
 
 Core functions (``text_transforms``, ``text_analysis``, ``code_analysis``)
-provide step bodies. ``preprocessing.import_inference`` owns the import repair,
-inference, and deduplication logic used by preprocessing and HumanEval parsing.
+provide step bodies; ``preprocessing.import_inference`` owns import inference.
 """
 
 from __future__ import annotations
@@ -17,60 +16,52 @@ from dr_code.eval.lifecycle import (
     PreprocessingStepBinding,
 )
 from dr_code.preprocessing.definitions import (
-    BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-    BEST_EFFORT_V2_DEFINITION,
     DEFINITION_VERSION,
-    FIELD_MARKER_V2_DEFINITION,
-    STRICT_FIELD_MARKER_DEFINITION_ID,
+    HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
     SUPPORTED_DEFINITION_IDS,
     SUPPORTED_DEFINITION_VERSIONS,
     resolve_preprocessing_definition,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.runner import (
+    BoundPreprocessingRunner,
     BoundStep,
     bind_definition,
+    bind_preprocessing,
     run_preprocessing,
 )
 from dr_code.preprocessing.steps.base import (
-    AlternativesStep,
     CandidateMapStep,
     Step,
     StepFailedError,
     StepOutput,
     StepSettings,
 )
-from dr_code.preprocessing.steps.extract_candidates import (
-    DEFAULT_STRATEGIES,
-    STRATEGY_REGISTRY,
-    ExtractionStrategy,
-)
 
 __all__ = [
-    "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
-    "BEST_EFFORT_V2_DEFINITION",
-    "DEFAULT_STRATEGIES",
     "DEFINITION_VERSION",
-    "FIELD_MARKER_V2_DEFINITION",
-    "STRICT_FIELD_MARKER_DEFINITION_ID",
+    "HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID",
+    "HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION",
     "SUPPORTED_DEFINITION_IDS",
     "SUPPORTED_DEFINITION_VERSIONS",
-    "AlternativesStep",
+    "BoundPreprocessingRunner",
     "BoundStep",
     "CandidateMapStep",
-    "ExtractionStrategy",
     "PreprocessingConfig",
+    "PreprocessingFailureCode",
     "PreprocessingDefinition",
     "PreprocessingStepBinding",
     "REGISTRY",
-    "STRATEGY_REGISTRY",
     "Step",
     "StepFailedError",
     "StepName",
     "StepOutput",
     "StepSettings",
     "bind_definition",
+    "bind_preprocessing",
     "resolve_preprocessing_definition",
     "run_preprocessing",
 ]

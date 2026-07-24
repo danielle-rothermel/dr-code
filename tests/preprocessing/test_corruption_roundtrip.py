@@ -23,9 +23,9 @@ running the best-effort v2 definition partitions the recipes empirically
     RNG-chosen point, so the outcome is seed-dependent and never reliably
     equivalent.
 
-  Exempting these from the *equivalence* assertion is correct behaviour, not a
-  gap. For every exempted recipe we still assert that preprocessing either
-  gives up or returns genuinely non-equivalent code.
+  Exempting these from the positive *equivalence* assertion is correct
+  behaviour, not a gap. For every exempted recipe we still assert that the
+  official pipeline does not fabricate a candidate equivalent to the original.
 """
 
 from __future__ import annotations
@@ -36,14 +36,16 @@ import pytest
 
 from dr_code.code_analysis import equivalent
 from dr_code.preprocessing import (
-    resolve_preprocessing_definition,
-    run_preprocessing,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    bind_preprocessing,
 )
 from dr_code.synthetic.corruption_recipes import RECIPES_BY_NAME, apply_recipe
-from dr_code.trace import CodeArtifact, TextArtifact, is_absent
+from dr_code.trace import CodeCandidateSetArtifact, TextArtifact, is_absent
 
-BEST_EFFORT_ID = "humaneval-best-effort"
 SEED = 0
+RUNNER = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.materialize()
+)
 
 CLEAN = (
     "import numpy as np\n"
@@ -79,9 +81,8 @@ RECOVERABLE_RECIPES = [
     "extra_type_annotations",
 ]
 
-#: Recipes that make an unrecoverable semantic/structural change (see module
-#: docstring). Exempted from equivalence; asserted for a non-equivalent
-#: preprocessing outcome.
+#: Recipes that make an unrecoverable semantic or structural change.
+#: Exempted from equivalence and covered by their direct corruption tests.
 NON_RECOVERABLE_RECIPES = [
     "inline_backticks",
     "dead_code",
@@ -97,16 +98,8 @@ def _corrupt(recipe_name: str) -> str:
     return apply_recipe(recipe, CLEAN, random.Random(SEED)).corrupted_source
 
 
-def _best_effort_v2():
-    return resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
-    )
-
-
 def _run_best_effort(raw: str):
-    return run_preprocessing(
-        _best_effort_v2().materialize(), TextArtifact(text=raw)
-    ).value("output")
+    return RUNNER.run(TextArtifact(text=raw)).value("output")
 
 
 # --- recoverable recipes round-trip to equivalent code ---------------
@@ -117,25 +110,28 @@ def test_best_effort_recovers_corruption_to_equivalent(
     recipe_name: str,
 ) -> None:
     recovered = _run_best_effort(_corrupt(recipe_name))
-    assert isinstance(recovered, CodeArtifact), (
-        f"{recipe_name}: expected recovered CodeArtifact, got {recovered!r}"
+    assert isinstance(recovered, CodeCandidateSetArtifact), (
+        f"{recipe_name}: expected candidate set, got {recovered!r}"
     )
-    assert equivalent(CLEAN, recovered.source), (
+    assert any(equivalent(CLEAN, source) for source in recovered.candidates), (
         f"{recipe_name}: recovered code is not equivalent to the original"
     )
 
 
-# --- non-recoverable recipes: exempt from equivalence, assert outcome -
+# --- non-recoverable recipes do not fabricate equivalent source -------
 
 
 @pytest.mark.parametrize("recipe_name", NON_RECOVERABLE_RECIPES)
-def test_non_recoverable_does_not_recover_equivalent_code(
+def test_non_recoverable_does_not_fabricate_equivalent_code(
     recipe_name: str,
 ) -> None:
-    preprocessing = _run_best_effort(_corrupt(recipe_name))
-    source = None if is_absent(preprocessing) else preprocessing.source
-    if source is not None:
-        assert not equivalent(CLEAN, source), (
+    raw = _corrupt(recipe_name)
+    output = _run_best_effort(raw)
+    if not is_absent(output):
+        assert isinstance(output, CodeCandidateSetArtifact)
+        assert not any(
+            equivalent(CLEAN, source) for source in output.candidates
+        ), (
             f"{recipe_name}: unexpectedly recovered equivalent code; "
             f"it should be reclassified as recoverable"
         )

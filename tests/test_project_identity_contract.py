@@ -16,8 +16,8 @@ def test_project_version_and_identity_dependency_are_deliberate() -> None:
 
     assert project["project"]["version"] == "0.2.0"
     assert "dr-serialize==0.1.0" in project["project"]["dependencies"]
-    assert METRIC_RECORD_SCHEMA_VERSION == 2
-    assert TRACE_SCHEMA_VERSION == 3
+    assert METRIC_RECORD_SCHEMA_VERSION == 3
+    assert TRACE_SCHEMA_VERSION == 4
 
 
 def test_lock_preserves_the_exact_identity_dependency_boundary() -> None:

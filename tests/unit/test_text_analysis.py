@@ -88,6 +88,22 @@ def test_anchored_code_blocks_starts_at_code_anchor() -> None:
     ]
 
 
+def test_anchored_code_blocks_split_functions_separated_by_prose() -> None:
+    assert anchored_code_blocks(
+        "def first():\n"
+        "    return 1\n"
+        "\n"
+        "This is an explanation, not Python.\n"
+        "\n"
+        "def second():\n"
+        "    return 2",
+        segment_prose=True,
+    ) == [
+        "def first():\n    return 1\n",
+        "def second():\n    return 2",
+    ]
+
+
 def test_code_like_blocks_flattens_anchored_segments() -> None:
     assert code_like_blocks(["prose\ndef f():\n    return 1"]) == [
         "def f():\n    return 1"

@@ -39,9 +39,6 @@ from dr_code.execution.subprocess import (
     SubprocessTimeoutError,
     run_python_subprocess,
 )
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-)
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -60,11 +57,14 @@ from dr_code.humaneval.sampling import (
     sample_human_eval_tasks_from_rows,
 )
 from dr_code.humaneval.scoring import (
+    CandidateHarnessFailure,
+    CompletedCandidateScore,
     CompletedScore,
     HarnessFailure,
     SubmissionOutcome,
     evaluation_outcome,
     score_humaneval_submission,
+    submission_outcome,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
@@ -74,16 +74,14 @@ from dr_code.humaneval.task import (
     apply_human_eval_override,
 )
 from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
     resolve_preprocessing_definition,
-    run_preprocessing,
 )
-from dr_code.trace import CodeArtifact, TextArtifact, is_absent
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
-    "CodeExtractionResult",
-    "CodeParserProfile",
+    "CandidateHarnessFailure",
+    "CompletedCandidateScore",
     "CompletedScore",
     "DEFAULT_HUMANEVAL_SCORING_PROFILE",
     "DEFAULT_HUMANEVAL_TIMEOUT_SECONDS",
@@ -95,20 +93,17 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "HUMANEVAL_SCORING_PROFILE_VERSION",
     "HarnessFailure",
     "HarnessFailureCause",
+    "HumanEvalCandidateScore",
     "HumanEvalScoringProfile",
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
-    "PARSER_PROFILE_VERSION",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
     "evaluation_aggregate_metrics",
     "load_human_eval_rows",
     "parse_human_eval_dataset",
     "resolve_humaneval_scoring_profile",
-    "resolve_parser_profile",
     "run_human_eval_sampling",
     "sample_human_eval_tasks",
     "sample_human_eval_tasks_from_rows",
@@ -163,18 +158,6 @@ def _input_result_test() -> str:
         "    for inp, expected in zip(inputs, results):\n"
         "        assertion(candidate(*inp), expected)\n"
     )
-
-
-def _preprocess_submission(source: str) -> CodeArtifact | None:
-    definition = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.profile_id,
-        version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.version,
-    )
-    output = run_preprocessing(
-        definition.materialize(),
-        TextArtifact(text=source),
-    ).value("output")
-    return None if is_absent(output) else output
 
 
 def test_humaneval_public_api_is_curated() -> None:
@@ -683,41 +666,6 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
     assert "doc" in dumped["comments"]
 
 
-@pytest.mark.parametrize(
-    ("source", "expected_fragment"),
-    [
-        ("```python\ndef add_one(x):\n    return x + 1\n```", "def add_one"),
-        ("> def add_one(x):\n>     return x + 1", "def add_one"),
-        (
-            "    def add_one(x):\n        return x + 1\n",
-            "def add_one",
-        ),
-        (
-            "def add_one(x):\n    return x + 1\nprint('trailing')\n",
-            "return x + 1",
-        ),
-        (
-            "def add_one(x):\n"
-            "    return x + 1\n"
-            "if __name__ == '__main__':\n"
-            "    print(add_one(1))\n",
-            "def add_one",
-        ),
-    ],
-)
-def test_canonical_preprocessing_extracts_known_submission_shapes(
-    source: str,
-    expected_fragment: str,
-) -> None:
-    candidate = _preprocess_submission(source)
-
-    assert isinstance(candidate, CodeArtifact)
-    assert expected_fragment in candidate.source
-    assert validate_python_source(candidate.source).compile_ok
-    assert "if __name__" not in candidate.source
-    assert "print('trailing')" not in candidate.source
-
-
 def test_evaluation_passes_when_best_function_passes(
     local_runner: PythonSubprocessRunner,
 ) -> None:
@@ -989,26 +937,28 @@ def test_scoring_uses_canonical_preprocessing_and_persists_its_trace() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return “ok”\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
         run_in_subprocess=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
     )
 
     assert isinstance(result, CompletedScore)
-    assert result.extraction.extracted_code == (
+    assert result.candidates[0].candidate_code == (
         'def add_one(x):\n    return "ok"'
     )
-    assert result.extraction.trace.producer.producer_id == (
-        BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.profile_id
+    assert result.preprocessing.producer.producer_id == (
+        HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID
     )
     assert (
-        result.extraction.trace.producer.preprocessing_config_hash
+        result.preprocessing.producer.preprocessing_config_hash
         == resolve_preprocessing_definition(
-            definition_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.profile_id,
-            version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.version,
+            definition_id=HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
+            version=HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.version,
         )
         .materialize()
         .config_identity_hash
+    )
+    assert (
+        CompletedScore.model_validate_json(result.model_dump_json()) == result
     )
 
 
@@ -1069,11 +1019,14 @@ def test_evaluation_outcome_reports_tests_failed_when_case_fails() -> None:
     assert evaluation_outcome(evaluation) is SubmissionOutcome.TESTS_FAILED
 
 
+def test_submission_outcome_reports_no_candidates_for_empty_input() -> None:
+    assert submission_outcome(()) is SubmissionOutcome.NO_CANDIDATES
+
+
 def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
         run_in_subprocess=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
     )
@@ -1081,26 +1034,30 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     assert isinstance(result, CompletedScore)
     assert result.outcome is SubmissionOutcome.EVALUATION_INCOMPLETE
     assert result.score == 0.0
-    assert result.evaluation is not None
-    assert result.evaluation.failures == []
-    assert result.evaluation.coverage_complete is False
+    candidate = result.candidates[0]
+    assert isinstance(candidate, CompletedCandidateScore)
+    assert candidate.evaluation.failures == []
+    assert candidate.evaluation.coverage_complete is False
 
 
 def test_score_humaneval_submission_returns_harness_failure() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
         run_in_subprocess=_stub_runner(stdout="not-json"),
     )
 
     assert isinstance(result, HarnessFailure)
     assert result.kind == "harness_failure"
-    assert result.failure_class == "unknown"
-    assert result.cause.exception_type == "JSONDecodeError"
-    assert result.evaluation is not None
-    assert result.evaluation.results[0].elapsed_seconds is not None
+    assert result.outcome is SubmissionOutcome.HARNESS_FAILURE
+    assert not hasattr(result, "score")
+    candidate = result.candidates[0]
+    assert isinstance(candidate, CandidateHarnessFailure)
+    assert candidate.failure_class == "unknown"
+    assert candidate.cause.exception_type == "JSONDecodeError"
+    assert candidate.evaluation is not None
+    assert candidate.evaluation.results[0].elapsed_seconds is not None
 
 
 def test_score_humaneval_submission_reports_execution_breakage() -> None:
@@ -1122,30 +1079,188 @@ def test_score_humaneval_submission_reports_execution_breakage() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
         run_in_subprocess=broken_execution,
     )
 
     assert isinstance(result, HarnessFailure)
     assert result.kind == "harness_failure"
-    assert result.cause.exception_type == "SubprocessError"
+    assert not hasattr(result, "score")
+    candidate = result.candidates[0]
+    assert isinstance(candidate, CandidateHarnessFailure)
+    assert candidate.cause.exception_type == "SubprocessError"
 
 
 def test_score_humaneval_submission_reports_empty_submission() -> None:
     result = score_humaneval_submission(
         raw_submission=" \n\t ",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
     )
 
     assert isinstance(result, CompletedScore)
     assert result.kind == "completed"
     assert result.raw_submission == " \n\t "
-    assert result.extraction.raw_submission == " \n\t "
-    assert result.outcome is SubmissionOutcome.EMPTY_SUBMISSION
-    assert result.evaluation is None
+    assert result.outcome is SubmissionOutcome.PREPROCESSING_FAILED
+    assert result.preprocessing_failure_code is not None
+    assert result.candidates == ()
+
+
+@pytest.mark.parametrize(
+    ("raw_submission", "safe_raw_submission"),
+    (
+        (
+            "def add_one(x):\n    return x + 1\n\x00",
+            "def add_one(x):\n    return x + 1\n\\x00",
+        ),
+        (
+            "def add_one(x):\n    return '\ud800'\n",
+            "def add_one(x):\n    return '\\ud800'\n",
+        ),
+    ),
+)
+def test_score_humaneval_submission_returns_one_result_for_invalid_decoder_text(
+    raw_submission: str,
+    safe_raw_submission: str,
+) -> None:
+    result = score_humaneval_submission(
+        raw_submission=raw_submission,
+        task=_task(),
+        timeout_seconds=2.0,
+    )
+
+    assert isinstance(result, CompletedScore)
+    assert result.outcome is SubmissionOutcome.PREPROCESSING_FAILED
+    assert result.preprocessing_failure_code == "decoder_output_invalid"
+    assert result.candidates == ()
+    assert result.raw_submission == safe_raw_submission
+    assert (
+        CompletedScore.model_validate_json(result.model_dump_json()) == result
+    )
+
+
+def test_score_humaneval_submission_evaluates_every_candidate() -> None:
+    evaluated_inputs: list[str] = []
+
+    def recording_runner(
+        *,
+        source: str,
+        input_text: str,
+        timeout_seconds: float,
+    ) -> SubprocessCompletedProcess:
+        evaluated_inputs.append(input_text)
+        return SubprocessCompletedProcess(
+            returncode=0,
+            stdout=(
+                '[{"case_id": "case_0", "status": "passed"}, '
+                '{"case_id": "case_1", "status": "passed"}]'
+            ),
+            stderr="",
+        )
+
+    result = score_humaneval_submission(
+        raw_submission=(
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x\n"
+            "```\n"
+            "```python\n"
+            "def add_one(x):\n"
+            "    return x + 1\n"
+            "```\n"
+        ),
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_subprocess=recording_runner,
+    )
+
+    assert isinstance(result, CompletedScore)
+    assert [candidate.candidate_index for candidate in result.candidates] == [
+        0,
+        1,
+    ]
+    assert (
+        len({candidate.candidate_id for candidate in result.candidates}) == 2
+    )
+    assert len(evaluated_inputs) == 2
+
+
+@pytest.mark.parametrize(
+    "raw_submission",
+    (
+        "def first():\n"
+        "    return 1\n"
+        "\n"
+        "The preceding function is complete.\n"
+        "\n"
+        "def second():\n"
+        "    return 2\n",
+        r"def first():\n"
+        r"    return 1\n"
+        r"\n"
+        r"The preceding function is complete.\n"
+        r"\n"
+        r"def second():\n"
+        r"    return 2",
+    ),
+    ids=("unfenced", "escaped-unfenced"),
+)
+def test_score_humaneval_submission_evaluates_unfenced_functions_separated_by_prose(
+    raw_submission: str,
+) -> None:
+    evaluated_inputs: list[str] = []
+
+    def recording_runner(
+        *,
+        source: str,
+        input_text: str,
+        timeout_seconds: float,
+    ) -> SubprocessCompletedProcess:
+        evaluated_inputs.append(input_text)
+        return SubprocessCompletedProcess(
+            returncode=0,
+            stdout=(
+                '[{"case_id": "case_0", "status": "passed"}, '
+                '{"case_id": "case_1", "status": "passed"}]'
+            ),
+            stderr="",
+        )
+
+    result = score_humaneval_submission(
+        raw_submission=raw_submission,
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_subprocess=recording_runner,
+    )
+
+    assert isinstance(result, CompletedScore)
+    assert [candidate.candidate_code for candidate in result.candidates] == [
+        "def first():\n    return 1",
+        "def second():\n    return 2",
+    ]
+    assert len(evaluated_inputs) == 2
+
+
+def test_scoring_does_not_filter_candidates_by_task_entry_point() -> None:
+    result = score_humaneval_submission(
+        raw_submission=(
+            "def deliberately_different_name(x):\n    return x + 1\n"
+        ),
+        task=_task(),
+        timeout_seconds=2.0,
+        run_in_subprocess=_stub_runner(
+            stdout=(
+                '[{"case_id": "case_0", "status": "passed"}, '
+                '{"case_id": "case_1", "status": "passed"}]'
+            )
+        ),
+    )
+
+    assert isinstance(result, CompletedScore)
+    assert result.outcome is SubmissionOutcome.PASSED
+    assert result.candidates[0].candidate_code.startswith(
+        "def deliberately_different_name"
+    )
 
 
 def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
@@ -1162,19 +1277,6 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.status_counts == {"passed": 1}
 
 
-def test_canonical_preprocessing_returns_absent_for_blank_input() -> None:
-    assert _preprocess_submission("") is None
-    assert _preprocess_submission("   \n\t  ") is None
-
-
-def test_canonical_preprocessing_supports_tilde_fences() -> None:
-    source = "~~~python\ndef add_one(x):\n    return x + 1\n~~~"
-    candidate = _preprocess_submission(source)
-
-    assert isinstance(candidate, CodeArtifact)
-    assert "def add_one" in candidate.source
-
-
 def test_validate_python_source_reports_syntax_errors() -> None:
     validation = validate_python_source("def bad(x)\n  pass")
 
@@ -1189,7 +1291,6 @@ def test_score_humaneval_submission_rejects_non_string_input() -> None:
         score_humaneval_submission(
             raw_submission={"code": "def add_one(x):\n    return x + 1\n"},  # type: ignore[arg-type]
             task=_task(),
-            parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
             timeout_seconds=2.0,
         )
 

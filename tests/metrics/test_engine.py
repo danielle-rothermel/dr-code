@@ -276,8 +276,16 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
     distinct from a missing key (which is a wiring error)."""
     trace = external_trace(
         {
-            "input": Absent(failed_step="extract", cause="no code"),
-            "output": Absent(failed_step="extract", cause="no code"),
+            "input": Absent(
+                failed_step="extract",
+                cause="no code",
+                failure_code="no_code_candidates",
+            ),
+            "output": Absent(
+                failed_step="extract",
+                cause="no code",
+                failure_code="no_code_candidates",
+            ),
         }
     )
     definition = _definition(
@@ -289,6 +297,7 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
         assert record.status.value == "not_applicable"
         assert record.absence_mode.value == "preprocessing_failure"
         assert record.absence_cause == "extract: no code"
+        assert record.failure_code == "no_code_candidates"
         assert record.fact_values() == {}
 
 
@@ -301,7 +310,11 @@ def test_absent_auxiliary_yields_not_applicable(task) -> None:
         {
             "input": code,
             "output": code,
-            "task": Absent(failed_step="load", cause="missing task"),
+            "task": Absent(
+                failed_step="load",
+                cause="missing task",
+                failure_code="task_unavailable",
+            ),
         }
     )
     definition = _definition([_q("code_test", on="input")])
@@ -309,6 +322,7 @@ def test_absent_auxiliary_yields_not_applicable(task) -> None:
     assert record.status.value == "not_applicable"
     assert record.absence_mode.value == "preprocessing_failure"
     assert record.absence_cause == "load: missing task"
+    assert record.failure_code == "task_unavailable"
 
 
 # ===========================================================================
