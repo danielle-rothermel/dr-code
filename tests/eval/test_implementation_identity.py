@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -11,6 +14,28 @@ from dr_code.implementation_identity import (
     package_source_digest,
     package_source_manifest,
 )
+
+
+@pytest.fixture(scope="module")
+def built_wheel_package(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    project_root = Path(__file__).resolve().parents[2]
+    build_root = tmp_path_factory.mktemp("installed-wheel")
+    wheel_dir = build_root / "dist"
+    subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(wheel_dir)],
+        cwd=project_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    wheels = list(wheel_dir.glob("*.whl"))
+    assert len(wheels) == 1
+    installed_root = build_root / "installed"
+    with zipfile.ZipFile(wheels[0]) as archive:
+        archive.extractall(installed_root)
+    return installed_root / "dr_code"
 
 
 def _write_package(root: Path) -> Path:
@@ -47,6 +72,36 @@ def test_package_manifest_is_location_stable(tmp_path: Path) -> None:
         module="dr_code.operator",
         qualname="Implementation",
         package_root=installed_root,
+    )
+
+
+def test_built_wheel_matches_source_package_manifest(
+    built_wheel_package: Path,
+) -> None:
+    source_package = Path(__file__).resolve().parents[2] / "src" / "dr_code"
+
+    assert package_source_manifest(
+        built_wheel_package
+    ) == package_source_manifest(source_package)
+    assert package_source_digest(built_wheel_package) == package_source_digest(
+        source_package
+    )
+
+
+def test_built_wheel_manifest_detects_mutated_installed_source(
+    tmp_path: Path,
+    built_wheel_package: Path,
+) -> None:
+    mutated_package = tmp_path / "dr_code"
+    shutil.copytree(built_wheel_package, mutated_package)
+    source = mutated_package / "corpus" / "candidate_evaluation.py"
+    source.write_bytes(source.read_bytes() + b"\n# mutated installed bytes\n")
+
+    assert package_source_manifest(mutated_package) != package_source_manifest(
+        built_wheel_package
+    )
+    assert package_source_digest(mutated_package) != package_source_digest(
+        built_wheel_package
     )
 
 

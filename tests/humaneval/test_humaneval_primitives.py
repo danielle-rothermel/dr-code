@@ -53,6 +53,7 @@ from dr_code.humaneval.sampling import (
     HumanEvalRawRowsSnapshot,
     SampledHumanEvalTask,
     load_human_eval_rows,
+    load_human_eval_snapshot_rows_bytes,
     run_human_eval_sampling,
     sample_human_eval_tasks_from_rows,
 )
@@ -102,6 +103,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "SubmissionOutcome",
     "evaluation_aggregate_metrics",
     "load_human_eval_rows",
+    "load_human_eval_snapshot_rows_bytes",
     "parse_human_eval_dataset",
     "resolve_humaneval_scoring_profile",
     "run_human_eval_sampling",
@@ -594,6 +596,13 @@ def test_raw_row_snapshot_rejects_forged_dataset_split(
             snapshot_path=forged_path,
             expected_snapshot_sha256=digest,
         )
+
+
+def test_raw_row_snapshot_bytes_and_path_decoders_are_identical() -> None:
+    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
+    assert load_human_eval_snapshot_rows_bytes(
+        snapshot_path.read_bytes()
+    ) == load_human_eval_rows(snapshot_path=snapshot_path)
 
 
 def test_parse_input_result_tests_have_stable_case_ids() -> None:

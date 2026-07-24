@@ -192,13 +192,31 @@ def load_human_eval_snapshot_rows(
     hf_revision: str = DEFAULT_HUMAN_EVAL_HF_REVISION,
     expected_snapshot_sha256: str | None = None,
 ) -> list[HumanEvalRow]:
+    return load_human_eval_snapshot_rows_bytes(
+        snapshot_path.read_bytes(),
+        dataset_name=dataset_name,
+        dataset_split=dataset_split,
+        hf_revision=hf_revision,
+        expected_snapshot_sha256=expected_snapshot_sha256,
+    )
+
+
+def load_human_eval_snapshot_rows_bytes(
+    snapshot_bytes: bytes,
+    *,
+    dataset_name: str = DEFAULT_HUMAN_EVAL_DATASET_NAME,
+    dataset_split: str = DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+    hf_revision: str = DEFAULT_HUMAN_EVAL_HF_REVISION,
+    expected_snapshot_sha256: str | None = None,
+) -> list[HumanEvalRow]:
+    """Decode and validate a raw-row snapshot from authenticated bytes."""
+
     expected_digest = _trusted_snapshot_digest(
         dataset_name=dataset_name,
         dataset_split=dataset_split,
         hf_revision=hf_revision,
         expected_snapshot_sha256=expected_snapshot_sha256,
     )
-    snapshot_bytes = snapshot_path.read_bytes()
     actual_digest = hashlib.sha256(snapshot_bytes).hexdigest()
     if actual_digest != expected_digest:
         raise ValueError(
