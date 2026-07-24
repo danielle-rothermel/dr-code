@@ -489,7 +489,7 @@ def _task_annotation(value: DomainTaskAnnotation) -> TaskAnnotation:
     return TaskAnnotation(
         dataset_id=value.identity.dataset_id,
         task_id=value.identity.task_id,
-        origin=cast(Origin, value.origin.value),
+        origin=value.origin.value,
         category=value.category,
         note=value.note,
         tags=[_tag(tag) for tag in value.tags],
