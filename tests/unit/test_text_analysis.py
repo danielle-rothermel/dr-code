@@ -34,7 +34,9 @@ GARBAGE_INPUTS = (
     ids=lambda fn: fn.__name__,
 )
 @pytest.mark.parametrize("source", GARBAGE_INPUTS)
-def test_text_analysis_string_functions_are_total(analyze, source: str) -> None:
+def test_text_analysis_string_functions_are_total(
+    analyze, source: str
+) -> None:
     analyze(source)
 
 
@@ -63,7 +65,9 @@ def test_is_code_like_line_treats_blank_as_code_like() -> None:
     assert not is_code_like_line("This sentence is prose.")
 
 
-def test_split_by_fences_prefers_matching_closer_and_keeps_unmatched_fenced() -> None:
+def test_split_by_fences_prefers_matching_closer_and_keeps_unmatched_fenced() -> (
+    None
+):
     text = "before\n```python\nx = 1\n~~~\ny = 2\n```\nafter"
 
     unfenced, fenced = split_by_fences(text)

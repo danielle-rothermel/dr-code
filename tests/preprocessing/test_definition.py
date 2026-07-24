@@ -143,9 +143,7 @@ def test_definition_accepts_unique_non_reserved_names() -> None:
         definition_id="d",
         version="1",
         steps=(
-            StepSpec(
-                instance_name="n1", step=StepName.NORMALIZE_LINE_ENDINGS
-            ),
+            StepSpec(instance_name="n1", step=StepName.NORMALIZE_LINE_ENDINGS),
             StepSpec(instance_name="n2", step=StepName.NORMALIZE_UNICODE),
         ),
     )

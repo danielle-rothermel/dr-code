@@ -444,20 +444,85 @@ def test_evaluation_uses_highest_pass_count(
     assert result.status_counts == {"passed": 2}
 
 
-def test_evaluate_humaneval_code_reports_timeout_per_case(
-    local_runner: PythonSubprocessRunner,
-) -> None:
+def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
+    candidate_code = "def add_one(x):\n    return x + 1\n"
+    timeout_seconds = 0.2
+    forwarded_inputs: list[str] = []
+    forwarded_timeouts: list[float] = []
+    timeout_cause = SubprocessTimeoutError("controlled subprocess timeout")
+
+    def timeout_runner(
+        *,
+        source: str,
+        input_text: str,
+        timeout_seconds: float,
+    ) -> SubprocessCompletedProcess:
+        forwarded_inputs.append(input_text)
+        forwarded_timeouts.append(timeout_seconds)
+        raise timeout_cause
+
     result = evaluate_human_eval_code(
         task=_task(),
-        candidate_code=("def add_one(x):\n    while True:\n        pass\n"),
-        timeout_seconds=0.2,
-        run_in_subprocess=local_runner,
+        candidate_code=candidate_code,
+        timeout_seconds=timeout_seconds,
+        run_in_subprocess=timeout_runner,
     )
 
     assert result.passed is False
     assert result.status_counts == {"timeout": 2}
-    assert {case.case_id for case in result.results} == {"case_0", "case_1"}
-    assert {case.timeout_seconds for case in result.results} == {0.2}
+    assert result.results == [
+        EvaluationCaseResult(
+            task_id="HumanEval/fixture",
+            case_id="case_0",
+            function_name="add_one",
+            status=EvaluationCaseStatus.TIMEOUT,
+            message="Batch timed out after 0.2 seconds",
+            test_type=HumanEvalTestCaseKind.INPUT_RESULT,
+            input_repr="[1]",
+            expected_output_repr="2",
+            elapsed_seconds=0.2,
+            timeout_seconds=0.2,
+        ),
+        EvaluationCaseResult(
+            task_id="HumanEval/fixture",
+            case_id="case_1",
+            function_name="add_one",
+            status=EvaluationCaseStatus.TIMEOUT,
+            message="Batch timed out after 0.2 seconds",
+            test_type=HumanEvalTestCaseKind.INPUT_RESULT,
+            input_repr="[2]",
+            expected_output_repr="3",
+            elapsed_seconds=0.2,
+            timeout_seconds=0.2,
+        ),
+    ]
+    assert len(forwarded_inputs) == 1
+    assert json.loads(forwarded_inputs[0]) == {
+        "task_id": "HumanEval/fixture",
+        "candidate_code": candidate_code,
+        "support_code": "",
+        "function_name": "add_one",
+        "test_type": "input_result",
+        "checks": [
+            {
+                "case_id": "case_0",
+                "code": "assertion(candidate(*[1]), 2, 0.0)",
+                "input_repr": "[1]",
+                "expected_output_repr": "2",
+                "expected_output_expr": None,
+                "actual_output_expr": "candidate(*[1])",
+            },
+            {
+                "case_id": "case_1",
+                "code": "assertion(candidate(*[2]), 3, 0.0)",
+                "input_repr": "[2]",
+                "expected_output_repr": "3",
+                "expected_output_expr": None,
+                "actual_output_expr": "candidate(*[2])",
+            },
+        ],
+    }
+    assert forwarded_timeouts == [timeout_seconds]
     assert evaluation_outcome(result) is SubmissionOutcome.TIMED_OUT
 
 

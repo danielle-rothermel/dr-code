@@ -15,9 +15,7 @@ from dr_code.preprocessing.runner import (
     run_preprocessing,
 )
 from dr_code.trace import (
-    Absent,
     CodeArtifact,
-    CodeCandidateSetArtifact,
     TextArtifact,
     Trace,
     WiringError,
@@ -39,9 +37,7 @@ def _def(
 
 def test_bind_resolves_steps() -> None:
     definition = _def(
-        (
-            StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),
-        )
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
     bound = bind_definition(definition)
     assert len(bound) == 1
@@ -115,9 +111,7 @@ def test_run_single_text_step() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
-    trace = run_preprocessing(
-        definition, TextArtifact(text="ｄｅｆ")
-    )
+    trace = run_preprocessing(definition, TextArtifact(text="ｄｅｆ"))
     assert trace.value("output") == TextArtifact(text="def")
     assert trace.value("input") == TextArtifact(text="ｄｅｆ")
     assert trace.value("n") == TextArtifact(text="def")
@@ -300,7 +294,7 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
         )
     )
     source = (
-        r'Intro\n```python\ndef join_lines(lines):\n'
+        r"Intro\n```python\ndef join_lines(lines):\n"
         r'    return "\n".join(lines)\n```'
     )
     expected = 'def join_lines(lines):\n    return "\\n".join(lines)'

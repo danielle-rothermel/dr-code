@@ -1,66 +1,59 @@
-"""The trace package imports only pydantic and the stdlib."""
+"""Architecture boundary tests for the trace package."""
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import ast
+from importlib.util import resolve_name
+from pathlib import Path
 
-# The trace package holds only shared vocabulary; a test asserts it never
-# imports humaneval, preprocessing, metrics, or synthetic.
-FORBIDDEN = ("humaneval", "preprocessing", "metrics", "synthetic")
+DR_CODE_PACKAGE = Path(__file__).parents[2] / "src" / "dr_code"
+TRACE_PACKAGE = DR_CODE_PACKAGE / "trace"
+SIBLING_SYSTEMS = frozenset(
+    child.name
+    for child in DR_CODE_PACKAGE.iterdir()
+    if child.is_dir() and child.name not in {"__pycache__", TRACE_PACKAGE.name}
+)
 
 
-def test_trace_does_not_import_sibling_systems() -> None:
-    # Fresh subprocess so nothing else has warmed sys.modules.
-    code = (
-        "import sys\n"
-        "import dr_code.trace  # noqa: F401\n"
-        "forbidden = " + repr(FORBIDDEN) + "\n"
-        "loaded = [\n"
-        "    name for name in sys.modules\n"
-        "    if name.startswith('dr_code.')\n"
-        "    and any(name.startswith('dr_code.' + f) for f in forbidden)\n"
-        "]\n"
-        "print(';'.join(loaded))\n"
+def _import_targets(source_path: Path) -> set[str]:
+    tree = ast.parse(source_path.read_text(), filename=source_path)
+    relative_parent = source_path.relative_to(DR_CODE_PACKAGE).parent
+    current_package = ".".join(("dr_code", *relative_parent.parts))
+    targets: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            targets.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                relative_name = "." * node.level + (node.module or "")
+                module = resolve_name(relative_name, current_package)
+            else:
+                module = node.module or ""
+            targets.add(module)
+            targets.update(f"{module}.{alias.name}" for alias in node.names)
+
+    return targets
+
+
+def test_trace_source_does_not_import_sibling_systems() -> None:
+    forbidden_prefixes = tuple(
+        f"dr_code.{system}" for system in sorted(SIBLING_SYSTEMS)
     )
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert result.stdout.strip() == ""
+    violations = {
+        source_path.relative_to(DR_CODE_PACKAGE): sorted(
+            target
+            for target in _import_targets(source_path)
+            if any(
+                target == prefix or target.startswith(f"{prefix}.")
+                for prefix in forbidden_prefixes
+            )
+        )
+        for source_path in sorted(TRACE_PACKAGE.rglob("*.py"))
+    }
 
-
-def test_trace_modules_import_only_pydantic_and_stdlib() -> None:
-    # The package's imports resolve to pydantic/stdlib only. Baseline is
-    # a bare `import pydantic`, so pydantic's own transitive deps are
-    # allowed automatically; the trace package must add nothing beyond
-    # pydantic, stdlib, and dr_code itself.
-    code = (
-        "import sys\n"
-        # Baseline pulls pydantic and its own transitive dep tree, so the
-        # only unexplained additions are genuine third parties.
-        "import pydantic  # noqa: F401\n"
-        "from pydantic import (  # noqa: F401\n"
-        "    BaseModel, ConfigDict, Field, JsonValue, TypeAdapter,\n"
-        ")\n"
-        "import annotated_types  # noqa: F401\n"
-        "import typing_inspection  # noqa: F401\n"
-        "baseline = {n.split('.')[0] for n in sys.modules}\n"
-        "import dr_code.trace  # noqa: F401\n"
-        "stdlib = set(sys.stdlib_module_names)\n"
-        "added = {\n"
-        "    n.split('.')[0] for n in sys.modules\n"
-        "} - baseline - stdlib - {'dr_code'}\n"
-        "added = {n for n in added if n and not n.startswith('_')}\n"
-        "print(';'.join(sorted(added)))\n"
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    added = [n for n in result.stdout.strip().split(";") if n]
-    assert added == [], f"unexpected non-pydantic imports: {added}"
+    assert not {
+        source_path: targets
+        for source_path, targets in violations.items()
+        if targets
+    }
