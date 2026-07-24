@@ -67,3 +67,26 @@ The frontend workspace and its frozen pnpm lockfile are the source of truth for
 those packaged assets. `python3 scripts/build_viewer_assets.py` updates the
 checked archive, and `python3 scripts/build_viewer_assets.py --check` rebuilds
 in a temporary workspace and fails if either checked artifact is stale.
+
+Classify a descriptor's parse and measured candidate-test failures through an
+explicit subscription provider/model pair with:
+
+```bash
+uv run dr-code classify-failures /data/run.json \
+  --provider glm-coding \
+  --model glm-4.6 \
+  --repeats 5
+```
+
+The command checkpoints strict canonical JSONL details under a full
+experiment SHA-256 covering the authenticated run, provider transport, model,
+repeat and aggregation policy, taxonomy, prompt template, and selection
+limits. An explicit `--details` path is permanently owned by that exact
+experiment; `--force` recomputes it without allowing cross-experiment
+replacement. Machine task rollups are published as one transaction after the
+details artifact is complete. Human rows remain protected, and an all-failed
+rerun removes only stale machine rows owned by the same experiment and selected
+task scope.
+
+See [`docs/failure-classification.md`](docs/failure-classification.md) for the
+artifact, resume, and publication contracts plus the live validation checklist.

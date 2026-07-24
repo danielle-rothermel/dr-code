@@ -11,6 +11,7 @@ import duckdb
 import typer
 import uvicorn
 
+from dr_code.classifier.cli import register as register_classifier
 from dr_code.viewer.app import ViewerService, create_app
 
 DEFAULT_DATABASE = Path(".runs/dr-code-viewer.duckdb")
@@ -132,6 +133,9 @@ def viewer(
     application = create_app(service, allowed_host=host)
     # Annotation writes require a single process; do not expose a worker option.
     uvicorn.run(application, host=host, port=port, workers=1)
+
+
+register_classifier(app)
 
 
 if __name__ == "__main__":
