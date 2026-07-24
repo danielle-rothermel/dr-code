@@ -57,9 +57,7 @@ def _select_families(raw: str) -> tuple[OperatorFamily, ...]:
 def _task_filter(raw: str) -> tuple[str, ...]:
     if not raw.strip():
         return ()
-    return tuple(
-        token.strip() for token in raw.split(",") if token.strip()
-    )
+    return tuple(token.strip() for token in raw.split(",") if token.strip())
 
 
 @app.command()
