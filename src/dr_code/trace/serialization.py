@@ -10,11 +10,13 @@ from pydantic import JsonValue, model_validator
 from dr_code.models import FrozenModel
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
-from dr_code.trace.facts import reject_nonfinite_floats
+from dr_code.trace.facts import validate_step_facts
 from dr_code.trace.provenance import TraceProducer
 from dr_code.trace.trace import Trace
 
 TRACE_SCHEMA_VERSION: Final = 2
+_V1_SCHEMA_VERSION: Final = 1
+_V1_FAILURE_CODE: Final = "legacy.unknown"
 
 
 class SerializedTrace(FrozenModel):
@@ -37,7 +39,7 @@ class SerializedTrace(FrozenModel):
             return value
 
         payload = dict(value)
-        version = payload.get("schema_version", TRACE_SCHEMA_VERSION)
+        version = payload.get("schema_version", _V1_SCHEMA_VERSION)
         values = payload.get("values")
         if not isinstance(values, Mapping):
             return payload
@@ -52,9 +54,9 @@ class SerializedTrace(FrozenModel):
                 continue
             trace_value_payload = dict(trace_value)
             if trace_value_payload.get("kind") == "absent":
-                if version == 1:
+                if version == _V1_SCHEMA_VERSION:
                     trace_value_payload.setdefault(
-                        "failure_code", "legacy.unknown"
+                        "failure_code", _V1_FAILURE_CODE
                     )
                 elif "failure_code" not in trace_value_payload:
                     raise ValueError(
@@ -62,14 +64,14 @@ class SerializedTrace(FrozenModel):
                     )
             migrated_values[key] = trace_value_payload
 
-        if version == 1:
+        if version == _V1_SCHEMA_VERSION:
             payload["schema_version"] = TRACE_SCHEMA_VERSION
         payload["values"] = migrated_values
         return payload
 
     @model_validator(mode="after")
     def _validate_facts_are_json_lossless(self) -> SerializedTrace:
-        reject_nonfinite_floats(self.step_facts, path="step_facts")
+        validate_step_facts(self.step_facts)
         return self
 
 

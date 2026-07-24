@@ -10,7 +10,7 @@ from pydantic import JsonValue
 
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
-from dr_code.trace.facts import reject_nonfinite_floats
+from dr_code.trace.facts import validate_step_facts
 from dr_code.trace.provenance import EXTERNAL_PRODUCER, TraceProducer
 
 INPUT_KEY: Final = "input"
@@ -59,7 +59,7 @@ class Trace:
                     f"value for key {key!r} is not a TraceValue: "
                     f"{type(val).__name__}"
                 )
-        reject_nonfinite_floats(self.step_facts, path="step_facts")
+        validate_step_facts(self.step_facts)
 
     def value(self, key: str) -> TraceValue:
         """Missing key raises WiringError. Present-but-Absent returns the

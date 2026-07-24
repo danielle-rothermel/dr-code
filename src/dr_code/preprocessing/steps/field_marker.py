@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from dr_code.humaneval.code_parsing import field_marker_value
 from dr_code.preprocessing.names import StepName
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.steps.base import (
     Step,
     StepFailedError,
@@ -48,11 +49,15 @@ class FieldMarker(Step[FieldMarkerSettings]):
         )
         if field_value is None:
             raise StepFailedError(
-                f"missing field marker for {self.settings.field_name!r}"
+                f"missing field marker for {self.settings.field_name!r}",
+                failure_code=PreprocessingFailureCode.MISSING_FIELD_MARKER,
             )
         candidate = field_value.strip()
         if not candidate:
-            raise StepFailedError("empty field-marker code")
+            raise StepFailedError(
+                "empty field-marker code",
+                failure_code=PreprocessingFailureCode.EMPTY_FIELD_MARKER_CODE,
+            )
         return StepOutput(
             value=CodeCandidateSetArtifact(candidates=(candidate,)),
             facts={"field_name": self.settings.field_name},

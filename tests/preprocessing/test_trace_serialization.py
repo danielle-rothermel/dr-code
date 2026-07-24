@@ -10,11 +10,14 @@ under test is the one the resolver stamps.
 
 from __future__ import annotations
 
+import pytest
+
 from dr_code.preprocessing import (
     resolve_preprocessing_definition,
     run_preprocessing,
 )
 from dr_code.preprocessing.definition import preprocessing_definition_hash
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.steps.base import StepFailedError, StepOutput
 from dr_code.trace import (
     Absent,
@@ -27,7 +30,6 @@ from dr_code.trace import (
     is_absent,
     serialize_trace,
 )
-from dr_code.trace.absent import LEGACY_FAILURE_CODE
 
 BEST_EFFORT_ID = "humaneval-best-effort"
 FIELD_MARKER_ID = "humaneval-field-marker"
@@ -123,15 +125,26 @@ def test_step_contract_accepts_structured_facts() -> None:
     )
     error = StepFailedError(
         "no candidate survived",
-        failure_code="preprocessing.no_candidates",
+        failure_code=PreprocessingFailureCode.NO_CANDIDATE_TO_SELECT,
         facts={"rejected": [{"index": 0, "reason": "syntax"}]},
     )
-    legacy_error = StepFailedError("no candidate survived")
 
     assert output.facts == facts
-    assert error.failure_code == "preprocessing.no_candidates"
+    assert error.failure_code is PreprocessingFailureCode.NO_CANDIDATE_TO_SELECT
     assert error.facts == {"rejected": [{"index": 0, "reason": "syntax"}]}
-    assert legacy_error.failure_code == LEGACY_FAILURE_CODE
+
+
+def test_step_failure_requires_stable_code() -> None:
+    with pytest.raises(TypeError, match="failure_code"):
+        StepFailedError("no candidate survived")  # type: ignore[call-arg]
+
+
+def test_step_failure_rejects_unregistered_code() -> None:
+    with pytest.raises(TypeError, match="PreprocessingFailureCode"):
+        StepFailedError(
+            "no candidate survived",
+            failure_code="ad_hoc_code",  # type: ignore[arg-type]
+        )
 
 
 # --- absent trace: causal lineage and propagation survive ------------

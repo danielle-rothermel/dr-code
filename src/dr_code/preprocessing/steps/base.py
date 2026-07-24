@@ -14,13 +14,13 @@ from typing import ClassVar, Generic, TypeVar, cast
 from pydantic import JsonValue
 
 from dr_code.models import FrozenModel
+from dr_code.preprocessing.failures import PreprocessingFailureCode
+from dr_code.preprocessing.names import StepName
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
     CodeCandidateSetArtifact,
 )
-from dr_code.trace.absent import LEGACY_FAILURE_CODE
-from dr_code.preprocessing.names import StepName
 
 
 class StepSettings(FrozenModel):
@@ -45,12 +45,14 @@ class StepFailedError(Exception):
         self,
         cause: str,
         *,
-        failure_code: str = LEGACY_FAILURE_CODE,
+        failure_code: PreprocessingFailureCode,
         facts: Mapping[str, JsonValue] | None = None,
     ) -> None:
         super().__init__(cause)
+        if not isinstance(failure_code, PreprocessingFailureCode):
+            raise TypeError("failure_code must be a PreprocessingFailureCode")
         self.cause: str = cause
-        self.failure_code: str = failure_code
+        self.failure_code = failure_code
         self.facts: dict[str, JsonValue] = (
             dict(facts) if facts is not None else {}
         )
@@ -140,7 +142,10 @@ class AlternativesStep(Step[SettingsT], Generic[SettingsT]):
             result = strategy_fn(value)
             if result is not None:
                 return StepOutput(value=result, facts={"alternative": name})
-        raise StepFailedError("no alternative produced candidates")
+        raise StepFailedError(
+            "no alternative produced candidates",
+            failure_code=PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES,
+        )
 
 
 def _candidate_set(value: Artifact) -> CodeCandidateSetArtifact:

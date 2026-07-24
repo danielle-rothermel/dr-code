@@ -130,9 +130,21 @@ def absent_trace(
     """A trace whose ``key`` is Absent with causal lineage."""
     return external_trace(
         {
-            "input": Absent(failed_step=failed_step, cause=cause),
-            "output": Absent(failed_step=failed_step, cause=cause),
-            key: Absent(failed_step=failed_step, cause=cause),
+            "input": Absent(
+                failed_step=failed_step,
+                cause=cause,
+                failure_code="test.absent",
+            ),
+            "output": Absent(
+                failed_step=failed_step,
+                cause=cause,
+                failure_code="test.absent",
+            ),
+            key: Absent(
+                failed_step=failed_step,
+                cause=cause,
+                failure_code="test.absent",
+            ),
         }
     )
 

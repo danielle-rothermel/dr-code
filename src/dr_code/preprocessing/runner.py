@@ -91,7 +91,7 @@ class BoundPreprocessingRunner:
                     current = Absent(
                         failed_step=bound.instance_name,
                         cause=exc.cause,
-                        failure_code=exc.failure_code,
+                        failure_code=exc.failure_code.value,
                     )
                     if exc.facts:
                         step_facts[bound.instance_name] = dict(exc.facts)

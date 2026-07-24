@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Final, Literal, TypeIs
+from typing import Literal, TypeIs
 
 from dr_code.models import FrozenModel
-
-LEGACY_FAILURE_CODE: Final = "legacy.unknown"
 
 
 class Absent(FrozenModel):
@@ -21,9 +19,8 @@ class Absent(FrozenModel):
     failed_step: str
     # human-readable reason for the failure
     cause: str
-    # stable machine-readable failure category. Old serialized traces did
-    # not carry this field, so they materialize as this explicit legacy value.
-    failure_code: str = LEGACY_FAILURE_CODE
+    # stable machine-readable failure category
+    failure_code: str
     # downstream instance names that inherited it
     propagated_through: tuple[str, ...] = ()
 

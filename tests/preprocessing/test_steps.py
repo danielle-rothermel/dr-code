@@ -9,9 +9,10 @@ import pytest
 
 from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.import_inference import infer_necessary_imports
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
-from dr_code.preprocessing.steps.base import Step, StepOutput
+from dr_code.preprocessing.steps.base import Step, StepFailedError, StepOutput
 from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
 )
@@ -433,10 +434,12 @@ def test_extract_candidates_all_fail_raises() -> None:
 
 
 def test_extract_candidates_empty_input_raises() -> None:
-    from dr_code.preprocessing.steps.base import StepFailedError
-
-    with pytest.raises(StepFailedError):
+    with pytest.raises(StepFailedError) as raised:
         ExtractCandidates().apply(TextArtifact(text=""))
+    assert (
+        raised.value.failure_code
+        is PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES
+    )
 
 
 # --- field_marker step -----------------------------------------------
@@ -450,10 +453,21 @@ def test_field_marker_extracts_code_field() -> None:
 
 
 def test_field_marker_missing_raises() -> None:
-    from dr_code.preprocessing.steps.base import StepFailedError
-
-    with pytest.raises(StepFailedError):
+    with pytest.raises(StepFailedError) as raised:
         FieldMarker().apply(TextArtifact(text="no markers here"))
+    assert (
+        raised.value.failure_code
+        is PreprocessingFailureCode.MISSING_FIELD_MARKER
+    )
+
+
+def test_field_marker_empty_code_raises() -> None:
+    with pytest.raises(StepFailedError) as raised:
+        FieldMarker().apply(TextArtifact(text="[[ ## code ## ]]\n  \n"))
+    assert (
+        raised.value.failure_code
+        is PreprocessingFailureCode.EMPTY_FIELD_MARKER_CODE
+    )
 
 
 def test_field_marker_custom_field_name() -> None:

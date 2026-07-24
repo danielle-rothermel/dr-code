@@ -87,7 +87,11 @@ def test_value_missing_key_raises_wiring_error() -> None:
 
 def test_value_present_but_absent_returns_absent() -> None:
     # Present-but-Absent is data: value() returns the Absent, not raise.
-    absent = Absent(failed_step="parse", cause="boom")
+    absent = Absent(
+        failed_step="parse",
+        cause="boom",
+        failure_code="test.parse_failure",
+    )
     trace = Trace(
         values={
             INPUT_KEY: TextArtifact(text="in"),

@@ -27,6 +27,7 @@ from dr_code.preprocessing.definitions import (
     SUPPORTED_DEFINITION_VERSIONS,
     resolve_preprocessing_definition,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.runner import (
@@ -64,6 +65,7 @@ __all__ = [
     "BoundStep",
     "CandidateMapStep",
     "ExtractionStrategy",
+    "PreprocessingFailureCode",
     "PreprocessingDefinition",
     "REGISTRY",
     "STRATEGY_REGISTRY",

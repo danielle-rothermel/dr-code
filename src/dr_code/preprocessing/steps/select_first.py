@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from dr_code.preprocessing.names import StepName
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.steps.base import Step, StepFailedError, StepOutput
 from dr_code.trace import (
     Artifact,
@@ -32,7 +33,10 @@ class SelectFirst(Step):
         assert isinstance(value, CodeCandidateSetArtifact)
         candidates = value.candidates
         if not candidates:
-            raise StepFailedError("no candidate survived filtering")
+            raise StepFailedError(
+                "no candidate survived filtering",
+                failure_code=PreprocessingFailureCode.NO_CANDIDATE_TO_SELECT,
+            )
         return StepOutput(value=CodeArtifact(source=candidates[0]))
 
 

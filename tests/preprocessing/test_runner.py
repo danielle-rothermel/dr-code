@@ -10,6 +10,7 @@ from dr_code.preprocessing.definition import (
     PreprocessingDefinition,
     StepSpec,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
     BoundPreprocessingRunner,
@@ -39,7 +40,7 @@ class _FailingTextStep(Step[StepSettings]):
     def apply(self, value: Artifact):  # noqa: ARG002
         raise StepFailedError(
             "cannot recover this input",
-            failure_code="test.unrecoverable",
+            failure_code=PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES,
             facts={
                 "candidates": ["candidate-0"],
                 "reason": {"kind": "unrecoverable"},
@@ -244,7 +245,10 @@ def test_bound_runner_preserves_structured_step_failure(
 
     failure = trace.value("fail")
     assert is_absent(failure)
-    assert failure.failure_code == "test.unrecoverable"
+    assert (
+        failure.failure_code
+        == PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES
+    )
     assert trace.step_facts["fail"] == {
         "candidates": ["candidate-0"],
         "reason": {"kind": "unrecoverable"},
@@ -252,7 +256,10 @@ def test_bound_runner_preserves_structured_step_failure(
 
     propagated = trace.value("downstream")
     assert is_absent(propagated)
-    assert propagated.failure_code == "test.unrecoverable"
+    assert (
+        propagated.failure_code
+        == PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES
+    )
 
 
 # --- run: Absent propagation -----------------------------------------
@@ -272,6 +279,10 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     assert is_absent(extract_val)
     assert extract_val.failed_step == "e"
     assert extract_val.cause == "no alternative produced candidates"
+    assert (
+        extract_val.failure_code
+        == PreprocessingFailureCode.NO_ALTERNATIVE_CANDIDATES
+    )
 
     # downstream steps inherit the same Absent, propagated_through grows
     strip_val = trace.value("s")
@@ -300,6 +311,10 @@ def test_run_select_first_empty_set_yields_absent() -> None:
     assert is_absent(out)
     assert out.failed_step == "sel"
     assert out.cause == "no candidate survived filtering"
+    assert (
+        out.failure_code
+        == PreprocessingFailureCode.NO_CANDIDATE_TO_SELECT
+    )
     # rejection reason recorded as fact
     assert "rejected_0" in trace.step_facts["flt"]
 

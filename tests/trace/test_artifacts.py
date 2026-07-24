@@ -69,7 +69,9 @@ def test_artifacts_are_frozen(art: Artifact) -> None:
 
 
 def test_absent_is_frozen() -> None:
-    absent = Absent(failed_step="s", cause="boom")
+    absent = Absent(
+        failed_step="s", cause="boom", failure_code="test.failure"
+    )
     with pytest.raises(ValidationError):
         absent.cause = "other"  # type: ignore[misc]
 
@@ -86,8 +88,16 @@ def test_text_artifact_rejects_extra_fields() -> None:
 def test_absent_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
         Absent(  # type: ignore[call-arg]
-            failed_step="s", cause="c", bogus=1
+            failed_step="s",
+            cause="c",
+            failure_code="test.failure",
+            bogus=1,
         )
+
+
+def test_absent_requires_failure_code() -> None:
+    with pytest.raises(ValidationError, match="failure_code"):
+        Absent(failed_step="s", cause="c")  # type: ignore[call-arg]
 
 
 # --- discriminated parse --------------------------------------------
@@ -127,6 +137,7 @@ def test_absent_causal_lineage_fields() -> None:
     absent = Absent(
         failed_step="parse",
         cause="syntax error",
+        failure_code="test.syntax_error",
         propagated_through=("score", "aggregate"),
     )
     assert absent.failed_step == "parse"
@@ -135,12 +146,16 @@ def test_absent_causal_lineage_fields() -> None:
 
 
 def test_absent_propagated_through_defaults_empty() -> None:
-    absent = Absent(failed_step="parse", cause="syntax error")
+    absent = Absent(
+        failed_step="parse",
+        cause="syntax error",
+        failure_code="test.syntax_error",
+    )
     assert absent.propagated_through == ()
 
 
 def test_is_absent_true_for_absent() -> None:
-    absent = Absent(failed_step="s", cause="c")
+    absent = Absent(failed_step="s", cause="c", failure_code="test.failure")
     assert is_absent(absent) is True
 
 
