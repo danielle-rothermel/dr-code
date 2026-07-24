@@ -34,6 +34,7 @@ from dr_code.corpus.run_descriptor import (
 )
 from dr_code.execution.subprocess import run_python_subprocess
 from dr_code.eval import identity_hash_for
+from dr_code.synthetic.humaneval_loader import packaged_snapshot_bytes
 from dr_code.viewer.analytics import ViewerAnalytics
 from dr_code.viewer.database import ViewerDatabase
 from dr_code.viewer.domain import (
@@ -220,9 +221,15 @@ def test_descriptor_uses_one_captured_preprocessing_manifest(
         destination: Path,
         *,
         label: str,
+        max_bytes: int | None = None,
     ) -> stable_files_module.StableFile:
         nonlocal replaced
-        captured = copy_and_hash(source, destination, label=label)
+        captured = copy_and_hash(
+            source,
+            destination,
+            label=label,
+            max_bytes=max_bytes,
+        )
         if source == source_manifest and not replaced:
             replaced = True
             replacement_manifest.replace(source_manifest)
@@ -293,9 +300,15 @@ def test_descriptor_uses_one_captured_evaluation_pointer(
         destination: Path,
         *,
         label: str,
+        max_bytes: int | None = None,
     ) -> stable_files_module.StableFile:
         nonlocal replaced
-        captured = copy_and_hash(source, destination, label=label)
+        captured = copy_and_hash(
+            source,
+            destination,
+            label=label,
+            max_bytes=max_bytes,
+        )
         if source == pointer_path and not replaced:
             replaced = True
             replacement_pointer.replace(pointer_path)
@@ -480,9 +493,7 @@ def test_descriptor_rejects_candidate_duplicate_across_row_groups(
 def test_real_schema_six_producer_flows_through_analysis_and_viewer(
     tmp_path: Path,
 ) -> None:
-    snapshot_bytes = Path(
-        "tests/corpus/humanevalplus_snapshot.json"
-    ).read_bytes()
+    snapshot_bytes = packaged_snapshot_bytes()
     canonical_task = json.loads(snapshot_bytes)["rows"][0]
     corpus = tmp_path / "corpus.parquet"
     pq.write_table(

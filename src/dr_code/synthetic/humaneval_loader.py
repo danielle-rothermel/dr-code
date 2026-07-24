@@ -1,16 +1,14 @@
 """Load HumanEvalPlus ground-truth solutions.
 
-The "Plus" variant matters because it ships extended unit tests — useful
-for future opt-in execution-based equivalence checks. The plain
-`canonical_solution` + `prompt` text is used for our syntactic ground truth.
-
-If network access is unavailable, callers must explicitly opt into the offline
-JSON snapshot under `tests/corpus/humanevalplus_snapshot.json`.
-The raw-row loading contract is owned by `dr_code.humaneval.sampling`.
+The packaged snapshot is the offline default. Callers may explicitly select
+the independently loaded pinned Hugging Face revision.
 """
 
 from __future__ import annotations
 
+import hashlib
+from enum import StrEnum
+from importlib.resources import files
 from pathlib import Path
 from typing import Final
 
@@ -20,6 +18,7 @@ from dr_code.humaneval.sampling import (
     DEFAULT_HUMAN_EVAL_HF_REVISION,
     HumanEvalRow,
     load_human_eval_rows,
+    load_human_eval_snapshot_rows_bytes,
     write_human_eval_snapshot_rows,
 )
 from dr_code.models import FrozenModel
@@ -29,8 +28,17 @@ HF_DATASET_ID: Final[str] = DEFAULT_HUMAN_EVAL_DATASET_NAME
 HF_SPLIT: Final[str] = DEFAULT_HUMAN_EVAL_DATASET_SPLIT
 HF_REVISION: Final[str] = DEFAULT_HUMAN_EVAL_HF_REVISION
 
-#: Path to the offline snapshot, relative to repo root.
-SNAPSHOT_REL_PATH: Final[str] = "tests/corpus/humanevalplus_snapshot.json"
+SNAPSHOT_RESOURCE: Final[str] = "humanevalplus_snapshot.json"
+SNAPSHOT_SHA256: Final[str] = (
+    "efb5d325d225243c48fb9848feeaa1e263dc7c335b6a6030b409d3e7cbb7b422"
+)
+
+
+class HumanEvalSource(StrEnum):
+    """The two independent pinned HumanEval+ sources."""
+
+    SNAPSHOT = "snapshot"
+    HF = "hf"
 
 
 class HumanEvalPlusTask(FrozenModel):
@@ -67,35 +75,35 @@ def _load_from_hf() -> list[HumanEvalPlusTask]:
     return [_task_from_row(row) for row in rows]
 
 
-def _load_from_snapshot(repo_root: Path) -> list[HumanEvalPlusTask]:
-    snap = repo_root / SNAPSHOT_REL_PATH
-    rows = load_human_eval_rows(
+def packaged_snapshot_bytes() -> bytes:
+    """Read the canonical snapshot from the installed package."""
+
+    content = (
+        files("dr_code.synthetic").joinpath(SNAPSHOT_RESOURCE).read_bytes()
+    )
+    if hashlib.sha256(content).hexdigest() != SNAPSHOT_SHA256:
+        raise ValueError("packaged HumanEval+ snapshot SHA-256 mismatch")
+    return content
+
+
+def _load_from_snapshot() -> list[HumanEvalPlusTask]:
+    rows = load_human_eval_snapshot_rows_bytes(
+        packaged_snapshot_bytes(),
         dataset_name=HF_DATASET_ID,
-        dataset_split=HF_SPLIT,
         hf_revision=HF_REVISION,
-        snapshot_path=snap,
     )
     return [_task_from_row(row) for row in rows]
 
 
-def _repo_root() -> Path:
-    """Walk up from this file to the repo root (where pyproject.toml lives)."""
-    here = Path(__file__).resolve()
-    for parent in [here, *here.parents]:
-        if (parent / "pyproject.toml").exists():
-            return parent
-    return Path.cwd()
-
-
 def save_snapshot(
-    tasks: list[HumanEvalPlusTask], repo_root: Path | None = None
+    tasks: list[HumanEvalPlusTask],
+    destination: Path,
 ) -> Path:
-    """Write a snapshot to disk for offline reuse. Returns the path written."""
-    root = repo_root or _repo_root()
-    snap = root / SNAPSHOT_REL_PATH
+    """Write snapshot rows to an explicit tooling destination."""
+
     return write_human_eval_snapshot_rows(
         [task.model_dump(mode="json") for task in tasks],
-        snapshot_path=snap,
+        snapshot_path=destination,
         dataset_name=HF_DATASET_ID,
         dataset_split=HF_SPLIT,
         hf_revision=HF_REVISION,
@@ -103,19 +111,12 @@ def save_snapshot(
 
 
 def load_humaneval_plus(
-    prefer_snapshot: bool = False,
+    source: HumanEvalSource = HumanEvalSource.SNAPSHOT,
 ) -> list[HumanEvalPlusTask]:
-    """Load HumanEvalPlus tasks.
+    """Load the packaged snapshot or an explicitly selected pinned HF source."""
 
-    Args:
-        prefer_snapshot: If True, load the local snapshot. Default loads the
-            pinned Hugging Face revision, so stale snapshots are never used
-            silently when the network path fails.
-
-    Raises:
-        FileNotFoundError: If the selected source is unavailable.
-    """
-    repo_root = _repo_root()
-    if prefer_snapshot:
-        return _load_from_snapshot(repo_root)
-    return _load_from_hf()
+    if source is HumanEvalSource.SNAPSHOT:
+        return _load_from_snapshot()
+    if source is HumanEvalSource.HF:
+        return _load_from_hf()
+    raise ValueError(f"unsupported HumanEval+ source: {source!r}")

@@ -42,6 +42,7 @@ include = [
     "/.gitignore",
     "/.python-version",
     "/CHANGELOG.md",
+    "/docs",
     "/LICENSE",
     "/README.md",
     "/hatch_build.py",

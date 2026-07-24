@@ -79,6 +79,7 @@ from dr_code.preprocessing import (
     HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
     resolve_preprocessing_definition,
 )
+from dr_code.synthetic.humaneval_loader import packaged_snapshot_bytes
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
     "CandidateHarnessFailure",
@@ -516,15 +517,13 @@ def test_sampled_task_rejects_embedded_task_identity_mismatch() -> None:
 
 
 def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
-    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
-    raw_snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
-        snapshot_path.read_text(encoding="utf-8")
-    )
+    snapshot_bytes = packaged_snapshot_bytes()
+    raw_snapshot = HumanEvalRawRowsSnapshot.model_validate_json(snapshot_bytes)
     fresh_tasks = parse_human_eval_dataset(
         [row.model_dump(mode="json") for row in raw_snapshot.rows]
     )
     snapshot_tasks = parse_human_eval_dataset(
-        load_human_eval_rows(snapshot_path=snapshot_path)
+        load_human_eval_snapshot_rows_bytes(snapshot_bytes)
     )
 
     assert [task.task_id for task in snapshot_tasks] == [
@@ -543,9 +542,8 @@ def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
 def test_default_snapshot_digest_is_pinned_before_parsing(
     tmp_path: Path,
 ) -> None:
-    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
     assert (
-        hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+        hashlib.sha256(packaged_snapshot_bytes()).hexdigest()
         == DEFAULT_HUMAN_EVAL_SNAPSHOT_SHA256
     )
     malformed = tmp_path / "malformed.json"
@@ -558,8 +556,7 @@ def test_default_snapshot_digest_is_pinned_before_parsing(
 def test_custom_snapshot_coordinates_require_and_verify_digest(
     tmp_path: Path,
 ) -> None:
-    source = Path("tests/corpus/humanevalplus_snapshot.json")
-    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload = json.loads(packaged_snapshot_bytes())
     payload["header"]["dataset_id"] = "custom/humaneval"
     custom_path = tmp_path / "custom.json"
     custom_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -581,8 +578,7 @@ def test_custom_snapshot_coordinates_require_and_verify_digest(
 def test_raw_row_snapshot_rejects_forged_dataset_split(
     tmp_path: Path,
 ) -> None:
-    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
-    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    payload = json.loads(packaged_snapshot_bytes())
     payload["header"]["dataset_id"] = "custom/humaneval"
     payload["header"]["dataset_split"] = "validation"
     forged_path = tmp_path / "forged-split.json"
@@ -598,8 +594,11 @@ def test_raw_row_snapshot_rejects_forged_dataset_split(
         )
 
 
-def test_raw_row_snapshot_bytes_and_path_decoders_are_identical() -> None:
-    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
+def test_raw_row_snapshot_bytes_and_path_decoders_are_identical(
+    tmp_path: Path,
+) -> None:
+    snapshot_path = tmp_path / "humanevalplus_snapshot.json"
+    snapshot_path.write_bytes(packaged_snapshot_bytes())
     assert load_human_eval_snapshot_rows_bytes(
         snapshot_path.read_bytes()
     ) == load_human_eval_rows(snapshot_path=snapshot_path)

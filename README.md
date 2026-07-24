@@ -13,6 +13,24 @@ Process-group cleanup cannot guarantee termination of descendants that detach
 from the group. Run evaluations only on disposable workers whose permissions,
 network access, resources, and lifetime are constrained externally.
 
+## Behavioral mutants
+
+`dr_code.mutants` creates deterministic, execution-validated behavioral
+mutants from pinned HumanEval+ canonical programs and inputs. It publishes
+stable JSONL plus an authenticating manifest as one immutable directory. The
+authenticated snapshot ships in the wheel as the offline default; `--hf`
+explicitly selects the independent pinned Hugging Face source.
+
+```bash
+uv run python -m dr_code.mutants generate \
+  --dry-run \
+  --tasks HumanEval/0
+```
+
+See [`docs/behavioral-mutants.md`](docs/behavioral-mutants.md) for the five
+operator families, acceptance gates, artifact contract, and generation
+command.
+
 ## Corpus analysis and viewer
 
 Completed preprocessing runs are immutable manifest-backed bundles containing

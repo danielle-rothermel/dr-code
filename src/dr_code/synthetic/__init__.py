@@ -23,6 +23,7 @@ from dr_code.synthetic.dataset_builder import (
     save_dataset,
 )
 from dr_code.synthetic.humaneval_loader import (
+    HumanEvalSource,
     HumanEvalPlusTask,
     load_humaneval_plus,
     save_snapshot,
@@ -34,6 +35,7 @@ __all__ = [
     "RECIPES_BY_NAME",
     "REGISTRY",
     "HumanEvalPlusTask",
+    "HumanEvalSource",
     "Corruption",
     "Recipe",
     "apply_recipe",
