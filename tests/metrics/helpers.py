@@ -28,9 +28,54 @@ from dr_code.trace import (
     CodeArtifact,
     JsonArtifact,
     TextArtifact,
+    PreprocessingTraceProducer,
     Trace,
     external_trace,
 )
+
+# ---------------------------------------------------------------------------
+# Eval-kernel builders: wrap a metrics definition in the minimal evaluation
+# procedure that owns it, so tests can exercise the kernel-routed path.
+# ---------------------------------------------------------------------------
+
+
+def _test_preprocessing():
+    from dr_code.eval import PreprocessingTemplate
+
+    return PreprocessingTemplate(
+        definition_id="test-preprocessing",
+        version="1",
+        steps=(),
+    ).materialize()
+
+
+def evaluation_procedure(metric_extraction):
+    """Build the minimal procedure that owns ``metric_extraction`` in tests."""
+
+    from dr_code.eval import EvaluationProcedureDefinition
+
+    return EvaluationProcedureDefinition(
+        definition_id="test-evaluation-procedure",
+        version="1",
+    ).materialize(
+        preprocessing=_test_preprocessing(),
+        metric_extraction=metric_extraction,
+    )
+
+
+def procedure_trace(trace: Trace, procedure) -> Trace:
+    """Stamp a test trace with the concrete preprocessing config it uses."""
+
+    preprocessing = _test_preprocessing()
+    assert procedure.preprocessing_config == preprocessing.coordinate()
+    return Trace(
+        values=trace.values,
+        producer=PreprocessingTraceProducer(
+            definition=preprocessing.definition_coordinate(),
+        ),
+        step_facts=trace.step_facts,
+    )
+
 
 # ---------------------------------------------------------------------------
 # HumanEval task fixtures / builders.

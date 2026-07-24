@@ -71,6 +71,36 @@ class AstStats(MetricOperator[OperatorSettings]):
     NAME = MetricName.AST_STATS
     VERSION = "0"
     INPUT = ArtifactKind.CODE
+    FACT_UNITS = {
+        "top_level_function_count": "function",
+        "nested_function_count": "function",
+        "async_function_count": "function",
+        "lambda_count": "lambda",
+        "class_count": "class",
+        "import_count": "import",
+        "ast_node_count": "node",
+        "statement_count": "statement",
+        "branch_count": "branch",
+        "return_count": "return",
+        "yield_count": "yield",
+        "call_count": "call",
+        "assignment_count": "assignment",
+        "comprehension_count": "comprehension",
+        "literal_count": "literal",
+        "max_branch_depth": "level",
+        "function_count": "function",
+        "total_argument_count": "argument",
+        "positional_only_argument_count": "argument",
+        "keyword_only_argument_count": "argument",
+        "vararg_count": "argument",
+        "kwarg_count": "argument",
+        "decorated_function_count": "function",
+        "annotated_return_count": "function",
+        "docstring_function_count": "function",
+        "total_function_body_statement_count": "statement",
+        "max_function_body_statement_count": "statement",
+        "max_function_line_span": "line",
+    }
 
     def compute(
         self,

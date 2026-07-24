@@ -35,6 +35,21 @@ class TextStats(MetricOperator[OperatorSettings]):
     VERSION = "0"
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
+    FACT_UNITS = {
+        "character_count": "character",
+        "byte_count": "byte",
+        "line_count": "line",
+        "nonempty_line_count": "line",
+        "word_count": "word",
+        "average_word_length": "character_per_word",
+        "punctuation_count": "character",
+        "symbol_count": "character",
+    }
+
+    def undefined_fact_reason(self, name: str) -> str:
+        if name == "average_word_length":
+            return "input contains no words"
+        return super().undefined_fact_reason(name)
 
     def compute(
         self,

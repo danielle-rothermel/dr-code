@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-08-04
+
+- The evaluation kernel names every artifact by manual component coordinates:
+  definition references, config references, question identity, task identity,
+  and repeat identity are coordinate models compared by plain equality.
+  Cryptographic digests appear only in the private execution cache.
+- Definition settings and variable values carry a hashable normalized JSON
+  value. Objects are key-order independent — entries are stored in name order,
+  so two objects with the same names and values are the same value however
+  they were written. Arrays are ordered, and both objects and arrays compare
+  by exact recursive type, so `1`, `1.0`, and `true` stay distinct at every
+  depth. Normalized values serialize as the ordinary JSON they represent.
+- Reduced operator resolution to registered name plus manual version, and
+  exported the persisted metric question, definition, and record boundary
+  models from the metrics facade.
+- Collapsed the kernel's parallel question, definition, record, and step
+  models onto the persisted boundary models. `MetricsDefinition`,
+  `MetricQuestion`, `MetricRecord`, `RecordStatus`, and
+  `PreprocessingDefinition` each have exactly one implementation; the kernel's
+  authoring surface is now `MetricExtractionTemplate`,
+  `MetricQuestionTemplate`, `PreprocessingTemplate`, and
+  `PreprocessingStepTemplate`, whose `materialize` resolves variable
+  references and yields a config nesting the concrete definition that the
+  engine and preprocessing runner execute.
+- `extract_metrics` and `extract_metrics_batch` answer a `MetricsDefinition`
+  against traces and return `MetricRecord`s; an evaluation procedure is
+  supplied as an optional binding that contributes the trace-source contract
+  and the live operator-resolution check.
+- Added `record_facts`, which projects a measured record onto unit-carrying,
+  lineage-stamped `MetricFact`s from the operator's `FACT_UNITS` declaration,
+  reporting a declared fact with no value as not-applicable with a reason.
+
 ## 2026-08-03
 
 - Established explicit manual component coordinates and reset every current

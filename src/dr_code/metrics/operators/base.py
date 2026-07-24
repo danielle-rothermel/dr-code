@@ -11,7 +11,6 @@ from dr_code.metrics.engine.execution import (
 )
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.records import MetricScalar
 from dr_code.metrics.settings import OperatorSettings
 from dr_code.models import FrozenModel
 from dr_code.trace import (
@@ -21,14 +20,13 @@ from dr_code.trace import (
     TextArtifact,
 )
 
-
 SettingsT = TypeVar("SettingsT", bound=OperatorSettings)
 
 
 class OperatorResult(FrozenModel):
     """Typed operator output; flattened to record values at the record boundary."""
 
-    def to_values(self) -> dict[str, MetricScalar]:
+    def to_values(self) -> dict[str, float | int | str | bool | None]:
         return self.model_dump(mode="python")
 
 
@@ -41,18 +39,32 @@ class EngineContext(Protocol):
 
 
 class MetricOperator(Generic[SettingsT]):
-    """Question implementation managed by the metrics engine."""
+    """Question implementation managed by the metrics engine.
+
+    ``NAME`` and ``VERSION`` are the operator's manual component coordinates.
+    ``VERSION`` is a hand-bumped string, ``"0"`` while development mode is on;
+    bump it whenever the operator's meaning changes, so records measured under
+    the old meaning stay distinguishable from records measured under the new
+    one.
+
+    ``Settings`` is the operator's concrete frozen settings model. The registry
+    resolves it when a ``MetricQuestion`` crosses a validation boundary, so a
+    question always carries the typed settings its operator declares.
+
+    ``FACT_UNITS`` maps every fact name the operator's ``OperatorResult`` can
+    produce to that fact's explicit unit. It is the operator's declaration of
+    what it measures: the engine rejects any computed fact the mapping does not
+    name, and stamps each declared fact with its unit. A fact whose value is
+    absent for one observation is reported as not-applicable with the reason
+    ``undefined_fact_reason`` supplies, so a declared fact never silently
+    disappears from a record.
+    """
 
     NAME: ClassVar[MetricName]
-    # Manual component version. Bump when the operator changes computed
-    # facts, execution requests, applicability, defaults, or failure
-    # behavior; not for comments, formatting, or behavior-preserving
-    # refactors. Stays ``"0"`` while development mode
-    # (``[tool.dr-code.component-versioning]`` in ``pyproject.toml``) is
-    # enabled.
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     ACCEPTED_INPUTS: ClassVar[frozenset[ArtifactKind]]
+    FACT_UNITS: ClassVar[Mapping[str, str]]
     Settings: ClassVar[type[OperatorSettings]] = OperatorSettings
 
     def __init__(self, settings: SettingsT) -> None:
@@ -62,8 +74,25 @@ class MetricOperator(Generic[SettingsT]):
     def accepted_input_kinds(cls) -> frozenset[ArtifactKind]:
         return getattr(cls, "ACCEPTED_INPUTS", frozenset({cls.INPUT}))
 
+    @classmethod
+    def fact_unit(cls, name: str) -> str:
+        """Return the explicit unit for one result field."""
+
+        try:
+            return cls.FACT_UNITS[name]
+        except KeyError as exc:
+            raise ValueError(
+                f"{cls.NAME} has no declared unit for fact {name!r}"
+            ) from exc
+
     def auxiliary_keys(self) -> tuple[str, ...]:
         return ()
+
+    def undefined_fact_reason(self, name: str) -> str:
+        """Explain why one declared fact has no value for this observation."""
+
+        _ = name
+        return "operator did not define this value for the observation"
 
     def accepted_auxiliary_kinds(
         self,

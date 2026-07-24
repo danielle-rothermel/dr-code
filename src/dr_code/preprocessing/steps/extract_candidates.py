@@ -9,8 +9,9 @@ rungs exist is data.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import ClassVar, Final
 
 from dr_code.text_analysis import candidate_blocks, code_like_blocks
@@ -101,14 +102,16 @@ def _escaped_markdown_wrapper(
     return _to_candidate_set(stripped)
 
 
-STRATEGY_REGISTRY: dict[str, ExtractionStrategyFn] = {
-    ExtractionStrategy.FENCED_BLOCKS.value: _fenced_blocks,
-    ExtractionStrategy.MARKDOWN_WRAPPER.value: _markdown_wrapper,
-    ExtractionStrategy.ESCAPED_PYTHON.value: _escaped_python,
-    ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER.value: (
-        _escaped_markdown_wrapper
-    ),
-}
+STRATEGY_REGISTRY: Mapping[str, ExtractionStrategyFn] = MappingProxyType(
+    {
+        ExtractionStrategy.FENCED_BLOCKS.value: _fenced_blocks,
+        ExtractionStrategy.MARKDOWN_WRAPPER.value: _markdown_wrapper,
+        ExtractionStrategy.ESCAPED_PYTHON.value: _escaped_python,
+        ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER.value: (
+            _escaped_markdown_wrapper
+        ),
+    }
+)
 
 DEFAULT_STRATEGIES: Final = (
     ExtractionStrategy.FENCED_BLOCKS,

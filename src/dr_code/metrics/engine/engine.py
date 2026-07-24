@@ -1,17 +1,29 @@
-"""Bind, plan, execute, and compute declared metric questions."""
+"""Bind, plan, execute, and compute declared metric questions.
+
+``extract_metrics`` answers a ``MetricsDefinition`` against one trace and
+returns one ``MetricRecord`` per declared question, in declaration order.
+``extract_metrics_batch`` does the same across several traces, collecting all
+subprocess work before running any of it so equivalent requests execute once.
+
+An evaluation procedure may be supplied to bind the run into the eval kernel.
+It contributes the trace-source contract (which producer kind the procedure
+accepts) and the operator-resolution check against the live registry; the
+answers themselves are identical either way.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from typing import TYPE_CHECKING
 
 from dr_code.execution.subprocess import (
     SubprocessError,
     PythonSubprocessRunner,
     run_python_subprocess,
 )
-from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
+from dr_code.metrics.definition import MetricQuestion, MetricsDefinition
 from dr_code.metrics.engine.execution import (
     ExecutionCache,
     ExecutionOutcome,
@@ -21,15 +33,18 @@ from dr_code.metrics.engine.execution import (
 )
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.settings import OperatorSettings
 from dr_code.metrics.operators.base import MetricOperator
-from dr_code.metrics.records import (
-    MetricRecord,
-    MetricScalar,
-    RecordStatus,
-)
-from dr_code.metrics.registry import REGISTRY
+from dr_code.metrics.records import MetricRecord, MetricScalar, RecordStatus
+from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.validation import validated_metric_operator
 from dr_code.trace import Absent, Artifact, Trace, TraceProducer, WiringError
+
+if TYPE_CHECKING:
+    from dr_code.eval.facts import MetricFact
+    from dr_code.eval.lifecycle import (
+        EvaluationProcedureConfig,
+        MetricExtractionConfig,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +80,7 @@ class _RecordIdentity:
         question = question_binding.question
         return cls(
             metric=question.metric,
-            metric_version=question_binding.operator.VERSION,
+            metric_version=str(type(question_binding.operator).VERSION),
             settings=question_binding.operator.settings,
             on_key=question.on,
             producer=binding.trace.producer,
@@ -102,6 +117,8 @@ def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
     *,
+    evaluation_procedure: EvaluationProcedureConfig | None = None,
+    metric_extraction: MetricExtractionConfig | None = None,
     run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]:
@@ -110,6 +127,8 @@ def extract_metrics(
     return extract_metrics_batch(
         definition,
         (trace,),
+        evaluation_procedure=evaluation_procedure,
+        metric_extraction=metric_extraction,
         run_in_subprocess=run_in_subprocess,
         execution_cache=execution_cache,
     )[0]
@@ -119,10 +138,21 @@ def extract_metrics_batch(
     definition: MetricsDefinition,
     traces: Sequence[Trace],
     *,
+    evaluation_procedure: EvaluationProcedureConfig | None = None,
+    metric_extraction: MetricExtractionConfig | None = None,
     run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[tuple[MetricRecord, ...], ...]:
     """Extract records after collecting work across every supplied trace."""
+
+    if evaluation_procedure is not None:
+        definition = _kernel_bound_definition(
+            definition,
+            evaluation_procedure=evaluation_procedure,
+            metric_extraction=metric_extraction,
+        )
+        for trace in traces:
+            evaluation_procedure.validate_trace_producer(trace.producer)
 
     question_bindings = _bind_questions(definition)
     trace_bindings = tuple(
@@ -172,21 +202,44 @@ def extract_metrics_batch(
     )
 
 
+def _kernel_bound_definition(
+    definition: MetricsDefinition,
+    *,
+    evaluation_procedure: EvaluationProcedureConfig,
+    metric_extraction: MetricExtractionConfig | None,
+) -> MetricsDefinition:
+    """Check the kernel wiring and return the definition the procedure owns."""
+
+    if metric_extraction is None:
+        raise WiringError(
+            "an evaluation procedure requires the metric extraction config "
+            "it references"
+        )
+    if (
+        evaluation_procedure.metric_extraction_config
+        != metric_extraction.coordinate()
+    ):
+        raise WiringError(
+            "evaluation procedure does not reference this metric "
+            "extraction definition"
+        )
+    if metric_extraction.definition != definition:
+        raise WiringError(
+            "metric extraction config does not carry this metrics definition"
+        )
+    return metric_extraction.definition
+
+
 def _bind_questions(
     definition: MetricsDefinition,
 ) -> tuple[_QuestionBinding, ...]:
     bindings: list[_QuestionBinding] = []
     for question in definition.questions:
-        operator_class = REGISTRY.get(str(question.metric))
-        if operator_class is None:
-            raise WiringError(
-                f"no metric operator registered for {question.metric!r}"
-            )
         try:
-            settings = operator_class.Settings.model_validate(
-                question.settings
+            operator = validated_metric_operator(
+                name=question.metric.value,
+                settings=question.settings.model_dump(mode="json"),
             )
-            operator = operator_class(settings)
         except Exception as exc:
             raise WiringError(
                 f"invalid settings for metric {question.metric}: {exc}"
@@ -271,21 +324,81 @@ def _compute_record(
         return _failure_record(identity, binding.planning_failure)
 
     assert binding.value is not None
+    operator = binding.question_binding.operator
     try:
-        result = binding.question_binding.operator.compute(
+        result = operator.compute(
             binding.value,
             binding.auxiliary,
             context,
         )
+        values = result.to_values()
+        undeclared = set(values) - set(operator.FACT_UNITS)
+        if undeclared:
+            raise ValueError(
+                "operator returned undeclared facts: "
+                + ", ".join(sorted(undeclared))
+            )
         return _build_record(
             identity,
             status=RecordStatus.MEASURED,
-            values=result.to_values(),
+            values={name: values.get(name) for name in operator.FACT_UNITS},
         )
     except (SubprocessError, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)
+
+
+def record_facts(
+    record: MetricRecord,
+    *,
+    evaluation_procedure: EvaluationProcedureConfig,
+) -> tuple[MetricFact, ...]:
+    """Project one measured record onto unit-carrying, lineage-stamped facts.
+
+    Each value the record carries becomes a ``MetricFact`` stamped with the
+    unit its operator declares in ``FACT_UNITS``. A declared fact with no value
+    for this observation is reported as not-applicable with the operator's
+    reason, so a declared fact never silently disappears.
+    """
+
+    from dr_code.eval.facts import (
+        Applicability,
+        MetricFact,
+        OperatorLineage,
+    )
+
+    if record.status is not RecordStatus.MEASURED:
+        return ()
+    operator = validated_metric_operator(
+        name=record.metric.value,
+        settings=record.settings.model_dump(mode="json"),
+    )
+    lineage = OperatorLineage(
+        evaluation_procedure_config=evaluation_procedure.coordinate(),
+        operator=record.metric,
+        operator_version=record.metric_version,
+        on_key=record.on_key,
+    )
+    return tuple(
+        MetricFact(
+            name=name,
+            value=record.values.get(name),
+            unit=unit,
+            applicability=(
+                Applicability.APPLICABLE
+                if record.values.get(name) is not None
+                else Applicability.NOT_APPLICABLE
+            ),
+            reason=(
+                None
+                if record.values.get(name) is not None
+                else operator.undefined_fact_reason(name)
+            ),
+            lineage=lineage,
+        )
+        for name, unit in operator.FACT_UNITS.items()
+    )
 
 
 def _failure_record(

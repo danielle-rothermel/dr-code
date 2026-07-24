@@ -45,6 +45,15 @@ class CodeLeakage(MetricOperator[CodeLeakageSettings]):
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
     Settings = CodeLeakageSettings
+    FACT_UNITS = {
+        "keyword_count": "occurrence",
+        "code_marker_count": "occurrence",
+        "fenced_code_block_count": "block",
+        "code_like_line_count": "line",
+        "operator_count": "character",
+        "punctuation_density": "ratio",
+        "task_name_hit_count": "occurrence",
+    }
 
     def compute(
         self,
