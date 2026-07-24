@@ -31,14 +31,17 @@ packages = ["src/dr_code"]
 
 [dependency-groups]
 dev = [
+    "filelock>=3.29.4",
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.15.18",
     "ty>=0.0.51",
 ]
 
 [tool.pytest.ini_options]
+addopts = "-n auto --maxprocesses=4 --dist=worksteal"
 testpaths = ["tests"]
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py"]
