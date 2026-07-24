@@ -361,9 +361,7 @@ def pass_rate(
 
     resolved = config or pass_rate_aggregation_config()
     inputs = tuple(
-        AggregationInput(
-            value=None if indicator is None else float(indicator)
-        )
+        AggregationInput(value=None if indicator is None else float(indicator))
         for indicator in pass_indicators
     )
     return aggregate(resolved, inputs)
