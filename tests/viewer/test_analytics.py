@@ -355,23 +355,34 @@ def test_compatible_comparison_allows_different_definition_hashes(
     assert sum(item.count for item in comparison.transitions) == 9
     assert all(stage.count_delta == 0 for stage in comparison.stages)
     assert [stage.stage_id for stage in comparison.stages] == [
+        "lost:output_present",
+        "lost:output_nonblank",
         "has_extracted_candidate",
         "has_compilable_candidate",
         "has_top_level_candidate",
         "has_passing_candidate",
     ]
-    assert [stage.baseline_count for stage in comparison.stages] == [4, 3, 2, 1]
-    assert all(
-        stage.baseline_denominator_count
-        == stage.candidate_denominator_count
-        == 9
-        for stage in comparison.stages
-    )
+    assert [stage.baseline_count for stage in comparison.stages] == [
+        1,
+        1,
+        4,
+        3,
+        2,
+        1,
+    ]
+    assert [
+        stage.baseline_denominator_count for stage in comparison.stages
+    ] == [9, 9, 7, 7, 7, 7]
+    assert [
+        stage.candidate_denominator_count for stage in comparison.stages
+    ] == [9, 9, 7, 7, 7, 7]
     assert [stage.baseline_rate for stage in comparison.stages] == [
-        4 / 9,
-        3 / 9,
-        2 / 9,
         1 / 9,
+        1 / 9,
+        4 / 7,
+        3 / 7,
+        2 / 7,
+        1 / 7,
     ]
     assert transition.total == 2
 

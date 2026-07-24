@@ -76,7 +76,7 @@ describe("PreprocessingViewer", () => {
       name: "After Candidate · preprocessing@2",
     })).toBeTruthy();
     expect(within(comparisonTable).getByRole("columnheader", {
-      name: "Row share Δ",
+      name: "Percentage Δ",
     })).toBeTruthy();
 
     fireEvent.click(await screen.findByRole("button", {

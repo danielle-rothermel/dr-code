@@ -659,9 +659,6 @@ class ViewerAnalytics:
         self._validate_compatible(baseline, candidate)
         baseline_waterfall = self.waterfall(baseline_run_id)
         candidate_waterfall = self.waterfall(candidate_run_id)
-        baseline_corpus_rows = baseline_waterfall.stages[0].count
-        candidate_corpus_rows = candidate_waterfall.stages[0].count
-        stages: list[ComparisonStage] = []
         for before, after in zip(
             baseline_waterfall.stages, candidate_waterfall.stages, strict=True
         ):
@@ -669,25 +666,76 @@ class ViewerAnalytics:
                 raise IncompatibleRunsError(
                     "runs expose different waterfall stage mappings"
                 )
-            if before.stage_id not in _COMPARISON_STAGE_IDS:
-                continue
-            baseline_rate = _rate(before.count, baseline_corpus_rows)
-            candidate_rate = _rate(after.count, candidate_corpus_rows)
-            stages.append(
-                ComparisonStage(
-                    stage_id=before.stage_id,
-                    label=before.label,
-                    unit=before.unit,
-                    baseline_count=before.count,
-                    baseline_denominator_count=baseline_corpus_rows,
-                    candidate_count=after.count,
-                    candidate_denominator_count=candidate_corpus_rows,
-                    count_delta=after.count - before.count,
-                    baseline_rate=baseline_rate,
-                    candidate_rate=candidate_rate,
-                    rate_delta=_difference(candidate_rate, baseline_rate),
+
+        baseline_stages = {
+            stage.stage_id: stage for stage in baseline_waterfall.stages
+        }
+        candidate_stages = {
+            stage.stage_id: stage for stage in candidate_waterfall.stages
+        }
+        baseline_corpus_rows = baseline_stages["source"].count
+        candidate_corpus_rows = candidate_stages["source"].count
+        baseline_nonblank_rows = baseline_stages["output_nonblank"].count
+        candidate_nonblank_rows = candidate_stages["output_nonblank"].count
+        comparison_values = [
+            (
+                "lost:output_present",
+                "Decoder output missing",
+                baseline_corpus_rows
+                - baseline_stages["output_present"].count,
+                candidate_corpus_rows
+                - candidate_stages["output_present"].count,
+                baseline_corpus_rows,
+                candidate_corpus_rows,
+            ),
+            (
+                "lost:output_nonblank",
+                "Decoder output empty",
+                baseline_stages["output_present"].count
+                - baseline_nonblank_rows,
+                candidate_stages["output_present"].count
+                - candidate_nonblank_rows,
+                baseline_corpus_rows,
+                candidate_corpus_rows,
+            ),
+            *(
+                (
+                    stage_id,
+                    baseline_stages[stage_id].label,
+                    baseline_stages[stage_id].count,
+                    candidate_stages[stage_id].count,
+                    baseline_nonblank_rows,
+                    candidate_nonblank_rows,
                 )
+                for stage_id in _COMPARISON_STAGE_IDS
+            ),
+        ]
+        stages = tuple(
+            ComparisonStage(
+                stage_id=stage_id,
+                label=label,
+                unit="sample",
+                baseline_count=baseline_count,
+                baseline_denominator_count=baseline_denominator,
+                candidate_count=candidate_count,
+                candidate_denominator_count=candidate_denominator,
+                count_delta=candidate_count - baseline_count,
+                baseline_rate=_rate(baseline_count, baseline_denominator),
+                candidate_rate=_rate(candidate_count, candidate_denominator),
+                rate_delta=_difference(
+                    _rate(candidate_count, candidate_denominator),
+                    _rate(baseline_count, baseline_denominator),
+                ),
             )
+            for (
+                stage_id,
+                label,
+                baseline_count,
+                candidate_count,
+                baseline_denominator,
+                candidate_denominator,
+            ) in comparison_values
+        )
         rows = self._connection.execute(
             """
             SELECT
@@ -704,7 +752,7 @@ class ViewerAnalytics:
         return RunComparison(
             baseline=self._summary(baseline),
             candidate=self._summary(candidate),
-            stages=tuple(stages),
+            stages=stages,
             transitions=tuple(
                 OutcomeTransition(
                     baseline_outcome=row[0],

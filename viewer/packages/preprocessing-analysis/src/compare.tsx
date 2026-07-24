@@ -42,7 +42,7 @@ export function Compare({
   return (
     <section className="surface" aria-labelledby="compare-title">
       <div className="surface-heading"><div><p className="eyebrow">Compare</p><h2 id="compare-title">Compatible before / after deltas</h2></div></div>
-      <p className="surface-copy">Counts are corpus rows, and every percentage uses all corpus rows as its denominator. Incompatible corpora, stage mappings, or evaluation semantics are rejected by the service.</p>
+      <p className="surface-copy">Missing and empty output percentages use all corpus rows. Extraction through passing percentages use rows with an existing, non-empty decoder output. Incompatible corpora, stage mappings, or evaluation semantics are rejected by the service.</p>
 
       {comparison === null && error === "" && <p className="loading-state" role="status">Checking compatibility and loading comparison…</p>}
       {error !== "" && (
@@ -67,13 +67,16 @@ export function Compare({
                     <small>{candidateRun.label} · {candidateRun.definition_id}@{String(candidateRun.semantic_coordinates.definition_version ?? "unknown")}</small>
                   </th>
                   <th>Count Δ</th>
-                  <th>Row share Δ</th>
+                  <th>Percentage Δ</th>
                 </tr>
               </thead>
               <tbody>
                 {comparison.stages.map((stage) => (
                   <tr key={stage.id}>
-                    <th scope="row">{stage.label}<small>corpus rows</small></th>
+                    <th scope="row">
+                      {stage.label}
+                      <small>{stage.id.startsWith("lost:") ? "of all corpus rows" : "of non-empty decoder outputs"}</small>
+                    </th>
                     <td>
                       <button
                         aria-label={`Inspect ${formatNumber(stage.baseline_count)} baseline examples at ${stage.label}`}

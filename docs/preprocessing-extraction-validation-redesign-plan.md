@@ -1093,15 +1093,19 @@ and
 respectively. Both validate the manifest-published membership and result hashes
 against the exact Parquet bytes and report no evaluation-linkage limitation.
 
-The live viewer comparison reports these corpus-row deltas, with every
-percentage using all 365,216 corpus rows as its denominator:
+The live viewer comparison reports these corpus-row deltas. Missing and empty
+decoder output percentages use all 365,216 corpus rows as their denominator;
+later-stage percentages use the 307,761 rows with an existing, non-empty
+decoder output:
 
-| Stage | Baseline | Redesign | Delta |
-| --- | ---: | ---: | ---: |
-| Extracted response candidate | 307,398 | 307,448 | +50 |
-| Compilable candidate | 302,149 | 306,683 | +4,534 |
-| Top-level function candidate | 300,184 | 305,048 | +4,864 |
-| Passing candidate | 227,444 | 230,814 | +3,370 |
+| Stage | Denominator | Baseline | Redesign | Delta |
+| --- | --- | ---: | ---: | ---: |
+| Decoder output missing | All rows | 57,346 | 57,346 | 0 |
+| Decoder output empty | All rows | 109 | 109 | 0 |
+| Extracted response candidate | Non-empty outputs | 307,398 | 307,448 | +50 |
+| Compilable candidate | Non-empty outputs | 302,149 | 306,683 | +4,534 |
+| Top-level function candidate | Non-empty outputs | 300,184 | 305,048 | +4,864 |
+| Passing candidate | Non-empty outputs | 227,444 | 230,814 | +3,370 |
 
 There are exactly 3,370 passing-sample gains and zero passing-sample losses.
 Both committed viewer descriptors load, pass relational validation, and produce

@@ -8,3 +8,8 @@ viewer/packages/*/dist/
 *.swp
 .runs/
 .scratch/
+
+# Generated preprocessing viewer and validation artifacts
+analysis/preprocessing/
+analysis/preprocessing-comparisons/
+screenshots/

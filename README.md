@@ -163,8 +163,9 @@ to loopback addresses (or `localhost`) and rejects non-loopback `--host`
 values. The Waterfall view traces stage counts to examples, Compare shows
 compatible corpus-row deltas for extracted, compilable, top-level, and passing
 outcomes plus a terminal outcome matrix, and Review groups terminal failures
-for verdicts, notes, and tags. Compare percentages always use all corpus rows
-as their denominator.
+for verdicts, notes, and tags. Missing and empty output percentages use all
+corpus rows as their denominator; later-stage percentages use rows with an
+existing, non-empty decoder output.
 
 Review annotations persist in the selected DuckDB database across restarts and
 can be downloaded as deterministic JSON from `GET /api/annotations/export`.
