@@ -158,49 +158,31 @@ def test_json_round_trip_preserves_absent() -> None:
     assert reparsed.values["missing"] == _FULL_VALUES["missing"]
 
 
-def test_legacy_v1_absent_materializes_legacy_failure_code() -> None:
-    legacy_payload = {
+def test_schema_version_is_required() -> None:
+    payload = {
+        "producer": {"producer_id": "preproc-1", "version": "1.0"},
+        "values": {
+            INPUT_KEY: {"kind": "text", "text": "prompt"},
+            OUTPUT_KEY: {"kind": "text", "text": "result"},
+        },
+    }
+
+    with pytest.raises(ValidationError, match="schema_version"):
+        SerializedTrace.model_validate(payload)
+
+
+def test_schema_v1_is_rejected() -> None:
+    payload = {
         "schema_version": 1,
         "producer": {"producer_id": "preproc-1", "version": "1.0"},
         "values": {
             INPUT_KEY: {"kind": "text", "text": "prompt"},
-            OUTPUT_KEY: {
-                "kind": "absent",
-                "failed_step": "parse",
-                "cause": "syntax error",
-                "propagated_through": ["score"],
-            },
+            OUTPUT_KEY: {"kind": "text", "text": "result"},
         },
     }
 
-    legacy = SerializedTrace.model_validate(legacy_payload)
-    restored = deserialize_trace(legacy)
-    output = restored.value(OUTPUT_KEY)
-
-    assert legacy.schema_version == TRACE_SCHEMA_VERSION
-    assert isinstance(output, Absent)
-    assert output.failure_code == "legacy.unknown"
-    assert serialize_trace(restored).schema_version == TRACE_SCHEMA_VERSION
-
-
-def test_unversioned_v1_absent_is_upgraded() -> None:
-    legacy_payload = {
-        "producer": {"producer_id": "preproc-1", "version": "1.0"},
-        "values": {
-            INPUT_KEY: {"kind": "text", "text": "prompt"},
-            OUTPUT_KEY: {
-                "kind": "absent",
-                "failed_step": "parse",
-                "cause": "syntax error",
-            },
-        },
-    }
-
-    restored = deserialize_trace(SerializedTrace.model_validate(legacy_payload))
-    output = restored.value(OUTPUT_KEY)
-
-    assert isinstance(output, Absent)
-    assert output.failure_code == "legacy.unknown"
+    with pytest.raises(ValidationError, match="schema_version"):
+        SerializedTrace.model_validate(payload)
 
 
 def test_schema_v2_absent_requires_failure_code() -> None:
@@ -217,7 +199,7 @@ def test_schema_v2_absent_requires_failure_code() -> None:
         },
     }
 
-    with pytest.raises(ValidationError, match="require failure_code"):
+    with pytest.raises(ValidationError, match="failure_code"):
         SerializedTrace.model_validate(payload)
 
 

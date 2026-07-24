@@ -17,21 +17,26 @@ from dr_code.corpus.preprocessing_artifacts import (
 from dr_code.preprocessing.definitions import (
     HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
 )
-from dr_code.preprocessing.runner import run_preprocessing
+from dr_code.preprocessing.runner import bind_preprocessing, run_preprocessing
 from dr_code.trace import (
     CandidateLineage,
     CandidateOrigin,
     CodeCandidateSetArtifact,
     TextArtifact,
+    Trace,
     external_trace,
 )
+
+OFFICIAL_PRODUCER = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION
+).producer
 
 
 def _success_trace():
     first = "def first():\n    return 1\n"
     second = "async def second():\n    return 2\n"
-    return external_trace(
-        {
+    return Trace(
+        values={
             "input": TextArtifact(text="raw"),
             "output": CodeCandidateSetArtifact(
                 candidates=(first, second),
@@ -61,6 +66,7 @@ def _success_trace():
                 ),
             ),
         },
+        producer=OFFICIAL_PRODUCER,
         step_facts={
             "filter_compilable": {
                 "survivors": [
@@ -140,6 +146,33 @@ def test_blank_present_decoder_output_projects_official_absent_trace() -> None:
     assert projected.step_facts[0]["step_name"] == "require_nonblank_text"
 
 
+def test_present_decoder_output_rejects_trace_for_different_input() -> None:
+    trace = run_preprocessing(
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+        TextArtifact(text="def wrong():\n    return 1"),
+    )
+
+    with pytest.raises(ValueError, match="does not match decoder output"):
+        project_preprocessing_result(
+            "sample-mismatch",
+            "def right():\n    return 2",
+            trace,
+        )
+
+
+def test_present_decoder_output_rejects_nonofficial_trace() -> None:
+    trace = external_trace(
+        {
+            "input": TextArtifact(text="raw"),
+            "output": CodeCandidateSetArtifact(candidates=()),
+        },
+        step_facts={"complete": {"outcome_code": "external"}},
+    )
+
+    with pytest.raises(ValueError, match="official definition"):
+        project_preprocessing_result("sample-external", "raw", trace)
+
+
 def test_success_projects_multiple_candidates_origins_and_diagnostics() -> (
     None
 ):
@@ -213,11 +246,12 @@ def test_success_projects_multiple_candidates_origins_and_diagnostics() -> (
 def test_rejections_are_mechanically_flattened_with_canonical_details() -> (
     None
 ):
-    trace = external_trace(
-        {
+    trace = Trace(
+        values={
             "input": TextArtifact(text="raw"),
             "output": CodeCandidateSetArtifact(candidates=()),
         },
+        producer=OFFICIAL_PRODUCER,
         step_facts={
             "filter": {
                 "rejections": [

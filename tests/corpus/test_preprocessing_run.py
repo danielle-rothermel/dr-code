@@ -109,6 +109,33 @@ def test_run_is_resumable_and_publishes_complete_relations(
     assert candidates.num_rows == 1
 
 
+def test_run_completes_with_an_oversized_json_number(tmp_path: Path) -> None:
+    input_path = tmp_path / "oversized-number.parquet"
+    schema = pa.schema(
+        [
+            pa.field("sample_id", pa.string(), nullable=False),
+            pa.field("decoder_output", pa.string(), nullable=True),
+        ]
+    )
+    pq.write_table(
+        pa.Table.from_arrays(
+            [pa.array(["oversized"]), pa.array(["9" * 5_000])],
+            schema=schema,
+        ),
+        input_path,
+    )
+
+    completed_dir = run_preprocessing_corpus(
+        input_path=input_path,
+        output_root=tmp_path / "runs",
+        run_id="oversized-number",
+    )
+
+    assert _manifest(completed_dir)["complete"] is True
+    results = pq.read_table(completed_dir / "results.parquet")
+    assert results.column("outcome").to_pylist() == ["no_code_candidates"]
+
+
 def test_resume_refuses_manifest_fingerprint_mismatch(tmp_path: Path) -> None:
     input_path = _write_input(tmp_path / "input.parquet")
     output_root = tmp_path / "runs"

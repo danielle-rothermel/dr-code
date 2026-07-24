@@ -24,6 +24,7 @@ from dr_code.trace import (
     CandidateOrigin,
     CodeCandidateSetArtifact,
     TextArtifact,
+    is_absent,
 )
 
 
@@ -97,6 +98,35 @@ def test_extraction_reads_json_string_and_top_level_code_object() -> None:
         for item in object_candidates.lineage
         for origin in item.origins
     }
+
+
+def test_oversized_json_number_becomes_a_normal_preprocessing_failure() -> (
+    None
+):
+    trace = run_preprocessing(
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+        TextArtifact(text="9" * 5_000),
+    )
+
+    output = trace.value("output")
+    assert is_absent(output)
+    assert output.failure_code == "no_code_candidates"
+
+
+def test_json_code_is_recovered_beside_an_oversized_number() -> None:
+    raw = (
+        '{"irrelevant":'
+        + ("9" * 5_000)
+        + ',"code":"def recovered():\\n    return 1"}'
+    )
+
+    output = run_preprocessing(
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+        TextArtifact(text=raw),
+    ).value("output")
+
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert "def recovered():\n    return 1" in output.candidates
 
 
 def test_extraction_reads_marker_payload_without_consuming_next_marker() -> (

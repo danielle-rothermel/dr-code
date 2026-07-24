@@ -19,7 +19,25 @@ from typing import Final
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from dr_code.trace import Absent, CodeCandidateSetArtifact, Trace
+from dr_code.preprocessing.definition import preprocessing_definition_hash
+from dr_code.preprocessing.definitions import (
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+)
+from dr_code.trace import (
+    Absent,
+    CodeCandidateSetArtifact,
+    TextArtifact,
+    Trace,
+    TraceProducer,
+)
+
+_OFFICIAL_PREPROCESSING_PRODUCER: Final = TraceProducer(
+    producer_id=HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.definition_id,
+    version=HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.version,
+    definition_hash=preprocessing_definition_hash(
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION
+    ),
+)
 
 RESULTS_SCHEMA: Final = pa.schema(
     [
@@ -290,6 +308,17 @@ def project_preprocessing_result(
     if trace is None:
         raise ValueError(
             "present decoder output requires a preprocessing trace"
+        )
+    trace_input = trace.value("input")
+    if not isinstance(trace_input, TextArtifact):
+        raise ValueError("preprocessing trace input must be a TextArtifact")
+    if trace_input.text != decoder_output:
+        raise ValueError(
+            "preprocessing trace input does not match decoder output"
+        )
+    if trace.producer != _OFFICIAL_PREPROCESSING_PRODUCER:
+        raise ValueError(
+            "preprocessing trace was not produced by the official definition"
         )
 
     output = trace.value("output")

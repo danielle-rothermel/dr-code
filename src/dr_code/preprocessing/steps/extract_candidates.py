@@ -61,6 +61,11 @@ _FIELD_MARKER_RE: Final[re.Pattern[str]] = re.compile(
 )
 
 
+def _ignore_json_number(_value: str) -> None:
+    """Avoid converting JSON numbers that extraction never inspects."""
+    return None
+
+
 def _code_like_candidates(blocks: list[str]) -> list[str]:
     """Refine blocks through code-like anchored segmentation."""
     return [block for block in code_like_blocks(blocks) if block.strip()]
@@ -126,8 +131,12 @@ class ExtractCandidatesSettings(StepSettings):
 def _json_value(text: str) -> object | None:
     """Parse a whole response as JSON without treating parse failure as data."""
     try:
-        return json.loads(text)
-    except (json.JSONDecodeError, RecursionError):
+        return json.loads(
+            text,
+            parse_int=_ignore_json_number,
+            parse_float=_ignore_json_number,
+        )
+    except (ValueError, RecursionError):
         return None
 
 
