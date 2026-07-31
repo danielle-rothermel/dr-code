@@ -54,10 +54,11 @@ from dr_code.preprocessing.definitions import (
     HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
 )
 from dr_code.preprocessing.candidate_identity import candidate_id_for_source
+from dr_code.synthetic.humaneval_loader import packaged_snapshot_bytes
 from dr_code.trace import TraceProducer
 
-_CANONICAL_SNAPSHOT = Path(__file__).with_name("humanevalplus_snapshot.json")
-_CANONICAL_TASK = json.loads(_CANONICAL_SNAPSHOT.read_text())["rows"][0]
+_CANONICAL_SNAPSHOT_BYTES = packaged_snapshot_bytes()
+_CANONICAL_TASK = json.loads(_CANONICAL_SNAPSHOT_BYTES)["rows"][0]
 _TASK_ID = _CANONICAL_TASK["task_id"]
 _CANDIDATE = (
     "from typing import List\n\n"
@@ -71,7 +72,7 @@ _CANDIDATE = (
 
 
 def _snapshot(path: Path) -> Path:
-    shutil.copyfile(_CANONICAL_SNAPSHOT, path)
+    path.write_bytes(_CANONICAL_SNAPSHOT_BYTES)
     return path
 
 

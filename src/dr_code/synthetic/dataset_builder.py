@@ -15,6 +15,7 @@ from dr_code.synthetic.corruption_recipes import (
 )
 from dr_code.code_transforms import strip_docstrings
 from dr_code.synthetic.humaneval_loader import (
+    HumanEvalSource,
     HumanEvalPlusTask,
     load_humaneval_plus,
 )
@@ -65,16 +66,15 @@ def build_dataset(
     tasks: Iterable[HumanEvalPlusTask] | None = None,
     recipes: Iterable[Recipe] = RECIPES,
     seed: int = 0,
-    prefer_snapshot: bool = True,
+    source: HumanEvalSource = HumanEvalSource.SNAPSHOT,
 ) -> list[SyntheticSample]:
     """Build the full dataset list (in-memory).
 
-    If `tasks` is None, load HumanEvalPlus through the explicit
-    `prefer_snapshot` source choice.
+    If `tasks` is None, load HumanEvalPlus from the selected pinned source.
     """
     if tasks is None:
         tasks_iter: Iterable[HumanEvalPlusTask] = load_humaneval_plus(
-            prefer_snapshot=prefer_snapshot
+            source=source
         )
     else:
         tasks_iter = tasks

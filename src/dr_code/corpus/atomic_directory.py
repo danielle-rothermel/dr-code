@@ -7,10 +7,13 @@ import errno
 import os
 import platform
 import shutil
+import stat
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+from dr_code.corpus.durability import fsync_directory, fsync_file
 
 _MACOS_RENAME_EXCL = 0x00000004
 _LINUX_AT_FDCWD = -100
@@ -35,7 +38,7 @@ def staged_output_directory(destination: Path) -> Iterator[Path]:
     )
     try:
         yield temporary
-        _publish_without_replacement(temporary, destination)
+        publish_staged_output_directory(temporary, destination)
     except BaseException:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -94,7 +97,36 @@ def publish_staged_output_directory(
         raise AtomicPublicationError(
             "atomic publication requires source and destination siblings"
         )
+    _fsync_staged_tree(temporary)
     _publish_without_replacement(temporary, destination)
+    fsync_directory(destination.parent)
+
+
+def _fsync_staged_tree(root: Path) -> None:
+    """Make a completed private tree durable before it becomes visible."""
+
+    regular_files: list[Path] = []
+    directories: list[Path] = []
+    for current, directory_names, filenames in os.walk(
+        root,
+        topdown=True,
+        followlinks=False,
+    ):
+        directory_names.sort()
+        current_path = Path(current)
+        directories.append(current_path)
+        for filename in sorted(filenames):
+            path = current_path / filename
+            if stat.S_ISREG(path.stat(follow_symlinks=False).st_mode):
+                regular_files.append(path)
+
+    for path in sorted(regular_files):
+        fsync_file(path)
+    for path in sorted(
+        directories,
+        key=lambda candidate: (-len(candidate.parts), str(candidate)),
+    ):
+        fsync_directory(path)
 
 
 def _macos_exclusive_rename(

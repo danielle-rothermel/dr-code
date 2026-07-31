@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -11,6 +12,11 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
+
+from dr_code.synthetic.humaneval_loader import (
+    SNAPSHOT_RESOURCE,
+    SNAPSHOT_SHA256,
+)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SOURCE_DATE_EPOCH = "1704067200"
@@ -149,6 +155,7 @@ def test_installed_wheel_serves_packaged_viewer(tmp_path: Path) -> None:
 def _assert_sdist_contains_prebuilt_frontend(path: Path) -> None:
     with tarfile.open(path, "r:gz") as archive:
         names = archive.getnames()
+        _assert_root_readme_markdown_targets_are_packaged(names)
         asset_archive_name = next(
             name
             for name in names
@@ -182,9 +189,27 @@ def _assert_sdist_contains_prebuilt_frontend(path: Path) -> None:
     )
 
 
+def _assert_root_readme_markdown_targets_are_packaged(
+    archive_names: list[str],
+) -> None:
+    targets = {
+        match.split("#", 1)[0]
+        for match in re.findall(
+            r"\[[^\]]+\]\(([^)]+\.md(?:#[^)]*)?)\)",
+            (_ROOT / "README.md").read_text(encoding="utf-8"),
+        )
+        if "://" not in match
+    }
+    assert targets
+    for target in targets:
+        assert (_ROOT / target).is_file()
+        assert any(name.endswith(f"/{target}") for name in archive_names)
+
+
 def _assert_wheel_contains_only_packaged_frontend(path: Path) -> None:
     with ZipFile(path) as archive:
         names = archive.namelist()
+        snapshot = archive.read(f"dr_code/synthetic/{SNAPSHOT_RESOURCE}")
     assert "dr_code/viewer/static/index.html" in names
     assert any(
         name.startswith("dr_code/viewer/static/assets/")
@@ -198,6 +223,7 @@ def _assert_wheel_contains_only_packaged_frontend(path: Path) -> None:
     assert not any(
         name.endswith(".parquet") or "/analysis/" in name for name in names
     )
+    assert hashlib.sha256(snapshot).hexdigest() == SNAPSHOT_SHA256
 
 
 def _one_artifact(directory: Path, pattern: str) -> Path:
@@ -236,6 +262,7 @@ import re
 from fastapi.testclient import TestClient
 
 from dr_code.viewer.app import create_app
+from dr_code.synthetic.humaneval_loader import load_humaneval_plus
 
 
 class Service:
@@ -258,5 +285,7 @@ assert asset.content != root.content
 api = client.get("/api/runs")
 assert api.status_code == 200
 assert api.json() == []
+tasks = load_humaneval_plus()
+assert tasks[0].task_id == "HumanEval/0"
 print("installed viewer smoke passed")
 """

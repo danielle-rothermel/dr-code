@@ -86,7 +86,7 @@ def build(
 ) -> None:
     """Build a synthetic corruption-corpus JSONL artifact."""
     selected_recipes = _select_recipes(recipes)
-    selected_tasks = load_humaneval_plus(prefer_snapshot=True)[:tasks]
+    selected_tasks = load_humaneval_plus()[:tasks]
     samples = build_dataset(
         tasks=selected_tasks, recipes=selected_recipes, seed=seed
     )

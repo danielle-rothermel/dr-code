@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-24
+
+- Added the `mutants@v2` HumanEval+ behavioral-mutant generator, typed
+  execution oracle, deterministic five-family AST search, and authenticated
+  atomic dataset publication, with exact canonical-suite/runtime provenance
+  and an invocation-bound result channel. The authenticated default snapshot
+  ships as a package resource; trusted loads require a caller-pinned dataset
+  identity and remain offline.
+
 ## 2026-07-15
 
 - Removed superseded design-review and eval-flow hero artifacts, and updated

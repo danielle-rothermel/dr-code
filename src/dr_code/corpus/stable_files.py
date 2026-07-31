@@ -34,15 +34,26 @@ def stable_file(
     path: Path | str,
     *,
     label: str = "input",
+    max_bytes: int | None = None,
 ) -> Iterator[StableFile]:
-    """Capture a regular file once, then expose only the captured bytes."""
+    """Capture a regular file once, then expose only the captured bytes.
+
+    ``max_bytes`` bounds unauthenticated capture before a caller parses or
+    otherwise consumes the snapshot.  It is enforced while streaming, rather
+    than from source metadata, so a concurrent file change cannot bypass it.
+    """
 
     source = Path(path).expanduser().resolve(strict=True)
     if not source.is_file():
         raise ValueError(f"{label} must be a regular file: {source}")
     with tempfile.TemporaryDirectory(prefix="dr-code-stable-file-") as root:
         destination = Path(root) / "snapshot"
-        yield _copy_and_hash(source, destination, label=label)
+        yield _copy_and_hash(
+            source,
+            destination,
+            label=label,
+            max_bytes=max_bytes,
+        )
 
 
 @contextmanager
@@ -70,7 +81,14 @@ def _copy_and_hash(
     destination: Path,
     *,
     label: str,
+    max_bytes: int | None = None,
 ) -> StableFile:
+    if max_bytes is not None and (
+        isinstance(max_bytes, bool)
+        or not isinstance(max_bytes, int)
+        or max_bytes < 0
+    ):
+        raise ValueError("max_bytes must be a non-negative integer")
     digest = hashlib.sha256()
     size = 0
     try:
@@ -78,7 +96,15 @@ def _copy_and_hash(
             source.open("rb") as input_stream,
             destination.open("xb") as output_stream,
         ):
-            while chunk := input_stream.read(_COPY_BUFFER_SIZE):
+            while chunk := input_stream.read(
+                _COPY_BUFFER_SIZE
+                if max_bytes is None
+                else min(_COPY_BUFFER_SIZE, max_bytes - size + 1)
+            ):
+                if max_bytes is not None and size + len(chunk) > max_bytes:
+                    raise ValueError(
+                        f"{label} exceeds maximum size of {max_bytes} bytes"
+                    )
                 digest.update(chunk)
                 output_stream.write(chunk)
                 size += len(chunk)
