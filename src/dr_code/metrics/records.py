@@ -67,10 +67,7 @@ class MetricRecord(FrozenModel):
             raise ValueError("non-measured records cannot carry values")
 
         if self.status is RecordStatus.NOT_APPLICABLE:
-            if (
-                self.absence_failed_step is None
-                or self.absence_cause is None
-            ):
+            if self.absence_failed_step is None or self.absence_cause is None:
                 raise ValueError(
                     "not-applicable records require an absence cause"
                 )

@@ -70,7 +70,9 @@ _DIRECT_INPUTS: dict[str, str] = {
     "name_guard": CLEAN
     + "\nif __name__ == '__main__':\n    print(make_array([1]))\n",
     "escaped_json": '"import numpy as np\\n\\ndef f():\\n    return 1\\n"',
-    "json_wrapped_markdown": json.dumps("- def add(a, b):\n-     return a + b"),
+    "json_wrapped_markdown": json.dumps(
+        "- def add(a, b):\n-     return a + b"
+    ),
     "field_marker": "[[ ## code ## ]]\ndef f():\n    return 1\n",
     "field_marker_literal": "[[ ## code ## ]]\n{1: 2, 3: 4}\n",
     "field_marker_empty": "[[ ## code ## ]]\n\n",
@@ -89,9 +91,9 @@ _ALL_INPUTS: dict[str, str] = {**_DIRECT_INPUTS, **_CORRUPTION_INPUTS}
 
 
 def _new_output(definition: PreprocessingDefinition, raw: str) -> str | None:
-    output = run_preprocessing(
-        definition, TextArtifact(text=raw)
-    ).value("output")
+    output = run_preprocessing(definition, TextArtifact(text=raw)).value(
+        "output"
+    )
     if is_absent(output):
         return None
     assert isinstance(output, CodeArtifact)
@@ -195,7 +197,7 @@ def test_smart_quote_delimiters_recovered_only_by_new_pipeline() -> None:
 
 
 def test_smart_quotes_inside_literal_preserved_by_new_pipeline() -> None:
-    raw = "def f():\n    return \"don’t “quote” me\""
+    raw = 'def f():\n    return "don’t “quote” me"'
     definition = resolve_preprocessing_definition(
         definition_id=BEST_EFFORT_ID, version="v2"
     )

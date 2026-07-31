@@ -43,7 +43,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 [tool.ruff]
-include = ["scripts/**/*.py", "src/**/*.py"]
+include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]
 line-length = 79
 
 [tool.ty.src]

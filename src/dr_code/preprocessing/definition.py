@@ -61,8 +61,7 @@ class PreprocessingDefinition(FrozenModel):
             seen.add(name)
         if duplicates:
             raise WiringError(
-                "duplicate instance names: "
-                + ", ".join(sorted(duplicates))
+                "duplicate instance names: " + ", ".join(sorted(duplicates))
             )
         return self
 

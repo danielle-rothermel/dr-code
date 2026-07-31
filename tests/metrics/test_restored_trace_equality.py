@@ -97,6 +97,7 @@ def _pass_all_executor():
 # Fresh ≡ deserialized ≡ external (X-S2).
 # ===========================================================================
 
+
 def test_deserialized_trace_measures_identically_to_fresh() -> None:
     fresh = external_trace(_namespace())
     restored = deserialize_trace(serialize_trace(fresh))
@@ -106,7 +107,9 @@ def test_deserialized_trace_measures_identically_to_fresh() -> None:
     ]
 
 
-def test_external_trace_measures_identically_to_preprocessing_producer() -> None:
+def test_external_trace_measures_identically_to_preprocessing_producer() -> (
+    None
+):
     external = external_trace(_namespace())
     preprocessing = Trace(
         values=_namespace(),
@@ -142,6 +145,7 @@ def test_fresh_restored_and_external_all_yield_equal_answers() -> None:
 # ===========================================================================
 # Execution-backed records are deterministic too: restored ≡ fresh (X-S2).
 # ===========================================================================
+
 
 def _code_test_definition():
     from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition

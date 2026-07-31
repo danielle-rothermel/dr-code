@@ -46,7 +46,9 @@ def test_v2_recovers_escaped_newline_shapes(source: str, v2_profile) -> None:
     assert validate_python_source(result.extracted_code).compile_ok
 
 
-def test_normal_code_with_string_literal_escape_skips_fallback(v2_profile) -> None:
+def test_normal_code_with_string_literal_escape_skips_fallback(
+    v2_profile,
+) -> None:
     # E: a normal code candidate must retain the string-literal escape.
     source = 'def join_lines(lines):\n    return "\\n".join(lines)'
 
@@ -99,8 +101,7 @@ def test_escaped_prose_preserves_python_string_literals(
 
 def test_json_wrapped_code_preserves_python_string_escapes(v2_profile) -> None:
     expected = (
-        'def separators(values):\n'
-        '    return "\\n".join(values), "\\t", "\\r"'
+        'def separators(values):\n    return "\\n".join(values), "\\t", "\\r"'
     )
     source = json.dumps(f"Intro\n```python\n{expected}\n```")
 

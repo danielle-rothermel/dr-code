@@ -29,7 +29,6 @@ from dr_code.humaneval.scoring import (
 from dr_exec import Records
 
 from metrics.helpers import (
-    PRODUCTION_EXECUTOR,
     code_test_trace,
     fake_executor_always,
     scripted_batch,
@@ -87,13 +86,16 @@ def _assert_parity(submission, task, *, executor, timeout=5.0) -> None:
         code_test_trace(submission, task), executor=executor, timeout=timeout
     )
     consumer = _derive_outcome(record)
-    oracle = _score_outcome(submission, task, executor=executor, timeout=timeout)
+    oracle = _score_outcome(
+        submission, task, executor=executor, timeout=timeout
+    )
     assert str(consumer.value) == str(oracle)
 
 
 # ---------------------------------------------------------------------------
 # Outcome parity vs score_humaneval_submission.
 # ---------------------------------------------------------------------------
+
 
 def test_passed_outcome_parity(task, good_submission, real_executor) -> None:
     _assert_parity(good_submission, task, executor=real_executor)
@@ -158,6 +160,7 @@ def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
 # ---------------------------------------------------------------------------
 # Facts stay in records; verdicts stay in the consumer.
 # ---------------------------------------------------------------------------
+
 
 def test_code_test_record_carries_no_verdict_fields(
     task, good_submission, real_executor

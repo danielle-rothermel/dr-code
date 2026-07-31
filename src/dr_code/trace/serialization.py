@@ -43,7 +43,5 @@ def deserialize_trace(serialized: SerializedTrace) -> Trace:
     return Trace(
         values=dict(serialized.values),
         producer=serialized.producer,
-        step_facts={
-            k: dict(v) for k, v in serialized.step_facts.items()
-        },
+        step_facts={k: dict(v) for k, v in serialized.step_facts.items()},
     )

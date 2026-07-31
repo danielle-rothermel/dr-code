@@ -49,9 +49,7 @@ IMPORT_ALIAS_MAP: Final[dict[str, str]] = {
 }
 
 IMPORT_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*(import |from )")
-TRAILING_JUNK_RE: Final[re.Pattern[str]] = re.compile(
-    r"\s*(?:#|//|--|/\*).*$"
-)
+TRAILING_JUNK_RE: Final[re.Pattern[str]] = re.compile(r"\s*(?:#|//|--|/\*).*$")
 
 
 def infer_missing_imports(source: str) -> str:

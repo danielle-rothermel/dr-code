@@ -36,7 +36,6 @@ from metrics.helpers import (
     PRODUCTION_EXECUTOR,
     code_test_trace,
     fake_executor_always,
-    fake_executor_scripted,
     full_pass_batch,
     output_budget_run,
     scripted_batch,
@@ -47,6 +46,7 @@ from metrics.helpers import (
 # ---------------------------------------------------------------------------
 # Definition helpers (lazy metrics imports inside).
 # ---------------------------------------------------------------------------
+
 
 def _definition(questions) -> object:
     from dr_code.metrics import MetricsDefinition
@@ -59,7 +59,9 @@ def _definition(questions) -> object:
 def _q(metric_name: str, on: str = "input", **settings) -> object:
     from dr_code.metrics import MetricName, MetricQuestion
 
-    return MetricQuestion(metric=MetricName(metric_name), on=on, settings=settings)
+    return MetricQuestion(
+        metric=MetricName(metric_name), on=on, settings=settings
+    )
 
 
 def _pass_all_executor():
@@ -76,6 +78,7 @@ def _pass_all_executor():
 # Bind-time WiringError, before any work.
 # ===========================================================================
 
+
 def test_missing_on_key_is_a_wiring_error_before_any_work(
     counting_executor,
 ) -> None:
@@ -90,7 +93,10 @@ def test_missing_on_key_is_a_wiring_error_before_any_work(
 
 def test_wrong_artifact_kind_is_a_wiring_error(counting_executor) -> None:
     trace = external_trace(
-        {"input": TextArtifact(text="not code"), "output": TextArtifact(text="x")}
+        {
+            "input": TextArtifact(text="not code"),
+            "output": TextArtifact(text="x"),
+        }
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
@@ -98,7 +104,9 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_executor) -> None:
     assert counting_executor.call_count == 0
 
 
-def test_invalid_operator_settings_is_a_wiring_error(counting_executor) -> None:
+def test_invalid_operator_settings_is_a_wiring_error(
+    counting_executor,
+) -> None:
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
@@ -110,7 +118,9 @@ def test_invalid_operator_settings_is_a_wiring_error(counting_executor) -> None:
     assert counting_executor.call_count == 0
 
 
-def test_missing_auxiliary_key_is_a_wiring_error(task, counting_executor) -> None:
+def test_missing_auxiliary_key_is_a_wiring_error(
+    task, counting_executor
+) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = external_trace(
         {
@@ -124,9 +134,14 @@ def test_missing_auxiliary_key_is_a_wiring_error(task, counting_executor) -> Non
     assert counting_executor.call_count == 0
 
 
-def test_batch_wiring_error_runs_no_execution_work(task, counting_executor) -> None:
+def test_batch_wiring_error_runs_no_execution_work(
+    task, counting_executor
+) -> None:
     bad = external_trace(
-        {"input": TextArtifact(text="not code"), "output": TextArtifact(text="x")}
+        {
+            "input": TextArtifact(text="not code"),
+            "output": TextArtifact(text="x"),
+        }
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
@@ -138,10 +153,14 @@ def test_batch_wiring_error_runs_no_execution_work(task, counting_executor) -> N
 # Totality — one record per declared question, in declaration order.
 # ===========================================================================
 
+
 def test_one_record_per_question_in_declaration_order() -> None:
     text = "def f(x):\n    return x + 1\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=text), "output": CodeArtifact(source=text)}
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
     )
     definition = _definition(
         [
@@ -205,6 +224,7 @@ def test_absent_auxiliary_yields_not_applicable(task) -> None:
 # Operator exception ⇒ OPERATOR_FAILURE record (totality).
 # ===========================================================================
 
+
 def test_operator_exception_becomes_an_operator_failure_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -213,7 +233,10 @@ def test_operator_exception_becomes_an_operator_failure_record(
 
     text = "def f(x):\n    return x + 1\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=text), "output": CodeArtifact(source=text)}
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
     )
 
     operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
@@ -230,12 +253,17 @@ def test_operator_exception_becomes_an_operator_failure_record(
     assert record.metric is MetricName.TEXT_STATS
 
 
-def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> None:
+def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> (
+    None
+):
     from dr_code.metrics import MetricName
 
     invalid = "def f(:\n    pass\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=invalid), "output": CodeArtifact(source=invalid)}
+        {
+            "input": CodeArtifact(source=invalid),
+            "output": CodeArtifact(source=invalid),
+        }
     )
     definition = _definition([_q("ast_stats", on="input")])
     record = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)[0]
@@ -247,6 +275,7 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
 # ===========================================================================
 # Executor failures raise; candidate budget deaths are data.
 # ===========================================================================
+
 
 def test_executor_failure_raises(task) -> None:
     """A genuine ExecutorFailure (no result to attribute) raises — never a
@@ -289,7 +318,9 @@ def test_wall_clock_budget_is_candidate_data_not_infrastructure(task) -> None:
     cases, not a raised failure."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
-    definition = _definition([_q("code_test", on="input", timeout_seconds=1.0)])
+    definition = _definition(
+        [_q("code_test", on="input", timeout_seconds=1.0)]
+    )
 
     def timed_out(call):
         return scripted_batch(case_payloads={}, run=wall_clock_run(None))
@@ -322,6 +353,7 @@ def test_output_budget_is_candidate_data_not_infrastructure(task) -> None:
 # Two-phase execution + content-hash request dedupe (X-S4).
 # ===========================================================================
 
+
 def test_batch_dedupes_identical_code_test_executions(
     task, counting_executor
 ) -> None:
@@ -334,7 +366,9 @@ def test_batch_dedupes_identical_code_test_executions(
     assert counting_executor.call_count == 1
 
 
-def test_distinct_submissions_execute_separately(task, counting_executor) -> None:
+def test_distinct_submissions_execute_separately(
+    task, counting_executor
+) -> None:
     good = code_test_trace("def add_one(x):\n    return x + 1\n", task)
     bad = code_test_trace("def add_one(x):\n    return x - 1\n", task)
     definition = _definition([_q("code_test", on="input")])
@@ -345,7 +379,9 @@ def test_distinct_submissions_execute_separately(task, counting_executor) -> Non
 def test_batch_returns_one_record_tuple_per_trace(task) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
-    definition = _definition([_q("code_test", on="input", timeout_seconds=5.0)])
+    definition = _definition(
+        [_q("code_test", on="input", timeout_seconds=5.0)]
+    )
     results = _extract_batch(
         definition, [trace, trace], executor=PRODUCTION_EXECUTOR
     )
@@ -381,7 +417,10 @@ def test_prepopulated_execution_cache_skips_the_executor(
 def test_pure_operators_never_call_the_executor(counting_executor) -> None:
     text = "def f(x):\n    return x\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=text), "output": CodeArtifact(source=text)}
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
     )
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
@@ -393,6 +432,7 @@ def test_pure_operators_never_call_the_executor(counting_executor) -> None:
 # ===========================================================================
 # Record equality across fresh / deserialized / external traces (X-S2).
 # ===========================================================================
+
 
 def test_fresh_trace_equals_deserialized_trace() -> None:
     text = "def add_one(x):\n    return x + 1\n"
@@ -406,9 +446,9 @@ def test_fresh_trace_equals_deserialized_trace() -> None:
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
     )
-    assert _extract(definition, fresh, executor=PRODUCTION_EXECUTOR) == _extract(
-        definition, restored, executor=PRODUCTION_EXECUTOR
-    )
+    assert _extract(
+        definition, fresh, executor=PRODUCTION_EXECUTOR
+    ) == _extract(definition, restored, executor=PRODUCTION_EXECUTOR)
 
 
 def test_external_trace_matches_preprocessing_producer_trace() -> None:
@@ -438,17 +478,22 @@ def test_external_trace_matches_preprocessing_producer_trace() -> None:
         )
 
     assert [
-        answer(r) for r in _extract(definition, external, executor=PRODUCTION_EXECUTOR)
+        answer(r)
+        for r in _extract(definition, external, executor=PRODUCTION_EXECUTOR)
     ] == [
         answer(r)
-        for r in _extract(definition, preprocessing, executor=PRODUCTION_EXECUTOR)
+        for r in _extract(
+            definition, preprocessing, executor=PRODUCTION_EXECUTOR
+        )
     ]
 
 
 def test_code_test_record_values_exclude_timing(task) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
-    definition = _definition([_q("code_test", on="input", timeout_seconds=2.0)])
+    definition = _definition(
+        [_q("code_test", on="input", timeout_seconds=2.0)]
+    )
     record = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)[0]
     assert "elapsed_seconds" not in record.values
 
@@ -456,6 +501,7 @@ def test_code_test_record_values_exclude_timing(task) -> None:
 # ---------------------------------------------------------------------------
 # Engine call wrappers (keep the lazy import in one place).
 # ---------------------------------------------------------------------------
+
 
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics

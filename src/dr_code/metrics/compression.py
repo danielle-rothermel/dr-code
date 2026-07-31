@@ -35,9 +35,7 @@ class ZstdConfig(FrozenModel):
     @model_validator(mode="after")
     def validate_level(self) -> Self:
         if self.level == 0 or self.level > 22:
-            raise ValueError(
-                "zstd level must be negative or between 1 and 22"
-            )
+            raise ValueError("zstd level must be negative or between 1 and 22")
         return self
 
 

@@ -2,54 +2,65 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 
 from dr_code.synthetic import humaneval_loader
-from dr_code.synthetic.humaneval_loader import HumanEvalPlusTask, load_humaneval_plus
+from dr_code.synthetic.humaneval_loader import load_humaneval_plus
 
 
-def _task() -> HumanEvalPlusTask:
-    return HumanEvalPlusTask(
-        task_id="HumanEval/0",
-        prompt="def add(a, b):\n",
-        canonical_solution="    return a + b\n",
-        entry_point="add",
-        test="",
-    )
+ROW = {
+    "task_id": "HumanEval/0",
+    "prompt": "def add(a, b):\n",
+    "canonical_solution": "    return a + b\n",
+    "entry_point": "add",
+    "test": "",
+}
 
 
-def test_hf_first_does_not_silently_use_snapshot(
+def test_default_loader_does_not_fall_back_to_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    snapshot_tasks = [_task()]
+    calls: list[Mapping[str, object]] = []
 
-    def unavailable_hf() -> list[HumanEvalPlusTask]:
+    def unavailable_source(**kwargs: object) -> list[object]:
+        calls.append(kwargs)
         raise FileNotFoundError("hf unavailable")
 
-    def available_snapshot(_repo_root: Path) -> list[HumanEvalPlusTask]:
-        return snapshot_tasks
-
-    monkeypatch.setattr(humaneval_loader, "_load_from_hf", unavailable_hf)
-    monkeypatch.setattr(humaneval_loader, "_load_from_snapshot", available_snapshot)
+    monkeypatch.setattr(
+        humaneval_loader,
+        "load_human_eval_rows",
+        unavailable_source,
+    )
 
     with pytest.raises(FileNotFoundError, match="hf unavailable"):
         load_humaneval_plus(prefer_snapshot=False)
 
+    assert len(calls) == 1
+    assert "snapshot_path" not in calls[0]
 
-def test_snapshot_first_allows_explicit_offline_snapshot(
+
+def test_explicit_snapshot_loader_uses_repository_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    snapshot_tasks = [_task()]
+    calls: list[Mapping[str, object]] = []
 
-    def unavailable_hf() -> list[HumanEvalPlusTask]:
-        raise FileNotFoundError("hf unavailable")
+    def available_source(**kwargs: object) -> list[dict[str, str]]:
+        calls.append(kwargs)
+        return [ROW]
 
-    def available_snapshot(_repo_root: Path) -> list[HumanEvalPlusTask]:
-        return snapshot_tasks
+    monkeypatch.setattr(
+        humaneval_loader,
+        "load_human_eval_rows",
+        available_source,
+    )
 
-    monkeypatch.setattr(humaneval_loader, "_load_from_hf", unavailable_hf)
-    monkeypatch.setattr(humaneval_loader, "_load_from_snapshot", available_snapshot)
+    tasks = load_humaneval_plus(prefer_snapshot=True)
 
-    assert load_humaneval_plus(prefer_snapshot=True) == snapshot_tasks
+    assert [task.task_id for task in tasks] == ["HumanEval/0"]
+    assert calls[0]["snapshot_path"] == (
+        Path(__file__).resolve().parents[2]
+        / humaneval_loader.SNAPSHOT_REL_PATH
+    )

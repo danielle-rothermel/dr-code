@@ -38,7 +38,6 @@ from dr_code.metrics.engine.execution import (
 )
 
 from metrics.helpers import (
-    clean_run,
     full_pass_batch,
     output_budget_run,
     scripted_batch,
@@ -50,10 +49,13 @@ from dr_exec import Records
 _BODY = "def run_item(item_id, payload):\n    return {}\n"
 
 
-def _batch_request(*, case_ids=("case_0", "case_1"), config="cfg") -> BatchRequest:
+def _batch_request(
+    *, case_ids=("case_0", "case_1"), config="cfg"
+) -> BatchRequest:
     return BatchRequest(
         items=tuple(
-            BatchItem(item_id=cid, payload={"code": "pass"}) for cid in case_ids
+            BatchItem(item_id=cid, payload={"code": "pass"})
+            for cid in case_ids
         ),
         body_source=_BODY,
         item_schema="humaneval-case@v1",
@@ -64,7 +66,9 @@ def _batch_request(*, case_ids=("case_0", "case_1"), config="cfg") -> BatchReque
 def _budgets() -> Budgets:
     return Budgets(
         wall_clock=2.0,
-        output=OutputBudget(limit_bytes=1024, overflow_policy=OverflowPolicy.FAIL),
+        output=OutputBudget(
+            limit_bytes=1024, overflow_policy=OverflowPolicy.FAIL
+        ),
         input=4096,
     )
 
@@ -111,6 +115,7 @@ def _run(requests, *, executor, cache=None):
 # ExecutionRequest.cache_key — content-addressed + deterministic.
 # ===========================================================================
 
+
 def test_cache_key_is_a_deterministic_string() -> None:
     assert isinstance(_request().cache_key, str)
     assert len(_request().cache_key) > 0
@@ -123,10 +128,15 @@ def test_cache_key_is_a_deterministic_string() -> None:
         ({"case_ids": ("case_0",)}, {"case_ids": ("case_1",)}),
         ({"config": "a"}, {"config": "b"}),
         ({"computation_id": "a@v1"}, {"computation_id": "a@v2"}),
-        ({"executor_identity": "dr-exec@1"}, {"executor_identity": "dr-exec@2"}),
+        (
+            {"executor_identity": "dr-exec@1"},
+            {"executor_identity": "dr-exec@2"},
+        ),
     ],
 )
-def test_cache_key_depends_on_each_identity_component(kwargs_a, kwargs_b) -> None:
+def test_cache_key_depends_on_each_identity_component(
+    kwargs_a, kwargs_b
+) -> None:
     assert _request(**kwargs_a).cache_key != _request(**kwargs_b).cache_key
 
 
@@ -140,6 +150,7 @@ def test_cache_key_folds_in_executor_identity() -> None:
 # ===========================================================================
 # GOLDEN: the exact identity components and their order, pinned.
 # ===========================================================================
+
 
 def test_invocation_identity_key_components_are_pinned() -> None:
     """The cache-key derivation is a persisted contract: pin the exact ordered
@@ -182,6 +193,7 @@ def test_invocation_identity_key_components_are_pinned() -> None:
 # ===========================================================================
 # ExecutionOutcome — structured attribution fields.
 # ===========================================================================
+
 
 def test_execution_outcome_carries_attribution_fields() -> None:
     outcome = ExecutionOutcome(
@@ -241,6 +253,7 @@ def test_timeout_and_output_limit_classification() -> None:
 # InMemoryExecutionCache get/put.
 # ===========================================================================
 
+
 def _outcome() -> ExecutionOutcome:
     return ExecutionOutcome(
         attribution=Attribution.PAYLOAD,
@@ -287,6 +300,7 @@ def test_in_memory_cache_put_overwrites() -> None:
 # run_requests — dedupe + at-most-once execution.
 # ===========================================================================
 
+
 def test_run_requests_dedupes_identical_requests() -> None:
     from metrics.helpers import fake_executor_scripted
 
@@ -324,7 +338,11 @@ def test_run_requests_populates_cache_for_misses() -> None:
 
     cache = InMemoryExecutionCache()
     request = _request()
-    _run([request], executor=fake_executor_scripted(full_pass_batch()), cache=cache)
+    _run(
+        [request],
+        executor=fake_executor_scripted(full_pass_batch()),
+        cache=cache,
+    )
     assert cache.get(request.cache_key) is not None
 
 

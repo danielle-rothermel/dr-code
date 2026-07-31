@@ -90,7 +90,10 @@ def make_task(
 # records).
 # ---------------------------------------------------------------------------
 
-def text_trace(text: str, namespace: Mapping[str, object] | None = None) -> Trace:
+
+def text_trace(
+    text: str, namespace: Mapping[str, object] | None = None
+) -> Trace:
     values: dict[str, object] = {
         "input": TextArtifact(text=text),
         "output": TextArtifact(text=text),
@@ -100,7 +103,9 @@ def text_trace(text: str, namespace: Mapping[str, object] | None = None) -> Trac
     return external_trace(values)
 
 
-def code_trace(source: str, namespace: Mapping[str, object] | None = None) -> Trace:
+def code_trace(
+    source: str, namespace: Mapping[str, object] | None = None
+) -> Trace:
     code = CodeArtifact(source=source)
     values: dict[str, object] = {
         "input": code,
@@ -157,6 +162,7 @@ def absent_trace(
 # ---------------------------------------------------------------------------
 # dr-exec RunResult / ScriptedBatch builders.
 # ---------------------------------------------------------------------------
+
 
 def _measurements(*, stdout: str = "", stderr: str = "") -> Measurements:
     return Measurements(
@@ -302,6 +308,7 @@ def partial_pass_batch(
 # Executor doubles.
 # ---------------------------------------------------------------------------
 
+
 def fake_executor_scripted(*batches: ScriptedBatch) -> FakeExecutor:
     """A FakeExecutor answering each run_batch call with the next batch, FIFO."""
     fake = FakeExecutor()
@@ -352,6 +359,7 @@ class CountingExecutor:
 # ---------------------------------------------------------------------------
 # Oracle: delegate to the real batch_runner for parity comparisons.
 # ---------------------------------------------------------------------------
+
 
 def evaluate_oracle(
     task: HumanEvalTask,

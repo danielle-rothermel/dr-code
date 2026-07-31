@@ -32,6 +32,7 @@ EXPECTED_RECORD_STATUSES = {
 # MetricName / RecordStatus enums.
 # ===========================================================================
 
+
 def test_metric_name_is_a_strenum_of_the_six_families() -> None:
     from dr_code.metrics import MetricName
 
@@ -50,10 +51,14 @@ def test_metric_name_members_round_trip_through_their_string_values() -> None:
 def test_record_status_is_the_three_way_answer_taxonomy() -> None:
     from dr_code.metrics import RecordStatus
 
-    assert {status.value for status in RecordStatus} == EXPECTED_RECORD_STATUSES
+    assert {
+        status.value for status in RecordStatus
+    } == EXPECTED_RECORD_STATUSES
 
 
-def test_record_status_members_round_trip_through_their_string_values() -> None:
+def test_record_status_members_round_trip_through_their_string_values() -> (
+    None
+):
     from dr_code.metrics import RecordStatus
 
     for value in EXPECTED_RECORD_STATUSES:
@@ -64,6 +69,7 @@ def test_record_status_members_round_trip_through_their_string_values() -> None:
 # ---------------------------------------------------------------------------
 # Registry ↔ enum sync (plan: ``names.py`` registry↔enum sync-tested).
 # ---------------------------------------------------------------------------
+
 
 def test_registry_covers_every_metric_name() -> None:
     from dr_code.metrics import MetricName
@@ -85,6 +91,7 @@ def test_registry_has_no_stray_keys() -> None:
 # ===========================================================================
 # MetricRecord schema + identity/lineage.
 # ===========================================================================
+
 
 def _identity_kwargs(**overrides: object) -> dict[str, object]:
     base = dict(
@@ -184,6 +191,7 @@ def test_metric_record_values_accept_all_scalar_types() -> None:
 # ===========================================================================
 # Exactly-one-shape-per-status (X-S1).
 # ===========================================================================
+
 
 def test_measured_record_shape() -> None:
     from dr_code.metrics import RecordStatus
@@ -306,6 +314,7 @@ def test_records_differ_on_metric_settings_on_key_and_status() -> None:
 # record_rows: flat dataframe rows, metric-prefixed value columns (X-S3).
 # ===========================================================================
 
+
 def test_record_rows_returns_one_row_per_record() -> None:
     from dr_code.metrics import MetricName, record_rows
 
@@ -360,7 +369,9 @@ def test_record_rows_value_columns_are_collision_free_across_metrics() -> None:
     assert rows[1]["ast_stats.count"] == 2
 
 
-def test_record_rows_status_column_distinguishes_absence_from_measured_zero() -> None:
+def test_record_rows_status_column_distinguishes_absence_from_measured_zero() -> (
+    None
+):
     """Not-applicable ≠ measured zero: a status column, not a magic value."""
     from dr_code.metrics import RecordStatus, record_rows
 

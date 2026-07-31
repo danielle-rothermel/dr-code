@@ -60,8 +60,12 @@ def test_equivalent_ignores_formatting_and_docstrings() -> None:
     assert equivalent(a, b)
 
 
-def test_equivalent_is_false_for_different_code_and_unparseable_input() -> None:
-    assert not equivalent("def f():\n    return 1\n", "def f():\n    return 2\n")
+def test_equivalent_is_false_for_different_code_and_unparseable_input() -> (
+    None
+):
+    assert not equivalent(
+        "def f():\n    return 1\n", "def f():\n    return 2\n"
+    )
     assert not equivalent(UNPARSEABLE, "x = 1\n")
 
 
@@ -93,7 +97,9 @@ def test_annotation_sites_include_source_location_and_value_flag() -> None:
 
     sites = annotation_sites(tree)
 
-    assert [(site.kind, site.name, site.annotation_source) for site in sites] == [
+    assert [
+        (site.kind, site.name, site.annotation_source) for site in sites
+    ] == [
         (AnnotationKind.PARAMETER, "x", "int"),
         (AnnotationKind.RETURN, None, "str"),
         (AnnotationKind.VARIABLE, "y", "list[int]"),
@@ -146,7 +152,10 @@ def test_function_signature_helpers_return_plain_analysis_values() -> None:
     assert format_function_signature(function) == (
         "async def f(x: int, *args: str, y: bool=False, **kwargs) -> str:"
     )
-    assert [(arg.name, arg.annotation_source) for arg in extract_function_args(function)] == [
+    assert [
+        (arg.name, arg.annotation_source)
+        for arg in extract_function_args(function)
+    ] == [
         ("x", "int"),
         ("y", "bool"),
     ]
@@ -169,7 +178,9 @@ def test_comment_and_docstring_sites_share_text_site_shape() -> None:
     hash_comments = extract_hash_comments(source)
     docstrings = extract_docstrings(tree)
 
-    assert [(site.kind, site.text, site.location.lineno) for site in hash_comments] == [
+    assert [
+        (site.kind, site.text, site.location.lineno) for site in hash_comments
+    ] == [
         (TextSiteKind.HASH_COMMENT, "module comment", 1),
         (TextSiteKind.HASH_COMMENT, "inline comment", 5),
     ]

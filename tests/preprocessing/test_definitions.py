@@ -171,9 +171,7 @@ def test_best_effort_extraction_ladder_has_fourth_rung() -> None:
     be = resolve_preprocessing_definition(
         definition_id=BEST_EFFORT_ID, version=V2
     )
-    extract = next(
-        s for s in be.steps if s.step == "extract_candidates"
-    )
+    extract = next(s for s in be.steps if s.step == "extract_candidates")
     assert extract.settings["alternatives"] == [
         "fenced_blocks",
         "markdown_wrapper",
