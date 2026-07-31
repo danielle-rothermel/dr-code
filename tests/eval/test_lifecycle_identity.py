@@ -23,6 +23,8 @@ from dr_code.eval import (
     VariableReference,
     VariableSpec,
     identity_hash_for,
+    resolved_operator_identity,
+    resolved_step_identity,
     resolve_assignment,
 )
 from dr_code.preprocessing import run_preprocessing
@@ -63,8 +65,8 @@ def _components():
         version="1",
         steps=(
             PreprocessingStepBinding(
-                instance_name="sf",
-                step="select_first",
+                instance_name="return_all",
+                step="return_all",
             ),
         ),
     ).materialize()
@@ -98,11 +100,11 @@ def _components():
 def test_configs_have_stable_full_sha256_identities() -> None:
     expected = (
         "df81e5ad266c408bfc17ca576ce0e5febdb91b2e02e6ee4c298b1168936b641f",
-        "88ed790f70ebb2b3b4904dd76def49ee75a2f487be95058095c0af178c0d5540",
-        "164199a4bd36ee5cf77d756b3a3bfcc8f105365da7de46280de6ee988c81d6a4",
-        "b2be66a3d2a67b0e225ab08717321c4eeeee5ff5d79c5ca1875e9bb016ecc603",
+        "28ac59989b6b2fde0057a869fde616fa15ebca55265ca242126ac66afded664f",
+        "1d030174bc0db9731d09afb18029a204a658b63235238f9bd98636497a8ed38a",
+        "4f38afb0727e5e620790c18dd16513fba2f5016242ef470d237e9814a18fb6af",
         "373b234c512b09f897fc42107cb7f6d7b848c5f6a48e4dc70d0ba39727e3522b",
-        "1470b51d7e2cac09debc645caaed62da99e9b5ef2ea7e288d781b13ef4a762ec",
+        "d38f8356c90b1e8113502e6371610cbb66f5c6d243959970d51f87833d9c38f2",
     )
     actual = tuple(item.config_identity_hash for item in _components())
     assert actual == expected
@@ -113,18 +115,16 @@ def test_resolved_step_and_operator_versions_are_materialized() -> None:
     _, preprocessing, metric, procedure, _, _ = _components()
     assert preprocessing.resolved_step_versions == (
         (
-            "sf",
-            "select_first",
-            "1",
-            "073aafebcd1410d99d47c3378c7631f15fba2115c3e132e469cc68094a5ff76a",
+            "return_all",
+            "return_all",
+            *resolved_step_identity("return_all"),
         ),
     )
     assert metric.resolved_operator_versions == (
         (
-            "0de9c1d49cf0e80c13e19a784b74a721c435b032a9797807104c301d7d5415ca",
+            metric.questions[0].identity_hash(),
             "code_leakage",
-            "2",
-            "78f152ae792e9fe7c963297c6552ab80e1dd5bf0da5f707e3a13f7500abdc5eb",
+            *resolved_operator_identity("code_leakage"),
         ),
     )
     assert procedure.preprocessing_config_hash == (
@@ -269,18 +269,7 @@ def test_preprocessing_settings_use_recursive_canonical_json() -> None:
             ("fenced_blocks", "escaped_python"),
         ),
     )
-    assert (
-        PreprocessingDefinition(
-            definition_id="pre",
-            version="1",
-            steps=(forward,),
-        ).identity_hash()
-        == PreprocessingDefinition(
-            definition_id="pre",
-            version="1",
-            steps=(reverse,),
-        ).identity_hash()
-    )
+    assert forward.model_dump_json() == reverse.model_dump_json()
 
 
 @pytest.mark.parametrize("invalid", [math.inf, math.nan, {"values": {1, 2}}])
@@ -290,7 +279,7 @@ def test_preprocessing_settings_reject_non_json_values(
     with pytest.raises(StrictJsonError):
         PreprocessingStepBinding(
             instance_name="extract",
-            step="select_first",
+            step="return_all",
             settings={"invalid": invalid},
         )
 
@@ -594,18 +583,12 @@ def test_identity_json_is_deeply_immutable_and_round_trips() -> None:
         task_names.append("b")
     assert type(config).model_validate_json(config.model_dump_json()) == config
 
-    preprocessing = PreprocessingDefinition(
-        definition_id="pre",
-        version="1",
-        steps=(
-            PreprocessingStepBinding(
-                instance_name="extract",
-                step="extract_candidates",
-                settings={"alternatives": ["fenced_blocks", "escaped_python"]},
-            ),
-        ),
+    preprocessing = PreprocessingStepBinding(
+        instance_name="extract",
+        step="extract_candidates",
+        settings={"alternatives": ["fenced_blocks", "escaped_python"]},
     )
-    alternatives = dict(preprocessing.steps[0].settings)["alternatives"]
+    alternatives = dict(preprocessing.settings)["alternatives"]
     with pytest.raises(AttributeError):
         alternatives.append("raw_text")
 

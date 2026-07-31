@@ -2,25 +2,56 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from dr_code.eval import (
+    PreprocessingConfig,
     PreprocessingDefinition,
     PreprocessingStepBinding,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
+    BoundPreprocessingRunner,
     BoundStep,
     bind_definition,
+    bind_preprocessing,
     run_preprocessing,
 )
+from dr_code.preprocessing.steps.base import (
+    Step,
+    StepFailedError,
+    StepSettings,
+)
 from dr_code.trace import (
+    Artifact,
+    ArtifactKind,
     CodeArtifact,
+    CodeCandidateSetArtifact,
     TextArtifact,
     Trace,
     WiringError,
     is_absent,
 )
+
+
+class _FailingTextStep(Step[StepSettings]):
+    NAME = StepName.NORMALIZE_UNICODE
+    VERSION = "test"
+    INPUT = ArtifactKind.TEXT
+    OUTPUT = ArtifactKind.TEXT
+
+    def apply(self, value: Artifact):  # noqa: ARG002
+        raise StepFailedError(
+            "cannot recover this input",
+            failure_code=PreprocessingFailureCode.DECODER_OUTPUT_BLANK,
+            facts={
+                "candidates": ["candidate-0"],
+                "reason": {"kind": "unrecoverable"},
+            },
+        )
 
 
 def _def(
@@ -116,12 +147,80 @@ def test_bind_accepts_valid_kind_chain() -> None:
                 instance_name="s", step=StepName.STRIP_FENCES
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )
     bound = bind_definition(definition.materialize())
     assert len(bound) == 3
+
+
+def test_bound_runner_is_immutable_and_uses_frozen_config() -> None:
+    definition = _def(
+        (
+            PreprocessingStepBinding(
+                instance_name="n", step=StepName.NORMALIZE_UNICODE
+            ),
+        )
+    )
+    config = definition.materialize()
+    runner = bind_preprocessing(config)
+
+    assert isinstance(runner, BoundPreprocessingRunner)
+    with pytest.raises(FrozenInstanceError):
+        setattr(runner, "bound_steps", ())
+    assert config.steps[0].settings == ()
+    assert runner.bound_steps[0].step.settings == StepSettings()
+
+
+def test_bound_runner_matches_one_shot_execution() -> None:
+    definition = _def(
+        (
+            PreprocessingStepBinding(
+                instance_name="n", step=StepName.NORMALIZE_UNICODE
+            ),
+        )
+    )
+    input_value = TextArtifact(text="ｄｅｆ")
+    config = definition.materialize()
+
+    assert bind_preprocessing(config).run(input_value) == run_preprocessing(
+        config, input_value
+    )
+
+
+def test_bound_runner_binds_steps_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = _def(
+        (
+            PreprocessingStepBinding(
+                instance_name="n", step=StepName.NORMALIZE_UNICODE
+            ),
+        )
+    )
+    import dr_code.preprocessing.runner as runner_mod
+
+    calls = 0
+    original = runner_mod.bind_definition
+
+    def count_bind(
+        config: PreprocessingConfig,
+    ) -> tuple[BoundStep, ...]:
+        nonlocal calls
+        calls += 1
+        return original(config)
+
+    monkeypatch.setattr(runner_mod, "bind_definition", count_bind)
+    runner = runner_mod.bind_preprocessing(definition.materialize())
+
+    assert runner.run(TextArtifact(text="ｄｅｆ")).value(
+        "output"
+    ) == TextArtifact(text="def")
+    assert runner.run(TextArtifact(text="ｇ")).value("output") == TextArtifact(
+        text="g"
+    )
+    assert calls == 1
 
 
 # --- run: basic execution -------------------------------------------
@@ -161,7 +260,7 @@ def test_run_empty_definition_output_equals_input() -> None:
     assert trace.value("output") == TextArtifact(text="x")
 
 
-def test_run_input_kind_mismatch_raises_wiring_error() -> None:
+def test_bound_runner_input_kind_mismatch_raises_wiring_error() -> None:
     definition = _def(
         (
             PreprocessingStepBinding(
@@ -171,7 +270,55 @@ def test_run_input_kind_mismatch_raises_wiring_error() -> None:
     )
     # extract_candidates expects Text; pass a CodeArtifact.
     with pytest.raises(WiringError):
-        _run(definition, CodeArtifact(source="x = 1"))
+        bind_preprocessing(definition.materialize()).run(
+            CodeArtifact(source="x = 1")
+        )
+
+
+def test_bound_runner_preserves_structured_step_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = _def(
+        (
+            PreprocessingStepBinding(
+                instance_name="fail", step=StepName.NORMALIZE_UNICODE
+            ),
+            PreprocessingStepBinding(
+                instance_name="downstream",
+                step=StepName.NORMALIZE_LINE_ENDINGS,
+            ),
+        )
+    )
+    import dr_code.preprocessing.runner as runner_mod
+
+    monkeypatch.setattr(
+        runner_mod,
+        "REGISTRY",
+        {
+            **runner_mod.REGISTRY,
+            StepName.NORMALIZE_UNICODE.value: _FailingTextStep,
+        },
+    )
+    trace = bind_preprocessing(definition.materialize()).run(
+        TextArtifact(text="x")
+    )
+
+    failure = trace.value("fail")
+    assert is_absent(failure)
+    assert (
+        failure.failure_code == PreprocessingFailureCode.DECODER_OUTPUT_BLANK
+    )
+    assert trace.step_facts["fail"] == {
+        "candidates": ["candidate-0"],
+        "reason": {"kind": "unrecoverable"},
+    }
+
+    propagated = trace.value("downstream")
+    assert is_absent(propagated)
+    assert (
+        propagated.failure_code
+        == PreprocessingFailureCode.DECODER_OUTPUT_BLANK
+    )
 
 
 # --- run: Absent propagation -----------------------------------------
@@ -187,7 +334,7 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
                 instance_name="s", step=StepName.STRIP_FENCES
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )
@@ -196,7 +343,8 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     extract_val = trace.value("e")
     assert is_absent(extract_val)
     assert extract_val.failed_step == "e"
-    assert extract_val.cause == "no alternative produced candidates"
+    assert extract_val.cause == "no code candidates extracted"
+    assert extract_val.failure_code == "no_code_candidates"
 
     # downstream steps inherit the same Absent, propagated_through grows
     strip_val = trace.value("s")
@@ -212,27 +360,35 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     assert set(trace.values) == {"input", "e", "s", "sel", "output"}
 
 
-def test_run_select_first_empty_set_yields_absent() -> None:
+def test_filter_exhaustion_yields_absent_before_return_all() -> None:
     definition = _def(
         (
             PreprocessingStepBinding(
                 instance_name="e", step=StepName.EXTRACT_CANDIDATES
             ),
             PreprocessingStepBinding(
+                instance_name="id", step=StepName.IDENTIFY_CANDIDATES
+            ),
+            PreprocessingStepBinding(
                 instance_name="flt", step=StepName.FILTER_COMPILABLE
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )
     trace = _run(definition, TextArtifact(text="def broken(:"))
     out = trace.value("output")
     assert is_absent(out)
-    assert out.failed_step == "sel"
-    assert out.cause == "no candidate survived filtering"
+    assert out.failed_step == "flt"
+    assert out.failure_code == "no_compilable_candidate"
+    assert "sel" in out.propagated_through
     # rejection reason recorded as fact
-    assert "rejected_0" in trace.step_facts["flt"]
+    assert trace.step_facts["flt"]["rejections"][0]["input_index"] == 0
 
 
 def test_run_step_facts_merged() -> None:
@@ -242,7 +398,7 @@ def test_run_step_facts_merged() -> None:
                 instance_name="e", step=StepName.EXTRACT_CANDIDATES
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )
@@ -250,7 +406,7 @@ def test_run_step_facts_merged() -> None:
         definition,
         TextArtifact(text="```python\ndef f():\n    return 1\n```"),
     )
-    assert trace.step_facts["e"] == {"alternative": "fenced_blocks"}
+    assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
 def test_run_propagated_absent_records_each_step() -> None:
@@ -292,22 +448,23 @@ def test_run_full_fenced_pipeline() -> None:
                 instance_name="ng", step=StepName.SPLIT_ON_NAME_GUARD
             ),
             PreprocessingStepBinding(
-                instance_name="rr", step=StepName.DROP_AFTER_LAST_RETURN
-            ),
-            PreprocessingStepBinding(
                 instance_name="ri", step=StepName.REPAIR_IMPORT_LINES
-            ),
-            PreprocessingStepBinding(
-                instance_name="ii", step=StepName.INFER_MISSING_IMPORTS
             ),
             PreprocessingStepBinding(
                 instance_name="dd", step=StepName.DEDUPE_IMPORTS
             ),
             PreprocessingStepBinding(
+                instance_name="id", step=StepName.IDENTIFY_CANDIDATES
+            ),
+            PreprocessingStepBinding(
                 instance_name="fc", step=StepName.FILTER_COMPILABLE
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )
@@ -318,10 +475,10 @@ def test_run_full_fenced_pipeline() -> None:
     )
     trace = _run(definition, TextArtifact(text=raw))
     out = trace.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert "import numpy as np" in out.source
-    assert "def f(x):" in out.source
-    assert trace.step_facts["e"] == {"alternative": "fenced_blocks"}
+    assert isinstance(out, CodeCandidateSetArtifact)
+    assert any("import numpy as np" in source for source in out.candidates)
+    assert any("def f(x):" in source for source in out.candidates)
+    assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
 # --- escaped-newline behavior cases, re-expressed against the pipeline
@@ -349,19 +506,28 @@ def test_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
                 instance_name="sf", step=StepName.STRIP_FENCES
             ),
             PreprocessingStepBinding(
+                instance_name="id", step=StepName.IDENTIFY_CANDIDATES
+            ),
+            PreprocessingStepBinding(
                 instance_name="fc", step=StepName.FILTER_COMPILABLE
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )
     trace = _run(definition, TextArtifact(text=source))
     out = trace.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert "def f():" in out.source
-    # round-trip: recovered code must compile
-    assert validate_python_source(out.source).compile_ok
+    assert isinstance(out, CodeCandidateSetArtifact)
+    assert all("def f():" in candidate for candidate in out.candidates)
+    assert all(
+        validate_python_source(candidate).compile_ok
+        for candidate in out.candidates
+    )
 
 
 def test_pipeline_preserves_string_literal_escapes() -> None:
@@ -376,10 +542,17 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
                 instance_name="sf", step=StepName.STRIP_FENCES
             ),
             PreprocessingStepBinding(
+                instance_name="id", step=StepName.IDENTIFY_CANDIDATES
+            ),
+            PreprocessingStepBinding(
                 instance_name="fc", step=StepName.FILTER_COMPILABLE
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="materialize",
+                step=StepName.MATERIALIZE_CANDIDATES,
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )
@@ -390,9 +563,9 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
     expected = 'def join_lines(lines):\n    return "\\n".join(lines)'
     trace = _run(definition, TextArtifact(text=source))
     out = trace.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert out.source == expected
-    assert validate_python_source(out.source).compile_ok
+    assert isinstance(out, CodeCandidateSetArtifact)
+    assert out.candidates == (expected,)
+    assert validate_python_source(out.candidates[0]).compile_ok
 
 
 def test_pipeline_prose_only_yields_absent() -> None:
@@ -402,7 +575,7 @@ def test_pipeline_prose_only_yields_absent() -> None:
                 instance_name="e", step=StepName.EXTRACT_CANDIDATES
             ),
             PreprocessingStepBinding(
-                instance_name="sel", step=StepName.SELECT_FIRST
+                instance_name="sel", step=StepName.RETURN_ALL
             ),
         )
     )

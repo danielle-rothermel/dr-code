@@ -12,59 +12,35 @@ import json
 import pytest
 
 from dr_code.code_analysis import validate_python_source
-from dr_code.eval import (
-    PreprocessingDefinition,
-    PreprocessingStepBinding,
+from dr_code.preprocessing.definitions import (
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
 )
-from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import run_preprocessing
-from dr_code.trace import OUTPUT_KEY, CodeArtifact, TextArtifact, is_absent
+from dr_code.trace import (
+    OUTPUT_KEY,
+    CodeCandidateSetArtifact,
+    TextArtifact,
+    is_absent,
+)
 
 
-def _escaped_pipeline_definition() -> PreprocessingDefinition:
-    """Full normalization + extraction + selection, matching the old path."""
-
-    def _spec(name: str, step: StepName) -> PreprocessingStepBinding:
-        return PreprocessingStepBinding(instance_name=name, step=step)
-
-    return PreprocessingDefinition(
-        definition_id="escaped",
-        version="1",
-        steps=(
-            _spec("le", StepName.NORMALIZE_LINE_ENDINGS),
-            _spec("unicode", StepName.NORMALIZE_UNICODE),
-            _spec("tabs", StepName.EXPAND_TABS),
-            _spec("strip", StepName.STRIP_TRAILING_WHITESPACE),
-            _spec("blank", StepName.COLLAPSE_BLANK_RUNS),
-            _spec("trim", StepName.TRIM_OUTER_BLANKS),
-            _spec("extract", StepName.EXTRACT_CANDIDATES),
-            _spec("fences", StepName.STRIP_FENCES),
-            _spec("split", StepName.SPLIT_ON_NAME_GUARD),
-            _spec("drop", StepName.DROP_AFTER_LAST_RETURN),
-            _spec("repair", StepName.REPAIR_IMPORT_LINES),
-            _spec("infer", StepName.INFER_MISSING_IMPORTS),
-            _spec("dedupe", StepName.DEDUPE_IMPORTS),
-            _spec("filter", StepName.FILTER_COMPILABLE),
-            _spec("select", StepName.SELECT_FIRST),
-        ),
-    )
-
-
-def _output_source(source: str) -> CodeArtifact:
+def _output_source(source: str) -> str:
     trace = run_preprocessing(
-        _escaped_pipeline_definition().materialize(), TextArtifact(text=source)
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.materialize(),
+        TextArtifact(text=source),
     )
     output = trace.value(OUTPUT_KEY)
-    assert isinstance(output, CodeArtifact)
-    return output
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert len(output.candidates) == 1
+    return output.candidates[0]
 
 
 def test_escaped_pipeline_preserves_string_literal_escape() -> None:
     # A normal code candidate must retain the string-literal escape.
     source = 'def join_lines(lines):\n    return "\\n".join(lines)'
     output = _output_source(source)
-    assert output.source == source
-    assert validate_python_source(output.source).compile_ok
+    assert output == source
+    assert validate_python_source(output).compile_ok
 
 
 @pytest.mark.parametrize(
@@ -96,8 +72,8 @@ def test_escaped_pipeline_preserves_python_string_literals(
     source: str, expected: str
 ) -> None:
     output = _output_source(source)
-    assert output.source == expected
-    assert validate_python_source(output.source).compile_ok
+    assert output == expected
+    assert validate_python_source(output).compile_ok
 
 
 def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
@@ -106,14 +82,15 @@ def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
     )
     source = json.dumps(f"Intro\n```python\n{expected}\n```")
     output = _output_source(source)
-    assert output.source == expected
-    assert validate_python_source(output.source).compile_ok
+    assert output == expected
+    assert validate_python_source(output).compile_ok
 
 
 def test_escaped_pipeline_prose_has_no_candidates() -> None:
     # Applying the fallback does not turn prose into code.
     source = r"Here is a discussion.\nThere is no implementation."
     trace = run_preprocessing(
-        _escaped_pipeline_definition().materialize(), TextArtifact(text=source)
+        HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.materialize(),
+        TextArtifact(text=source),
     )
     assert is_absent(trace.value(OUTPUT_KEY))

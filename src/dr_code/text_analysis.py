@@ -103,27 +103,43 @@ def is_code_like_block(text: str) -> bool:
     return is_code_like_line(first_line)
 
 
-def anchored_code_blocks(text: str) -> list[str]:
-    """Split `text` into code-like blocks anchored at def/class/import lines."""
+def anchored_code_blocks(
+    text: str, *, segment_prose: bool = False
+) -> list[str]:
+    """Split `text` into code blocks anchored at def/class/import lines.
+
+    When requested for unfenced text, a non-code-like line becomes a separator
+    only when a later anchor follows it. Fenced blocks keep their original
+    whole-block and return-salvage behavior.
+    """
     lines = text.split(LINE_SEP)
-    if is_code_like_block(text):
-        return [text]
+    anchor_indexes = [
+        index for index, line in enumerate(lines) if is_code_anchor_line(line)
+    ]
+    if not anchor_indexes:
+        return [text] if is_code_like_block(text) else []
 
     blocks: list[str] = []
-    prefix: list[str] = []
-    for index, line in enumerate(lines):
-        if not is_code_anchor_line(line):
-            prefix.append(line)
-            continue
+    start = 0 if is_code_like_block(text) else anchor_indexes[0]
+    if not segment_prose:
+        return [LINE_SEP.join(lines[start:])]
 
-        prefix_text = LINE_SEP.join(prefix)
-        if prefix and is_code_like_block(prefix_text):
-            blocks.append(prefix_text)
+    previous_anchor = anchor_indexes[0]
+    for anchor in anchor_indexes[1:]:
+        separator = next(
+            (
+                index
+                for index in range(previous_anchor + 1, anchor)
+                if not is_code_like_line(lines[index])
+            ),
+            None,
+        )
+        if separator is not None:
+            blocks.append(LINE_SEP.join(lines[start:separator]))
+            start = anchor
+        previous_anchor = anchor
 
-        remaining = LINE_SEP.join(lines[index:])
-        if is_code_like_block(remaining) or not blocks:
-            blocks.append(remaining)
-            break
+    blocks.append(LINE_SEP.join(lines[start:]))
     return blocks
 
 

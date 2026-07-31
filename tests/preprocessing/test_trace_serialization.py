@@ -10,14 +10,21 @@ under test is the one the resolver stamps.
 
 from __future__ import annotations
 
+import pytest
+
 from dr_code.preprocessing import (
+    HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID,
     resolve_preprocessing_definition,
     run_preprocessing,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
+from dr_code.preprocessing.steps.base import StepFailedError, StepOutput
 from dr_code.trace import (
     Absent,
-    CodeArtifact,
+    CandidateLineage,
+    CandidateOrigin,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
     SerializedTrace,
     TextArtifact,
     Trace,
@@ -26,21 +33,20 @@ from dr_code.trace import (
     serialize_trace,
 )
 
-BEST_EFFORT_ID = "humaneval-best-effort"
-FIELD_MARKER_ID = "humaneval-field-marker"
+DEFINITION_ID = HUMANEVAL_FUNCTION_CANDIDATES_DEFINITION_ID
 
 _FENCED = "Here is the code:\n```python\ndef f(x):\n    return x + 1\n```\n"
 
 
-def _best_effort_v2():
+def _function_candidates_v1():
     return resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
+        definition_id=DEFINITION_ID, version="v1"
     )
 
 
 def _trace(raw: str) -> Trace:
     return run_preprocessing(
-        _best_effort_v2().materialize(), TextArtifact(text=raw)
+        _function_candidates_v1().materialize(), TextArtifact(text=raw)
     )
 
 
@@ -72,25 +78,26 @@ def _assert_json_round_trip(trace: Trace) -> Trace:
 
 def test_round_trip_preserves_code_output_and_facts() -> None:
     trace = _trace(_FENCED)
-    assert isinstance(trace.value("output"), CodeArtifact)
+    assert isinstance(trace.value("output"), CodeCandidateSetArtifact)
 
     restored = _assert_round_trip(trace)
     out = restored.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert out.source == trace.value("output").source
-    # The extraction alternative fact is preserved.
-    assert restored.step_facts["extract_candidates"] == {
-        "alternative": "fenced_blocks"
-    }
+    assert isinstance(out, CodeCandidateSetArtifact)
+    assert out == trace.value("output")
+    assert restored.step_facts["extract_candidates"]["candidate_count"] >= 1
 
 
 def test_round_trip_preserves_producer_id_and_version() -> None:
     trace = _trace(_FENCED)
     restored = _assert_round_trip(trace)
-    assert restored.producer.producer_id == BEST_EFFORT_ID
-    assert restored.producer.version == "v2"
+    assert restored.producer.producer_id == DEFINITION_ID
+    assert restored.producer.version == "v1"
+    definition = _function_candidates_v1()
+    config = definition.materialize()
+    assert restored.producer.definition_hash == definition.identity_hash()
     assert (
-        restored.producer.definition_hash == _best_effort_v2().identity_hash()
+        restored.producer.preprocessing_config_hash
+        == config.config_identity_hash
     )
 
 
@@ -113,6 +120,49 @@ def test_round_trip_preserves_candidate_set_kind() -> None:
 
 def test_json_round_trip_is_lossless() -> None:
     _assert_json_round_trip(_trace(_FENCED))
+
+
+def test_step_contract_accepts_structured_facts() -> None:
+    facts = {"candidates": {"accepted": [0], "rejected": [1, 2]}}
+    output = StepOutput(
+        value=CodeCandidateSetArtifact(
+            candidates=("x = 1",),
+            lineage=(
+                CandidateLineage(
+                    origins=(
+                        CandidateOrigin(
+                            path=(ExtractionOperation(kind="test_input"),)
+                        ),
+                    )
+                ),
+            ),
+        ),
+        facts=facts,
+    )
+    error = StepFailedError(
+        "no candidate survived",
+        failure_code=PreprocessingFailureCode.NO_COMPILABLE_CANDIDATE,
+        facts={"rejected": [{"index": 0, "reason": "syntax"}]},
+    )
+
+    assert output.facts == facts
+    assert (
+        error.failure_code is PreprocessingFailureCode.NO_COMPILABLE_CANDIDATE
+    )
+    assert error.facts == {"rejected": [{"index": 0, "reason": "syntax"}]}
+
+
+def test_step_failure_requires_stable_code() -> None:
+    with pytest.raises(TypeError, match="failure_code"):
+        StepFailedError("no candidate survived")  # type: ignore[call-arg]
+
+
+def test_step_failure_rejects_unregistered_code() -> None:
+    with pytest.raises(TypeError, match="PreprocessingFailureCode"):
+        StepFailedError(
+            "no candidate survived",
+            failure_code="ad_hoc_code",  # type: ignore[arg-type]
+        )
 
 
 # --- absent trace: causal lineage and propagation survive ------------

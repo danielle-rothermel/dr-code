@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.code_parsing import BEST_EFFORT_HUMANEVAL_PARSER_PROFILE
 from dr_code.humaneval.scoring import (
     SubmissionOutcome,
     score_humaneval_submission,
@@ -84,7 +83,6 @@ def _score_outcome(submission, task, *, executor, timeout=5.0) -> str:
     result = score_humaneval_submission(
         raw_submission=submission,
         task=task,
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=timeout,
         executor=executor,
         records=Records.none(),
@@ -130,9 +128,15 @@ def test_tests_failed_outcome_parity(
     )
 
 
-def test_no_top_level_functions_outcome_parity(task, real_executor) -> None:
+def test_no_top_level_functions_is_rejected_before_scoring(
+    task, real_executor
+) -> None:
     submission = "x = 1\n"  # compiles, no top-level functions
-    _assert_parity(submission, task, executor=real_executor)
+    scoring_outcome = _score_outcome(submission, task, executor=real_executor)
+    assert scoring_outcome == SubmissionOutcome.PREPROCESSING_FAILED.value
+
+    # Manually built code_test traces can still describe the lower-level
+    # evaluator behavior outside official preprocessing acceptance.
     record = _code_test_record(
         code_test_trace(submission, task), executor=real_executor
     )

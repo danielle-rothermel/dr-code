@@ -17,8 +17,10 @@ class Absent(FrozenModel):
     kind: Literal["absent"] = "absent"
     # instance name that originated the failure
     failed_step: str
-    # human-readable reason, stable for lineage joins
+    # human-readable reason for the failure
     cause: str
+    # stable machine-readable failure category
+    failure_code: str
     # downstream instance names that inherited it
     propagated_through: tuple[str, ...] = ()
 

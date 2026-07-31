@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from dr_code.code_analysis import validate_python_source
-from dr_code.humaneval.import_inference import infer_necessary_imports
 from dr_code.preprocessing import (
-    BEST_EFFORT_V2_DEFINITION,
-    run_preprocessing,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    bind_preprocessing,
 )
-from dr_code.trace import CodeArtifact, TextArtifact
+from dr_code.preprocessing.import_inference import (
+    infer_missing_imports,
+    infer_necessary_imports,
+)
+from dr_code.trace import CodeCandidateSetArtifact, TextArtifact
+
+RUNNER = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.materialize()
+)
 
 
 @pytest.mark.parametrize(
@@ -112,12 +121,68 @@ def test_infer_necessary_imports_still_injects_free_name() -> None:
     assert result.startswith("import numpy as np\n")
 
 
+def test_speculative_parse_does_not_leak_syntax_warnings() -> None:
+    invalid_escape = chr(92) + "q"
+    source = (
+        f"def f():\n    value = '{invalid_escape}'\n"
+        "    return np.array(value)\n"
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", SyntaxWarning)
+        result = infer_necessary_imports(source)
+
+    assert caught == []
+    assert result.startswith("import numpy as np\n")
+
+
 def test_infer_necessary_imports_adds_multiple_missing_imports() -> None:
     source = "def f():\n    return np.zeros(1) + math.pi\n"
     result = infer_necessary_imports(source)
     assert "import numpy as np" in result
     assert "import math" in result
     assert result.index("import numpy as np") < result.index("import math")
+
+
+def test_inferred_import_follows_and_preserves_module_docstring() -> None:
+    source = (
+        '"""Module documentation."""\n\n'
+        "def circumference(radius):\n"
+        "    return 2 * math.pi * radius\n"
+    )
+
+    result = infer_missing_imports(source)
+
+    assert result.startswith('"""Module documentation."""\nimport math\n')
+    namespace: dict[str, object] = {}
+    exec(compile(result, "<inferred>", "exec"), namespace)
+    assert namespace["__doc__"] == "Module documentation."
+
+
+def test_inferred_import_follows_docstring_and_contiguous_futures() -> None:
+    source = (
+        '"""Module documentation."""\n'
+        "from __future__ import annotations\n"
+        "from __future__ import generator_stop\n\n"
+        "def circumference(radius: float) -> float:\n"
+        "    return 2 * math.pi * radius\n"
+    )
+
+    result = infer_missing_imports(source)
+
+    assert result.startswith(
+        '"""Module documentation."""\n'
+        "from __future__ import annotations\n"
+        "from __future__ import generator_stop\n"
+        "import math\n"
+    )
+    compile(result, "<inferred>", "exec")
+
+
+def test_inferred_import_keeps_no_docstring_prefix_behavior() -> None:
+    source = "def circumference(radius):\n    return 2 * math.pi * radius\n"
+
+    assert infer_missing_imports(source) == f"import math\n{source}"
 
 
 def test_infer_necessary_imports_repairs_trailing_comment_on_import_line() -> (
@@ -162,14 +227,10 @@ def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     assert "import random" not in result
 
 
-def test_canonical_preprocessing_infers_imports_for_compilable_candidate() -> (
-    None
-):
+def test_official_pipeline_infers_imports_for_compilable_candidate() -> None:
     source = "```python\ndef f(x):\n    return np.array([x])\n```"
-    output = run_preprocessing(
-        BEST_EFFORT_V2_DEFINITION.materialize(),
-        TextArtifact(text=source),
-    ).value("output")
-    assert isinstance(output, CodeArtifact)
-    assert output.source.startswith("import numpy as np")
-    assert validate_python_source(output.source).compile_ok
+    output = RUNNER.run(TextArtifact(text=source)).value("output")
+
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert output.candidates[0].startswith("import numpy as np")
+    assert validate_python_source(output.candidates[0]).compile_ok

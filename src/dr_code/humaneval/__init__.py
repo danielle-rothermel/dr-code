@@ -1,16 +1,6 @@
 from importlib import import_module
 from typing import TYPE_CHECKING
 
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    PARSER_PROFILE_VERSION,
-    STRICT_FIELD_MARKER_PARSER_PROFILE,
-    STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
-    CodeExtractionResult,
-    CodeParserProfile,
-    resolve_parser_profile,
-)
 from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
 from dr_code.humaneval.profiles import (
     DEFAULT_HUMANEVAL_SCORING_PROFILE,
@@ -38,9 +28,12 @@ from dr_code.humaneval.task import (
 
 if TYPE_CHECKING:
     from dr_code.humaneval.scoring import (
+        CandidateHarnessFailure,
+        CompletedCandidateScore,
         CompletedScore,
         HarnessFailure,
         HarnessFailureCause,
+        HumanEvalCandidateScore,
         HumanEvalSubmissionScore,
         SubmissionOutcome,
         evaluation_aggregate_metrics,
@@ -50,9 +43,12 @@ if TYPE_CHECKING:
 
 _SCORING_EXPORTS = frozenset(
     {
+        "CandidateHarnessFailure",
+        "CompletedCandidateScore",
         "CompletedScore",
         "HarnessFailure",
         "HarnessFailureCause",
+        "HumanEvalCandidateScore",
         "HumanEvalSubmissionScore",
         "SubmissionOutcome",
         "evaluation_aggregate_metrics",
@@ -81,10 +77,8 @@ def __dir__() -> list[str]:
 
 
 __all__ = (
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
-    "CodeExtractionResult",
-    "CodeParserProfile",
+    "CandidateHarnessFailure",
+    "CompletedCandidateScore",
     "CompletedScore",
     "DEFAULT_HUMANEVAL_SCORING_PROFILE",
     "DEFAULT_HUMANEVAL_TIMEOUT_SECONDS",
@@ -96,20 +90,17 @@ __all__ = (
     "HUMANEVAL_SCORING_PROFILE_VERSION",
     "HarnessFailure",
     "HarnessFailureCause",
+    "HumanEvalCandidateScore",
     "HumanEvalScoringProfile",
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
-    "PARSER_PROFILE_VERSION",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
     "evaluation_aggregate_metrics",
     "load_human_eval_rows",
     "parse_human_eval_dataset",
     "resolve_humaneval_scoring_profile",
-    "resolve_parser_profile",
     "run_human_eval_sampling",
     "sample_human_eval_tasks",
     "sample_human_eval_tasks_from_rows",

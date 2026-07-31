@@ -1,11 +1,24 @@
 """Curated façade for the trace boundary contract package."""
 
 from dr_code.trace.absent import Absent, is_absent
+from dr_code.trace.archive import (
+    ArchivedAbsentV2,
+    ArchivedSerializedTraceV2,
+    ArchivedTraceProducerV2,
+    LoadedSerializedTrace,
+    load_serialized_trace,
+)
 from dr_code.trace.artifacts import (
     Artifact,
     ArtifactKind,
+    CandidateInspection,
+    CandidateLineage,
+    CandidateOrigin,
     CodeArtifact,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
+    IdentifiedCandidate,
+    IdentifiedCandidateSetArtifact,
     JsonArtifact,
     TextArtifact,
     parsed_module,
@@ -35,14 +48,24 @@ from dr_code.trace.trace import (
 
 __all__ = (
     "Absent",
+    "ArchivedAbsentV2",
+    "ArchivedSerializedTraceV2",
+    "ArchivedTraceProducerV2",
     "Artifact",
     "ArtifactKind",
+    "CandidateInspection",
+    "CandidateLineage",
+    "CandidateOrigin",
     "CodeArtifact",
     "CodeCandidateSetArtifact",
     "EXTERNAL_PRODUCER_ID",
     "ExternalSource",
+    "ExtractionOperation",
     "INPUT_KEY",
+    "IdentifiedCandidate",
+    "IdentifiedCandidateSetArtifact",
     "JsonArtifact",
+    "LoadedSerializedTrace",
     "OUTPUT_KEY",
     "RESERVED_KEYS",
     "SerializedTrace",
@@ -56,6 +79,7 @@ __all__ = (
     "deserialize_trace",
     "external_trace",
     "is_absent",
+    "load_serialized_trace",
     "parsed_module",
     "serialize_trace",
     "sample_identity_hash",

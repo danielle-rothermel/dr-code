@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "question": "text_stats",
+  "question_identity_hash": "f0c9be5a2b1e421db4af08660f94ea3221f3f150f981c12fc5d3ca2d44f142fd",
+  "on_key": "output",
+  "evaluation_procedure_config_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "trace_producer": {
+    "producer_id": "historical-preprocessing",
+    "version": "1",
+    "definition_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "preprocessing_config_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "operator": {
+    "name": "text_stats",
+    "version": "1",
+    "settings": []
+  },
+  "status": "not_applicable",
+  "facts": [],
+  "absence_mode": "missing_trace_key",
+  "absence_cause": "output was absent",
+  "failure_type": null,
+  "failure_message": null
+}

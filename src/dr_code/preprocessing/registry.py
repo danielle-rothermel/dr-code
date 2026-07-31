@@ -18,14 +18,13 @@ from dr_code.preprocessing.steps.collapse_blank_runs import (
 )
 from dr_code.preprocessing.steps.dedupe_imports import DedupeImports
 from dr_code.preprocessing.steps.dedent import Dedent
-from dr_code.preprocessing.steps.drop_after_last_return import (
-    DropAfterLastReturn,
-)
 from dr_code.preprocessing.steps.expand_tabs import ExpandTabs
+from dr_code.preprocessing.steps.expand_last_return_salvage import (
+    ExpandLastReturnSalvage,
+)
 from dr_code.preprocessing.steps.extract_candidates import (
     ExtractCandidates,
 )
-from dr_code.preprocessing.steps.field_marker import FieldMarker
 from dr_code.preprocessing.steps.filter_code_repr import FilterCodeRepr
 from dr_code.preprocessing.steps.filter_compilable import (
     FilterCompilable,
@@ -33,8 +32,15 @@ from dr_code.preprocessing.steps.filter_compilable import (
 from dr_code.preprocessing.steps.filter_plain_literal import (
     FilterPlainLiteral,
 )
-from dr_code.preprocessing.steps.infer_missing_imports import (
-    InferMissingImports,
+from dr_code.preprocessing.steps.filter_has_top_level_function import (
+    FilterHasTopLevelFunction,
+)
+from dr_code.preprocessing.steps.filter_nonblank_candidates import (
+    FilterNonblankCandidates,
+)
+from dr_code.preprocessing.steps.identify_candidates import IdentifyCandidates
+from dr_code.preprocessing.steps.materialize_candidates import (
+    MaterializeCandidates,
 )
 from dr_code.preprocessing.steps.normalize_line_endings import (
     NormalizeLineEndings,
@@ -48,8 +54,10 @@ from dr_code.preprocessing.steps.normalize_unicode import (
 from dr_code.preprocessing.steps.repair_import_lines import (
     RepairImportLines,
 )
+from dr_code.preprocessing.steps.require_nonblank_text import (
+    RequireNonblankText,
+)
 from dr_code.preprocessing.steps.return_all import ReturnAll
-from dr_code.preprocessing.steps.select_first import SelectFirst
 from dr_code.preprocessing.steps.split_on_name_guard import (
     SplitOnNameGuard,
 )
@@ -68,19 +76,21 @@ REGISTRY: Mapping[str, type[Step]] = MappingProxyType(
         StripTrailingWhitespace.NAME: StripTrailingWhitespace,
         CollapseBlankRuns.NAME: CollapseBlankRuns,
         TrimOuterBlanks.NAME: TrimOuterBlanks,
+        RequireNonblankText.NAME: RequireNonblankText,
         ExtractCandidates.NAME: ExtractCandidates,
-        FieldMarker.NAME: FieldMarker,
         StripFences.NAME: StripFences,
         Dedent.NAME: Dedent,
         SplitOnNameGuard.NAME: SplitOnNameGuard,
-        DropAfterLastReturn.NAME: DropAfterLastReturn,
+        ExpandLastReturnSalvage.NAME: ExpandLastReturnSalvage,
         RepairImportLines.NAME: RepairImportLines,
-        InferMissingImports.NAME: InferMissingImports,
         DedupeImports.NAME: DedupeImports,
+        FilterNonblankCandidates.NAME: FilterNonblankCandidates,
+        IdentifyCandidates.NAME: IdentifyCandidates,
         FilterCompilable.NAME: FilterCompilable,
         FilterPlainLiteral.NAME: FilterPlainLiteral,
         FilterCodeRepr.NAME: FilterCodeRepr,
-        SelectFirst.NAME: SelectFirst,
+        FilterHasTopLevelFunction.NAME: FilterHasTopLevelFunction,
+        MaterializeCandidates.NAME: MaterializeCandidates,
         ReturnAll.NAME: ReturnAll,
     }
 )

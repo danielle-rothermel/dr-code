@@ -1,184 +1,175 @@
-"""Canonical preprocessing behavior over representative submission shapes."""
+"""End-to-end contract cases for the exhaustive named definition."""
 
 from __future__ import annotations
 
 import json
-import random
 
 import pytest
 
 from dr_code.preprocessing import (
-    PreprocessingDefinition,
-    resolve_preprocessing_definition,
-    run_preprocessing,
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION,
+    bind_preprocessing,
 )
-from dr_code.synthetic.corruption_recipes import RECIPES_BY_NAME, apply_recipe
-from dr_code.trace import CodeArtifact, TextArtifact, is_absent
+from dr_code.trace import CodeCandidateSetArtifact, TextArtifact, is_absent
 
-BEST_EFFORT_ID = "humaneval-best-effort"
-FIELD_MARKER_ID = "humaneval-field-marker"
-SEED = 0
-
-#: A HumanEval-shaped solution: an import (so import recipes are
-#: meaningful), a loop, and local variables.
-CLEAN = (
-    "import numpy as np\n"
-    "\n"
-    "def make_array(values):\n"
-    "    total = 0\n"
-    "    for v in values:\n"
-    "        total += v\n"
-    "    return np.array([total, total])\n"
+RUNNER = bind_preprocessing(
+    HUMANEVAL_FUNCTION_CANDIDATES_V1_DEFINITION.materialize()
 )
 
 
-def _corrupt(recipe_name: str) -> str:
-    recipe = RECIPES_BY_NAME[recipe_name]
-    return apply_recipe(recipe, CLEAN, random.Random(SEED)).corrupted_source
+def _run(raw: str):
+    return RUNNER.run(TextArtifact(text=raw))
 
 
-#: Direct-shaped inputs exercising each extraction path plus both-absent
-#: cases. Inputs whose behaviour the new pipeline intentionally changes are
-#: NOT here — they live in the divergence section.
-_DIRECT_INPUTS: dict[str, str] = {
-    "clean": CLEAN,
-    "fenced": "```python\n" + CLEAN + "```\n",
-    "fenced_untagged": "```\n" + CLEAN + "```\n",
-    "prose_wrapped": "Here is the solution:\n\n```python\n"
-    + CLEAN
-    + "```\nDone.\n",
-    "indented": "    " + CLEAN.replace("\n", "\n    ").rstrip() + "\n",
-    "name_guard": CLEAN
-    + "\nif __name__ == '__main__':\n    print(make_array([1]))\n",
-    "escaped_json": '"import numpy as np\\n\\ndef f():\\n    return 1\\n"',
-    "json_wrapped_markdown": json.dumps(
-        "- def add(a, b):\n-     return a + b"
+@pytest.mark.parametrize(
+    "raw,expected_code",
+    [
+        ("def f():\n    return 1\n", "def f():\n    return 1"),
+        (
+            "Here is code:\n```python\ndef f():\n    return 1\n```\n",
+            "def f():\n    return 1",
+        ),
+        (
+            "> def wrapped():\n>     return 1",
+            "def wrapped():\n    return 1",
+        ),
+        (
+            "    def indented():\n        return 1\n",
+            "def indented():\n    return 1",
+        ),
+        (
+            "def trimmed():\n    return 1\nprint('trailing')\n",
+            "def trimmed():\n    return 1",
+        ),
+        (
+            "def guarded():\n"
+            "    return 1\n"
+            "if __name__ == '__main__':\n"
+            "    print(guarded())\n",
+            "def guarded():\n    return 1",
+        ),
+        (
+            json.dumps({"code": "def from_json():\n    return 2\n"}),
+            "def from_json():\n    return 2",
+        ),
+        (
+            "[[ ## code ## ]]\ndef from_marker():\n    return 3\n"
+            "[[ ## completed ## ]]",
+            "def from_marker():\n    return 3",
+        ),
+        (
+            "def greet():\n    return “hello”",
+            'def greet():\n    return "hello"',
+        ),
+        (
+            "async def fetch():\n    return 1\n",
+            "async def fetch():\n    return 1",
+        ),
+    ],
+)
+def test_named_pipeline_recovers_function_candidate(
+    raw: str,
+    expected_code: str,
+) -> None:
+    output = _run(raw).value("output")
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert expected_code in output.candidates
+    assert output.candidates
+    assert all(item.candidate_id for item in output.lineage)
+
+
+@pytest.mark.parametrize(
+    "raw,failure_code",
+    [
+        ("", "decoder_output_blank"),
+        (" \n\t", "decoder_output_blank"),
+        ("This is only prose.", "no_code_candidates"),
+        ("```python\n{1: 2, 3: 4}\n```", "plain_literal_only"),
+        ('code = "def f(): pass"\n', "code_repr_only"),
+        ("def broken(:\n", "no_compilable_candidate"),
+        ("x = 1\n", "no_top_level_function_candidate"),
+    ],
+)
+def test_named_pipeline_emits_specific_terminal_failure(
+    raw: str,
+    failure_code: str,
+) -> None:
+    output = _run(raw).value("output")
+    assert is_absent(output)
+    assert output.failure_code == failure_code
+
+
+@pytest.mark.parametrize(
+    ("raw", "normalized_input"),
+    (
+        ("def f():\n    return 1\n\x00", "def f():\n    return 1\n\\x00"),
+        ("def f():\n    return '\ud800'", "def f():\n    return '\\ud800'"),
     ),
-    "field_marker": "[[ ## code ## ]]\ndef f():\n    return 1\n",
-    "field_marker_literal": "[[ ## code ## ]]\n{1: 2, 3: 4}\n",
-    "field_marker_empty": "[[ ## code ## ]]\n\n",
-    # both-absent cases
-    "empty": "",
-    "whitespace_only": "   \n\n  \t\n",
-    "prose_only": "This is an explanation with no code whatsoever.\n",
-    "no_field_marker": "def f():\n    return 1\n",
-    "plain_literal_only": "{1: 2, 3: 4}\n",
-    "code_repr_only": 'code = "def f(): pass"\n',
-}
-_CORRUPTION_INPUTS: dict[str, str] = {
-    f"corrupt_{name}": _corrupt(name) for name in RECIPES_BY_NAME
-}
-_ALL_INPUTS: dict[str, str] = {**_DIRECT_INPUTS, **_CORRUPTION_INPUTS}
+)
+def test_named_pipeline_rejects_invalid_decoder_text_at_input_boundary(
+    raw: str,
+    normalized_input: str,
+) -> None:
+    trace = _run(raw)
+
+    output = trace.value("output")
+    assert is_absent(output)
+    assert output.failed_step == "validate_decoder_output"
+    assert output.failure_code == "decoder_output_invalid"
+    assert trace.value("input") == TextArtifact(text=normalized_input)
+    assert trace.step_facts["validate_decoder_output"] == {
+        "text_character_count": len(normalized_input),
+        "contains_nul": "\\x00" in normalized_input,
+        "contains_surrogate": "\\ud800" in normalized_input,
+    }
 
 
-def _new_output(definition: PreprocessingDefinition, raw: str) -> str | None:
-    output = run_preprocessing(
-        definition.materialize(), TextArtifact(text=raw)
-    ).value("output")
-    if is_absent(output):
-        return None
-    assert isinstance(output, CodeArtifact)
-    return output.source
+def test_function_name_is_not_a_preprocessing_policy() -> None:
+    output = _run("def any_name_is_valid():\n    return 1\n").value("output")
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert output.candidates
 
 
-_PROFILES = [
-    (BEST_EFFORT_ID, "v2"),
-    (FIELD_MARKER_ID, "v2"),
-]
-
-
-# --- intended-identical parity across v2 coordinates -----------------
+def test_multiple_functions_are_returned_without_first_candidate_selection() -> (
+    None
+):
+    raw = (
+        "```python\ndef first():\n    return 1\n```\n"
+        "```python\ndef second():\n    return 2\n```\n"
+    )
+    output = _run(raw).value("output")
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert any("def first" in source for source in output.candidates)
+    assert any("def second" in source for source in output.candidates)
 
 
 @pytest.mark.parametrize(
-    "profile_id, version",
-    _PROFILES,
-    ids=["best-effort-v2", "field-marker-v2"],
+    "raw",
+    (
+        "def first():\n"
+        "    return 1\n"
+        "\n"
+        "The preceding function is complete.\n"
+        "\n"
+        "def second():\n"
+        "    return 2\n",
+        r"def first():\n"
+        r"    return 1\n"
+        r"\n"
+        r"The preceding function is complete.\n"
+        r"\n"
+        r"def second():\n"
+        r"    return 2",
+    ),
+    ids=("unfenced", "escaped-unfenced"),
 )
-@pytest.mark.parametrize("input_name", sorted(_ALL_INPUTS))
-def test_canonical_output_is_deterministic(
-    profile_id: str, version: str, input_name: str
+def test_named_pipeline_segments_unfenced_functions_separated_by_prose(
+    raw: str,
 ) -> None:
-    raw = _ALL_INPUTS[input_name]
-    definition = resolve_preprocessing_definition(
-        definition_id=profile_id, version=version
+    output = _run(raw).value("output")
+
+    assert isinstance(output, CodeCandidateSetArtifact)
+    assert output.candidates == (
+        "def first():\n    return 1",
+        "def second():\n    return 2",
     )
-    output = _new_output(definition, raw)
-    assert output == _new_output(definition, raw)
-    if output is not None:
-        compile(output, f"<{input_name}>", "exec")
-
-
-@pytest.mark.parametrize(
-    "profile_id, version",
-    _PROFILES,
-    ids=["best-effort-v2", "field-marker-v2"],
-)
-def test_canonical_pipeline_is_absent_on_empty_input(
-    profile_id: str, version: str
-) -> None:
-    definition = resolve_preprocessing_definition(
-        definition_id=profile_id, version=version
-    )
-    output = run_preprocessing(
-        definition.materialize(), TextArtifact(text="")
-    ).value("output")
-    assert is_absent(output)
-
-
-def test_fourth_rung_recovers_json_wrapped_markdown() -> None:
-    raw = json.dumps("- def add(a, b):\n-     return a + b")
-    definition = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
-    )
-    expected = "def add(a, b):\n    return a + b"
-    assert _new_output(definition, raw) == expected
-
-
-def test_import_inference_does_not_import_shadowed_name() -> None:
-    raw = "def solve(F):\n    return F + 1\n"
-    definition = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
-    )
-    new = _new_output(definition, raw)
-    assert new is not None
-    assert "import torch.nn.functional as F" not in new
-
-
-def test_smart_quote_delimiters_are_recovered() -> None:
-    raw = "def greet():\n    return “hello”"
-    definition = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
-    )
-    new = _new_output(definition, raw)
-    assert new == 'def greet():\n    return "hello"'
-
-
-def test_smart_quotes_inside_literal_are_preserved() -> None:
-    raw = 'def f():\n    return "don’t “quote” me"'
-    definition = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
-    )
-    new = _new_output(definition, raw)
-    # Contents inside the ASCII-quoted literal are untouched.
-    assert new == raw
-
-
-def test_empty_fence_is_absent() -> None:
-    raw = "```\n\n```"
-    definition = resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
-    )
-    output = run_preprocessing(
-        definition.materialize(), TextArtifact(text=raw)
-    ).value("output")
-    assert is_absent(output)
-
-
-def test_field_marker_code_repr_is_rejected() -> None:
-    raw = '[[ ## code ## ]]\ncode = "def f(): pass"\n'
-    definition = resolve_preprocessing_definition(
-        definition_id=FIELD_MARKER_ID, version="v2"
-    )
-    new = _new_output(definition, raw)
-    assert new is None

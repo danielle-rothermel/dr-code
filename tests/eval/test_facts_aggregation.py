@@ -22,6 +22,7 @@ from dr_code.eval import (
     MetricRecord,
     OperatorCoordinates,
     OperatorLineage,
+    RecordStatus,
     ReferenceResolutionError,
     SCORE_SCHEMA_VERSION,
     Score,
@@ -308,9 +309,53 @@ def test_record_shapes_are_mutually_exclusive() -> None:
         operator=_operator(),
         absence_mode=AbsenceMode.EMPTY_CANDIDATE_SET,
         cause="no candidates",
+        failure_code="no_candidates",
     )
     assert absent.facts == ()
     assert absent.absence_mode is AbsenceMode.EMPTY_CANDIDATE_SET
+    assert absent.failure_code == "no_candidates"
+    assert MetricRecord.model_validate_json(absent.model_dump_json()) == absent
+
+    with pytest.raises(ValueError, match="failure code"):
+        MetricRecord(
+            schema_version=METRIC_RECORD_SCHEMA_VERSION,
+            question="text_stats",
+            question_identity_hash=_question_identity(),
+            on_key="output",
+            evaluation_procedure_config_hash=_PROCEDURE_HASH,
+            trace_producer=_producer(),
+            operator=_operator(),
+            status=RecordStatus.NOT_APPLICABLE,
+            absence_mode=AbsenceMode.EMPTY_CANDIDATE_SET,
+            absence_cause="no candidates",
+        )
+    with pytest.raises(ValueError, match="absence fields"):
+        MetricRecord(
+            schema_version=METRIC_RECORD_SCHEMA_VERSION,
+            question="text_stats",
+            question_identity_hash=_question_identity(),
+            on_key="output",
+            evaluation_procedure_config_hash=_PROCEDURE_HASH,
+            trace_producer=_producer(),
+            operator=_operator(),
+            status=RecordStatus.OPERATOR_FAILURE,
+            failure_type="ValueError",
+            failure_message="operator bug",
+            failure_code="no_candidates",
+        )
+    with pytest.raises(ValueError, match="absence/failure fields"):
+        MetricRecord(
+            schema_version=METRIC_RECORD_SCHEMA_VERSION,
+            question="text_stats",
+            question_identity_hash=_question_identity(),
+            on_key="output",
+            evaluation_procedure_config_hash=_PROCEDURE_HASH,
+            trace_producer=_producer(),
+            operator=_operator(),
+            status=RecordStatus.MEASURED,
+            facts=(_fact(),),
+            failure_code="no_candidates",
+        )
 
 
 def test_operator_failure_accepts_present_empty_message() -> None:
@@ -335,7 +380,7 @@ def test_operator_failure_accepts_present_empty_message() -> None:
             evaluation_procedure_config_hash=_PROCEDURE_HASH,
             trace_producer=_producer(),
             operator=_operator(),
-            status="operator_failure",
+            status=RecordStatus.OPERATOR_FAILURE,
             failure_type="ValueError",
             failure_message=None,
         )

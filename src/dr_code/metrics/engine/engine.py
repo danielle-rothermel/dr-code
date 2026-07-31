@@ -353,6 +353,7 @@ def _compute_record(
             absence_cause=(
                 f"{binding.absence.failed_step}: {binding.absence.cause}"
             ),
+            failure_code=binding.absence.failure_code,
         )
     if binding.planning_failure is not None:
         return _failure_record(identity, binding.planning_failure)
@@ -435,9 +436,9 @@ def _build_record(
     identity: _RecordIdentity,
     *,
     absence_mode: AbsenceMode,
-    absence_cause: str | None = None,
+    absence_cause: str,
+    failure_code: str,
 ) -> MetricRecord:
-    assert absence_cause is not None
     return MetricRecord.not_applicable(
         question=identity.question,
         question_identity_hash=identity.question_identity_hash,
@@ -450,4 +451,5 @@ def _build_record(
         operator=identity.operator,
         absence_mode=absence_mode,
         cause=absence_cause,
+        failure_code=failure_code,
     )

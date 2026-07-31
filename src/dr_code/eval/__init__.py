@@ -6,6 +6,15 @@ from dr_code.eval.aggregation import (
     AggregationStatus,
     aggregate,
 )
+from dr_code.eval.archive import (
+    ArchivedMetricFactV1,
+    ArchivedMetricRecordV1,
+    ArchivedOperatorCoordinatesV1,
+    ArchivedOperatorLineageV1,
+    LEGACY_UNSPECIFIED_FAILURE_CODE,
+    LoadedMetricRecord,
+    load_metric_record,
+)
 from dr_code.eval.compression_reference import (
     ZERO_DENOMINATOR,
     CompressionReferenceArtifact,
@@ -76,6 +85,10 @@ from dr_code.eval.variables import (
 __all__ = [
     "ZERO_DENOMINATOR",
     "AbsenceMode",
+    "ArchivedMetricFactV1",
+    "ArchivedMetricRecordV1",
+    "ArchivedOperatorCoordinatesV1",
+    "ArchivedOperatorLineageV1",
     "AggregationConfig",
     "AggregationDefinition",
     "AggregationInput",
@@ -92,6 +105,8 @@ __all__ = [
     "EvaluationProcedureDefinition",
     "EvaluationTraceSource",
     "METRIC_RECORD_SCHEMA_VERSION",
+    "LEGACY_UNSPECIFIED_FAILURE_CODE",
+    "LoadedMetricRecord",
     "MetricExtractionConfig",
     "MetricExtractionDefinition",
     "MetricFact",
@@ -124,6 +139,7 @@ __all__ = [
     "humaneval_task_identity_payload",
     "identity_hash_for",
     "implementation_identity",
+    "load_metric_record",
     "record_rows",
     "repeat_plan_from_provenance",
     "resolve_assignment",

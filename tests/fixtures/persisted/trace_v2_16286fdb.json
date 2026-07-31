@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "producer": {
+    "producer_id": "historical-preprocessing",
+    "version": "1",
+    "definition_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "preprocessing_config_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "values": {
+    "input": {
+      "kind": "text",
+      "text": "historical input"
+    },
+    "output": {
+      "kind": "absent",
+      "failed_step": "parse",
+      "cause": "syntax error",
+      "propagated_through": [
+        "score"
+      ]
+    }
+  },
+  "step_facts": {
+    "parse": {
+      "reason": "syntax error"
+    }
+  }
+}

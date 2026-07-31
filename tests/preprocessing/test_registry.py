@@ -7,10 +7,6 @@ import pytest
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.steps.base import Step
-from dr_code.preprocessing.steps.extract_candidates import (
-    ExtractionStrategy,
-    STRATEGY_REGISTRY,
-)
 from dr_code.trace import ArtifactKind
 
 
@@ -41,16 +37,3 @@ def test_every_registered_step_has_settings_model() -> None:
 
     for step_cls in REGISTRY.values():
         assert issubclass(step_cls.Settings, StepSettings)
-
-
-def test_strategy_registry_covers_all_strategies() -> None:
-    assert set(STRATEGY_REGISTRY) == {
-        strategy.value for strategy in ExtractionStrategy
-    }
-
-
-def test_strategy_registry_is_immutable_after_builtin_registration() -> None:
-    with pytest.raises(TypeError):
-        STRATEGY_REGISTRY["replacement"] = next(  # type: ignore[index]
-            iter(STRATEGY_REGISTRY.values())
-        )

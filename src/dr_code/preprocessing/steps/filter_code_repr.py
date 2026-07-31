@@ -1,42 +1,68 @@
-"""Drop candidates that are code-repr assignments."""
+"""Drop identified candidates that are code-representation assignments."""
 
 from __future__ import annotations
 
 from typing import ClassVar
 
-from dr_code.humaneval.code_parsing import is_code_repr_assignment
+from pydantic import JsonValue
+
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.steps.base import Step, StepOutput
+from dr_code.preprocessing.steps.base import Step, StepFailedError, StepOutput
+from dr_code.preprocessing.steps.filter_plain_literal import (
+    _diagnostics,
+    _record,
+)
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
-    CodeCandidateSetArtifact,
+    IdentifiedCandidateSetArtifact,
 )
 
 
-class FilterCodeRepr(Step):
-    """Drop candidates that are ``code = "..."`` repr assignments.
+CODE_REPR_VARIABLE_NAME = "code"
 
-    Wraps ``code_parsing.is_code_repr_assignment``. Rejections are
-    recorded as facts.
-    """
+
+class FilterCodeRepr(Step):
+    """Drop candidates shaped like ``code = \"...\"``."""
 
     NAME: ClassVar[StepName] = StepName.FILTER_CODE_REPR
-    VERSION: ClassVar[str] = "1"
-    INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
-    OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
+    VERSION: ClassVar[str] = "4"
+    INPUT: ClassVar[ArtifactKind] = ArtifactKind.IDENTIFIED_CANDIDATE_SET
+    OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.IDENTIFIED_CANDIDATE_SET
 
     def apply(self, value: Artifact) -> StepOutput:
-        assert isinstance(value, CodeCandidateSetArtifact)
-        survivors: list[str] = []
-        facts: dict[str, str] = {}
+        assert isinstance(value, IdentifiedCandidateSetArtifact)
+        survivors = []
+        survivor_records: list[dict[str, JsonValue]] = []
+        rejections: list[dict[str, JsonValue]] = []
         for index, candidate in enumerate(value.candidates):
-            if is_code_repr_assignment(candidate):
-                facts[f"rejected_{index}"] = "code repr assignment"
+            record = _record(index, candidate.lineage.candidate_id)
+            if candidate.inspection.is_code_repr_assignment:
+                rejections.append(
+                    {
+                        **record,
+                        "reason_code": "code_repr_assignment",
+                        **_diagnostics(candidate.inspection),
+                    }
+                )
             else:
                 survivors.append(candidate)
+                survivor_records.append(record)
+        facts: dict[str, JsonValue] = {
+            "input_candidate_count": len(value.candidates),
+            "survivor_candidate_count": len(survivors),
+            "survivors": survivor_records,
+            "rejections": rejections,
+        }
+        if not survivors:
+            raise StepFailedError(
+                "no candidate survived code-repr filtering",
+                failure_code=PreprocessingFailureCode.CODE_REPR_ONLY,
+                facts=facts,
+            )
         return StepOutput(
-            value=CodeCandidateSetArtifact(candidates=tuple(survivors)),
+            value=IdentifiedCandidateSetArtifact(candidates=tuple(survivors)),
             facts=facts,
         )
 
