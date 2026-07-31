@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from itertools import chain
+from types import MappingProxyType
 from typing import Final, cast
 
 import duckdb
@@ -25,6 +27,8 @@ from dr_code.corpus.run_descriptor import file_sha256, normalize_origins
 from dr_code.viewer.database import ViewerDatabase
 from dr_code.viewer.domain import (
     Annotation,
+    CandidateTestFailureClassificationInput,
+    CandidateTestFailureClassificationInputs,
     ComparisonStage,
     ExampleDetail,
     ExampleSummary,
@@ -32,8 +36,11 @@ from dr_code.viewer.domain import (
     Failures,
     IncompatibleRunsError,
     InvalidQueryError,
+    MachineTaskAnnotationBatchResult,
     OutcomeTransition,
     Page,
+    ParseFailureClassificationInput,
+    ParseFailureClassificationInputs,
     ReviewPage,
     RunComparison,
     RunDescriptor,
@@ -41,6 +48,8 @@ from dr_code.viewer.domain import (
     RunSummary,
     Tag,
     TaskAnnotation,
+    TaskAnnotationPublicationIntent,
+    TaskIdentity,
     TaskAnnotationProvenance,
     TaskNotFoundError,
     MachineTaskAnnotationWriteResult,
@@ -294,6 +303,259 @@ class ViewerAnalytics:
             run=self._summary(descriptor),
             groups=groups,
             total_count=sum(group.count for group in groups),
+        )
+
+    def parse_failures_for_classification(
+        self,
+        run_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> ParseFailureClassificationInputs:
+        """Return stable parse-failure inputs without exposing storage."""
+        descriptor = self._run(run_id)
+        _validate_optional_limit(limit)
+        _validate_offset(offset)
+        source_paths = [
+            str(descriptor.step_facts_path),
+            str(descriptor.corpus_path),
+            str(descriptor.results_path),
+        ]
+        total_row = self._connection.execute(
+            """
+            WITH facts AS (SELECT * FROM read_parquet(?))
+            SELECT count(*)
+            FROM read_parquet(?) AS c
+            JOIN read_parquet(?) AS r USING (sample_id)
+            WHERE EXISTS (
+                    SELECT 1 FROM facts AS sf
+                    WHERE sf.sample_id = r.sample_id
+                      AND sf.step_name = 'require_nonblank_text'
+                      AND cast(
+                          json_extract(sf.facts_json, '$.is_nonblank')
+                          AS BOOLEAN
+                      )
+                  )
+              AND r.final_candidate_count = 0
+              AND r.failure_code IS NOT NULL
+              AND r.failed_step IS NOT NULL
+            """,
+            source_paths,
+        ).fetchone()
+        assert total_row is not None
+        limit_clause = (
+            ("OFFSET ?" if offset else "")
+            if limit is None
+            else "LIMIT ? OFFSET ?"
+        )
+        parameters: list[object] = [*source_paths]
+        if limit is not None:
+            parameters.append(limit)
+            parameters.append(offset)
+        elif offset:
+            parameters.append(offset)
+        cursor = self._connection.execute(
+            f"""
+            WITH facts AS (SELECT * FROM read_parquet(?))
+            SELECT
+                {self._corpus_projection(descriptor)},
+                r.failure_code AS __classifier_failure_code,
+                r.failed_step AS __classifier_failed_step,
+                r.cause AS __classifier_cause
+            FROM read_parquet(?) AS c
+            JOIN read_parquet(?) AS r USING (sample_id)
+            WHERE EXISTS (
+                    SELECT 1 FROM facts AS sf
+                    WHERE sf.sample_id = r.sample_id
+                      AND sf.step_name = 'require_nonblank_text'
+                      AND cast(
+                          json_extract(sf.facts_json, '$.is_nonblank')
+                          AS BOOLEAN
+                      )
+                  )
+              AND r.final_candidate_count = 0
+              AND r.failure_code IS NOT NULL
+              AND r.failed_step IS NOT NULL
+            ORDER BY c.sample_id
+            {limit_clause}
+            """,
+            parameters,
+        )
+        columns = [item[0] for item in cursor.description]
+        rows = cursor.fetchall()
+        items: list[ParseFailureClassificationInput] = []
+        for row in rows:
+            value = dict(zip(columns, row, strict=True))
+            sample_id = cast(str, value.pop("sample_id"))
+            decoder_output = cast(str, value.pop("decoder_output"))
+            task_context = self._decode_corpus_context(
+                descriptor,
+                value.pop(_CORPUS_CONTEXT_COLUMN),
+            )
+            task_id = cast(str | None, task_context.get("task_id"))
+            task_identity = self._classification_task_identity(
+                descriptor,
+                task_id,
+            )
+            failure_code = cast(str, value.pop("__classifier_failure_code"))
+            failed_step = cast(str, value.pop("__classifier_failed_step"))
+            cause = cast(str | None, value.pop("__classifier_cause"))
+            items.append(
+                ParseFailureClassificationInput(
+                    sample_id=sample_id,
+                    dataset_id=descriptor.dataset_id,
+                    task_id=task_id,
+                    task_identity=task_identity,
+                    decoder_output=decoder_output,
+                    failure_code=failure_code,
+                    failed_step=failed_step,
+                    cause=cause,
+                    task_context=MappingProxyType(task_context),
+                )
+            )
+        return ParseFailureClassificationInputs(
+            items=tuple(items), total=cast(int, total_row[0])
+        )
+
+    def candidate_test_failures_for_classification(
+        self,
+        run_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> CandidateTestFailureClassificationInputs:
+        """Return stable measured candidate failures without exposing storage."""
+        descriptor = self._run(run_id)
+        _validate_optional_limit(limit)
+        _validate_offset(offset)
+        if not descriptor.has_evaluation:
+            return CandidateTestFailureClassificationInputs(items=(), total=0)
+        assert descriptor.candidate_membership_path is not None
+        assert descriptor.candidate_results_path is not None
+        source_paths = [
+            str(descriptor.corpus_path),
+            str(descriptor.candidate_membership_path),
+            str(descriptor.candidate_results_path),
+        ]
+        total_row = self._connection.execute(
+            """
+            SELECT count(*)
+            FROM read_parquet(?) AS c
+            JOIN read_parquet(?) AS em USING (sample_id)
+            JOIN read_parquet(?) AS er USING (evaluation_key)
+            WHERE er.record_status = 'measured'
+              AND er.outcome IS DISTINCT FROM 'passed'
+            """,
+            source_paths,
+        ).fetchone()
+        assert total_row is not None
+        limit_clause = (
+            ("OFFSET ?" if offset else "")
+            if limit is None
+            else "LIMIT ? OFFSET ?"
+        )
+        parameters: list[object] = [*source_paths]
+        if limit is not None:
+            parameters.append(limit)
+            parameters.append(offset)
+        elif offset:
+            parameters.append(offset)
+        cursor = self._connection.execute(
+            f"""
+            SELECT
+                {self._corpus_projection(descriptor)},
+                em.candidate_id AS __classifier_candidate_id,
+                em.evaluation_key AS __classifier_evaluation_key,
+                er.task_id AS __classifier_task_id,
+                er.task_identity AS __classifier_task_identity,
+                er.cleaned_source AS __classifier_cleaned_source,
+                er.outcome AS __classifier_outcome,
+                er.function_count AS __classifier_function_count,
+                er.best_function_name AS __classifier_best_function_name,
+                er.total_cases AS __classifier_total_cases,
+                er.passed_count AS __classifier_passed_count,
+                er.failed_count AS __classifier_failed_count,
+                er.error_count AS __classifier_error_count,
+                er.timeout_count AS __classifier_timeout_count,
+                er.coverage_complete AS __classifier_coverage_complete
+            FROM read_parquet(?) AS c
+            JOIN read_parquet(?) AS em USING (sample_id)
+            JOIN read_parquet(?) AS er USING (evaluation_key)
+            WHERE er.record_status = 'measured'
+              AND er.outcome IS DISTINCT FROM 'passed'
+            ORDER BY c.sample_id, em.candidate_id, em.evaluation_key
+            {limit_clause}
+            """,
+            parameters,
+        )
+        columns = [item[0] for item in cursor.description]
+        rows = cursor.fetchall()
+        items: list[CandidateTestFailureClassificationInput] = []
+        for row in rows:
+            value = dict(zip(columns, row, strict=True))
+            sample_id = cast(str, value.pop("sample_id"))
+            value.pop("decoder_output", None)
+            task_context = self._decode_corpus_context(
+                descriptor,
+                value.pop(_CORPUS_CONTEXT_COLUMN),
+            )
+            corpus_task_id = cast(str | None, task_context.get("task_id"))
+            task_id = cast(str, value.pop("__classifier_task_id"))
+            task_identity = cast(
+                str,
+                value.pop("__classifier_task_identity"),
+            )
+            if corpus_task_id is not None and corpus_task_id != task_id:
+                raise InvalidQueryError(
+                    "candidate evaluation task_id does not match corpus task_id"
+                )
+            candidate_id = cast(str, value.pop("__classifier_candidate_id"))
+            evaluation_key = cast(
+                str, value.pop("__classifier_evaluation_key")
+            )
+            cleaned_source = cast(
+                str, value.pop("__classifier_cleaned_source")
+            )
+            outcome = cast(str, value.pop("__classifier_outcome"))
+            function_count = cast(
+                int, value.pop("__classifier_function_count")
+            )
+            best_function_name = cast(
+                str | None, value.pop("__classifier_best_function_name")
+            )
+            total_cases = cast(int, value.pop("__classifier_total_cases"))
+            passed_count = cast(int, value.pop("__classifier_passed_count"))
+            failed_count = cast(int, value.pop("__classifier_failed_count"))
+            error_count = cast(int, value.pop("__classifier_error_count"))
+            timeout_count = cast(int, value.pop("__classifier_timeout_count"))
+            coverage_complete = cast(
+                bool, value.pop("__classifier_coverage_complete")
+            )
+            items.append(
+                CandidateTestFailureClassificationInput(
+                    sample_id=sample_id,
+                    dataset_id=descriptor.dataset_id,
+                    task_id=task_id,
+                    task_identity=task_identity,
+                    candidate_id=candidate_id,
+                    evaluation_key=evaluation_key,
+                    cleaned_source=cleaned_source,
+                    outcome=outcome,
+                    function_count=function_count,
+                    best_function_name=best_function_name,
+                    total_cases=total_cases,
+                    passed_count=passed_count,
+                    failed_count=failed_count,
+                    error_count=error_count,
+                    timeout_count=timeout_count,
+                    coverage_complete=coverage_complete,
+                    task_context=MappingProxyType(
+                        {**task_context, "task_id": task_id}
+                    ),
+                )
+            )
+        return CandidateTestFailureClassificationInputs(
+            items=tuple(items), total=cast(int, total_row[0])
         )
 
     def examples(
@@ -910,6 +1172,138 @@ class ViewerAnalytics:
             provenance=provenance,
         )
 
+    def validate_task_annotation_scope(
+        self,
+        identities: Iterable[TaskIdentity],
+    ) -> None:
+        """Authenticate every task target against registered evaluation data."""
+        for identity in identities:
+            self._validate_task_target(
+                identity.dataset_id,
+                identity.task_id,
+                identity.task_identity,
+            )
+
+    def require_registered_descriptor(
+        self,
+        supplied: RunDescriptor,
+    ) -> RunDescriptor:
+        """Return the registered snapshot after exact coordinate equality."""
+        registered = self._run(supplied.run_id)
+        if _descriptor_authentication_coordinates(registered) != (
+            _descriptor_authentication_coordinates(supplied)
+        ):
+            raise InvalidQueryError(
+                "supplied run descriptor does not exactly match the "
+                "registered immutable coordinates"
+            )
+        return registered
+
+    def validate_classification_task_scope(
+        self,
+        run_id: str,
+        identities: Iterable[tuple[str, str, str]],
+    ) -> None:
+        """Authenticate exact task content identities for one registered run."""
+        descriptor = self._run(run_id)
+        requested = iter(identities)
+        try:
+            first = next(requested)
+        except StopIteration:
+            return
+        if descriptor.evaluation_coordinates is None:
+            raise TaskNotFoundError(
+                "classification tasks require a registered evaluated run"
+            )
+        membership_path = descriptor.candidate_membership_path
+        assert membership_path is not None
+        for dataset_id, task_id, task_identity in chain((first,), requested):
+            if dataset_id != descriptor.dataset_id:
+                raise TaskNotFoundError(
+                    "classification task dataset does not match registered run"
+                )
+            validate_sha256(task_identity, "task_identity")
+            row = self._connection.execute(
+                """
+                SELECT 1
+                FROM read_parquet(?)
+                WHERE task_id = ? AND task_identity = ?
+                LIMIT 1
+                """,
+                [str(membership_path), task_id, task_identity],
+            ).fetchone()
+            if row is None:
+                raise TaskNotFoundError(
+                    "task identity is not present in the registered candidate "
+                    "evaluation"
+                )
+
+    def _classification_task_identity(
+        self,
+        descriptor: RunDescriptor,
+        task_id: str | None,
+    ) -> str | None:
+        if task_id is None or descriptor.evaluation_coordinates is None:
+            return None
+        membership_path = descriptor.candidate_membership_path
+        assert membership_path is not None
+        rows = self._connection.execute(
+            """
+            SELECT DISTINCT task_identity
+            FROM read_parquet(?)
+            WHERE task_id = ?
+            """,
+            [str(membership_path), task_id],
+        ).fetchall()
+        if len(rows) > 1:
+            raise InvalidQueryError(
+                "candidate evaluation maps one task_id to multiple "
+                "task_identity values"
+            )
+        return cast(str, rows[0][0]) if rows else None
+
+    def begin_task_annotation_publication(
+        self,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> None:
+        self._database.begin_task_annotation_publication(intent)
+
+    def get_task_annotation_publication_intent(
+        self,
+        output_path: str,
+    ) -> TaskAnnotationPublicationIntent | None:
+        return self._database.get_task_annotation_publication_intent(
+            output_path
+        )
+
+    def abort_task_annotation_publication(
+        self,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> None:
+        self._database.abort_task_annotation_publication(intent)
+
+    def finalize_task_annotation_publication(
+        self,
+        scope: Iterable[TaskIdentity],
+        annotations: Iterable[TaskAnnotation],
+        *,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> MachineTaskAnnotationBatchResult:
+        def validated_scope() -> Iterator[TaskIdentity]:
+            for identity in scope:
+                self._validate_task_target(
+                    identity.dataset_id,
+                    identity.task_id,
+                    identity.task_identity,
+                )
+                yield identity
+
+        return self._database.finalize_task_annotation_publication(
+            validated_scope(),
+            annotations,
+            intent=intent,
+        )
+
     def delete_task_annotation(
         self,
         dataset_id: str,
@@ -1131,20 +1525,9 @@ class ViewerAnalytics:
     ) -> ExampleDetail:
         decoder_output = cast(str | None, joined["decoder_output"])
         decoder_output_sha256 = cast(str | None, joined["raw_output_sha256"])
-        raw_context = joined[_CORPUS_CONTEXT_COLUMN]
-        context_value = _json_ready(raw_context)
-        if not isinstance(context_value, dict):
-            raise InvalidQueryError("corpus context projection is invalid")
-        has_context_fields = any(
-            name not in {"sample_id", "decoder_output"}
-            for name in pq.ParquetFile(
-                descriptor.corpus_path
-            ).schema_arrow.names
-        )
-        context: dict[str, object] = (
-            {str(key): value for key, value in context_value.items()}
-            if has_context_fields
-            else {}
+        context = self._decode_corpus_context(
+            descriptor,
+            joined[_CORPUS_CONTEXT_COLUMN],
         )
         task_id = context.get("task_id")
         task_identity = (
@@ -1178,6 +1561,26 @@ class ViewerAnalytics:
             rejections=rejections,
             annotation=annotation,
         )
+
+    def _decode_corpus_context(
+        self,
+        descriptor: RunDescriptor,
+        raw_context: object,
+    ) -> dict[str, object]:
+        context_value = _json_ready(raw_context)
+        if not isinstance(context_value, dict):
+            raise InvalidQueryError("corpus context projection is invalid")
+        has_context_fields = any(
+            name not in {"sample_id", "decoder_output"}
+            for name in pq.ParquetFile(
+                descriptor.corpus_path
+            ).schema_arrow.names
+        )
+        if not has_context_fields:
+            return {}
+        return {
+            str(key): value for key, value in sorted(context_value.items())
+        }
 
     def _corpus_projection(self, descriptor: RunDescriptor) -> str:
         context_fields: list[str] = []
@@ -1321,6 +1724,46 @@ class ViewerAnalytics:
 
 def _rate(count: int, denominator: int) -> float | None:
     return count / denominator if denominator else None
+
+
+def _descriptor_authentication_coordinates(
+    descriptor: RunDescriptor,
+) -> dict[str, object]:
+    """Return every immutable content coordinate, excluding snapshot paths."""
+    return {
+        "artifact_sha256": dict(descriptor.artifact_sha256),
+        "corpus_sha256": descriptor.corpus_sha256,
+        "dataset_id": descriptor.dataset_id,
+        "definition_id": descriptor.definition_id,
+        "definition_identity": descriptor.definition_identity,
+        "definition_version": descriptor.definition_version,
+        "evaluation_coordinates": descriptor.evaluation_coordinates,
+        "evaluation_generation_id": descriptor.evaluation_generation_id,
+        "evaluation_identity": descriptor.evaluation_identity,
+        "evaluation_manifest_sha256": (descriptor.evaluation_manifest_sha256),
+        "evaluation_pointer_sha256": descriptor.evaluation_pointer_sha256,
+        "label": descriptor.label,
+        "preprocessing_identity": descriptor.preprocessing_identity,
+        "preprocessing_manifest_sha256": (
+            descriptor.preprocessing_manifest_sha256
+        ),
+        "preprocessing_schema_version": (
+            descriptor.preprocessing_schema_version
+        ),
+        "run_id": descriptor.run_id,
+    }
+
+
+def _validate_optional_limit(limit: int | None) -> None:
+    if limit is not None and (
+        isinstance(limit, bool) or not isinstance(limit, int) or limit < 1
+    ):
+        raise InvalidQueryError("limit must be a positive integer or null")
+
+
+def _validate_offset(offset: int) -> None:
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        raise InvalidQueryError("offset must be a nonnegative integer")
 
 
 def _difference(

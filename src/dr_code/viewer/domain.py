@@ -108,6 +108,60 @@ class Failures:
 
 
 @dataclass(frozen=True, slots=True)
+class ParseFailureClassificationInput:
+    """One preprocessing failure exposed to a classifier."""
+
+    sample_id: str
+    dataset_id: str
+    task_id: str | None
+    task_identity: str | None
+    decoder_output: str
+    failure_code: str
+    failed_step: str
+    cause: str | None
+    task_context: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class ParseFailureClassificationInputs:
+    """A deterministic, optionally capped parse-failure population."""
+
+    items: tuple[ParseFailureClassificationInput, ...]
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateTestFailureClassificationInput:
+    """One measured candidate test failure exposed to a classifier."""
+
+    sample_id: str
+    dataset_id: str
+    task_id: str
+    task_identity: str
+    candidate_id: str
+    evaluation_key: str
+    cleaned_source: str
+    outcome: str
+    function_count: int
+    best_function_name: str | None
+    total_cases: int
+    passed_count: int
+    failed_count: int
+    error_count: int
+    timeout_count: int
+    coverage_complete: bool
+    task_context: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateTestFailureClassificationInputs:
+    """A deterministic, optionally capped candidate-test population."""
+
+    items: tuple[CandidateTestFailureClassificationInput, ...]
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
 class ExampleSummary:
     sample_id: str
     task_id: str | None
@@ -296,6 +350,25 @@ class MachineTaskAnnotationWriteOutcome(StrEnum):
 class MachineTaskAnnotationWriteResult:
     outcome: MachineTaskAnnotationWriteOutcome
     annotation: TaskAnnotation
+
+
+@dataclass(frozen=True, slots=True)
+class MachineTaskAnnotationBatchResult:
+    written: int
+    protected: int
+    removed: int
+
+
+@dataclass(frozen=True, slots=True)
+class TaskAnnotationPublicationIntent:
+    """Durable handoff between one artifact and its machine rollups."""
+
+    producer: str
+    experiment_identity: str
+    output_path: str
+    staged_path: str
+    prior_sha256: str | None
+    intended_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -754,6 +827,8 @@ def _strict_json_object(
 
 __all__ = (
     "Annotation",
+    "CandidateTestFailureClassificationInput",
+    "CandidateTestFailureClassificationInputs",
     "ExampleDetail",
     "ExampleSummary",
     "FailureGroup",
@@ -763,8 +838,11 @@ __all__ = (
     "InvalidTaskAnnotationError",
     "MachineTaskAnnotationWriteOutcome",
     "MachineTaskAnnotationWriteResult",
+    "MachineTaskAnnotationBatchResult",
     "OutcomeTransition",
     "Page",
+    "ParseFailureClassificationInput",
+    "ParseFailureClassificationInputs",
     "ReviewPage",
     "RunComparison",
     "RunDescriptor",

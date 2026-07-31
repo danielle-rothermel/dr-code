@@ -270,7 +270,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         identity = InvocationIdentity.of(
             executor_identity=EXECUTOR_IDENTITY,
             source=plan.request.driver_source(),
-            input_text="",
+            input_text=plan.request.items_input_text(),
             budgets=plan.budgets,
             environment=batch_runner.HUMANEVAL_ENVIRONMENT,
             profile=batch_runner.HUMANEVAL_PROFILE,

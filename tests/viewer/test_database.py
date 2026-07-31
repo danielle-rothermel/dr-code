@@ -21,16 +21,24 @@ from dr_code.viewer.database import (
     ViewerDatabase,
     database_owner_lock_path,
 )
+import dr_code.viewer.database as database_module
 from dr_code.viewer.domain import (
     InvalidQueryError,
     InvalidTaskAnnotationError,
     RunDescriptor,
+    TaskAnnotationOrigin,
+    TaskAnnotationPublicationIntent,
+    TaskAnnotationProvenance,
+    TaskAnnotation,
+    TaskIdentity,
     Verdict,
+    validate_task_annotation,
 )
 from viewer.helpers import write_bundle
 
 CORPUS = "a" * 64
 OUTPUT = "b" * 64
+EXPERIMENT = "c" * 64
 
 
 def test_database_owner_lock_path_is_canonical(tmp_path: Path) -> None:
@@ -139,6 +147,425 @@ def _create_legacy_task_tables(
         )
         """
     )
+
+
+def _machine_candidate(
+    dataset_id: str,
+    task_id: str,
+    *,
+    category: str,
+) -> TaskAnnotation:
+    return validate_task_annotation(
+        identity=TaskIdentity(
+            dataset_id=dataset_id,
+            task_id=task_id,
+            task_identity=_task_identity(task_id),
+        ),
+        origin=TaskAnnotationOrigin.MACHINE,
+        category=category,
+        note=None,
+        tags=(),
+        provenance=TaskAnnotationProvenance(
+            model="model",
+            taxonomy_version="taxonomy",
+            repeats=1,
+            agreement=1,
+            extra={
+                "producer": "classifier",
+                "experiment_identity": EXPERIMENT,
+            },
+        ),
+    )
+
+
+def _publication_intent(
+    tmp_path: Path,
+    *,
+    output_name: str = "details.jsonl",
+) -> TaskAnnotationPublicationIntent:
+    output = (tmp_path / output_name).resolve()
+    staged = output.parent / f".{output.name}.publication"
+    return TaskAnnotationPublicationIntent(
+        producer="classifier",
+        experiment_identity=EXPERIMENT,
+        output_path=str(output),
+        staged_path=str(staged),
+        prior_sha256=None,
+        intended_sha256="e" * 64,
+    )
+
+
+def test_machine_batch_rolls_back_all_rows_on_late_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    with ViewerDatabase(":memory:") as database:
+        candidate = _machine_candidate(
+            "dataset",
+            "Task/1",
+            category="new",
+        )
+
+        def fail_tags(*args, **kwargs):
+            raise RuntimeError("injected transaction failure")
+
+        monkeypatch.setattr(
+            database,
+            "_replace_task_annotation_tags",
+            fail_tags,
+        )
+        intent = _publication_intent(tmp_path)
+        database.begin_task_annotation_publication(intent)
+        with pytest.raises(RuntimeError, match="injected"):
+            database.finalize_task_annotation_publication(
+                (candidate.identity,),
+                (candidate,),
+                intent=intent,
+            )
+
+        assert (
+            database.get_task_annotation(
+                "dataset", "Task/1", _task_identity("Task/1")
+            )
+            is None
+        )
+        assert (
+            database.get_task_annotation_publication_intent(intent.output_path)
+            == intent
+        )
+
+
+def test_machine_batch_requires_the_exact_pending_intent(
+    tmp_path: Path,
+) -> None:
+    with ViewerDatabase(":memory:") as database:
+        candidate = _machine_candidate(
+            "dataset",
+            "Task/1",
+            category="new",
+        )
+        intent = _publication_intent(tmp_path)
+        database.begin_task_annotation_publication(intent)
+        wrong = TaskAnnotationPublicationIntent(
+            producer=intent.producer,
+            experiment_identity=intent.experiment_identity,
+            output_path=intent.output_path,
+            staged_path=intent.staged_path,
+            prior_sha256=intent.prior_sha256,
+            intended_sha256="f" * 64,
+        )
+
+        with pytest.raises(
+            InvalidTaskAnnotationError,
+            match="exact task annotation publication intent",
+        ):
+            database.finalize_task_annotation_publication(
+                (candidate.identity,),
+                (candidate,),
+                intent=wrong,
+            )
+
+        assert (
+            database.get_task_annotation(
+                "dataset", "Task/1", _task_identity("Task/1")
+            )
+            is None
+        )
+        assert (
+            database.get_task_annotation_publication_intent(intent.output_path)
+            == intent
+        )
+
+
+def test_machine_batch_deletes_only_owned_rows_then_their_tags(
+    tmp_path: Path,
+) -> None:
+    with ViewerDatabase(":memory:") as database:
+        owned_tag = database.create_tag("owned")
+        other_tag = database.create_tag("other")
+        owned = database.put_machine_task_annotation(
+            "dataset",
+            "Task/1",
+            _task_identity("Task/1"),
+            category="owned",
+            tag_ids=(owned_tag.tag_id,),
+            provenance=TaskAnnotationProvenance(
+                model="model",
+                taxonomy_version="taxonomy",
+                repeats=1,
+                agreement=1,
+                extra={
+                    "producer": "classifier",
+                    "experiment_identity": EXPERIMENT,
+                },
+            ),
+        )
+        other = database.put_machine_task_annotation(
+            "dataset",
+            "Task/2",
+            _task_identity("Task/2"),
+            category="other",
+            tag_ids=(other_tag.tag_id,),
+            provenance=TaskAnnotationProvenance(
+                model="model",
+                taxonomy_version="taxonomy",
+                repeats=1,
+                agreement=1,
+                extra={
+                    "producer": "classifier",
+                    "experiment_identity": "d" * 64,
+                },
+            ),
+        )
+        assert owned.annotation.tags == (owned_tag,)
+        assert other.annotation.tags == (other_tag,)
+
+        intent = _publication_intent(tmp_path)
+        database.begin_task_annotation_publication(intent)
+        result = database.finalize_task_annotation_publication(
+            (
+                TaskIdentity("dataset", "Task/1", _task_identity("Task/1")),
+                TaskIdentity("dataset", "Task/2", _task_identity("Task/2")),
+            ),
+            (),
+            intent=intent,
+        )
+
+        assert result.removed == 1
+        assert (
+            database.get_task_annotation(
+                "dataset", "Task/1", _task_identity("Task/1")
+            )
+            is None
+        )
+        assert database.get_task_annotation(
+            "dataset", "Task/2", _task_identity("Task/2")
+        ) == (other.annotation)
+        tag_links = database.connection.execute(
+            "SELECT task_id, tag_id FROM task_annotation_tags ORDER BY task_id"
+        ).fetchall()
+        assert tag_links == [("Task/2", other_tag.tag_id)]
+        assert (
+            database.get_task_annotation_publication_intent(intent.output_path)
+            is None
+        )
+
+
+def test_machine_publication_streams_many_tasks_in_bounded_batches(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    with ViewerDatabase(":memory:") as database:
+        identities = tuple(
+            TaskIdentity(
+                "dataset",
+                f"Task/{index:03d}",
+                _task_identity(f"Task/{index:03d}"),
+            )
+            for index in range(10)
+        )
+        candidates = tuple(
+            _machine_candidate(
+                identity.dataset_id,
+                identity.task_id,
+                category="batch",
+            )
+            for identity in identities
+        )
+
+        class NoLengthHintIterator:
+            def __init__(self, values) -> None:
+                self._values = iter(values)
+                self.yielded = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                value = next(self._values)
+                self.yielded += 1
+                return value
+
+            def __length_hint__(self) -> int:
+                raise AssertionError("publication input was materialized")
+
+        scope = NoLengthHintIterator(identities)
+        annotations = NoLengthHintIterator(candidates)
+
+        monkeypatch.setattr(
+            database_module,
+            "_PUBLICATION_BATCH_SIZE",
+            3,
+        )
+        original_batches = database._publication_stage_batches
+        batch_sizes: list[int] = []
+
+        def observed_batches(stage: str):
+            for batch in original_batches(stage):
+                batch_sizes.append(len(batch))
+                yield batch
+
+        monkeypatch.setattr(
+            database,
+            "_publication_stage_batches",
+            observed_batches,
+        )
+        intent = _publication_intent(tmp_path)
+        database.begin_task_annotation_publication(intent)
+
+        result = database.finalize_task_annotation_publication(
+            scope,
+            annotations,
+            intent=intent,
+        )
+
+        assert result.written == 10
+        assert result.protected == 0
+        assert result.removed == 0
+        assert batch_sizes == [3, 3, 3, 1]
+        assert scope.yielded == 10
+        assert annotations.yielded == 10
+
+
+def test_pending_intent_suppresses_matching_machine_but_not_human(
+    tmp_path: Path,
+) -> None:
+    with ViewerDatabase(":memory:") as database:
+        matching = database.put_machine_task_annotation(
+            "dataset",
+            "Task/1",
+            _task_identity("Task/1"),
+            category="matching",
+            provenance=_machine_candidate(
+                "dataset", "Task/1", category="matching"
+            ).provenance,
+        )
+        other = database.put_machine_task_annotation(
+            "dataset",
+            "Task/2",
+            _task_identity("Task/2"),
+            category="other",
+            provenance=TaskAnnotationProvenance(
+                model="model",
+                taxonomy_version="taxonomy",
+                repeats=1,
+                agreement=1,
+                extra={
+                    "producer": "classifier",
+                    "experiment_identity": "d" * 64,
+                },
+            ),
+        )
+        human = database.put_task_annotation(
+            "dataset",
+            "Task/3",
+            _task_identity("Task/3"),
+            category="human",
+        )
+        intent = _publication_intent(tmp_path)
+        database.begin_task_annotation_publication(intent)
+
+        assert (
+            database.get_task_annotation(
+                "dataset", "Task/1", _task_identity("Task/1")
+            )
+            is None
+        )
+        assert database.get_task_annotation(
+            "dataset", "Task/2", _task_identity("Task/2")
+        ) == (other.annotation)
+        assert (
+            database.get_task_annotation(
+                "dataset", "Task/3", _task_identity("Task/3")
+            )
+            == human
+        )
+        listed = database._task_annotations()  # noqa: SLF001
+        exported = database.export_task_annotations()
+
+        assert matching.annotation not in listed
+        assert listed == (other.annotation, human)
+        assert [item["category"] for item in exported] == ["other", "human"]
+
+
+def test_same_experiment_intents_are_keyed_by_path_and_suppress_until_all_clear(
+    tmp_path: Path,
+) -> None:
+    with ViewerDatabase(":memory:") as database:
+        machine = database.put_machine_task_annotation(
+            "dataset",
+            "Task/1",
+            _task_identity("Task/1"),
+            category="machine",
+            provenance=_machine_candidate(
+                "dataset", "Task/1", category="machine"
+            ).provenance,
+        )
+        first = _publication_intent(tmp_path, output_name="first.jsonl")
+        second = _publication_intent(tmp_path, output_name="second.jsonl")
+
+        database.begin_task_annotation_publication(first)
+        database.begin_task_annotation_publication(second)
+        database.abort_task_annotation_publication(first)
+        assert (
+            database.get_task_annotation(
+                "dataset", "Task/1", _task_identity("Task/1")
+            )
+            is None
+        )
+
+        database.abort_task_annotation_publication(second)
+        assert (
+            database.get_task_annotation(
+                "dataset", "Task/1", _task_identity("Task/1")
+            )
+            == machine.annotation
+        )
+
+
+def test_single_and_batch_machine_writes_share_protected_upsert_primitive(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    with ViewerDatabase(":memory:") as database:
+        original = database._upsert_task_annotation_row
+        calls: list[TaskIdentity] = []
+
+        def track(candidate):
+            calls.append(candidate.identity)
+            return original(candidate)
+
+        monkeypatch.setattr(
+            database,
+            "_upsert_task_annotation_row",
+            track,
+        )
+        database.put_machine_task_annotation(
+            "dataset",
+            "Task/1",
+            _task_identity("Task/1"),
+            category="single",
+            provenance=_machine_candidate(
+                "dataset", "Task/1", category="single"
+            ).provenance,
+        )
+        candidate = _machine_candidate(
+            "dataset",
+            "Task/2",
+            category="batch",
+        )
+        intent = _publication_intent(tmp_path)
+        database.begin_task_annotation_publication(intent)
+        database.finalize_task_annotation_publication(
+            (candidate.identity,),
+            (candidate,),
+            intent=intent,
+        )
+
+        assert calls == [
+            TaskIdentity("dataset", "Task/1", _task_identity("Task/1")),
+            TaskIdentity("dataset", "Task/2", _task_identity("Task/2")),
+        ]
 
 
 def test_existing_database_reopens_and_registers_runs(
@@ -348,6 +775,7 @@ def test_current_schema_and_annotations_survive_restart(
             "runs",
             "tags",
             "task_annotation_tags",
+            "task_annotation_publication_intents",
             "task_annotations",
             "viewer_schema",
         }
@@ -497,6 +925,7 @@ def test_high_contention_constructors_share_initialized_database(
         "runs",
         "tags",
         "task_annotation_tags",
+        "task_annotation_publication_intents",
         "task_annotations",
         "viewer_schema",
     }

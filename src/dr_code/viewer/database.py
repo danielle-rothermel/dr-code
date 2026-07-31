@@ -21,12 +21,14 @@ from dr_code.viewer.domain import (
     Annotation,
     InvalidQueryError,
     InvalidTaskAnnotationError,
+    MachineTaskAnnotationBatchResult,
     MachineTaskAnnotationWriteOutcome,
     MachineTaskAnnotationWriteResult,
     RunDescriptor,
     Tag,
     TaskAnnotation,
     TaskAnnotationOrigin,
+    TaskAnnotationPublicationIntent,
     TaskAnnotationProvenance,
     TaskIdentity,
     Verdict,
@@ -125,6 +127,17 @@ _SCHEMA = (
         PRIMARY KEY (dataset_id, task_id, task_identity, tag_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS task_annotation_publication_intents (
+        producer VARCHAR NOT NULL,
+        experiment_identity VARCHAR NOT NULL,
+        output_path VARCHAR PRIMARY KEY,
+        staged_path VARCHAR NOT NULL UNIQUE,
+        prior_sha256 VARCHAR,
+        intended_sha256 VARCHAR NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
+    )
+    """,
 )
 _SCHEMA_TABLES: Final = frozenset(
     {
@@ -135,6 +148,7 @@ _SCHEMA_TABLES: Final = frozenset(
         "annotation_tags",
         "task_annotations",
         "task_annotation_tags",
+        "task_annotation_publication_intents",
     }
 )
 _SCHEMA_VERSION: Final = 1
@@ -258,6 +272,7 @@ def _serialized_initialization(path: Path | str) -> Iterator[None]:
 
 
 _TASK_ANNOTATION_WRITE_ATTEMPTS = 3
+_PUBLICATION_BATCH_SIZE = 128
 type _TaskAnnotationRow = tuple[
     str,
     str,
@@ -268,6 +283,14 @@ type _TaskAnnotationRow = tuple[
     str | None,
     list[str],
     list[str],
+]
+type _PublicationIntentRow = tuple[
+    str,
+    str,
+    str,
+    str,
+    str | None,
+    str,
 ]
 
 
@@ -761,7 +784,10 @@ class ViewerDatabase:
             )
             if outcome is MachineTaskAnnotationWriteOutcome.WRITTEN:
                 self._replace_task_annotation_tags(identity, selected_tag_ids)
-            stored = self._get_task_annotation(identity)
+            stored = self._get_task_annotation(
+                identity,
+                suppress_pending_publications=False,
+            )
             assert stored is not None
             result = MachineTaskAnnotationWriteResult(
                 outcome=outcome,
@@ -771,6 +797,382 @@ class ViewerDatabase:
         self._retry_task_annotation_write(protect_and_upsert)
         assert result is not None
         return result
+
+    def begin_task_annotation_publication(
+        self,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> None:
+        """Durably hide one experiment's machine rows before file publish."""
+        validated = _validate_publication_intent(intent)
+
+        def insert() -> None:
+            self._connection.execute(
+                """
+                INSERT INTO task_annotation_publication_intents(
+                    producer,
+                    experiment_identity,
+                    output_path,
+                    staged_path,
+                    prior_sha256,
+                    intended_sha256
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    validated.producer,
+                    validated.experiment_identity,
+                    validated.output_path,
+                    validated.staged_path,
+                    validated.prior_sha256,
+                    validated.intended_sha256,
+                ],
+            )
+
+        self._retry_task_annotation_write(insert)
+
+    def get_task_annotation_publication_intent(
+        self,
+        output_path: str,
+    ) -> TaskAnnotationPublicationIntent | None:
+        validated_path = _canonical_absolute_path(
+            output_path,
+            "publication output_path",
+        )
+        row = cast(
+            _PublicationIntentRow | None,
+            self._connection.execute(
+                """
+                SELECT
+                    producer,
+                    experiment_identity,
+                    output_path,
+                    staged_path,
+                    prior_sha256,
+                    intended_sha256
+                FROM task_annotation_publication_intents
+                WHERE output_path = ?
+                """,
+                [validated_path],
+            ).fetchone(),
+        )
+        return _publication_intent_from_row(row) if row is not None else None
+
+    def abort_task_annotation_publication(
+        self,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> None:
+        """Delete exactly one unambiguous pre-replace publication intent."""
+        validated = _validate_publication_intent(intent)
+
+        def delete() -> None:
+            self._require_publication_intent(validated)
+            self._delete_publication_intent(validated)
+
+        self._retry_task_annotation_write(delete)
+
+    def finalize_task_annotation_publication(
+        self,
+        scope: Iterable[TaskIdentity],
+        annotations: Iterable[TaskAnnotation],
+        *,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> MachineTaskAnnotationBatchResult:
+        """Atomically replace exact rollups and consume their file intent."""
+        validated_intent = _validate_publication_intent(intent)
+        validated_producer = validated_intent.producer
+        experiment_identity = validated_intent.experiment_identity
+        stage = f"_task_annotation_publication_{uuid.uuid4().hex}"
+        self._connection.execute(
+            f"""
+            CREATE TEMP TABLE {stage} (
+                dataset_id VARCHAR NOT NULL,
+                task_id VARCHAR NOT NULL,
+                task_identity VARCHAR NOT NULL,
+                has_annotation BOOLEAN NOT NULL DEFAULT false,
+                category VARCHAR,
+                note VARCHAR,
+                provenance VARCHAR,
+                PRIMARY KEY (dataset_id, task_id, task_identity)
+            )
+            """
+        )
+
+        result: MachineTaskAnnotationBatchResult | None = None
+
+        def replace() -> None:
+            nonlocal result
+            self._require_publication_intent(validated_intent)
+            written = 0
+            protected = 0
+            removed = 0
+            for batch in self._publication_stage_batches(stage):
+                for (
+                    dataset_id,
+                    task_id,
+                    task_identity,
+                    has_annotation,
+                    category,
+                    note,
+                    provenance_json,
+                ) in batch:
+                    identity = TaskIdentity(
+                        dataset_id,
+                        task_id,
+                        task_identity,
+                    )
+                    if has_annotation:
+                        assert provenance_json is not None
+                        candidate = TaskAnnotation(
+                            identity=identity,
+                            origin=TaskAnnotationOrigin.MACHINE,
+                            category=category,
+                            note=note,
+                            tags=(),
+                            provenance=decode_task_annotation_provenance(
+                                provenance_json
+                            ),
+                        )
+                        row = self._upsert_task_annotation_row(candidate)
+                        outcome = (
+                            MachineTaskAnnotationWriteOutcome.WRITTEN
+                            if row
+                            else MachineTaskAnnotationWriteOutcome.PROTECTED
+                        )
+                        if (
+                            outcome
+                            is MachineTaskAnnotationWriteOutcome.PROTECTED
+                        ):
+                            protected += 1
+                        else:
+                            self._replace_task_annotation_tags(identity, ())
+                            written += 1
+                        continue
+
+                    row = self._connection.execute(
+                        """
+                        DELETE FROM task_annotations
+                        WHERE dataset_id = ?
+                          AND task_id = ?
+                          AND task_identity = ?
+                          AND origin = 'machine'
+                          AND json_extract_string(
+                              provenance, '$.extra.producer'
+                          ) = ?
+                          AND json_extract_string(
+                              provenance, '$.extra.experiment_identity'
+                          ) = ?
+                        RETURNING task_id
+                        """,
+                        [
+                            dataset_id,
+                            task_id,
+                            task_identity,
+                            validated_producer,
+                            experiment_identity,
+                        ],
+                    ).fetchone()
+                    if row is not None:
+                        self._connection.execute(
+                            """
+                            DELETE FROM task_annotation_tags
+                            WHERE dataset_id = ?
+                              AND task_id = ?
+                              AND task_identity = ?
+                            """,
+                            [dataset_id, task_id, task_identity],
+                        )
+                        removed += 1
+                        continue
+                    existing = self._connection.execute(
+                        """
+                        SELECT origin FROM task_annotations
+                        WHERE dataset_id = ?
+                          AND task_id = ?
+                          AND task_identity = ?
+                        """,
+                        [dataset_id, task_id, task_identity],
+                    ).fetchone()
+                    if existing is not None and existing[0] == "human":
+                        protected += 1
+            self._delete_publication_intent(validated_intent)
+            result = MachineTaskAnnotationBatchResult(
+                written=written,
+                protected=protected,
+                removed=removed,
+            )
+
+        try:
+            self._stage_task_annotation_publication(
+                stage,
+                scope,
+                annotations,
+                producer=validated_producer,
+                experiment_identity=experiment_identity,
+            )
+            self._retry_task_annotation_write(replace)
+        finally:
+            self._connection.execute(f"DROP TABLE IF EXISTS {stage}")
+        assert result is not None
+        return result
+
+    def _stage_task_annotation_publication(
+        self,
+        stage: str,
+        scope: Iterable[TaskIdentity],
+        annotations: Iterable[TaskAnnotation],
+        *,
+        producer: str,
+        experiment_identity: str,
+    ) -> None:
+        for identity_value in scope:
+            identity = validate_task_identity(
+                identity_value.dataset_id,
+                identity_value.task_id,
+                identity_value.task_identity,
+            )
+            try:
+                self._connection.execute(
+                    f"""
+                    INSERT INTO {stage}(dataset_id, task_id, task_identity)
+                    VALUES (?, ?, ?)
+                    """,
+                    [
+                        identity.dataset_id,
+                        identity.task_id,
+                        identity.task_identity,
+                    ],
+                )
+            except duckdb.ConstraintException as exc:
+                raise InvalidTaskAnnotationError(
+                    "machine replacement scope contains duplicate task "
+                    "identities"
+                ) from exc
+        for annotation in annotations:
+            if not isinstance(annotation, TaskAnnotation):
+                raise InvalidTaskAnnotationError(
+                    "machine replacements must contain TaskAnnotation values"
+                )
+            if annotation.origin is not TaskAnnotationOrigin.MACHINE:
+                raise InvalidTaskAnnotationError(
+                    "machine replacements must have machine origin"
+                )
+            if annotation.tags:
+                raise InvalidTaskAnnotationError(
+                    "machine replacements do not accept materialized tags"
+                )
+            identity = validate_task_identity(
+                annotation.identity.dataset_id,
+                annotation.identity.task_id,
+                annotation.identity.task_identity,
+            )
+            assert annotation.provenance is not None
+            if (
+                annotation.provenance.extra.get("producer") != producer
+                or annotation.provenance.extra.get("experiment_identity")
+                != experiment_identity
+            ):
+                raise InvalidTaskAnnotationError(
+                    "machine replacement provenance does not match its owner"
+                )
+            row = self._connection.execute(
+                f"""
+                UPDATE {stage}
+                SET has_annotation = true,
+                    category = ?,
+                    note = ?,
+                    provenance = ?
+                WHERE dataset_id = ?
+                  AND task_id = ?
+                  AND task_identity = ?
+                  AND NOT has_annotation
+                RETURNING task_id
+                """,
+                [
+                    annotation.category,
+                    annotation.note,
+                    encode_task_annotation_provenance(annotation.provenance),
+                    identity.dataset_id,
+                    identity.task_id,
+                    identity.task_identity,
+                ],
+            ).fetchone()
+            if row is not None:
+                continue
+            existing = self._connection.execute(
+                f"""
+                SELECT has_annotation FROM {stage}
+                WHERE dataset_id = ?
+                  AND task_id = ?
+                  AND task_identity = ?
+                """,
+                [
+                    identity.dataset_id,
+                    identity.task_id,
+                    identity.task_identity,
+                ],
+            ).fetchone()
+            if existing is None:
+                raise InvalidTaskAnnotationError(
+                    "machine replacement is outside the selected task scope"
+                )
+            raise InvalidTaskAnnotationError(
+                "machine replacements contain duplicate task identities"
+            )
+
+    def _publication_stage_batches(
+        self,
+        stage: str,
+    ) -> Iterable[
+        list[
+            tuple[
+                str,
+                str,
+                str,
+                bool,
+                str | None,
+                str | None,
+                str | None,
+            ]
+        ]
+    ]:
+        last: tuple[str, str, str] | None = None
+        while True:
+            if last is None:
+                query = f"""
+                    SELECT dataset_id, task_id, task_identity, has_annotation,
+                           category, note, provenance
+                    FROM {stage}
+                    ORDER BY dataset_id, task_id, task_identity
+                    LIMIT ?
+                """
+                parameters: list[object] = [_PUBLICATION_BATCH_SIZE]
+            else:
+                query = f"""
+                    SELECT dataset_id, task_id, task_identity, has_annotation,
+                           category, note, provenance
+                    FROM {stage}
+                    WHERE (dataset_id, task_id, task_identity) > (?, ?, ?)
+                    ORDER BY dataset_id, task_id, task_identity
+                    LIMIT ?
+                """
+                parameters = [*last, _PUBLICATION_BATCH_SIZE]
+            rows = cast(
+                list[
+                    tuple[
+                        str,
+                        str,
+                        str,
+                        bool,
+                        str | None,
+                        str | None,
+                        str | None,
+                    ]
+                ],
+                self._connection.execute(query, parameters).fetchall(),
+            )
+            if not rows:
+                return
+            yield rows
+            last = rows[-1][0], rows[-1][1], rows[-1][2]
 
     def delete_task_annotation(
         self,
@@ -852,26 +1254,58 @@ class ViewerDatabase:
         return tuple(Tag(tag_id=row[0], name=row[1]) for row in rows)
 
     def _get_task_annotation(
-        self, identity: TaskIdentity
+        self,
+        identity: TaskIdentity,
+        *,
+        suppress_pending_publications: bool = True,
     ) -> TaskAnnotation | None:
-        annotations = self._task_annotations(identity)
+        annotations = self._task_annotations(
+            identity,
+            suppress_pending_publications=suppress_pending_publications,
+        )
         return annotations[0] if annotations else None
 
     def _task_annotations(
-        self, identity: TaskIdentity | None = None
+        self,
+        identity: TaskIdentity | None = None,
+        *,
+        suppress_pending_publications: bool = True,
     ) -> tuple[TaskAnnotation, ...]:
-        where = ""
+        conditions: list[str] = []
         parameters: list[str] = []
         if identity is not None:
-            where = (
-                "WHERE a.dataset_id = ? AND a.task_id = ? "
-                "AND a.task_identity = ?"
+            conditions.append(
+                "a.dataset_id = ? AND a.task_id = ? AND a.task_identity = ?"
             )
             parameters = [
                 identity.dataset_id,
                 identity.task_id,
                 identity.task_identity,
             ]
+        if suppress_pending_publications:
+            conditions.append(
+                """
+                (
+                    a.origin = 'human'
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM task_annotation_publication_intents AS intent
+                        WHERE intent.producer = try(
+                            json_extract_string(
+                                a.provenance, '$.extra.producer'
+                            )
+                        )
+                          AND intent.experiment_identity = try(
+                            json_extract_string(
+                                a.provenance,
+                                '$.extra.experiment_identity'
+                            )
+                        )
+                    )
+                )
+                """
+            )
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
         rows = cast(
             list[_TaskAnnotationRow],
             self._connection.execute(
@@ -913,6 +1347,50 @@ class ViewerDatabase:
             ).fetchall(),
         )
         return tuple(_decode_task_annotation_row(row) for row in rows)
+
+    def _require_publication_intent(
+        self,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> None:
+        row = self._connection.execute(
+            """
+            SELECT 1
+            FROM task_annotation_publication_intents
+            WHERE producer = ?
+              AND experiment_identity = ?
+              AND output_path = ?
+              AND staged_path = ?
+              AND prior_sha256 IS NOT DISTINCT FROM ?
+              AND intended_sha256 = ?
+            """,
+            _publication_intent_parameters(intent),
+        ).fetchone()
+        if row is None:
+            raise InvalidTaskAnnotationError(
+                "exact task annotation publication intent is not pending"
+            )
+
+    def _delete_publication_intent(
+        self,
+        intent: TaskAnnotationPublicationIntent,
+    ) -> None:
+        row = self._connection.execute(
+            """
+            DELETE FROM task_annotation_publication_intents
+            WHERE producer = ?
+              AND experiment_identity = ?
+              AND output_path = ?
+              AND staged_path = ?
+              AND prior_sha256 IS NOT DISTINCT FROM ?
+              AND intended_sha256 = ?
+            RETURNING output_path
+            """,
+            _publication_intent_parameters(intent),
+        ).fetchone()
+        if row is None:
+            raise InvalidTaskAnnotationError(
+                "exact task annotation publication intent disappeared"
+            )
 
     def _upsert_task_annotation_row(self, annotation: TaskAnnotation) -> bool:
         row = self._connection.execute(
@@ -1144,6 +1622,93 @@ def _annotation_key(
     if not isinstance(sample_id, str) or not sample_id:
         raise InvalidQueryError("sample_id must not be blank")
     return corpus_sha256, sample_id, decoder_output_sha256
+
+
+def _nonblank_trimmed(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value or value.strip() != value:
+        raise InvalidTaskAnnotationError(
+            f"{label} must be a nonblank trimmed string"
+        )
+    return value
+
+
+def _validate_publication_intent(
+    intent: TaskAnnotationPublicationIntent,
+) -> TaskAnnotationPublicationIntent:
+    if not isinstance(intent, TaskAnnotationPublicationIntent):
+        raise InvalidTaskAnnotationError(
+            "publication intent must be a TaskAnnotationPublicationIntent"
+        )
+    producer = _nonblank_trimmed(intent.producer, "machine producer")
+    validate_sha256(intent.experiment_identity, "experiment_identity")
+    output_path = _canonical_absolute_path(
+        intent.output_path,
+        "publication output_path",
+    )
+    staged_path = _canonical_absolute_path(
+        intent.staged_path,
+        "publication staged_path",
+    )
+    if output_path == staged_path:
+        raise InvalidTaskAnnotationError(
+            "publication output and staged paths must be different"
+        )
+    if Path(output_path).parent != Path(staged_path).parent:
+        raise InvalidTaskAnnotationError(
+            "publication output and staged paths must share a directory"
+        )
+    if intent.prior_sha256 is not None:
+        validate_sha256(intent.prior_sha256, "prior_sha256")
+    validate_sha256(intent.intended_sha256, "intended_sha256")
+    return TaskAnnotationPublicationIntent(
+        producer=producer,
+        experiment_identity=intent.experiment_identity,
+        output_path=output_path,
+        staged_path=staged_path,
+        prior_sha256=intent.prior_sha256,
+        intended_sha256=intent.intended_sha256,
+    )
+
+
+def _canonical_absolute_path(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise InvalidTaskAnnotationError(
+            f"{label} must be a canonical absolute path"
+        )
+    path = Path(value)
+    if not path.is_absolute() or str(path.resolve()) != value:
+        raise InvalidTaskAnnotationError(
+            f"{label} must be a canonical absolute path"
+        )
+    return value
+
+
+def _publication_intent_parameters(
+    intent: TaskAnnotationPublicationIntent,
+) -> list[str | None]:
+    return [
+        intent.producer,
+        intent.experiment_identity,
+        intent.output_path,
+        intent.staged_path,
+        intent.prior_sha256,
+        intent.intended_sha256,
+    ]
+
+
+def _publication_intent_from_row(
+    row: _PublicationIntentRow,
+) -> TaskAnnotationPublicationIntent:
+    return _validate_publication_intent(
+        TaskAnnotationPublicationIntent(
+            producer=row[0],
+            experiment_identity=row[1],
+            output_path=row[2],
+            staged_path=row[3],
+            prior_sha256=row[4],
+            intended_sha256=row[5],
+        )
+    )
 
 
 def _normalize_tag_name(name: str) -> tuple[str, str]:

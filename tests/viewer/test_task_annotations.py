@@ -853,6 +853,8 @@ def test_reregister_replaces_only_supplied_run_task_membership(
             _task_identity("CurrentTask/5"),
             category="active",
         )
+        assert database.task_is_registered(old_annotation.identity)
+        assert database.task_is_registered(current_annotation.identity)
         assert (
             database.get_task_annotation(
                 "dataset/old",

@@ -4,11 +4,15 @@ from dr_code.viewer.analytics import ViewerAnalytics
 from dr_code.viewer.database import DatabaseSchemaError, ViewerDatabase
 from dr_code.viewer.domain import (
     Annotation,
+    CandidateTestFailureClassificationInput,
+    CandidateTestFailureClassificationInputs,
     IncompatibleRunsError,
     InvalidQueryError,
     InvalidTaskAnnotationError,
     MachineTaskAnnotationWriteOutcome,
     MachineTaskAnnotationWriteResult,
+    ParseFailureClassificationInput,
+    ParseFailureClassificationInputs,
     RunDescriptor,
     RunNotFoundError,
     RunValidationError,
@@ -24,12 +28,16 @@ from dr_code.viewer.domain import (
 
 __all__ = (
     "Annotation",
+    "CandidateTestFailureClassificationInput",
+    "CandidateTestFailureClassificationInputs",
     "DatabaseSchemaError",
     "IncompatibleRunsError",
     "InvalidQueryError",
     "InvalidTaskAnnotationError",
     "MachineTaskAnnotationWriteOutcome",
     "MachineTaskAnnotationWriteResult",
+    "ParseFailureClassificationInput",
+    "ParseFailureClassificationInputs",
     "RunDescriptor",
     "RunNotFoundError",
     "RunValidationError",

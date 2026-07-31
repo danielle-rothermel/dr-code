@@ -155,6 +155,7 @@ def write_bundle(
     task_namespace: str = "Task",
     corpus_path: Path | None = None,
     with_evaluation: bool = True,
+    parse_failures_are_nonblank: bool = True,
     no_code_causes: tuple[str | None, str | None, str | None] = (
         "primary",
         "alternate",
@@ -163,21 +164,43 @@ def write_bundle(
 ) -> RunDescriptor:
     root.mkdir()
     corpus = corpus_path or root / "corpus.parquet"
-    if corpus_path is None:
-        corpus_rows = [
+    parse_failure_ids = {
+        "no-code",
+        "no-code-alt",
+        "no-code-null",
+        "compile-fail",
+        "top-fail",
+    }
+    corpus_rows = [
+        (
+            sample_id,
+            resolved_task_id,
+            source_kind,
             (
-                sample_id,
-                f"{task_namespace}/{task_id.rsplit('/', 1)[1]}",
-                source_kind,
-                decoder_output,
-            )
-            for sample_id, task_id, source_kind, decoder_output in CORPUS_ROWS
-        ]
+                " \n"
+                if (
+                    not parse_failures_are_nonblank
+                    and sample_id in parse_failure_ids
+                )
+                else decoder_output
+            ),
+        )
+        for (
+            sample_id,
+            task_id,
+            source_kind,
+            decoder_output,
+        ) in CORPUS_ROWS
+        for resolved_task_id in (
+            f"{task_namespace}/{task_id.rsplit('/', 1)[1]}",
+        )
+    ]
+    if corpus_path is None:
         _write(corpus, CORPUS_SCHEMA, corpus_rows)
     run = root / "run"
     run.mkdir()
 
-    relations = _projected_relations(no_code_causes)
+    relations = _projected_relations(corpus_rows, no_code_causes)
     result_rows = relations["results"]
     for name, rows in relations.items():
         _write(
@@ -206,7 +229,7 @@ def write_bundle(
             "schema_hex": (
                 corpus_file.schema_arrow.serialize().to_pybytes().hex()
             ),
-            "expected_rows": len(CORPUS_ROWS),
+            "expected_rows": len(corpus_rows),
             "expected_row_groups": corpus_file.num_row_groups,
             "row_groups": row_groups,
         },
@@ -386,20 +409,24 @@ def sha256_file(path: Path) -> str:
 
 
 def _projected_relations(
+    corpus_rows: Sequence[tuple[str, str, str, str | None]],
     no_code_causes: tuple[str | None, str | None, str | None],
 ) -> dict[str, list[dict[str, object]]]:
     relations: dict[str, list[dict[str, object]]] = {
         name: [] for name in PROJECTED_ARTIFACT_SCHEMAS
     }
-    failure_causes = {
-        "blank": "blank",
-        "no-code": no_code_causes[0],
-        "no-code-alt": no_code_causes[1],
-        "no-code-null": no_code_causes[2],
-        "compile-fail": "syntax",
-        "top-fail": "no function",
+    failure_details = {
+        "blank": ("decoder_output_blank", "blank"),
+        "no-code": ("no_code_candidates", no_code_causes[0]),
+        "no-code-alt": ("no_code_candidates", no_code_causes[1]),
+        "no-code-null": ("no_code_candidates", no_code_causes[2]),
+        "compile-fail": ("no_compilable_candidate", "syntax"),
+        "top-fail": (
+            "no_top_level_function_candidate",
+            "no function",
+        ),
     }
-    for sample_id, _task_id, _source_kind, decoder_output in CORPUS_ROWS:
+    for sample_id, _task_id, _source_kind, decoder_output in corpus_rows:
         trace = (
             None
             if decoder_output is None
@@ -410,8 +437,12 @@ def _projected_relations(
             decoder_output,
             trace,
         )
-        if sample_id in failure_causes:
-            projected.results[0]["cause"] = failure_causes[sample_id]
+        failure_detail = failure_details.get(sample_id)
+        if (
+            failure_detail is not None
+            and projected.results[0]["outcome"] == failure_detail[0]
+        ):
+            projected.results[0]["cause"] = failure_detail[1]
         relations["results"].extend(projected.results)
         relations["candidates"].extend(projected.candidates)
         relations["step_facts"].extend(projected.step_facts)

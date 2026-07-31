@@ -50,11 +50,11 @@ _BODY = "def run_item(item_id, payload):\n    return {}\n"
 
 
 def _batch_request(
-    *, case_ids=("case_0", "case_1"), config="cfg"
+    *, case_ids=("case_0", "case_1"), config="cfg", payload_code="pass"
 ) -> BatchRequest:
     return BatchRequest(
         items=tuple(
-            BatchItem(item_id=cid, payload={"code": "pass"})
+            BatchItem(item_id=cid, payload={"code": payload_code})
             for cid in case_ids
         ),
         body_source=_BODY,
@@ -77,15 +77,18 @@ def _request(
     *,
     case_ids=("case_0", "case_1"),
     config="cfg",
+    payload_code="pass",
     computation_id: str = "humaneval-runner@v1",
     executor_identity: str = "dr-exec@1.2.3",
 ) -> ExecutionRequest:
-    batch = _batch_request(case_ids=case_ids, config=config)
+    batch = _batch_request(
+        case_ids=case_ids, config=config, payload_code=payload_code
+    )
     budgets = _budgets()
     identity = InvocationIdentity.of(
         executor_identity=executor_identity,
         source=batch.driver_source(),
-        input_text="",
+        input_text=batch.items_input_text(),
         budgets=budgets,
         environment=EnvironmentGrant.fixed({"OPENBLAS_NUM_THREADS": "1"}),
         profile=PROCESS_BOUNDARY_ONLY,
@@ -138,6 +141,28 @@ def test_cache_key_depends_on_each_identity_component(
     kwargs_a, kwargs_b
 ) -> None:
     assert _request(**kwargs_a).cache_key != _request(**kwargs_b).cache_key
+
+
+def test_cache_key_depends_on_item_payload_via_input_digest() -> None:
+    """Item payloads cross to the child as stdin ``input_text`` (not inlined
+    in the driver source), so they key the request through ``input_digest``
+    alone.
+
+    With item_ids AND config held fixed, driver_source is byte-identical
+    across payloads, so this distinction rides entirely on input_digest — the
+    dimension that the ``case_ids``/``config`` cases do not exercise. If the
+    identity ever reverts to feeding ``input_text=""``, two requests that
+    would run different candidate code collide on one key and a wrong outcome
+    is served.
+    """
+    a = _request(payload_code="pass")
+    b = _request(payload_code="return 1")
+    assert a.batch_request.driver_source() == b.batch_request.driver_source()
+    assert (
+        a.batch_request.items_input_text()
+        != b.batch_request.items_input_text()
+    )
+    assert a.cache_key != b.cache_key
 
 
 def test_cache_key_folds_in_executor_identity() -> None:
