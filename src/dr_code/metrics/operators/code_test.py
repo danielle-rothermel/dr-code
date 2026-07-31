@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from typing import Self
 
 from dr_exec import BatchResult, OverflowPolicy
-from pydantic import StrictInt, model_validator
+from pydantic import Field, StrictInt, model_validator
 
 from dr_code.humaneval import batch_runner
 from dr_code.humaneval.profiles import DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
@@ -97,14 +97,48 @@ class CodeTestSettings(OperatorSettings):
 
 
 class CodeTestResult(OperatorResult):
-    total_cases: int
-    passed_count: int
-    failed_count: int
-    error_count: int
-    timeout_count: int
+    total_cases: int = Field(ge=0)
+    passed_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    error_count: int = Field(ge=0)
+    timeout_count: int = Field(ge=0)
     coverage_complete: bool
-    function_count: int
+    function_count: int = Field(ge=0)
     best_function_name: str | None
+
+    @model_validator(mode="after")
+    def validate_relational_invariants(self) -> Self:
+        observed = (
+            self.passed_count
+            + self.failed_count
+            + self.error_count
+            + self.timeout_count
+        )
+        if observed > self.total_cases:
+            raise ValueError("observed case count must not exceed total_cases")
+        if self.function_count == 0:
+            if observed != 0:
+                raise ValueError(
+                    "zero-function result requires zero observed cases"
+                )
+            if self.best_function_name is not None:
+                raise ValueError(
+                    "zero-function result requires null best_function_name"
+                )
+            if self.coverage_complete:
+                raise ValueError(
+                    "zero-function result requires incomplete coverage"
+                )
+            return self
+        if not self.best_function_name:
+            raise ValueError(
+                "result with functions requires best_function_name"
+            )
+        if self.coverage_complete != (observed == self.total_cases):
+            raise ValueError(
+                "coverage_complete must equal complete case observation"
+            )
+        return self
 
 
 class CodeTest(MetricOperator[CodeTestSettings]):

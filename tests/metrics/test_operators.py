@@ -457,6 +457,52 @@ def test_compressed_level_is_part_of_identity() -> None:
 # ===========================================================================
 
 
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"passed_count": 3},
+        {"passed_count": 1, "coverage_complete": True},
+        {"coverage_complete": False},
+        {
+            "function_count": 0,
+            "best_function_name": None,
+            "coverage_complete": False,
+        },
+        {
+            "function_count": 0,
+            "passed_count": 0,
+            "best_function_name": "f",
+            "coverage_complete": False,
+        },
+        {
+            "function_count": 0,
+            "passed_count": 0,
+            "best_function_name": None,
+            "coverage_complete": True,
+        },
+    ],
+)
+def test_code_test_result_rejects_impossible_relations(
+    updates: dict[str, object],
+) -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics.operators.code_test import CodeTestResult
+
+    values = {
+        "total_cases": 2,
+        "passed_count": 2,
+        "failed_count": 0,
+        "error_count": 0,
+        "timeout_count": 0,
+        "coverage_complete": True,
+        "function_count": 1,
+        "best_function_name": "f",
+    }
+    with pytest.raises(ValidationError):
+        CodeTestResult.model_validate({**values, **updates}, strict=True)
+
+
 def _code_test_question(timeout_seconds: float = 5.0) -> object:
     return _question("code_test", on="input", timeout_seconds=timeout_seconds)
 
