@@ -2610,7 +2610,13 @@ def _export_artifacts(
         }
         _write_text(
             staged.manifest_path,
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            json.dumps(
+                manifest,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            )
+            + "\n",
         )
         _heartbeat(connection, lease_id)
         try:

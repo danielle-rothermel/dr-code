@@ -62,7 +62,7 @@ def humaneval() -> None:
         "required": ["task", "case_summary"],
         "$defs": definitions["$defs"],
     }
-    typer.echo(json.dumps(bundle, indent=2, sort_keys=True))
+    typer.echo(json.dumps(bundle, indent=2, sort_keys=True, allow_nan=False))
 
 
 if __name__ == "__main__":

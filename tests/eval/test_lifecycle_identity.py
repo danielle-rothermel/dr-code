@@ -100,11 +100,11 @@ def _components():
 def test_configs_have_stable_full_sha256_identities() -> None:
     expected = (
         "df81e5ad266c408bfc17ca576ce0e5febdb91b2e02e6ee4c298b1168936b641f",
-        "fb07c2deb04777f51edbd7a4f3e63138f2612137e3a65913bbd6942b9842ca1f",
-        "f2b7c8375e2500e516bee4e82ba6d7853182524b8c45602e7f56febc7ec73d37",
-        "369c6292de7a3688d9447cbef53dcdcb0ec4f536c845ffdc2fe34cf73014a250",
+        "e26fd8fd79c0e510c51a9ed84a2b7ec0b0f4299497350cd5c8759ae20d0299c6",
+        "3fd10aa89f51262f491b7a98c429b8ae1dbe142b1bf604bb61b2066c905ff81a",
+        "7fd81845dacc6c10d515160e8f6b60942c752d21e65e1927583fb586d6aeb0aa",
         "373b234c512b09f897fc42107cb7f6d7b848c5f6a48e4dc70d0ba39727e3522b",
-        "09da151b9a25ca1a5b5a003b1f35866781f10dfb237a61d7a13c71364ee049b3",
+        "2c3530320ea32f451e9b5734139b8558dd1f06d53737a481a4aeea8f12c6052b",
     )
     actual = tuple(item.config_identity_hash for item in _components())
     assert actual == expected

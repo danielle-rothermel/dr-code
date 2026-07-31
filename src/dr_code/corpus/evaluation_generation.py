@@ -164,7 +164,13 @@ def staged_current_switch(
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             stream.write(
-                json.dumps(generation.pointer, indent=2, sort_keys=True) + "\n"
+                json.dumps(
+                    generation.pointer,
+                    indent=2,
+                    sort_keys=True,
+                    allow_nan=False,
+                )
+                + "\n"
             )
             stream.flush()
             os.fsync(stream.fileno())

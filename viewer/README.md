@@ -1,8 +1,8 @@
 # `viewer/` — React code-visualization primitives
 
-This pnpm workspace contains the publishable `@dr-code/viewer` package and its
-private visual gallery. The package provides domain-agnostic React primitives;
-it is not included in the Python wheel.
+This pnpm workspace contains the publishable `@dr-code/viewer` primitives, a
+private visual gallery, and the dynamic preprocessing-analysis application.
+Frontend runtime data comes only from the local Python API.
 
 ## Public API
 
@@ -149,6 +149,53 @@ pnpm build
 pnpm test
 ```
 
-The recursive typecheck and build commands cover both the publishable package
-and the gallery. After component or style changes, also run the gallery and
-inspect both theme columns in a browser.
+The recursive checks cover the primitives, gallery, and preprocessing
+application.
+
+## Dynamic preprocessing application
+
+Create one JSON descriptor per immutable run. Its fields are exact: `label`,
+`corpus`, `preprocessing`, and optional `candidate_evaluation`. Relative paths
+are resolved from the descriptor:
+
+```json
+{
+  "label": "candidate",
+  "corpus": "../data/corpus.parquet",
+  "preprocessing": "../data/preprocessing/candidate",
+  "candidate_evaluation": "../data/evaluations/candidate"
+}
+```
+
+Build and serve it from the repository root:
+
+```bash
+cd viewer
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm build
+cd ..
+
+uv run dr-code viewer \
+  --run viewer/runs/candidate.json \
+  --database .runs/viewer.duckdb
+```
+
+The preprocessing build writes its ignored production output to
+`src/dr_code/viewer/static`. Release maintainers update the one immutable asset
+archive with the pinned Node 22 and pnpm 11.9.0 toolchain:
+
+```bash
+python3 scripts/build_viewer_assets.py
+```
+
+Source distributions carry that hash-checked archive. Wheel builds consume the
+archive without invoking Node, pnpm, or the frontend workspace, so direct
+source wheels and wheels rebuilt from an sdist contain the same package
+resources. Installed wheels also need no JavaScript toolchain.
+
+The service binds only to loopback. It validates all manifest hashes, schemas,
+and row counts before registration, keeps source Parquets external, and uses
+DuckDB only for run registrations, tags, and example annotations. Unknown
+frontend paths receive the SPA shell; `/api` paths never do.

@@ -2,9 +2,17 @@ exports/
 __pycache__/
 node_modules/
 viewer/packages/*/dist/
+src/dr_code/viewer/static/
 *.py[cod]
 *.cache
 .DS_Store
 *.swp
 .runs/
 .scratch/
+
+# Generated preprocessing viewer and validation artifacts
+analysis/preprocessing/
+analysis/preprocessing-comparisons/
+screenshots/
+viewer/packages/preprocessing-analysis/playwright-report/
+viewer/packages/preprocessing-analysis/test-results/

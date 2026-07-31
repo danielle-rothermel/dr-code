@@ -1,0 +1,164 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@dr-code/viewer", () => ({
+  CodeBlock: ({ code }: { code: string }) => <pre>{code}</pre>,
+  CodeDiff: () => <div>code diff</div>,
+  StatusBadge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+
+import { PreprocessingViewer } from "../src/app";
+import { candidateRun, detail, examples, fakeApi } from "./fixtures";
+
+afterEach(cleanup);
+
+describe("PreprocessingViewer", () => {
+  it("loads registered runs and drills into an exact waterfall stage", async () => {
+    const api = fakeApi();
+    render(<PreprocessingViewer api={api} />);
+
+    expect(await screen.findByRole("heading", { name: "Trace every stage back to examples" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect 7 examples at Nonblank output" }));
+
+    expect(await screen.findByRole("heading", { name: "sample-1" })).toBeTruthy();
+    expect(api.getExamples).toHaveBeenCalledWith("baseline", {
+      limit: 25,
+      offset: 0,
+      stage_id: "output_nonblank",
+    });
+    expect(screen.getByText("No candidate survived preprocessing.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Inspect 3 examples that did not reach Nonblank output",
+    }));
+    await waitFor(() => expect(api.getExamples).toHaveBeenCalledWith("baseline", {
+      limit: 25,
+      offset: 0,
+      stage_id: "lost:output_nonblank",
+    }));
+    expect(screen.getByRole("heading", { name: "Did not reach Nonblank output" })).toBeTruthy();
+  });
+
+  it("shows empty and backend error states", async () => {
+    const { rerender } = render(<PreprocessingViewer api={fakeApi({ getRuns: vi.fn().mockResolvedValue([]) })} />);
+    expect(await screen.findByRole("heading", { name: "No runs are registered" })).toBeTruthy();
+
+    rerender(<PreprocessingViewer api={fakeApi({ getRuns: vi.fn().mockRejectedValue(new Error("service unavailable")) })} />);
+    expect(await screen.findByText("service unavailable")).toBeTruthy();
+  });
+
+  it("explains an incompatible comparison and inspects compatible transitions", async () => {
+    const incompatibleApi = fakeApi({ compare: vi.fn().mockRejectedValue(new Error("Corpus fingerprints differ")) });
+    const { unmount } = render(<PreprocessingViewer api={incompatibleApi} />);
+    await screen.findByRole("heading", { name: "Trace every stage back to examples" });
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    expect(await screen.findByText("Corpus fingerprints differ")).toBeTruthy();
+    unmount();
+
+    const getExample = vi.fn(async (runId: string) => runId === candidateRun.run_id
+      ? { ...detail, outcome: "function_candidates_extracted", raw_decoder_output: "candidate output" }
+      : { ...detail, raw_decoder_output: "baseline output" });
+    const getExamples = vi.fn().mockResolvedValue(examples);
+    const api = fakeApi({ getExample, getExamples });
+    render(<PreprocessingViewer api={api} />);
+    await screen.findByRole("heading", { name: "Trace every stage back to examples" });
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+
+    const comparisonTable = await screen.findByRole("table", { name: "Corpus row comparison" });
+    expect((screen.getByLabelText("Before run") as HTMLSelectElement).value).toBe("baseline");
+    expect((screen.getByLabelText("After run") as HTMLSelectElement).value).toBe("candidate");
+    expect(api.compare).toHaveBeenCalledWith("baseline", "candidate");
+    expect(within(comparisonTable).getByRole("columnheader", {
+      name: "Before Baseline · preprocessing@1",
+    })).toBeTruthy();
+    expect(within(comparisonTable).getByRole("columnheader", {
+      name: "After Candidate · preprocessing@2",
+    })).toBeTruthy();
+    expect(within(comparisonTable).getByRole("columnheader", {
+      name: "Percentage Δ",
+    })).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Inspect 8 candidate examples at Candidates extracted",
+    }));
+    await waitFor(() => expect(getExamples).toHaveBeenCalledWith("candidate", {
+      limit: 25,
+      offset: 0,
+      stage_id: "has_extracted_candidate",
+    }));
+    await waitFor(() => expect(getExample).toHaveBeenCalledWith("candidate", "sample-1"));
+
+    const transitionMatrix = screen.getByRole("table", { name: "Terminal outcome transitions" });
+    expect(within(transitionMatrix).getByRole("rowheader", { name: /no compilable candidate/i })).toBeTruthy();
+    expect(within(transitionMatrix).getByRole("columnheader", { name: /function candidates extracted/i })).toBeTruthy();
+    fireEvent.click(within(transitionMatrix).getByRole("button", { name: /no compilable candidate.*function candidates extracted.*1/i }));
+
+    await waitFor(() => expect(getExamples).toHaveBeenCalledWith("baseline", {
+      baseline_outcome: "no_compilable_candidate",
+      candidate_outcome: "function_candidates_extracted",
+      compare_run_id: candidateRun.run_id,
+      limit: 25,
+      offset: 0,
+    }));
+    await waitFor(() => {
+      expect(getExample).toHaveBeenCalledWith("baseline", "sample-1");
+      expect(getExample).toHaveBeenCalledWith("candidate", "sample-1");
+    });
+    expect(within(screen.getByRole("region", { name: "Baseline example detail" })).getByText("baseline output")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Candidate example detail" })).getByText("candidate output")).toBeTruthy();
+  });
+
+  it("holds top-level surface and run navigation when a review flush fails", async () => {
+    const annotatedDetail = {
+      ...detail,
+      annotation: { note: null, tags: [], verdict: "should_be_parseable" as const },
+    };
+    const api = fakeApi({
+      getExample: vi.fn().mockResolvedValue(annotatedDetail),
+      putAnnotation: vi.fn().mockRejectedValue(new Error("database is locked")),
+    });
+    render(<PreprocessingViewer api={api} />);
+    await screen.findByRole("heading", { name: "Trace every stage back to examples" });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByRole("article", { name: "Example sample-1" });
+
+    fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "keep this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Waterfall" }));
+    expect(await screen.findByText("Save failed")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Triage terminal preprocessing failures" })).toBeTruthy();
+
+    const runSelect = screen.getByLabelText("Active run") as HTMLSelectElement;
+    fireEvent.change(runSelect, { target: { value: "candidate" } });
+    await waitFor(() => expect(runSelect.value).toBe("baseline"));
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("keep this draft");
+  });
+
+  it("holds App-mounted review page navigation when a card flush fails", async () => {
+    const firstDetail = {
+      ...detail,
+      annotation: { note: null, tags: [], verdict: "should_be_parseable" as const },
+    };
+    const secondDetail = { ...detail, decoder_output_sha256: "second-output", sample_id: "sample-2" };
+    const api = fakeApi({
+      getReviewExamples: vi.fn(async (_runId, query) => ({
+        items: [query.offset === 0 ? firstDetail : secondDetail],
+        limit: query.limit,
+        offset: query.offset,
+        total: 11,
+      })),
+      putAnnotation: vi.fn().mockRejectedValue(new Error("database is locked")),
+    });
+    render(<PreprocessingViewer api={api} />);
+    await screen.findByRole("heading", { name: "Trace every stage back to examples" });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByRole("article", { name: "Example sample-1" });
+
+    fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "keep internal draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    expect(await screen.findByText("Save failed")).toBeTruthy();
+    expect(screen.getByRole("article", { name: "Example sample-1" })).toBeTruthy();
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("keep internal draft");
+  });
+});

@@ -463,19 +463,48 @@ def validate_origin_paths(value: object) -> list[dict[str, object]]:
                 raise ValueError(
                     "extraction operation details_json must be a string"
                 )
-            try:
-                details = json.loads(details_json)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    "extraction operation details_json is invalid JSON"
-                ) from exc
-            if not isinstance(details, dict):
-                raise ValueError(
-                    "extraction operation details_json must encode an object"
-                )
+            details = _canonical_json_object(
+                details_json,
+                label="extraction operation details_json",
+            )
             path.append({"kind": kind, "details": details})
         normalized.append({"path": path})
     return normalized
+
+
+class _DuplicateJsonKeyError(ValueError):
+    pass
+
+
+def _canonical_json_object(value: str, *, label: str) -> dict[str, object]:
+    try:
+        decoded = json.loads(
+            value,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except (json.JSONDecodeError, _DuplicateJsonKeyError, ValueError) as exc:
+        raise ValueError(f"{label} is invalid JSON") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError(f"{label} must encode an object")
+    if value != _canonical_json(decoded):
+        raise ValueError(f"{label} is not canonical JSON")
+    return decoded
+
+
+def _unique_json_object(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise _DuplicateJsonKeyError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"invalid JSON constant: {value}")
 
 
 def read_part_manifest(part_dir: Path) -> dict[str, object]:

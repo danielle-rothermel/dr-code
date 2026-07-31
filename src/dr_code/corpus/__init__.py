@@ -35,6 +35,20 @@ from dr_code.corpus.preprocessing_run import (
     CorpusRunError,
     run_preprocessing_corpus,
 )
+from dr_code.corpus.preprocessing_analysis import (
+    PreprocessingAnalysisArtifacts,
+    PreprocessingAnalysisError,
+    analyze_preprocessing_corpus,
+)
+from dr_code.corpus.preprocessing_comparison import (
+    PreprocessingComparisonArtifacts,
+    PreprocessingComparisonError,
+    compare_preprocessing_runs,
+)
+from dr_code.corpus.run_descriptor import (
+    RunDescriptor,
+    RunValidationError,
+)
 
 __all__ = [
     "AtomicProjectedPartWriter",
@@ -49,12 +63,20 @@ __all__ = [
     "PROJECTED_ARTIFACT_SCHEMAS",
     "ProjectedArtifacts",
     "ProjectedPart",
+    "PreprocessingAnalysisArtifacts",
+    "PreprocessingAnalysisError",
+    "PreprocessingComparisonArtifacts",
+    "PreprocessingComparisonError",
     "REJECTIONS_SCHEMA",
     "RESULTS_SCHEMA",
     "STEP_FACTS_SCHEMA",
+    "RunDescriptor",
+    "RunValidationError",
+    "analyze_preprocessing_corpus",
     "combine_projected_parts",
     "candidate_evaluation_identity",
     "candidate_evaluation_key",
+    "compare_preprocessing_runs",
     "evaluate_preprocessing_candidates",
     "project_preprocessing_result",
     "resolve_current_generation",

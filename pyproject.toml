@@ -12,11 +12,16 @@ dependencies = [
     "dr-exec",
     "dr-serialize==0.1.0",
     "duckdb>=1.5.5",
+    "fastapi>=0.139.2",
     "pyarrow>=23.0.1",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
+    "uvicorn[standard]>=0.51.0",
     "zstandard>=0.25.0",
 ]
+
+[project.scripts]
+dr-code = "dr_code.viewer.cli:app"
 
 [tool.uv.sources]
 # Local path source during the cutover development phase. The path is
@@ -34,9 +39,34 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dr_code"]
+exclude = [
+    "/src/dr_code/viewer/prebuilt_viewer_assets.sha256",
+    "/src/dr_code/viewer/prebuilt_viewer_assets.tar.gz",
+    "/src/dr_code/viewer/static",
+]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.hatch.build.targets.sdist]
+skip-excluded-dirs = true
+include = [
+    "/.gitignore",
+    "/.python-version",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/README.md",
+    "/hatch_build.py",
+    "/pyproject.toml",
+    "/scripts",
+    "/src",
+    "/tests",
+    "/uv.lock",
+    "/viewer",
+]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-timeout>=2.4.0",
     "ruff>=0.15.18",
@@ -45,6 +75,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]
 line-length = 79

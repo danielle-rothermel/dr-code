@@ -60,6 +60,19 @@ def test_schema_two_origin_paths_require_ordered_path() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "details_json",
+    ['{"value":NaN}', '{"value":Infinity}', '{"value":1,"value":2}'],
+)
+def test_origin_details_reject_noncanonical_json_constants_and_duplicates(
+    details_json: str,
+) -> None:
+    with pytest.raises(ValueError, match="invalid JSON"):
+        validate_origin_paths(
+            [{"path": [{"kind": "raw", "details_json": details_json}]}]
+        )
+
+
 def test_projected_part_has_exact_hashed_relation_manifest(
     tmp_path: Path,
 ) -> None:

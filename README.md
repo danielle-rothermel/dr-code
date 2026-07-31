@@ -25,3 +25,33 @@ credential, process, and network reach; a payload writing directly to a file
 descriptor can still reach the protocol channel. Run evaluations only on
 disposable workers whose permissions, network access, resources, and lifetime
 are constrained externally.
+
+## Corpus analysis and viewer
+
+Completed preprocessing runs are immutable manifest-backed bundles containing
+`results.parquet`, `candidates.parquet`, `step_facts.parquet`, and
+`rejections.parquet`. Candidate evaluations may add their own complete
+manifest plus membership and result Parquets.
+
+Generate compact summaries and schema-pinned comparison relations with:
+
+```bash
+uv run python scripts/analyze_preprocessing_corpus.py \
+  --corpus /data/corpus.parquet \
+  --run-dir /data/preprocessing/run-id \
+  --candidate-evaluation /data/evaluations/run-id \
+  --output-dir analysis/preprocessing/run-id
+
+uv run python scripts/compare_preprocessing_runs.py \
+  --corpus /data/corpus.parquet \
+  --before-run /data/preprocessing/before \
+  --after-run /data/preprocessing/after \
+  --output-dir analysis/preprocessing-comparisons/before--after
+```
+
+The local viewer queries those external Parquets dynamically and stores only
+run registrations, tags, and example annotations in DuckDB. See
+[`viewer/README.md`](viewer/README.md) for the descriptor contract, build, and
+loopback-only serving instructions. Published wheels include the complete
+frontend, so an installed `dr-code viewer` does not depend on a repository
+checkout or a separate static-assets directory.
