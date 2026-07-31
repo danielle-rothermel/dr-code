@@ -1,10 +1,20 @@
-"""HumanEval execution over the bounded Python process primitive.
+"""HumanEval execution over dr-exec's batch driver kit and NDJSON protocol.
 
-The adapter owns runner payload/result validation, partial-result semantics,
-and candidate-versus-harness failure attribution. Candidate code has the
-worker's filesystem, credential, process, and network permissions, and direct
-file-descriptor writes can corrupt the stdout protocol. Run it only on
-disposable workers constrained outside this process boundary.
+The adapter owns HumanEval case semantics and candidate-versus-harness failure
+attribution; dr-exec owns spawn, budgets, capture, batch transport, and the
+per-item NDJSON delivery that makes partial results survive a child's death.
+
+One batch is one function's cases run in one warm child: each case is a
+``BatchItem`` whose result the kit emits the moment it is produced, so a late
+death, a wall-clock deadline, or an output overflow costs only the unfinished
+tail — completed cases are already delivered. The parent branches on dr-exec's
+attribution *before* reading any transcript: a budget or infrastructure outcome
+is decided as data, never mistaken for a protocol error.
+
+Candidate code has the worker's filesystem, credential, process, and network
+permissions; direct file-descriptor writes to the protocol channel are a
+declared limit of the containment profile. Run it only on disposable workers
+constrained outside this process boundary.
 """
 
 from __future__ import annotations
@@ -12,21 +22,33 @@ from __future__ import annotations
 import ast
 import json
 import signal
-import time
 from dataclasses import dataclass
 from functools import cache
 from importlib.resources import files
-from typing import Final
+from typing import Final, Protocol
 
+from dr_exec import (
+    HERMETIC,
+    PROCESS_BOUNDARY_ONLY,
+    Attribution,
+    BatchItem,
+    BatchRequest,
+    BatchResult,
+    BudgetAxis,
+    Budgets,
+    ContainmentProfile,
+    EnvironmentGrant,
+    ItemResult,
+    OutputBudget,
+    OverflowPolicy,
+    ProtocolChannelBudget,
+    PythonRuntime,
+    Records,
+    RunResult,
+    run_batch,
+)
 from pydantic import TypeAdapter, ValidationError
 
-from dr_code.execution.subprocess import (
-    PythonSubprocessRunner,
-    SubprocessCompletedProcess,
-    SubprocessOutputLimitError,
-    SubprocessTimeoutError,
-    run_python_subprocess,
-)
 from dr_code.humaneval.parsed_tests import (
     ParsedTests,
     SingleCaseCheck,
@@ -42,18 +64,104 @@ from dr_code.humaneval.task import (
     HumanEvalTask,
 )
 
+# dr-code's declared execution budgets, at the site where the protocol
+# knowledge lives (adjudication artifact 4). Output overflow is FAIL: the
+# payload stream is killed and budget-attributed, and dr-exec retains the
+# captured-so-far bytes with a truncation mark.
+MAX_HUMANEVAL_INPUT_BYTES: Final[int] = 4 * 1024 * 1024
+MAX_HUMANEVAL_OUTPUT_BYTES: Final[int] = 1024 * 1024
+
+# Per-case protocol result bound: one case's delivered JSON result line. The
+# in-child clip keeps a flooding case's own result reportable rather than
+# voiding the batch.
+MAX_HUMANEVAL_ITEM_RESULT_BYTES: Final[int] = 128 * 1024
+
+# The containment profile and runtime dr-code declares for HumanEval batches.
+HUMANEVAL_PROFILE: Final[ContainmentProfile] = PROCESS_BOUNDARY_ONLY
+HUMANEVAL_RUNTIME: Final[PythonRuntime] = HERMETIC
+
+# A determinism and thread-oversubscription control, granted explicitly at the
+# Python-execution call site (adjudication requirement 14).
+HUMANEVAL_ENVIRONMENT: Final[EnvironmentGrant] = EnvironmentGrant.fixed(
+    {"OPENBLAS_NUM_THREADS": "1"}
+)
+
+# The batch config schema the driver body may validate its payloads against.
+_ITEM_SCHEMA: Final[str] = "humaneval-case@v1"
+
+# Returncodes that mean the candidate's own process died, not a clean exit:
+# an external SIGKILL or an interpreter SIGSEGV. Scored against the candidate.
 CANDIDATE_KILL_RETURNCODES: Final[frozenset[int]] = frozenset(
     {-int(signal.SIGKILL), -int(signal.SIGSEGV)}
 )
 
 
-@dataclass(frozen=True, slots=True)
-class HumanEvalBatchRequest:
-    """Trusted runner source and opaque input for one HumanEval batch."""
+class BatchExecutor(Protocol):
+    """The batch-running executor the adapter drives (real or fake)."""
 
-    source: str
-    input_text: str
-    timeout_seconds: float
+    def run_batch(
+        self,
+        request: BatchRequest,
+        *,
+        profile: ContainmentProfile,
+        budgets: Budgets,
+        records: Records,
+        runtime: PythonRuntime,
+        environment: EnvironmentGrant,
+    ) -> BatchResult: ...
+
+
+class _ProductionExecutor:
+    """Adapts dr-exec's ``run_batch`` entry point to the executor protocol.
+
+    The real executor is a module function, not an object; this thin object
+    lets the same call sites drive either it or a ``FakeExecutor`` without a
+    branch. It claims no identity of its own — the run it produces carries
+    ``EXECUTOR_IDENTITY``.
+    """
+
+    def run_batch(
+        self,
+        request: BatchRequest,
+        *,
+        profile: ContainmentProfile,
+        budgets: Budgets,
+        records: Records,
+        runtime: PythonRuntime,
+        environment: EnvironmentGrant,
+    ) -> BatchResult:
+        return run_batch(
+            request,
+            profile=profile,
+            budgets=budgets,
+            records=records,
+            runtime=runtime,
+            environment=environment,
+        )
+
+
+PRODUCTION_EXECUTOR: Final[_ProductionExecutor] = _ProductionExecutor()
+"""The real dr-exec batch executor, wrapped for the executor protocol."""
+
+
+@dataclass(frozen=True, slots=True)
+class HumanEvalBatchPlan:
+    """One function's dr-exec batch request plus the budgets it declares."""
+
+    request: BatchRequest
+    budgets: Budgets
+
+
+def human_eval_budgets(timeout_seconds: float) -> Budgets:
+    """dr-code's declared budgets for a HumanEval batch of one function."""
+    return Budgets(
+        wall_clock=timeout_seconds,
+        output=OutputBudget(
+            limit_bytes=MAX_HUMANEVAL_OUTPUT_BYTES,
+            overflow_policy=OverflowPolicy.FAIL,
+        ),
+        input=MAX_HUMANEVAL_INPUT_BYTES,
+    )
 
 
 def evaluate_human_eval_code(
@@ -61,8 +169,9 @@ def evaluate_human_eval_code(
     task: HumanEvalTask,
     candidate_code: str,
     timeout_seconds: float,
+    executor: BatchExecutor,
+    records: Records,
     candidate_ast: ast.Module | None = None,
-    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
 ) -> EvaluationTaskResult:
     parsed_tests = require_parsed_tests(task)
     function_names = top_level_function_names(
@@ -70,35 +179,19 @@ def evaluate_human_eval_code(
         parsed_module=candidate_ast,
     )
     checks = list(parsed_tests.iter_checks(candidate_name="candidate"))
-    runner_source = runner_script()
     results: list[EvaluationCaseResult] = []
     for function_name in function_names:
-        try:
-            results.extend(
-                run_subprocess_batch(
-                    task=task,
-                    candidate_code=candidate_code,
-                    function_name=function_name,
-                    timeout_seconds=timeout_seconds,
-                    checks=checks,
-                    runner_source=runner_source,
-                    run_in_subprocess=run_in_subprocess,
-                )
+        results.extend(
+            run_function_batch(
+                task=task,
+                candidate_code=candidate_code,
+                function_name=function_name,
+                timeout_seconds=timeout_seconds,
+                executor=executor,
+                records=records,
+                checks=checks,
             )
-        except EvaluationHarnessError as exc:
-            evaluation = EvaluationTaskResult(
-                task_id=task.task_id,
-                entry_point=task.entry_point,
-                function_names=function_names,
-                total_cases=len(parsed_tests.cases),
-                results=[*results, *exc.case_results],
-            )
-            raise EvaluationHarnessError(
-                str(exc),
-                case_results=exc.case_results,
-                evaluation=evaluation,
-                cause=exc.cause or exc,
-            ) from exc
+        )
     return EvaluationTaskResult(
         task_id=task.task_id,
         entry_point=task.entry_point,
@@ -121,85 +214,55 @@ def top_level_function_names(
     ]
 
 
-def run_subprocess_batch(
+def run_function_batch(
     *,
     task: HumanEvalTask,
     candidate_code: str,
     function_name: str,
     timeout_seconds: float,
+    executor: BatchExecutor,
+    records: Records,
     checks: list[SingleCaseCheck] | None = None,
-    runner_source: str | None = None,
-    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
 ) -> list[EvaluationCaseResult]:
-    request = build_human_eval_batch_request(
+    plan = build_human_eval_batch_plan(
         task=task,
         candidate_code=candidate_code,
         function_name=function_name,
         timeout_seconds=timeout_seconds,
         checks=checks,
-        runner_source=runner_source,
     )
-    started_at = time.perf_counter()
-    try:
-        completed = run_in_subprocess(
-            source=request.source,
-            input_text=request.input_text,
-            timeout_seconds=request.timeout_seconds,
-        )
-    except SubprocessTimeoutError:
-        return timeout_results(
-            task=task,
-            function_name=function_name,
-            timeout_seconds=request.timeout_seconds,
-        )
-    except SubprocessOutputLimitError as exc:
-        return error_results(
-            task=task,
-            function_name=function_name,
-            message=f"{type(exc).__name__}: {exc}",
-            elapsed_seconds=time.perf_counter() - started_at,
-        )
-    except Exception as exc:
-        elapsed_seconds = time.perf_counter() - started_at
-        case_results = error_results(
-            task=task,
-            function_name=function_name,
-            message=f"{type(exc).__name__}: {exc}",
-            elapsed_seconds=elapsed_seconds,
-        )
-        raise EvaluationHarnessError(
-            "subprocess execution failed",
-            case_results=case_results,
-            cause=exc,
-        ) from exc
-    elapsed_seconds = time.perf_counter() - started_at
-
-    return interpret_subprocess_batch_result(
+    result = executor.run_batch(
+        plan.request,
+        profile=HUMANEVAL_PROFILE,
+        budgets=plan.budgets,
+        records=records,
+        runtime=HUMANEVAL_RUNTIME,
+        environment=HUMANEVAL_ENVIRONMENT,
+    )
+    return interpret_batch_result(
         task=task,
         function_name=function_name,
-        completed=completed,
-        elapsed_seconds=elapsed_seconds,
+        result=result,
+        timeout_seconds=timeout_seconds,
     )
 
 
-def build_human_eval_batch_request(
+def build_human_eval_batch_plan(
     *,
     task: HumanEvalTask,
     candidate_code: str,
     function_name: str,
     timeout_seconds: float,
     checks: list[SingleCaseCheck] | None = None,
-    runner_source: str | None = None,
-) -> HumanEvalBatchRequest:
-    """Build the complete subprocess request for one HumanEval batch."""
-
+) -> HumanEvalBatchPlan:
+    """Build the dr-exec batch request and budgets for one function."""
     parsed_tests = require_parsed_tests(task)
     check_payloads = (
         checks
         if checks is not None
         else list(parsed_tests.iter_checks(candidate_name="candidate"))
     )
-    payload = HumanEvalRunnerPayload(
+    identity = HumanEvalRunnerPayload(
         task_id=task.task_id,
         candidate_code=candidate_code,
         support_code=parsed_tests.support_code,
@@ -207,159 +270,225 @@ def build_human_eval_batch_request(
         test_type=parsed_tests.test_type,
         checks=check_payloads,
     )
-    return HumanEvalBatchRequest(
-        source=runner_source or runner_script(),
-        input_text=payload.model_dump_json(),
-        timeout_seconds=timeout_seconds,
+    items = tuple(
+        BatchItem(item_id=check.case_id, payload=check.model_dump(mode="json"))
+        for check in check_payloads
+    )
+    request = BatchRequest(
+        items=items,
+        body_source=compose_body(
+            candidate_code=candidate_code,
+            support_code=parsed_tests.support_code,
+            function_name=function_name,
+        ),
+        item_schema=_ITEM_SCHEMA,
+        config=json.loads(identity.model_dump_json()),
+        channel_budget=ProtocolChannelBudget(
+            item_result_bytes=MAX_HUMANEVAL_ITEM_RESULT_BYTES,
+        ),
+    )
+    return HumanEvalBatchPlan(
+        request=request,
+        budgets=human_eval_budgets(timeout_seconds),
     )
 
 
-def interpret_subprocess_batch_result(
+def compose_body(
+    *,
+    candidate_code: str,
+    support_code: str,
+    function_name: str,
+) -> str:
+    """Bind the candidate/support/function literals into the driver body.
+
+    The shared code travels baked into the body source rather than per item:
+    every case in the batch runs the same candidate, so the body defines
+    ``run_item`` over one namespace built once at load.
+    """
+    bindings = "\n".join(
+        (
+            f"_HE_CANDIDATE_CODE = {json.dumps(candidate_code)}",
+            f"_HE_SUPPORT_CODE = {json.dumps(support_code)}",
+            f"_HE_FUNCTION_NAME = {json.dumps(function_name)}",
+        )
+    )
+    return f"{bindings}\n{driver_body_template()}"
+
+
+def interpret_batch_result(
     *,
     task: HumanEvalTask,
     function_name: str,
-    completed: SubprocessCompletedProcess,
-    elapsed_seconds: float,
+    result: BatchResult,
+    timeout_seconds: float,
 ) -> list[EvaluationCaseResult]:
-    """Interpret one completed subprocess through the HumanEval protocol."""
+    """Map one dr-exec batch result to HumanEval case results.
 
-    parsed_tests = require_parsed_tests(task)
-    if completed.returncode in CANDIDATE_KILL_RETURNCODES:
-        message = (
-            "subprocess killed candidate execution "
-            f"(exit {completed.returncode}: external kill or interpreter crash)"
-        )
-        detail = completed.stderr.strip()
-        if detail:
-            message = f"{message}: {detail}"
-        return error_results(
+    The attribution pre-branch runs first: a wall-clock budget outcome is a
+    per-case timeout, and an executor, channel, machine, or absence outcome is
+    a harness failure that never scores against the candidate. Only then are
+    the delivered per-item results read; a case that never reported is
+    synthesized from the run's benign cause — an output-budget death or a
+    candidate-process crash score the tail as errors, while a clean exit that
+    simply reported fewer cases is incomplete coverage, not a fault.
+
+    A delivered item whose payload the case schema rejects is a harness
+    failure the raising lane surfaces; the metrics lane catches it and scores
+    it as candidate case data.
+    """
+    run = result.run
+    attribution = run.outcome.attribution
+
+    if _is_wall_clock_budget(run):
+        return timeout_results(
             task=task,
             function_name=function_name,
-            message=message,
-            elapsed_seconds=elapsed_seconds,
-        )
-    if completed.returncode != 0:
-        message = completed.stderr.strip() or completed.stdout.strip()
-        case_results = error_results(
-            task=task,
-            function_name=function_name,
-            message=message,
-            elapsed_seconds=elapsed_seconds,
-        )
-        raise EvaluationHarnessError(
-            "runner subprocess exited nonzero",
-            case_results=case_results,
-        )
-    try:
-        raw_results = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        case_results = error_results(
-            task=task,
-            function_name=function_name,
-            message=f"Could not decode runner output: {exc}",
-            elapsed_seconds=elapsed_seconds,
-        )
-        raise EvaluationHarnessError(
-            "runner output was not valid JSON",
-            case_results=case_results,
-            cause=exc,
-        ) from exc
-    if not isinstance(raw_results, list):
-        case_results = error_results(
-            task=task,
-            function_name=function_name,
-            message=(
-                "Invalid runner output: expected a JSON list of case results"
-            ),
-            elapsed_seconds=elapsed_seconds,
-        )
-        raise EvaluationHarnessError(
-            "runner output had invalid shape",
-            case_results=case_results,
+            timeout_seconds=timeout_seconds,
         )
 
-    adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
-    expected_case_ids = {case.case_id for case in parsed_tests.cases}
-    seen_case_ids: set[str] = set()
-    results: list[EvaluationCaseResult] = []
-    for item in raw_results:
-        try:
-            runner_result = adapter.validate_python(item)
-        except ValidationError as exc:
-            case_id = (
-                str(item["case_id"])
-                if isinstance(item, dict) and "case_id" in item
-                else f"case_{len(results)}"
-            )
-            metadata: dict[str, str] = {}
-            for case in parsed_tests.cases:
-                if case.case_id == case_id:
-                    metadata = case_metadata(parsed_tests, case)
-                    break
-            results.append(
-                EvaluationCaseResult(
-                    task_id=task.task_id,
-                    case_id=case_id,
-                    function_name=function_name,
-                    status=EvaluationCaseStatus.ERROR,
-                    message=f"Invalid runner output: {exc}",
-                    test_type=parsed_tests.test_type,
-                    input_repr=metadata.get("input_repr", ""),
-                    expected_output_repr=metadata.get(
-                        "expected_output_repr",
-                        "",
-                    ),
-                    actual_output_repr=metadata.get(
-                        "actual_output_repr",
-                        "",
-                    ),
-                    elapsed_seconds=elapsed_seconds,
-                )
-            )
-            raise EvaluationHarnessError(
-                "runner output case failed validation",
-                case_results=results,
-                cause=exc,
-            ) from exc
-        if (
-            runner_result.case_id not in expected_case_ids
-            or runner_result.case_id in seen_case_ids
-        ):
-            results.append(
-                EvaluationCaseResult(
-                    task_id=task.task_id,
-                    case_id=runner_result.case_id,
-                    function_name=function_name,
-                    status=EvaluationCaseStatus.ERROR,
-                    message=(
-                        "Invalid runner output: duplicate or unknown case id "
-                        f"{runner_result.case_id!r}"
-                    ),
-                    test_type=parsed_tests.test_type,
-                    elapsed_seconds=elapsed_seconds,
-                )
-            )
-            raise EvaluationHarnessError(
-                "runner output contained duplicate or unknown case ids",
-                case_results=results,
-            )
-        seen_case_ids.add(runner_result.case_id)
-        results.append(
-            EvaluationCaseResult(
-                task_id=task.task_id,
-                case_id=runner_result.case_id,
+    if attribution not in (Attribution.PAYLOAD, Attribution.BUDGET):
+        raise EvaluationHarnessError(
+            f"runner batch failed with {attribution.value} attribution",
+            case_results=error_results(
+                task=task,
                 function_name=function_name,
-                status=runner_result.status,
-                message=runner_result.message,
-                test_type=parsed_tests.test_type,
-                input_repr=runner_result.input_repr,
-                expected_output_repr=runner_result.expected_output_repr,
-                actual_output_repr=runner_result.actual_output_repr,
-                elapsed_seconds=runner_result.elapsed_seconds,
-                timeout_seconds=runner_result.timeout_seconds,
+                message=(
+                    f"runner batch failed with {attribution.value} attribution"
+                ),
+            ),
+        )
+
+    results = _delivered_case_results(
+        task=task,
+        function_name=function_name,
+        result=result,
+    )
+    synthesized_status, synthesized_message = _synthesized_disposition(run)
+    if synthesized_status is not None:
+        for case_id in result.missing_item_ids:
+            results.append(
+                _case_result(
+                    task=task,
+                    function_name=function_name,
+                    case_id=case_id,
+                    status=synthesized_status,
+                    message=synthesized_message,
+                )
+            )
+    # A clean exit that reported fewer cases is incomplete coverage: the
+    # missing cases are left absent, and coverage_complete reads False.
+    return results
+
+
+def _delivered_case_results(
+    *,
+    task: HumanEvalTask,
+    function_name: str,
+    result: BatchResult,
+) -> list[EvaluationCaseResult]:
+    parsed_tests = require_parsed_tests(task)
+    adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
+    results: list[EvaluationCaseResult] = []
+    for item in result.results:
+        results.append(
+            _case_from_item(
+                task=task,
+                function_name=function_name,
+                parsed_tests=parsed_tests,
+                item=item,
+                adapter=adapter,
             )
         )
     return results
+
+
+def _case_from_item(
+    *,
+    task: HumanEvalTask,
+    function_name: str,
+    parsed_tests: ParsedTests,
+    item: ItemResult,
+    adapter: TypeAdapter[HumanEvalRunnerCaseOutput],
+) -> EvaluationCaseResult:
+    # A body that raised arrives as a kit error payload: the candidate's own
+    # traceback, preserved as an ERROR case scored against the candidate.
+    error_text = item.error_text
+    if error_text is not None:
+        return _case_result(
+            task=task,
+            function_name=function_name,
+            case_id=item.item_id,
+            status=EvaluationCaseStatus.ERROR,
+            message=error_text,
+            metadata=_case_metadata(parsed_tests, item.item_id),
+        )
+    payload = dict(item.payload) if isinstance(item.payload, dict) else {}
+    payload["case_id"] = item.item_id
+    try:
+        parsed = adapter.validate_python(payload)
+    except ValidationError as exc:
+        error = _case_result(
+            task=task,
+            function_name=function_name,
+            case_id=item.item_id,
+            status=EvaluationCaseStatus.ERROR,
+            message=f"Invalid runner output: {exc}",
+            metadata=_case_metadata(parsed_tests, item.item_id),
+        )
+        raise EvaluationHarnessError(
+            "runner output case failed validation",
+            case_results=[error],
+            cause=exc,
+        ) from exc
+    return EvaluationCaseResult(
+        task_id=task.task_id,
+        case_id=parsed.case_id,
+        function_name=function_name,
+        status=parsed.status,
+        message=parsed.message,
+        test_type=parsed_tests.test_type,
+        input_repr=parsed.input_repr,
+        expected_output_repr=parsed.expected_output_repr,
+        actual_output_repr=parsed.actual_output_repr,
+        elapsed_seconds=parsed.elapsed_seconds,
+        timeout_seconds=parsed.timeout_seconds,
+    )
+
+
+def _synthesized_disposition(
+    run: RunResult,
+) -> tuple[EvaluationCaseStatus | None, str]:
+    """How an unreported case is scored, from the run's outcome.
+
+    Returns ``(None, "")`` when the run itself carries no benign cause for a
+    missing case — that absence is a harness fault the caller raises on.
+    """
+    attribution = run.outcome.attribution
+    if (
+        attribution is Attribution.BUDGET
+        and run.outcome.violated_axis is BudgetAxis.OUTPUT
+    ):
+        return (
+            EvaluationCaseStatus.ERROR,
+            "subprocess output budget exceeded before this case reported",
+        )
+    if run.returncode in CANDIDATE_KILL_RETURNCODES:
+        message = (
+            "subprocess killed candidate execution "
+            f"(exit {run.returncode}: external kill or interpreter crash)"
+        )
+        detail = run.stderr.strip()
+        if detail:
+            message = f"{message}: {detail}"
+        return (EvaluationCaseStatus.ERROR, message)
+    return (None, "")
+
+
+def _is_wall_clock_budget(run: RunResult) -> bool:
+    return (
+        run.outcome.attribution is Attribution.BUDGET
+        and run.outcome.violated_axis is BudgetAxis.WALL_CLOCK
+    )
 
 
 def timeout_results(
@@ -418,6 +547,34 @@ def error_results(
     return results
 
 
+def _case_result(
+    *,
+    task: HumanEvalTask,
+    function_name: str,
+    case_id: str,
+    status: EvaluationCaseStatus,
+    message: str,
+    metadata: dict[str, str] | None = None,
+) -> EvaluationCaseResult:
+    parsed_tests = require_parsed_tests(task)
+    resolved = (
+        metadata
+        if metadata is not None
+        else _case_metadata(parsed_tests, case_id)
+    )
+    return EvaluationCaseResult(
+        task_id=task.task_id,
+        case_id=case_id,
+        function_name=function_name,
+        status=status,
+        message=message,
+        test_type=parsed_tests.test_type,
+        input_repr=resolved.get("input_repr", ""),
+        expected_output_repr=resolved.get("expected_output_repr", ""),
+        actual_output_repr=resolved.get("actual_output_repr", ""),
+    )
+
+
 def case_metadata(
     parsed_tests: ParsedTests,
     case: TestCase,
@@ -433,6 +590,17 @@ def case_metadata(
     }
 
 
+def _case_metadata(parsed_tests: ParsedTests, case_id: str) -> dict[str, str]:
+    for case in parsed_tests.cases:
+        if case.case_id == case_id:
+            return case_metadata(parsed_tests, case)
+    return {
+        "input_repr": "",
+        "expected_output_repr": "",
+        "actual_output_repr": "",
+    }
+
+
 def require_parsed_tests(task: HumanEvalTask) -> ParsedTests:
     if task.parsed_tests is None:
         raise ValueError("HumanEvalTask.parsed_tests is required")
@@ -440,9 +608,9 @@ def require_parsed_tests(task: HumanEvalTask) -> ParsedTests:
 
 
 @cache
-def runner_script() -> str:
-    # Read as a resource rather than importing: the program performs protocol
-    # I/O at module top level and must remain dependency-free.
+def driver_body_template() -> str:
+    # Read as a resource rather than imported: the body has module-level side
+    # effects when composed and must remain dependency-free.
     return (
         files("dr_code.humaneval")
         .joinpath("batch_runner_script.py")

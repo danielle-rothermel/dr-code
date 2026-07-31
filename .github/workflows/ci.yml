@@ -9,26 +9,42 @@ jobs:
   ci:
     runs-on: depot-ubuntu-24.04
     steps:
+      # The dr-exec local path source in pyproject.toml is
+      # ``../../repos/dr-exec`` relative to the dr-code checkout. Both repos
+      # are checked out into that same two-level layout so the one relative
+      # literal resolves identically here and in the local worktree. This
+      # cross-repo checkout and its credential are removed at the pin-swap
+      # commit; until then it is a validation item.
       - uses: actions/checkout@v7
+        with:
+          path: worktrees/dr-code-cutover
+      - uses: actions/checkout@v7
+        with:
+          repository: danielle-rothermel/dr-exec
+          path: repos/dr-exec
+          ref: main
       - uses: astral-sh/setup-uv@v8.3.1
         with:
           python-version: "3.13"
       - run: uv sync
+        working-directory: worktrees/dr-code-cutover
       - run: uv run ruff check .
+        working-directory: worktrees/dr-code-cutover
       - run: uv run pytest
+        working-directory: worktrees/dr-code-cutover
       - uses: pnpm/action-setup@v4
         with:
-          package_json_file: viewer/package.json
+          package_json_file: worktrees/dr-code-cutover/viewer/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
-          cache-dependency-path: viewer/pnpm-lock.yaml
+          cache-dependency-path: worktrees/dr-code-cutover/viewer/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-        working-directory: viewer
+        working-directory: worktrees/dr-code-cutover/viewer
       - run: pnpm typecheck
-        working-directory: viewer
+        working-directory: worktrees/dr-code-cutover/viewer
       - run: pnpm build
-        working-directory: viewer
+        working-directory: worktrees/dr-code-cutover/viewer
       - run: pnpm test
-        working-directory: viewer
+        working-directory: worktrees/dr-code-cutover/viewer

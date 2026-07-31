@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import ast
-import json
-import signal
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+from dr_exec import (
+    Attribution,
+    BudgetAxis,
+    ExitVerdict,
+    FakeExecutor,
+    ItemResult,
+    Measurements,
+    Outcome,
+    Records,
+    RunResult,
+    ScriptedBatch,
+    TruncationMark,
+)
 
 import dr_code.humaneval as humaneval
 from dr_code.code_analysis import validate_python_source
@@ -17,18 +26,12 @@ from dr_code.humaneval import (
     parse_human_eval_dataset,
 )
 from dr_code.humaneval.batch_runner import (
+    PRODUCTION_EXECUTOR,
+    CANDIDATE_KILL_RETURNCODES,
+    driver_body_template,
     evaluate_human_eval_code,
     require_parsed_tests,
-    run_subprocess_batch,
-    runner_script,
-)
-from dr_code.execution.subprocess import (
-    PythonSubprocessRunner,
-    SubprocessCompletedProcess,
-    SubprocessError,
-    SubprocessOutputLimitError,
-    SubprocessTimeoutError,
-    run_python_subprocess,
+    run_function_batch,
 )
 from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
@@ -150,60 +153,94 @@ def test_humaneval_public_api_is_curated() -> None:
 
 
 @pytest.fixture
-def local_runner() -> PythonSubprocessRunner:
-    """A real, injectable runner that keeps primitive tests fast.
-
-    It runs the standalone resource under the host interpreter. Injection is
-    a real function argument rather than a patched module global.
-    """
-
-    def run_local_python(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        try:
-            completed = subprocess.run(
-                [sys.executable, "-I", "-c", source],
-                input=input_text,
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-                timeout=timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise SubprocessTimeoutError(str(exc)) from exc
-        return SubprocessCompletedProcess(
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
-
-    return run_local_python
+def real_executor() -> object:
+    """The real dr-exec batch executor; records disabled per call site."""
+    return PRODUCTION_EXECUTOR
 
 
-def _stub_runner(
+def _no_records() -> Records:
+    return Records.none()
+
+
+# ---------------------------------------------------------------------------
+# Scripted dr-exec batch builders (logic tests that need a specific outcome).
+# ---------------------------------------------------------------------------
+
+def _measurements(*, stdout: str = "", stderr: str = "") -> Measurements:
+    return Measurements(
+        duration_seconds=0.0,
+        teardown_seconds=0.0,
+        stdout_bytes_produced=len(stdout.encode("utf-8")),
+        stderr_bytes_produced=len(stderr.encode("utf-8")),
+        input_bytes=0,
+    )
+
+
+def _payload_run(returncode: int, *, stderr: str = "") -> RunResult:
+    return RunResult(
+        returncode=returncode,
+        stdout="",
+        stderr=stderr,
+        truncation=TruncationMark(),
+        measurements=_measurements(stderr=stderr),
+        outcome=Outcome(
+            attribution=Attribution.PAYLOAD,
+            exit_verdict=ExitVerdict.REPORT_ONLY,
+        ),
+    )
+
+
+def _budget_run(axis: BudgetAxis) -> RunResult:
+    dropped = 1024 if axis is BudgetAxis.OUTPUT else 0
+    return RunResult(
+        returncode=-9,
+        stdout="",
+        stderr="",
+        truncation=TruncationMark(stderr_bytes_dropped=dropped),
+        measurements=Measurements(
+            duration_seconds=0.0,
+            teardown_seconds=0.0,
+            stdout_bytes_produced=0,
+            stderr_bytes_produced=dropped,
+            input_bytes=0,
+        ),
+        outcome=Outcome(attribution=Attribution.BUDGET, violated_axis=axis),
+    )
+
+
+def _scripted_executor(
     *,
-    stdout: str,
-    stderr: str = "",
-    returncode: int = 0,
-) -> PythonSubprocessRunner:
-    """Build a runner that returns a fixed completed process."""
+    case_payloads: dict[str, object] | None = None,
+    run: RunResult | None = None,
+) -> FakeExecutor:
+    """A FakeExecutor answering every batch with the given payloads and run."""
+    payloads = case_payloads or {}
 
-    def run(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        return SubprocessCompletedProcess(
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
+    def batch_for(call):
+        results = tuple(
+            ItemResult(item_id=item_id, payload=payload)
+            for item_id, payload in payloads.items()
+        )
+        return ScriptedBatch(
+            run=run if run is not None else _payload_run(0),
+            results=results,
+            completion_seen=True,
         )
 
-    return run
+    fake = FakeExecutor()
+    fake.script_batches_with(batch_for)
+    return fake
+
+
+def _passed_case(case_id: str) -> dict[str, object]:
+    return {
+        "status": "passed",
+        "message": "",
+        "input_repr": "[1]",
+        "expected_output_repr": "2",
+        "actual_output_repr": "",
+        "elapsed_seconds": 0.0,
+    }
 
 
 def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
@@ -357,7 +394,7 @@ def test_apply_cleaning_extracts_known_submission_shapes(
 
 
 def test_evaluation_passes_when_best_function_passes(
-    local_runner: PythonSubprocessRunner,
+    real_executor: object,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -369,7 +406,8 @@ def test_evaluation_passes_when_best_function_passes(
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_subprocess=local_runner,
+        executor=real_executor,
+        records=_no_records(),
     )
 
     assert result.best_function_name == "add_one"
@@ -383,7 +421,7 @@ def test_evaluation_passes_when_best_function_passes(
 
 
 def test_evaluation_prefers_entry_point_when_pass_counts_tie(
-    local_runner: PythonSubprocessRunner,
+    real_executor: object,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -395,7 +433,8 @@ def test_evaluation_prefers_entry_point_when_pass_counts_tie(
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_subprocess=local_runner,
+        executor=real_executor,
+        records=_no_records(),
     )
 
     assert result.best_function_name == "add_one"
@@ -403,7 +442,7 @@ def test_evaluation_prefers_entry_point_when_pass_counts_tie(
 
 
 def test_evaluation_fails_when_best_function_does_not_pass_all_cases(
-    local_runner: PythonSubprocessRunner,
+    real_executor: object,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -415,7 +454,8 @@ def test_evaluation_fails_when_best_function_does_not_pass_all_cases(
             "    return x + 1 if x == 1 else x\n"
         ),
         timeout_seconds=2.0,
-        run_in_subprocess=local_runner,
+        executor=real_executor,
+        records=_no_records(),
     )
 
     assert result.best_function_name == "add_one"
@@ -424,7 +464,7 @@ def test_evaluation_fails_when_best_function_does_not_pass_all_cases(
 
 
 def test_evaluation_uses_highest_pass_count(
-    local_runner: PythonSubprocessRunner,
+    real_executor: object,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -436,7 +476,8 @@ def test_evaluation_uses_highest_pass_count(
             "    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_subprocess=local_runner,
+        executor=real_executor,
+        records=_no_records(),
     )
 
     assert result.best_function_name == "helper"
@@ -445,13 +486,14 @@ def test_evaluation_uses_highest_pass_count(
 
 
 def test_evaluate_humaneval_code_reports_timeout_per_case(
-    local_runner: PythonSubprocessRunner,
+    real_executor: object,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=("def add_one(x):\n    while True:\n        pass\n"),
         timeout_seconds=0.2,
-        run_in_subprocess=local_runner,
+        executor=real_executor,
+        records=_no_records(),
     )
 
     assert result.passed is False
@@ -498,64 +540,71 @@ def test_python_print_output_does_not_corrupt_runner_protocol(
     test_source: str | None,
     expected_stderr: str,
 ) -> None:
-    completed_processes: list[SubprocessCompletedProcess] = []
+    """Candidate/support prints land on the payload stream, never the NDJSON
+    protocol channel: the kit captures the protocol handle before reassigning
+    stdout, so a noisy payload cannot interleave with result lines."""
+    from dr_code.humaneval.batch_runner import (
+        HUMANEVAL_ENVIRONMENT,
+        HUMANEVAL_PROFILE,
+        HUMANEVAL_RUNTIME,
+        build_human_eval_batch_plan,
+    )
 
-    def recording_runner(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        completed = run_python_subprocess(
-            source=source,
-            input_text=input_text,
-            timeout_seconds=timeout_seconds,
-        )
-        completed_processes.append(completed)
-        return completed
+    task = _task(test=test_source)
+    plan = build_human_eval_batch_plan(
+        task=task,
+        candidate_code=candidate_code,
+        function_name="add_one",
+        timeout_seconds=2.0,
+    )
+    batch = PRODUCTION_EXECUTOR.run_batch(
+        plan.request,
+        profile=HUMANEVAL_PROFILE,
+        budgets=plan.budgets,
+        records=_no_records(),
+        runtime=HUMANEVAL_RUNTIME,
+        environment=HUMANEVAL_ENVIRONMENT,
+    )
 
     result = evaluate_human_eval_code(
-        task=_task(test=test_source),
+        task=task,
         candidate_code=candidate_code,
         timeout_seconds=2.0,
-        run_in_subprocess=recording_runner,
+        executor=PRODUCTION_EXECUTOR,
+        records=_no_records(),
     )
 
     assert result.passed is True
-    assert len(completed_processes) == 1
-    assert isinstance(json.loads(completed_processes[0].stdout), list)
-    assert expected_stderr in completed_processes[0].stderr
-    assert expected_stderr not in completed_processes[0].stdout
+    # stdout is the protocol channel: every line is a JSON object.
+    assert batch.complete
+    assert expected_stderr in batch.run.stderr
+    assert expected_stderr not in batch.run.stdout
 
 
-def test_run_subprocess_batch_raises_for_malformed_runner_output() -> None:
-    runner = _stub_runner(
-        stdout=(
-            '[{"case_id": "case_0", "status": "passed", "message": ""}, '
-            '{"case_id": "case_1", "status": "nonsense"}]'
-        ),
+def test_run_function_batch_raises_for_malformed_item_payload() -> None:
+    """A delivered item whose payload the case schema rejects is a harness
+    failure carrying the validated cases up to and including the bad one."""
+    executor = _scripted_executor(
+        case_payloads={
+            "case_0": _passed_case("case_0"),
+            "case_1": {"status": "nonsense"},
+        }
     )
 
     with pytest.raises(EvaluationHarnessError) as exc_info:
-        run_subprocess_batch(
+        run_function_batch(
             task=_task(),
             candidate_code="def add_one(x):\n    return x + 1\n",
             function_name="add_one",
             timeout_seconds=2.0,
-            run_in_subprocess=runner,
+            executor=executor,
+            records=_no_records(),
         )
 
     results = exc_info.value.case_results
-    by_case_id = {result.case_id: result for result in results}
-    assert set(by_case_id) == {"case_0", "case_1"}
-    assert by_case_id["case_0"].status is EvaluationCaseStatus.PASSED
-    assert by_case_id["case_1"].status is EvaluationCaseStatus.ERROR
-    assert "Invalid runner output" in by_case_id["case_1"].message
-
-
-_PARTIAL_RUNNER_PASSED_CASE_0 = (
-    '[{"case_id": "case_0", "status": "passed", "message": ""}]'
-)
+    assert results[-1].case_id == "case_1"
+    assert results[-1].status is EvaluationCaseStatus.ERROR
+    assert "Invalid runner output" in results[-1].message
 
 
 def _partial_evaluation_result(task: HumanEvalTask) -> EvaluationTaskResult:
@@ -621,7 +670,10 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
         task=_task(),
         parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
-        run_in_subprocess=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+        executor=_scripted_executor(
+            case_payloads={"case_0": _passed_case("case_0")}
+        ),
+        records=_no_records(),
     )
 
     assert isinstance(result, CompletedScore)
@@ -633,49 +685,52 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
 
 
 def test_score_humaneval_submission_returns_harness_failure() -> None:
+    """A delivered item whose payload the case schema rejects surfaces as a
+    harness failure carrying the validation cause."""
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
         parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
-        run_in_subprocess=_stub_runner(stdout="not-json"),
+        executor=_scripted_executor(
+            case_payloads={"case_0": {"status": "not-a-status"}}
+        ),
+        records=_no_records(),
     )
 
     assert isinstance(result, HarnessFailure)
     assert result.kind == "harness_failure"
     assert result.failure_class == "unknown"
-    assert result.cause.exception_type == "JSONDecodeError"
-    assert result.evaluation is not None
-    assert result.evaluation.results[0].elapsed_seconds is not None
+    assert result.cause.exception_type == "ValidationError"
 
 
 def test_score_humaneval_submission_reports_execution_breakage() -> None:
     """Broken execution is a harness failure, never a scored result.
 
-    A candidate must not benefit from infrastructure breakage: the execution
-    error surfaces as a ``HarnessFailure`` rather than a
-    ``CompletedScore`` with a zero score.
+    A candidate must not benefit from infrastructure breakage: an
+    ``ExecutorFailure`` — a failure with no result to attribute — surfaces as a
+    ``HarnessFailure`` rather than a ``CompletedScore`` with a zero score.
     """
+    from dr_exec import ExecutorFailure
 
-    def broken_execution(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        raise SubprocessError("Python execution is unavailable")
+    def broken(call):
+        raise ExecutorFailure("executor is unavailable")
+
+    executor = FakeExecutor()
+    executor.script_batches_with(broken)
 
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
         parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=2.0,
-        run_in_subprocess=broken_execution,
+        executor=executor,
+        records=_no_records(),
     )
 
     assert isinstance(result, HarnessFailure)
     assert result.kind == "harness_failure"
-    assert result.cause.exception_type == "SubprocessError"
+    assert result.cause.exception_type == "ExecutorFailure"
 
 
 def test_score_humaneval_submission_reports_empty_submission() -> None:
@@ -699,7 +754,10 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
         task=_task(),
         candidate_code="def add_one(x):\n    return x + 1\n",
         timeout_seconds=2.0,
-        run_in_subprocess=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+        executor=_scripted_executor(
+            case_payloads={"case_0": _passed_case("case_0")}
+        ),
+        records=_no_records(),
     )
 
     assert result.passed is False
@@ -774,17 +832,18 @@ def test_parse_human_eval_tests_rejects_invalid_formats(
         parse_human_eval_tests(test_source)
 
 
-def test_run_subprocess_batch_scores_candidate_kill_returncode() -> None:
-    results = run_subprocess_batch(
+def test_batch_candidate_kill_returncode_scored_as_error() -> None:
+    """A candidate-process death (SIGKILL) reports no items; every case is
+    synthesized as an error scored against the candidate."""
+    results = run_function_batch(
         task=_task(),
         candidate_code="def add_one(x):\n    return x + 1\n",
         function_name="add_one",
         timeout_seconds=2.0,
-        run_in_subprocess=_stub_runner(
-            stdout="",
-            stderr="",
-            returncode=-signal.SIGKILL,
+        executor=_scripted_executor(
+            run=_payload_run(next(iter(CANDIDATE_KILL_RETURNCODES)))
         ),
+        records=_no_records(),
     )
 
     assert len(results) == 2
@@ -794,60 +853,70 @@ def test_run_subprocess_batch_scores_candidate_kill_returncode() -> None:
     assert "subprocess killed candidate execution" in results[0].message
 
 
-def test_run_subprocess_batch_scores_output_limit_as_candidate_error() -> None:
-    def overflowing_execution(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        raise SubprocessOutputLimitError("subprocess output exceeded limit")
-
-    results = run_subprocess_batch(
+def test_batch_output_budget_scored_as_error() -> None:
+    """An output-budget death reports no items; every case is synthesized as an
+    error scored against the candidate."""
+    results = run_function_batch(
         task=_task(),
         candidate_code="def add_one(x):\n    return x + 1\n",
         function_name="add_one",
         timeout_seconds=2.0,
-        run_in_subprocess=overflowing_execution,
+        executor=_scripted_executor(run=_budget_run(BudgetAxis.OUTPUT)),
+        records=_no_records(),
     )
 
     assert len(results) == 2
     assert all(
         result.status is EvaluationCaseStatus.ERROR for result in results
     )
-    assert "SubprocessOutputLimitError" in results[0].message
+    assert "output budget exceeded" in results[0].message
 
 
-@pytest.mark.parametrize(
-    "runner_stdout",
-    [
-        '[{"case_id": "case_0", "status": "passed", "message": ""},'
-        ' {"case_id": "case_0", "status": "passed", "message": ""}]',
-        '[{"case_id": "case_99", "status": "passed", "message": ""}]',
-        '[{"case_id": "case_0", "status": "passed", "message": ""},'
-        ' {"case_id": "case_1", "status": "passed", "message": ""},'
-        ' {"case_id": "case_2", "status": "passed", "message": ""}]',
-    ],
-    ids=("duplicate", "unknown", "more_rows_than_cases"),
-)
-def test_run_subprocess_batch_rejects_invalid_case_ids(
-    runner_stdout: str,
-) -> None:
-    with pytest.raises(
-        EvaluationHarnessError,
-        match="duplicate or unknown case ids",
-    ):
-        run_subprocess_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
+def test_batch_executor_attribution_is_a_harness_failure() -> None:
+    """A machine/executor/channel/absence attribution never scores against the
+    candidate: it is a harness failure the raising lane surfaces. A no-spawn
+    outcome carries no transcript, so this is exercised at the interpretation
+    boundary directly rather than through the fake's spawn-consistent batch."""
+    from dr_exec import BatchItem, BatchRequest, BatchResult
+
+    from dr_code.humaneval.batch_runner import interpret_batch_result
+
+    task = _task()
+    request = BatchRequest(
+        items=(
+            BatchItem(item_id="case_0", payload={}),
+            BatchItem(item_id="case_1", payload={}),
+        ),
+        body_source="def run_item(item_id, payload):\n    return {}\n",
+        item_schema="humaneval-case@v1",
+        config={"id": "x"},
+    )
+    run = RunResult(
+        returncode=None,
+        stdout="",
+        stderr="",
+        truncation=TruncationMark(),
+        measurements=_measurements(),
+        outcome=Outcome(attribution=Attribution.MACHINE, spawn_errno=13),
+    )
+    result = BatchResult(
+        request=request,
+        run=run,
+        results=(),
+        completion_seen=False,
+        results_emitted_claim=None,
+    )
+    with pytest.raises(EvaluationHarnessError, match="machine attribution"):
+        interpret_batch_result(
+            task=task,
             function_name="add_one",
+            result=result,
             timeout_seconds=2.0,
-            run_in_subprocess=_stub_runner(stdout=runner_stdout),
         )
 
 
 def test_candidate_module_level_sys_exit_is_scored(
-    local_runner: PythonSubprocessRunner,
+    real_executor: object,
 ) -> None:
     result = evaluate_human_eval_code(
         task=_task(),
@@ -855,77 +924,12 @@ def test_candidate_module_level_sys_exit_is_scored(
             "import sys\nsys.exit(5)\ndef add_one(x):\n    return x + 1\n"
         ),
         timeout_seconds=2.0,
-        run_in_subprocess=local_runner,
+        executor=real_executor,
+        records=_no_records(),
     )
 
     assert result.passed is False
     assert result.status_counts == {"error": 2}
-
-
-def test_run_subprocess_batch_raises_for_nonzero_returncode() -> None:
-    runner = _stub_runner(stdout="", stderr="runner crashed", returncode=1)
-
-    with pytest.raises(EvaluationHarnessError) as exc_info:
-        run_subprocess_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            function_name="add_one",
-            timeout_seconds=2.0,
-            run_in_subprocess=runner,
-        )
-
-    results = exc_info.value.case_results
-    assert all(
-        result.status is EvaluationCaseStatus.ERROR for result in results
-    )
-    assert "runner crashed" in results[0].message
-
-
-def test_run_subprocess_batch_raises_for_invalid_json() -> None:
-    with pytest.raises(EvaluationHarnessError) as exc_info:
-        run_subprocess_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            function_name="add_one",
-            timeout_seconds=2.0,
-            run_in_subprocess=_stub_runner(stdout="not-json"),
-        )
-
-    results = exc_info.value.case_results
-    assert all(
-        result.status is EvaluationCaseStatus.ERROR for result in results
-    )
-    assert "Could not decode runner output" in results[0].message
-
-
-def test_run_subprocess_batch_raises_for_non_list_json() -> None:
-    with pytest.raises(EvaluationHarnessError) as exc_info:
-        run_subprocess_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            function_name="add_one",
-            timeout_seconds=2.0,
-            run_in_subprocess=_stub_runner(stdout='{"not": "a list"}'),
-        )
-
-    results = exc_info.value.case_results
-    assert "expected a JSON list" in results[0].message
-
-
-def test_run_subprocess_batch_fallback_case_id_is_harness_detail() -> None:
-    runner = _stub_runner(stdout='[{"status": "passed", "message": ""}]')
-
-    with pytest.raises(EvaluationHarnessError) as exc_info:
-        run_subprocess_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            function_name="add_one",
-            timeout_seconds=2.0,
-            run_in_subprocess=runner,
-        )
-
-    results = exc_info.value.case_results
-    assert results[0].case_id == "case_0"
 
 
 def test_apply_human_eval_override_passthrough() -> None:
@@ -978,12 +982,19 @@ def test_require_parsed_tests_raises_when_missing() -> None:
         require_parsed_tests(task)
 
 
-def test_runner_script_source_compiles() -> None:
-    compile(runner_script(), "<runner>", "exec")
+def test_composed_driver_body_compiles() -> None:
+    from dr_code.humaneval.batch_runner import compose_body
+
+    composed = compose_body(
+        candidate_code="def add_one(x):\n    return x + 1\n",
+        support_code="",
+        function_name="add_one",
+    )
+    compile(composed, "<driver-body>", "exec")
 
 
-def test_runner_script_source_is_dependency_free() -> None:
-    tree = ast.parse(runner_script())
+def test_driver_body_template_is_dependency_free() -> None:
+    tree = ast.parse(driver_body_template())
     imported_modules: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

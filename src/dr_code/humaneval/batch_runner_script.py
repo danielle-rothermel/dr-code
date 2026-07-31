@@ -1,20 +1,26 @@
-# Standalone program executed in a fresh process via ``python -I -c``.
-# It reads one JSON value from stdin and writes a
-# JSON list of case results. It must stay dependency-free (no ``dr_code``
-# imports), and it must NEVER be imported by host code: it has top-level side
-# effects. Python-level untrusted stdout is redirected to bounded stderr;
-# direct file descriptor writes can still reach the JSON protocol stream.
-import json
-import sys
+# The HumanEval driver body composed into dr-exec's batch kit and run in a
+# hermetic ``python -I -c`` child. It defines ``run_item(item_id, payload)``,
+# which the kit calls once per case; the kit owns protocol I/O, prelude, the
+# terminal line, and per-item failure capture. This text is read as a resource
+# and executed by the kit, so it must stay dependency-free (no ``dr_code``
+# imports) and must never be imported by host code.
+#
+# The candidate namespace is built once at body load: ``build_namespace`` execs
+# the support and candidate code and resolves the target function. A load
+# failure is raised here and the kit fans it out as one error result per case.
+# Each case's ``run_item`` execs the case check against a fresh candidate
+# binding; on failure it re-executes the namespace to recover input/expected/
+# actual reprs (``failure_metadata``), matching the in-child diagnostics the
+# scoring layer persists.
 import time
 import traceback
 
-protocol_stdout = sys.stdout
-sys.stdout = sys.stderr
-setattr(sys, "__stdout__", sys.stderr)
-payload = json.loads(input())
-
 FIELD_LIMIT = 8000
+
+# Injected as literals by the request builder; see batch_runner.compose_body.
+CANDIDATE_CODE = _HE_CANDIDATE_CODE  # noqa: F821
+SUPPORT_CODE = _HE_SUPPORT_CODE  # noqa: F821
+FUNCTION_NAME = _HE_FUNCTION_NAME  # noqa: F821
 
 
 def clip(text):
@@ -31,16 +37,10 @@ def assertion(actual, expected, atol=0):
         assert actual == expected
 
 
-def emit_results(results):
-    protocol_stdout.write(json.dumps(results))
-    protocol_stdout.write("\n")
-    protocol_stdout.flush()
-
-
 def build_namespace():
     namespace = {"assertion": assertion}
-    exec(payload["support_code"], namespace)
-    exec(payload["candidate_code"], namespace)
+    exec(SUPPORT_CODE, namespace)
+    exec(CANDIDATE_CODE, namespace)
     return namespace
 
 
@@ -52,7 +52,7 @@ def failure_metadata(check):
     }
     try:
         detail_namespace = build_namespace()
-        detail_candidate = detail_namespace[payload["function_name"]]
+        detail_candidate = detail_namespace[FUNCTION_NAME]
     except BaseException:
         metadata["actual_output_repr"] = clip(traceback.format_exc(limit=4))
         return metadata
@@ -86,75 +86,43 @@ def failure_metadata(check):
     return metadata
 
 
-try:
-    namespace = build_namespace()
-    candidate = namespace[payload["function_name"]]
-except BaseException:
-    message = clip(traceback.format_exc(limit=4))
-    results = []
-    for check in payload["checks"]:
-        results.append(
-            {
-                "case_id": check["case_id"],
-                "status": "error",
-                "message": message,
-                "input_repr": check.get("input_repr", ""),
-                "expected_output_repr": check.get(
-                    "expected_output_repr",
-                    "",
-                ),
-                "actual_output_repr": message,
-                "elapsed_seconds": 0.0,
-            }
-        )
-    emit_results(results)
-    raise SystemExit(0)
+# Built once at load. A load failure raises out of the body, so the kit fans
+# out the candidate traceback as one error result per case.
+_NAMESPACE = build_namespace()
+_CANDIDATE = _NAMESPACE[FUNCTION_NAME]
 
-results = []
-for check in payload["checks"]:
+
+def _passed_payload(check, elapsed):
+    return {
+        "status": "passed",
+        "message": "",
+        "input_repr": check.get("input_repr", ""),
+        "expected_output_repr": check.get("expected_output_repr", ""),
+        "actual_output_repr": "",
+        "elapsed_seconds": elapsed,
+    }
+
+
+def run_item(item_id, payload):
+    check = payload
     started_at = time.perf_counter()
     try:
         exec(
-            compile(
-                check["code"],
-                f"<generated {check['case_id']}>",
-                "exec",
-            ),
-            namespace | {"candidate": candidate},
+            compile(check["code"], "<generated " + item_id + ">", "exec"),
+            _NAMESPACE | {"candidate": _CANDIDATE},
         )
     except AssertionError as exc:
-        results.append(
-            {
-                "case_id": check["case_id"],
-                "status": "failed",
-                "message": clip(exc),
-                **failure_metadata(check),
-                "elapsed_seconds": time.perf_counter() - started_at,
-            }
-        )
+        return {
+            "status": "failed",
+            "message": clip(exc),
+            **failure_metadata(check),
+            "elapsed_seconds": time.perf_counter() - started_at,
+        }
     except BaseException:
-        results.append(
-            {
-                "case_id": check["case_id"],
-                "status": "error",
-                "message": clip(traceback.format_exc(limit=4)),
-                **failure_metadata(check),
-                "elapsed_seconds": time.perf_counter() - started_at,
-            }
-        )
-    else:
-        results.append(
-            {
-                "case_id": check["case_id"],
-                "status": "passed",
-                "message": "",
-                "input_repr": check.get("input_repr", ""),
-                "expected_output_repr": check.get(
-                    "expected_output_repr",
-                    "",
-                ),
-                "actual_output_repr": "",
-                "elapsed_seconds": time.perf_counter() - started_at,
-            }
-        )
-emit_results(results)
+        return {
+            "status": "error",
+            "message": clip(traceback.format_exc(limit=4)),
+            **failure_metadata(check),
+            "elapsed_seconds": time.perf_counter() - started_at,
+        }
+    return _passed_payload(check, time.perf_counter() - started_at)

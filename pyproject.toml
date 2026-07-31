@@ -9,10 +9,21 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "datasets>=3.0,<4",
+    "dr-exec",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
     "zstandard>=0.25.0",
 ]
+
+[tool.uv.sources]
+# Local path source during the cutover development phase. The path is
+# relative to this pyproject and resolves identically in the local worktree
+# (worktrees/dr-code-cutover -> repos/dr-exec) and in CI, which checks out
+# both repos into that same two-level layout (see .github/workflows/ci.yml).
+# One commit swaps this for a pinned PyPI release once dr-exec publishes,
+# dropping the CI checkout step and re-enabling the packaging wheel
+# assertions.
+dr-exec = { path = "../../repos/dr-exec", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -37,4 +48,7 @@ line-length = 79
 
 [tool.ty.src]
 include = ["scripts", "src"]
-exclude = ["nbs", "tests"]
+# The HumanEval driver body is a resource executed inside a hermetic child
+# with literals the batch request injects (``_HE_*``); it is never imported,
+# so static analysis of it as a module reports spurious unresolved names.
+exclude = ["nbs", "tests", "src/dr_code/humaneval/batch_runner_script.py"]

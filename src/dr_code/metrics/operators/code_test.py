@@ -1,4 +1,4 @@
-"""Subprocess-backed HumanEval case execution facts.
+"""HumanEval case-execution facts over dr-exec's batch executor.
 
 This operator is HumanEval-specific by construction, not merely by its type
 annotations: it uses the HumanEval batch request and result protocol and
@@ -7,6 +7,12 @@ generic ``Task`` supertype -- a single-implementation abstraction with a
 guessed interface would be premature. The shared interface gets extracted when
 a second benchmark exists to constrain it; until then the HumanEval scope is
 kept honest through naming and docstrings.
+
+The metrics lane scores every candidate-observable outcome as case data:
+budget deaths, candidate-process crashes, malformed runner output, and
+unexpected exits all become case statuses in a measured record. Only a genuine
+executor failure with no result escapes the executor as an exception, and it
+does so before this operator's ``compute`` ever runs.
 """
 
 from __future__ import annotations
@@ -15,12 +21,9 @@ import math
 from collections.abc import Mapping
 from typing import Self
 
+from dr_exec import BatchResult
 from pydantic import model_validator
 
-from dr_code.execution.subprocess import (
-    SubprocessCompletedProcess,
-    SubprocessOutputLimitError,
-)
 from dr_code.humaneval import batch_runner
 from dr_code.humaneval.profiles import DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
 from dr_code.humaneval.task import (
@@ -33,8 +36,7 @@ from dr_code.humaneval.task import (
 from dr_code.metrics.engine.execution import (
     ExecutionOutcome,
     ExecutionRequest,
-    is_output_limit_outcome,
-    is_timeout_outcome,
+    InvocationIdentity,
 )
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import (
@@ -133,7 +135,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
             )
             for function_name in function_names
         )
-        case_results = []
+        case_results: list[EvaluationCaseResult] = []
         for function_name, request in zip(
             function_names,
             requests,
@@ -143,7 +145,8 @@ class CodeTest(MetricOperator[CodeTestSettings]):
                 _results_from_outcome(
                     task=task,
                     function_name=function_name,
-                    timeout_seconds=request.timeout_seconds,
+                    timeout_seconds=self.settings.timeout_seconds,
+                    request=request,
                     outcome=ctx.outcome_for(request),
                 )
             )
@@ -180,17 +183,31 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         candidate_code: str,
         function_name: str,
     ) -> ExecutionRequest:
-        request = batch_runner.build_human_eval_batch_request(
+        from dr_exec import EXECUTOR_IDENTITY
+
+        plan = batch_runner.build_human_eval_batch_plan(
             task=task,
             candidate_code=candidate_code,
             function_name=function_name,
             timeout_seconds=self.settings.timeout_seconds,
         )
+        identity = InvocationIdentity.of(
+            executor_identity=EXECUTOR_IDENTITY,
+            source=plan.request.driver_source(),
+            input_text="",
+            budgets=plan.budgets,
+            environment=batch_runner.HUMANEVAL_ENVIRONMENT,
+            profile=batch_runner.HUMANEVAL_PROFILE,
+            runtime=batch_runner.HUMANEVAL_RUNTIME,
+        )
         return ExecutionRequest(
-            source=request.source,
-            input_text=request.input_text,
-            timeout_seconds=request.timeout_seconds,
+            batch_request=plan.request,
+            budgets=plan.budgets,
+            environment=batch_runner.HUMANEVAL_ENVIRONMENT,
+            profile=batch_runner.HUMANEVAL_PROFILE,
+            runtime=batch_runner.HUMANEVAL_RUNTIME,
             computation_id=_COMPUTATION_ID,
+            identity=identity,
         )
 
 
@@ -199,38 +216,25 @@ def _results_from_outcome(
     task: HumanEvalTask,
     function_name: str,
     timeout_seconds: float,
+    request: ExecutionRequest,
     outcome: ExecutionOutcome,
 ) -> list[EvaluationCaseResult]:
-    """Interpret a cached process outcome through the HumanEval protocol."""
+    """Interpret a cached batch outcome through the HumanEval protocol.
 
-    if is_timeout_outcome(outcome):
-        return batch_runner.timeout_results(
+    Runner protocol faults and unexpected candidate exits are scored as
+    candidate-attributable case errors, never batch failures: the metrics lane
+    catches the harness fault the direct lane would raise and renders it as
+    case data.
+    """
+    result: BatchResult = outcome.batch_result_for(request.batch_request)
+    try:
+        return batch_runner.interpret_batch_result(
             task=task,
             function_name=function_name,
+            result=result,
             timeout_seconds=timeout_seconds,
         )
-    if is_output_limit_outcome(outcome):
-        return batch_runner.error_results(
-            task=task,
-            function_name=function_name,
-            message=f"{SubprocessOutputLimitError.__name__}: {outcome.stderr}",
-        )
-
-    completed = SubprocessCompletedProcess(
-        returncode=outcome.returncode,
-        stdout=outcome.stdout,
-        stderr=outcome.stderr,
-    )
-    try:
-        return batch_runner.interpret_subprocess_batch_result(
-            task=task,
-            function_name=function_name,
-            completed=completed,
-            elapsed_seconds=0.0,
-        )
     except EvaluationHarnessError as exc:
-        # Metrics treats runner protocol failures and unexpected candidate
-        # exits as candidate-attributable case errors, not batch failures.
         return batch_runner.error_results(
             task=task,
             function_name=function_name,

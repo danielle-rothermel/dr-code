@@ -36,7 +36,16 @@ import zstandard
 
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 
-from metrics.helpers import code_test_trace, evaluate_oracle
+from metrics.helpers import (
+    PRODUCTION_EXECUTOR,
+    code_test_trace,
+    evaluate_oracle,
+    fake_executor_always,
+    full_pass_batch,
+    killed_run,
+    partial_pass_batch,
+    scripted_batch,
+)
 
 # gzip.compress and ZstdCompressor()'s implicit defaults were gzip level 9 and
 # zstd level 3; the pinned questions must reproduce those exact sizes.
@@ -86,6 +95,7 @@ def _code_trace(source: str):
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
+    kwargs.setdefault("executor", PRODUCTION_EXECUTOR)
     return extract_metrics(definition, trace, **kwargs)
 
 
@@ -384,67 +394,24 @@ def _code_test_question(timeout_seconds: float = 5.0) -> object:
     return _question("code_test", on="input", timeout_seconds=timeout_seconds)
 
 
-def test_direct_and_metrics_execution_share_humaneval_request_builder(
+def test_direct_and_metrics_execution_share_humaneval_batch_plan(
     task,
     good_submission,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import dr_code.humaneval.batch_runner as batch_runner
-    from dr_code.execution.subprocess import SubprocessCompletedProcess
+    """The direct lane and the metrics operator build the same dr-exec batch
+    request from the same shared plan builder: identical driver source and
+    item set for the same inputs."""
+    from dr_code.humaneval.batch_runner import build_human_eval_batch_plan
     from dr_code.metrics.operators.code_test import CodeTest, CodeTestSettings
 
     from metrics.helpers import task_json_artifact
 
-    original_builder = batch_runner.build_human_eval_batch_request
-    builder_calls: list[tuple[str, str, str, float, object, object]] = []
-
-    def recording_builder(
-        *,
-        task,
-        candidate_code,
-        function_name,
-        timeout_seconds,
-        checks=None,
-        runner_source=None,
-    ):
-        builder_calls.append(
-            (
-                task.task_id,
-                candidate_code,
-                function_name,
-                timeout_seconds,
-                checks,
-                runner_source,
-            )
-        )
-        return original_builder(
-            task=task,
-            candidate_code=candidate_code,
-            function_name=function_name,
-            timeout_seconds=timeout_seconds,
-            checks=checks,
-            runner_source=runner_source,
-        )
-
-    monkeypatch.setattr(
-        batch_runner,
-        "build_human_eval_batch_request",
-        recording_builder,
-    )
-
-    direct_calls: list[tuple[str, str, float]] = []
-
-    def direct_runner(*, source, input_text, timeout_seconds):
-        direct_calls.append((source, input_text, timeout_seconds))
-        return SubprocessCompletedProcess(returncode=0, stdout="[]", stderr="")
-
     timeout_seconds = 2.5
-    batch_runner.run_subprocess_batch(
+    direct_plan = build_human_eval_batch_plan(
         task=task,
         candidate_code=good_submission,
         function_name=task.entry_point,
         timeout_seconds=timeout_seconds,
-        run_in_subprocess=direct_runner,
     )
     operator = CodeTest(CodeTestSettings(timeout_seconds=timeout_seconds))
     (metrics_request,) = operator.execution_requests(
@@ -452,27 +419,26 @@ def test_direct_and_metrics_execution_share_humaneval_request_builder(
         {"task": task_json_artifact(task)},
     )
 
-    assert len(builder_calls) == 2
-    assert builder_calls[0] == builder_calls[1]
-    assert direct_calls == [
-        (
-            metrics_request.source,
-            metrics_request.input_text,
-            metrics_request.timeout_seconds,
-        )
-    ]
+    assert (
+        metrics_request.batch_request.driver_source()
+        == direct_plan.request.driver_source()
+    )
+    assert (
+        metrics_request.batch_request.item_ids == direct_plan.request.item_ids
+    )
+    assert metrics_request.budgets == direct_plan.budgets
 
 
 def test_code_test_passing_counts_match_oracle(
-    task, good_submission, local_runner
+    task, good_submission, real_executor
 ) -> None:
     oracle = evaluate_oracle(
-        task, good_submission, timeout_seconds=5.0, run_in_subprocess=local_runner
+        task, good_submission, timeout_seconds=5.0, executor=real_executor
     )
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_subprocess=local_runner,
+        executor=real_executor,
     )[0]
     assert record.values["total_cases"] == oracle.total_cases
     assert record.values["passed_count"] == oracle.status_counts.get("passed", 0)
@@ -485,105 +451,85 @@ def test_code_test_passing_counts_match_oracle(
 
 
 def test_code_test_failing_counts_match_oracle(
-    task, failing_submission, local_runner
+    task, failing_submission, real_executor
 ) -> None:
     oracle = evaluate_oracle(
-        task, failing_submission, timeout_seconds=5.0, run_in_subprocess=local_runner
+        task, failing_submission, timeout_seconds=5.0, executor=real_executor
     )
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(failing_submission, task),
-        run_in_subprocess=local_runner,
+        executor=real_executor,
     )[0]
     assert record.values["passed_count"] == oracle.status_counts.get("passed", 0)
     assert record.values["failed_count"] == oracle.status_counts.get("failed", 0)
 
 
-def test_code_test_kill_returncode_attributed_to_candidate(
+def test_code_test_candidate_crash_attributed_to_candidate(
     task, good_submission
 ) -> None:
-    """A subprocess kill (returncode 137) is candidate data: all cases error."""
-    from dr_code.execution.subprocess import SubprocessCompletedProcess
+    """A candidate-process death (SIGKILL/SIGSEGV) is candidate data: the batch
+    reports no items and every case is synthesized as ERROR."""
 
-    def kill_runner(*, source, input_text, timeout_seconds):  # noqa: ANN001
-        return SubprocessCompletedProcess(returncode=137, stdout="", stderr="killed")
+    def crashed(call):
+        return scripted_batch(case_payloads={}, run=killed_run(-9))
 
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_subprocess=kill_runner,
+        executor=fake_executor_always(crashed),
     )[0]
     assert record.values["error_count"] == record.values["total_cases"]
     assert record.values["passed_count"] == 0
 
 
-def test_code_test_nonzero_exit_attributed_to_candidate(
+def test_code_test_malformed_item_payload_attributed_to_candidate(
     task, good_submission
 ) -> None:
-    """An unexpected nonzero returncode (e.g. ``os._exit(5)``) is
-    candidate-controlled data: it becomes all-ERROR case statuses in a measured
-    record, not an ``EvaluationHarnessError`` that aborts the batch."""
-    from metrics.helpers import scripted_runner
+    """A malformed per-item result payload (the candidate shares the driver's
+    namespace and can return a shape the case schema rejects) is candidate
+    data: the metrics lane catches the harness fault and scores it as all-ERROR
+    case statuses in a measured record, never a batch-aborting exception."""
+
+    def malformed(call):
+        case_ids = call.request.item_ids
+        from metrics.helpers import passed_payload
+
+        payloads = {case_ids[0]: {"status": "not-a-status"}}
+        for cid in case_ids[1:]:
+            payloads[cid] = passed_payload()
+        return scripted_batch(case_payloads=payloads)
 
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_subprocess=scripted_runner(returncode=5, stdout="", stderr="boom"),
+        executor=fake_executor_always(malformed),
     )[0]
     assert record.status.value == "measured"
     assert record.values["error_count"] == record.values["total_cases"]
     assert record.values["passed_count"] == 0
 
 
-def test_code_test_malformed_stdout_attributed_to_candidate(
+def test_code_test_executor_failure_still_propagates(
     task, good_submission
 ) -> None:
-    """Malformed runner stdout (candidate shares the runner's stdout) is
-    candidate data: it becomes all-ERROR case statuses in a measured record,
-    not a batch-aborting error. Covers the JSON-decode / shape / case-id
-    validation branches."""
-    from metrics.helpers import scripted_runner
+    """``ExecutorFailure`` is a failure with no result to attribute: it remains
+    the only propagating infrastructure path and aborts the batch loudly."""
+    from dr_exec import ExecutorFailure
 
-    for bad_stdout in (
-        "this is not json{",  # JSON decode failure
-        '{"not": "a list"}',  # wrong shape (object, not list)
-        '[{"case_id": "case_0"}]',  # result schema validation failure
-        '[{"case_id": "ghost", "status": "passed"}]',  # unknown case id
-    ):
-        record = _extract(
-            _definition([_code_test_question()]),
-            code_test_trace(good_submission, task),
-            run_in_subprocess=scripted_runner(returncode=0, stdout=bad_stdout),
-        )[0]
-        assert record.status.value == "measured", bad_stdout
-        assert (
-            record.values["error_count"] == record.values["total_cases"]
-        ), bad_stdout
-        assert record.values["passed_count"] == 0, bad_stdout
+    def broken(call):
+        raise ExecutorFailure("boundary broke")
 
-
-def test_code_test_subprocess_error_still_propagates(
-    task, good_submission
-) -> None:
-    """``SubprocessError`` is raised at the subprocess boundary before candidate code
-    runs, so it remains the only propagating infrastructure path and still
-    aborts the batch loudly -- it is not reclassified to case statuses."""
-    import pytest
-
-    from dr_code.execution.subprocess import SubprocessError
-
-    from metrics.helpers import raising_runner
-
-    with pytest.raises(SubprocessError):
+    with pytest.raises(ExecutorFailure):
         _extract(
             _definition([_code_test_question()]),
             code_test_trace(good_submission, task),
-            run_in_subprocess=raising_runner(SubprocessError("boundary broke")),
+            executor=fake_executor_always(broken),
         )
 
 
 def test_code_test_best_function_is_mechanical_max_passes(
-    task, local_runner
+    task, real_executor
 ) -> None:
     """best_function_name is an observation (max-passes), not a verdict — it
     stays in values; score/outcome stay in the consumer."""
@@ -594,7 +540,7 @@ def test_code_test_best_function_is_mechanical_max_passes(
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(candidate, task),
-        run_in_subprocess=local_runner,
+        executor=real_executor,
     )[0]
     assert record.values["best_function_name"] == task.entry_point
     assert record.values["function_count"] == 2
@@ -603,25 +549,19 @@ def test_code_test_best_function_is_mechanical_max_passes(
 
 
 def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
-    """Genuinely incomplete runner output (fewer results than cases, no
-    failures) is a measured record, not an error, and coverage_complete is the
-    fact "did every case produce a result" (False here) — a fact, not a
-    verdict.
-
-    coverage_complete is fact-shaped, matching the live oracle
-    ``EvaluationTaskResult.coverage_complete`` (``result_count ==
-    total_cases``); pass/fail thresholds belong in the policy consumer.
+    """A batch that reports only some of its cases is a measured record, not an
+    error, and coverage_complete is the fact "did every case produce a result"
+    (False here) — a fact, not a verdict.
     """
-    from metrics.helpers import partial_pass_runner_output, scripted_runner
 
-    # Only case_0 is reported for a two-case task: genuine incomplete coverage.
-    incomplete_output = partial_pass_runner_output(
-        passed=("case_0",), case_ids=("case_0",)
-    )
+    def partial(call):
+        case_ids = call.request.item_ids
+        return partial_pass_batch(passed=(case_ids[0],), case_ids=(case_ids[0],))
+
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_subprocess=scripted_runner(stdout=incomplete_output),
+        executor=fake_executor_always(partial),
     )[0]
     assert record.status.value == "measured"
     assert record.values["passed_count"] == 1
@@ -634,20 +574,16 @@ def test_code_test_complete_coverage_with_failure_is_covered(
 ) -> None:
     """Complete coverage with a failing case: coverage_complete is True (every
     case produced a result) even though a case failed — the fact/verdict split.
-
-    Matches the live oracle: for the same input (case_0 passed, case_1 failed,
-    both reported) ``EvaluationTaskResult.coverage_complete`` is True and its
-    outcome is ``tests_failed`` — the pass/fail threshold lives in the policy
-    consumer, not in coverage_complete.
     """
-    from metrics.helpers import partial_pass_runner_output, scripted_runner
 
-    # Both cases reported, one failing: complete coverage, one failure.
-    complete_with_failure = partial_pass_runner_output()
+    def complete_with_failure(call):
+        case_ids = call.request.item_ids
+        return partial_pass_batch(passed=(case_ids[0],), case_ids=case_ids)
+
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
-        run_in_subprocess=scripted_runner(stdout=complete_with_failure),
+        executor=fake_executor_always(complete_with_failure),
     )[0]
     assert record.status.value == "measured"
     assert record.values["passed_count"] == 1

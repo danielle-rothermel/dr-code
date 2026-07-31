@@ -5,18 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from dr_exec import ExecutorFailure, Records
 from pydantic import JsonValue
 
-from dr_code.execution.subprocess import (
-    SubprocessError,
-    PythonSubprocessRunner,
-    run_python_subprocess,
-)
 from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
 from dr_code.metrics.engine.execution import (
     ExecutionCache,
     ExecutionOutcome,
     ExecutionRequest,
+    Executor,
     InMemoryExecutionCache,
     run_requests,
 )
@@ -30,6 +27,9 @@ from dr_code.metrics.records import (
 )
 from dr_code.metrics.registry import REGISTRY
 from dr_code.trace import Absent, Artifact, Trace, WiringError
+
+_NO_RECORDS: Records = Records.none()
+"""The default record sink: hot metric sweeps persist no run records."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +109,8 @@ def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
     *,
-    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
+    executor: Executor,
+    records: Records = _NO_RECORDS,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]:
     """Extract one record per question from one trace."""
@@ -117,7 +118,8 @@ def extract_metrics(
     return extract_metrics_batch(
         definition,
         (trace,),
-        run_in_subprocess=run_in_subprocess,
+        executor=executor,
+        records=records,
         execution_cache=execution_cache,
     )[0]
 
@@ -126,7 +128,8 @@ def extract_metrics_batch(
     definition: MetricsDefinition,
     traces: Sequence[Trace],
     *,
-    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
+    executor: Executor,
+    records: Records = _NO_RECORDS,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[tuple[MetricRecord, ...], ...]:
     """Extract records after collecting work across every supplied trace."""
@@ -152,7 +155,7 @@ def extract_metrics_batch(
                     binding.value,
                     binding.auxiliary,
                 )
-            except (SubprocessError, EngineInvariantError):
+            except (ExecutorFailure, EngineInvariantError):
                 raise
             except Exception as exc:
                 binding.planning_failure = exc
@@ -166,7 +169,8 @@ def extract_metrics_batch(
     )
     outcomes = run_requests(
         requests,
-        run_in_subprocess=run_in_subprocess,
+        executor=executor,
+        records=records,
         cache=cache,
     )
     context = _EngineContext(views=ViewCache(), outcomes=outcomes)
@@ -198,9 +202,7 @@ def _bind_questions(
             raise WiringError(
                 f"invalid settings for metric {question.metric}: {exc}"
             ) from exc
-        bindings.append(
-            _QuestionBinding(question=question, operator=operator)
-        )
+        bindings.append(_QuestionBinding(question=question, operator=operator))
     return tuple(bindings)
 
 
@@ -291,7 +293,7 @@ def _compute_record(
             status=RecordStatus.MEASURED,
             values=result.to_values(),
         )
-    except (SubprocessError, EngineInvariantError):
+    except (ExecutorFailure, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)

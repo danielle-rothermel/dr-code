@@ -1,27 +1,46 @@
-"""Pure builders and fakes for the ``dr_code.metrics`` acceptance suite.
+"""Pure builders and executor doubles for the ``dr_code.metrics`` suite.
 
 Pure helpers (no pytest fixtures) so test modules import them directly. Pytest
 fixtures live in ``conftest.py``. Import as ``from metrics.helpers import ...``.
 
-The existing ``dr_code.humaneval`` modules are used as **oracles**;
-``dr_code.trace`` is the input contract. Execution stays behind the injectable
-``PythonSubprocessRunner`` seam.
+Logic tests drive a ``FakeExecutor`` scripted with dr-exec outcomes; parity and
+oracle tests drive the real batch executor with ``Records.none()`` — the
+contract's sanctioned way to genuinely execute a payload in a test. The
+existing ``dr_code.humaneval`` modules are the oracle; ``dr_code.trace`` is the
+input contract.
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
-from dr_code.execution.subprocess import (
-    PythonSubprocessRunner,
-    SubprocessCompletedProcess,
-    SubprocessTimeoutError,
+from dr_exec import (
+    Attribution,
+    BatchRequest,
+    BatchResult,
+    BudgetAxis,
+    ContainmentProfile,
+    Budgets,
+    EnvironmentGrant,
+    ExitVerdict,
+    FakeExecutor,
+    ItemResult,
+    Measurements,
+    Outcome,
+    OutputBudget,
+    OverflowPolicy,
+    PythonRuntime,
+    Records,
+    RunResult,
+    ScriptedBatch,
+    TruncationMark,
 )
-from dr_code.humaneval.batch_runner import CANDIDATE_KILL_RETURNCODES
+
+from dr_code.humaneval.batch_runner import (
+    PRODUCTION_EXECUTOR,
+    CANDIDATE_KILL_RETURNCODES,
+)
 from dr_code.humaneval.task import EvaluationCaseStatus, HumanEvalTask
 from dr_code.trace import (
     Absent,
@@ -136,62 +155,193 @@ def absent_trace(
 
 
 # ---------------------------------------------------------------------------
-# Injectable runner fakes.
+# dr-exec RunResult / ScriptedBatch builders.
 # ---------------------------------------------------------------------------
 
-def local_runner() -> PythonSubprocessRunner:
-    """An injectable runner that runs the trusted program under the host
-    interpreter."""
-
-    def run_local_python(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        try:
-            completed = subprocess.run(
-                [sys.executable, "-I", "-c", source],
-                input=input_text,
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-                timeout=timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise SubprocessTimeoutError(str(exc)) from exc
-        return SubprocessCompletedProcess(
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
-
-    return run_local_python
+def _measurements(*, stdout: str = "", stderr: str = "") -> Measurements:
+    return Measurements(
+        duration_seconds=0.0,
+        teardown_seconds=0.0,
+        stdout_bytes_produced=len(stdout.encode("utf-8")),
+        stderr_bytes_produced=len(stderr.encode("utf-8")),
+        input_bytes=0,
+    )
 
 
-class CountingRunner:
-    """A runner that records every call and delegates to an inner runner.
+def clean_run(*, stderr: str = "") -> RunResult:
+    """A payload run that exited 0 cleanly (the healthy batch child)."""
+    return RunResult(
+        returncode=0,
+        stdout="",
+        stderr=stderr,
+        truncation=TruncationMark(),
+        measurements=_measurements(stderr=stderr),
+        outcome=Outcome(
+            attribution=Attribution.PAYLOAD,
+            exit_verdict=ExitVerdict.REPORT_ONLY,
+        ),
+    )
 
-    Observes at-most-once execution (X-S4): the engine dedupes by content
-    hash so identical requests execute once per cache lifetime.
-    """
 
-    def __init__(self, inner: PythonSubprocessRunner) -> None:
+def killed_run(returncode: int, *, stderr: str = "killed") -> RunResult:
+    """A payload run whose child died on a signal (candidate crash)."""
+    return RunResult(
+        returncode=returncode,
+        stdout="",
+        stderr=stderr,
+        truncation=TruncationMark(),
+        measurements=_measurements(stderr=stderr),
+        outcome=Outcome(
+            attribution=Attribution.PAYLOAD,
+            exit_verdict=ExitVerdict.REPORT_ONLY,
+        ),
+    )
+
+
+def wall_clock_run(output_budget: OutputBudget | None = None) -> RunResult:
+    """A run killed on its wall-clock budget."""
+    return RunResult(
+        returncode=-9,
+        stdout="",
+        stderr="",
+        truncation=TruncationMark(),
+        measurements=_measurements(),
+        outcome=Outcome(
+            attribution=Attribution.BUDGET,
+            violated_axis=BudgetAxis.WALL_CLOCK,
+        ),
+    )
+
+
+def output_budget_run() -> RunResult:
+    """A run killed on its output budget."""
+    return RunResult(
+        returncode=-9,
+        stdout="",
+        stderr="x",
+        truncation=TruncationMark(stderr_bytes_dropped=1024),
+        measurements=Measurements(
+            duration_seconds=0.0,
+            teardown_seconds=0.0,
+            stdout_bytes_produced=0,
+            stderr_bytes_produced=1025,
+            input_bytes=0,
+        ),
+        outcome=Outcome(
+            attribution=Attribution.BUDGET,
+            violated_axis=BudgetAxis.OUTPUT,
+        ),
+    )
+
+
+def passed_payload(
+    *,
+    input_repr: str = "[1]",
+    expected_output_repr: str = "2",
+) -> dict[str, Any]:
+    return {
+        "status": EvaluationCaseStatus.PASSED.value,
+        "message": "",
+        "input_repr": input_repr,
+        "expected_output_repr": expected_output_repr,
+        "actual_output_repr": "",
+        "elapsed_seconds": 0.0,
+    }
+
+
+def failed_payload(*, message: str = "assertion failed") -> dict[str, Any]:
+    return {
+        "status": EvaluationCaseStatus.FAILED.value,
+        "message": message,
+        "input_repr": "[1]",
+        "expected_output_repr": "2",
+        "actual_output_repr": "0",
+        "elapsed_seconds": 0.0,
+    }
+
+
+def scripted_batch(
+    *,
+    case_payloads: Mapping[str, Any],
+    run: RunResult | None = None,
+    completion_seen: bool = True,
+) -> ScriptedBatch:
+    """A ScriptedBatch delivering ``case_payloads`` (item_id -> payload)."""
+    results = tuple(
+        ItemResult(item_id=item_id, payload=payload)
+        for item_id, payload in case_payloads.items()
+    )
+    return ScriptedBatch(
+        run=run if run is not None else clean_run(),
+        results=results,
+        completion_seen=completion_seen,
+    )
+
+
+def full_pass_batch(
+    case_ids: Sequence[str] = ("case_0", "case_1"),
+) -> ScriptedBatch:
+    return scripted_batch(
+        case_payloads={case_id: passed_payload() for case_id in case_ids}
+    )
+
+
+def partial_pass_batch(
+    *,
+    passed: Sequence[str] = ("case_0",),
+    case_ids: Sequence[str] = ("case_0", "case_1"),
+) -> ScriptedBatch:
+    payloads = {
+        case_id: (passed_payload() if case_id in passed else failed_payload())
+        for case_id in case_ids
+    }
+    return scripted_batch(case_payloads=payloads)
+
+
+# ---------------------------------------------------------------------------
+# Executor doubles.
+# ---------------------------------------------------------------------------
+
+def fake_executor_scripted(*batches: ScriptedBatch) -> FakeExecutor:
+    """A FakeExecutor answering each run_batch call with the next batch, FIFO."""
+    fake = FakeExecutor()
+    for batch in batches:
+        fake.enqueue_batch(batch)
+    return fake
+
+
+def fake_executor_always(batch_for: Any) -> FakeExecutor:
+    """A FakeExecutor answering every run_batch via a callable over the call."""
+    fake = FakeExecutor()
+    fake.script_batches_with(batch_for)
+    return fake
+
+
+class CountingExecutor:
+    """Wraps an executor and counts run_batch calls (observes at-most-once)."""
+
+    def __init__(self, inner: Any = PRODUCTION_EXECUTOR) -> None:
         self._inner = inner
-        self.calls: list[tuple[str, str, float]] = []
+        self.calls: list[BatchRequest] = []
 
-    def __call__(
+    def run_batch(
         self,
+        request: BatchRequest,
         *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        self.calls.append((source, input_text, timeout_seconds))
-        return self._inner(
-            source=source,
-            input_text=input_text,
-            timeout_seconds=timeout_seconds,
+        profile: ContainmentProfile,
+        budgets: Budgets,
+        records: Records,
+        runtime: PythonRuntime,
+        environment: EnvironmentGrant,
+    ) -> BatchResult:
+        self.calls.append(request)
+        return self._inner.run_batch(
+            request,
+            profile=profile,
+            budgets=budgets,
+            records=records,
+            runtime=runtime,
+            environment=environment,
         )
 
     @property
@@ -199,128 +349,8 @@ class CountingRunner:
         return len(self.calls)
 
 
-def scripted_runner(
-    *,
-    stdout: str = "[]",
-    stderr: str = "",
-    returncode: int = 0,
-) -> PythonSubprocessRunner:
-    """Build a runner that returns a fixed completed process."""
-
-    def run(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        return SubprocessCompletedProcess(
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-        )
-
-    return run
-
-
-def raising_runner(exc: BaseException) -> PythonSubprocessRunner:
-    """A runner that always raises (infra breakage or candidate timeout)."""
-
-    def run(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        raise exc
-
-    return run
-
-
 # ---------------------------------------------------------------------------
-# Scripted runner-JSON builders for deterministic code_test parity.
-# These script the runner's stdout so parity does not need a subprocess.
-# ---------------------------------------------------------------------------
-
-def case_result(
-    *,
-    case_id: str,
-    status: str,
-    message: str = "",
-    input_repr: str = "[1]",
-    expected_output_repr: str = "2",
-    actual_output_repr: str = "2",
-    elapsed_seconds: float | None = 0.0,
-    timeout_seconds: float | None = None,
-) -> dict[str, Any]:
-    return {
-        "case_id": case_id,
-        "status": status,
-        "message": message,
-        "input_repr": input_repr,
-        "expected_output_repr": expected_output_repr,
-        "actual_output_repr": actual_output_repr,
-        "elapsed_seconds": elapsed_seconds,
-        "timeout_seconds": timeout_seconds,
-    }
-
-
-def full_pass_runner_output(
-    case_ids: tuple[str, ...] = ("case_0", "case_1"),
-) -> str:
-    """Runner JSON that passes every supplied case id."""
-    return json.dumps(
-        [
-            case_result(case_id=case_id, status=EvaluationCaseStatus.PASSED.value)
-            for case_id in case_ids
-        ]
-    )
-
-
-def partial_pass_runner_output(
-    *,
-    passed: tuple[str, ...] = ("case_0",),
-    case_ids: tuple[str, ...] = ("case_0", "case_1"),
-) -> str:
-    """Runner JSON that passes ``passed`` and fails the rest of ``case_ids``."""
-    payload = []
-    for case_id in case_ids:
-        status = (
-            EvaluationCaseStatus.PASSED.value
-            if case_id in passed
-            else EvaluationCaseStatus.FAILED.value
-        )
-        payload.append(case_result(case_id=case_id, status=status))
-    return json.dumps(payload)
-
-
-def kill_runner_process(
-    returncode: int = next(iter(CANDIDATE_KILL_RETURNCODES)),
-) -> SubprocessCompletedProcess:
-    """A completed-process shape for the candidate-kill attribution path."""
-    return SubprocessCompletedProcess(returncode=returncode, stdout="", stderr="killed")
-
-
-def json_runner(
-    results: list[dict[str, Any]] | None = None,
-) -> tuple[PythonSubprocessRunner, list[tuple[str, str, float]]]:
-    """A deterministic fake runner plus its call log (source, input, timeout)."""
-    calls: list[tuple[str, str, float]] = []
-    payload = json.dumps(results or [])
-
-    def run(
-        *,
-        source: str,
-        input_text: str,
-        timeout_seconds: float,
-    ) -> SubprocessCompletedProcess:
-        calls.append((source, input_text, timeout_seconds))
-        return SubprocessCompletedProcess(returncode=0, stdout=payload, stderr="")
-
-    return run, calls
-
-
-# ---------------------------------------------------------------------------
-# Oracle runner: delegate to the existing batch_runner for parity comparisons.
+# Oracle: delegate to the real batch_runner for parity comparisons.
 # ---------------------------------------------------------------------------
 
 def evaluate_oracle(
@@ -328,14 +358,42 @@ def evaluate_oracle(
     candidate_code: str,
     *,
     timeout_seconds: float,
-    run_in_subprocess: PythonSubprocessRunner,
+    executor: Any = PRODUCTION_EXECUTOR,
 ):
-    """Run the existing batch_runner to get the oracle EvaluationTaskResult."""
+    """Run the real batch_runner to get the oracle EvaluationTaskResult."""
     from dr_code.humaneval.batch_runner import evaluate_human_eval_code
 
     return evaluate_human_eval_code(
         task=task,
         candidate_code=candidate_code,
         timeout_seconds=timeout_seconds,
-        run_in_subprocess=run_in_subprocess,
+        executor=executor,
+        records=Records.none(),
     )
+
+
+__all__ = [
+    "CANDIDATE_KILL_RETURNCODES",
+    "PRODUCTION_EXECUTOR",
+    "CountingExecutor",
+    "OutputBudget",
+    "OverflowPolicy",
+    "absent_trace",
+    "clean_run",
+    "code_test_trace",
+    "code_trace",
+    "evaluate_oracle",
+    "failed_payload",
+    "fake_executor_always",
+    "fake_executor_scripted",
+    "full_pass_batch",
+    "killed_run",
+    "make_task",
+    "output_budget_run",
+    "partial_pass_batch",
+    "passed_payload",
+    "scripted_batch",
+    "task_json_artifact",
+    "text_trace",
+    "wall_clock_run",
+]

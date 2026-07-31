@@ -26,15 +26,18 @@ from dr_code.humaneval.scoring import (
     SubmissionOutcome,
     score_humaneval_submission,
 )
-from dr_code.execution.subprocess import (
-    SubprocessCompletedProcess,
-    SubprocessTimeoutError,
+from dr_exec import Records
+
+from metrics.helpers import (
+    PRODUCTION_EXECUTOR,
+    code_test_trace,
+    fake_executor_always,
+    scripted_batch,
+    wall_clock_run,
 )
 
-from metrics.helpers import code_test_trace, raising_runner
 
-
-def _code_test_record(trace, *, runner, timeout=5.0):
+def _code_test_record(trace, *, executor, timeout=5.0):
     from dr_code.metrics import (
         MetricName,
         MetricQuestion,
@@ -53,7 +56,7 @@ def _code_test_record(trace, *, runner, timeout=5.0):
             ),
         ),
     )
-    records = extract_metrics(definition, trace, run_in_subprocess=runner)
+    records = extract_metrics(definition, trace, executor=executor)
     code_test = [r for r in records if r.metric is MetricName.CODE_TEST]
     assert len(code_test) == 1
     return code_test[0]
@@ -65,25 +68,26 @@ def _derive_outcome(record):
     return derive_outcome(record)
 
 
-def _score_outcome(submission, task, *, runner, timeout=5.0) -> str:
+def _score_outcome(submission, task, *, executor, timeout=5.0) -> str:
     result = score_humaneval_submission(
         raw_submission=submission,
         task=task,
         parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
         timeout_seconds=timeout,
-        run_in_subprocess=runner,
+        executor=executor,
+        records=Records.none(),
     )
     return result.outcome.value
 
 
-def _assert_parity(submission, task, *, runner, timeout=5.0) -> None:
+def _assert_parity(submission, task, *, executor, timeout=5.0) -> None:
     """policy_example's outcome over the code_test record equals scoring's
     outcome over the same submission."""
     record = _code_test_record(
-        code_test_trace(submission, task), runner=runner, timeout=timeout
+        code_test_trace(submission, task), executor=executor, timeout=timeout
     )
     consumer = _derive_outcome(record)
-    oracle = _score_outcome(submission, task, runner=runner, timeout=timeout)
+    oracle = _score_outcome(submission, task, executor=executor, timeout=timeout)
     assert str(consumer.value) == str(oracle)
 
 
@@ -91,31 +95,31 @@ def _assert_parity(submission, task, *, runner, timeout=5.0) -> None:
 # Outcome parity vs score_humaneval_submission.
 # ---------------------------------------------------------------------------
 
-def test_passed_outcome_parity(task, good_submission, local_runner) -> None:
-    _assert_parity(good_submission, task, runner=local_runner)
+def test_passed_outcome_parity(task, good_submission, real_executor) -> None:
+    _assert_parity(good_submission, task, executor=real_executor)
     record = _code_test_record(
-        code_test_trace(good_submission, task), runner=local_runner
+        code_test_trace(good_submission, task), executor=real_executor
     )
     assert _derive_outcome(record).value == SubmissionOutcome.PASSED.value
 
 
 def test_tests_failed_outcome_parity(
-    task, failing_submission, local_runner
+    task, failing_submission, real_executor
 ) -> None:
-    _assert_parity(failing_submission, task, runner=local_runner)
+    _assert_parity(failing_submission, task, executor=real_executor)
     record = _code_test_record(
-        code_test_trace(failing_submission, task), runner=local_runner
+        code_test_trace(failing_submission, task), executor=real_executor
     )
     assert _derive_outcome(record).value == (
         SubmissionOutcome.TESTS_FAILED.value
     )
 
 
-def test_no_top_level_functions_outcome_parity(task, local_runner) -> None:
+def test_no_top_level_functions_outcome_parity(task, real_executor) -> None:
     submission = "x = 1\n"  # compiles, no top-level functions
-    _assert_parity(submission, task, runner=local_runner)
+    _assert_parity(submission, task, executor=real_executor)
     record = _code_test_record(
-        code_test_trace(submission, task), runner=local_runner
+        code_test_trace(submission, task), executor=real_executor
     )
     assert _derive_outcome(record).value == (
         SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS.value
@@ -123,27 +127,28 @@ def test_no_top_level_functions_outcome_parity(task, local_runner) -> None:
 
 
 def test_timed_out_outcome_parity(task, good_submission) -> None:
-    runner = raising_runner(SubprocessTimeoutError("timed out"))
-    _assert_parity(good_submission, task, runner=runner, timeout=1.0)
+    executor = fake_executor_always(
+        lambda call: scripted_batch(case_payloads={}, run=wall_clock_run())
+    )
+    _assert_parity(good_submission, task, executor=executor, timeout=1.0)
     record = _code_test_record(
-        code_test_trace(good_submission, task), runner=runner, timeout=1.0
+        code_test_trace(good_submission, task), executor=executor, timeout=1.0
     )
     assert _derive_outcome(record).value == SubmissionOutcome.TIMED_OUT.value
 
 
 def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
-    """Partial runner output (incomplete coverage, no failures) ⇒ incomplete."""
+    """A batch that reports only some of its cases (no failures) ⇒ incomplete."""
+    from metrics.helpers import passed_payload
 
-    def partial_runner(*, source, input_text, timeout_seconds):  # noqa: ANN001
-        return SubprocessCompletedProcess(
-            returncode=0,
-            stdout='[{"case_id": "case_0", "status": "passed"}]',
-            stderr="",
-        )
+    def partial(call):
+        first = call.request.item_ids[0]
+        return scripted_batch(case_payloads={first: passed_payload()})
 
-    _assert_parity(good_submission, task, runner=partial_runner)
+    executor = fake_executor_always(partial)
+    _assert_parity(good_submission, task, executor=executor)
     record = _code_test_record(
-        code_test_trace(good_submission, task), runner=partial_runner
+        code_test_trace(good_submission, task), executor=executor
     )
     assert _derive_outcome(record).value == (
         SubmissionOutcome.EVALUATION_INCOMPLETE.value
@@ -155,11 +160,11 @@ def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
 # ---------------------------------------------------------------------------
 
 def test_code_test_record_carries_no_verdict_fields(
-    task, good_submission, local_runner
+    task, good_submission, real_executor
 ) -> None:
     """No thresholds, verdicts, or 'best'-as-judgement in records."""
     record = _code_test_record(
-        code_test_trace(good_submission, task), runner=local_runner
+        code_test_trace(good_submission, task), executor=real_executor
     )
     assert "outcome" not in record.values
     assert "score" not in record.values

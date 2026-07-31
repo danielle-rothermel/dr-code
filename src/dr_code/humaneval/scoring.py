@@ -18,15 +18,17 @@ from pydantic import (
     StrictStr,
 )
 
-from dr_code.humaneval.batch_runner import evaluate_human_eval_code
+from dr_exec import Records
+
+from dr_code.humaneval.batch_runner import (
+    PRODUCTION_EXECUTOR,
+    BatchExecutor,
+    evaluate_human_eval_code,
+)
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
     CodeParserProfile,
     extract_code_with_profile,
-)
-from dr_code.execution.subprocess import (
-    PythonSubprocessRunner,
-    run_python_subprocess,
 )
 from dr_code.humaneval.task import (
     EvaluationHarnessError,
@@ -104,7 +106,8 @@ def score_humaneval_submission(
     task: HumanEvalTask,
     parser_profile: CodeParserProfile,
     timeout_seconds: float,
-    run_in_subprocess: PythonSubprocessRunner = run_python_subprocess,
+    executor: BatchExecutor = PRODUCTION_EXECUTOR,
+    records: Records = Records.none(),
 ) -> HumanEvalSubmissionScore:
     """Score one submission under a parser profile."""
     if not isinstance(raw_submission, str):
@@ -130,7 +133,8 @@ def score_humaneval_submission(
             candidate_code=extraction.extracted_code,
             timeout_seconds=timeout_seconds,
             candidate_ast=extraction.parsed_candidate,
-            run_in_subprocess=run_in_subprocess,
+            executor=executor,
+            records=records,
         )
     except EvaluationHarnessError as exc:
         return HarnessFailure(

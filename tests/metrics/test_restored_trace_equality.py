@@ -11,7 +11,6 @@ cleanly against the missing package and fails hard (never skips) when absent.
 
 from __future__ import annotations
 
-from dr_code.execution.subprocess import SubprocessCompletedProcess
 from dr_code.trace import (
     CodeArtifact,
     TextArtifact,
@@ -22,7 +21,12 @@ from dr_code.trace import (
     serialize_trace,
 )
 
-from metrics.helpers import code_test_trace
+from metrics.helpers import (
+    PRODUCTION_EXECUTOR,
+    code_test_trace,
+    fake_executor_always,
+    full_pass_batch,
+)
 
 CODE = "def add_one(x):\n    return x + 1\n"
 TEXT = "some prose with def and return keywords\n"
@@ -79,11 +83,14 @@ def _answer(record):
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
+    kwargs.setdefault("executor", PRODUCTION_EXECUTOR)
     return extract_metrics(definition, trace, **kwargs)
 
 
-def _stub_runner(*, source, input_text, timeout_seconds):  # noqa: ANN001
-    return SubprocessCompletedProcess(returncode=0, stdout="[]", stderr="")
+def _pass_all_executor():
+    return fake_executor_always(
+        lambda call: full_pass_batch(case_ids=call.request.item_ids)
+    )
 
 
 # ===========================================================================
@@ -157,8 +164,10 @@ def test_code_test_record_equal_across_fresh_and_restored(task) -> None:
     restored = deserialize_trace(serialize_trace(fresh))
     definition = _code_test_definition()
     assert _answer(
-        _extract(definition, fresh, run_in_subprocess=_stub_runner)[0]
-    ) == _answer(_extract(definition, restored, run_in_subprocess=_stub_runner)[0])
+        _extract(definition, fresh, executor=_pass_all_executor())[0]
+    ) == _answer(
+        _extract(definition, restored, executor=_pass_all_executor())[0]
+    )
 
 
 def test_batch_over_identical_traces_yields_equal_record_sets(task) -> None:
@@ -171,7 +180,7 @@ def test_batch_over_identical_traces_yields_equal_record_sets(task) -> None:
     record_sets = extract_metrics_batch(
         definition,
         [fresh, restored, fresh],
-        run_in_subprocess=_stub_runner,
+        executor=_pass_all_executor(),
     )
     answers = [[_answer(r) for r in records] for records in record_sets]
     assert answers[0] == answers[1] == answers[2]
