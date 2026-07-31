@@ -14,7 +14,6 @@ from dr_code.preprocessing import (
     resolve_preprocessing_definition,
     run_preprocessing,
 )
-from dr_code.preprocessing.definition import preprocessing_definition_hash
 from dr_code.trace import (
     Absent,
     CodeArtifact,
@@ -40,7 +39,9 @@ def _best_effort_v2():
 
 
 def _trace(raw: str) -> Trace:
-    return run_preprocessing(_best_effort_v2(), TextArtifact(text=raw))
+    return run_preprocessing(
+        _best_effort_v2().materialize(), TextArtifact(text=raw)
+    )
 
 
 def _assert_round_trip(trace: Trace) -> Trace:
@@ -88,8 +89,8 @@ def test_round_trip_preserves_producer_id_and_version() -> None:
     restored = _assert_round_trip(trace)
     assert restored.producer.producer_id == BEST_EFFORT_ID
     assert restored.producer.version == "v2"
-    assert restored.producer.definition_hash == preprocessing_definition_hash(
-        _best_effort_v2()
+    assert (
+        restored.producer.definition_hash == _best_effort_v2().identity_hash()
     )
 
 

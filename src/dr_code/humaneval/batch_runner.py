@@ -152,15 +152,21 @@ class HumanEvalBatchPlan:
     budgets: Budgets
 
 
-def human_eval_budgets(timeout_seconds: float) -> Budgets:
+def human_eval_budgets(
+    timeout_seconds: float,
+    *,
+    output_bytes: int = MAX_HUMANEVAL_OUTPUT_BYTES,
+    output_overflow_policy: OverflowPolicy = OverflowPolicy.FAIL,
+    input_bytes: int = MAX_HUMANEVAL_INPUT_BYTES,
+) -> Budgets:
     """dr-code's declared budgets for a HumanEval batch of one function."""
     return Budgets(
         wall_clock=timeout_seconds,
         output=OutputBudget(
-            limit_bytes=MAX_HUMANEVAL_OUTPUT_BYTES,
-            overflow_policy=OverflowPolicy.FAIL,
+            limit_bytes=output_bytes,
+            overflow_policy=output_overflow_policy,
         ),
-        input=MAX_HUMANEVAL_INPUT_BYTES,
+        input=input_bytes,
     )
 
 
@@ -253,9 +259,15 @@ def build_human_eval_batch_plan(
     candidate_code: str,
     function_name: str,
     timeout_seconds: float,
+    budgets: Budgets | None = None,
     checks: list[SingleCaseCheck] | None = None,
 ) -> HumanEvalBatchPlan:
-    """Build the dr-exec batch request and budgets for one function."""
+    """Build the dr-exec batch request and budgets for one function.
+
+    ``budgets`` lets a caller declare its own output/input bounds (the
+    code_test operator folds them into its identity); when omitted the lane's
+    default HumanEval budgets are used.
+    """
     parsed_tests = require_parsed_tests(task)
     check_payloads = (
         checks
@@ -289,7 +301,11 @@ def build_human_eval_batch_plan(
     )
     return HumanEvalBatchPlan(
         request=request,
-        budgets=human_eval_budgets(timeout_seconds),
+        budgets=(
+            budgets
+            if budgets is not None
+            else human_eval_budgets(timeout_seconds)
+        ),
     )
 
 

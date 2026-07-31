@@ -1,11 +1,11 @@
 """Engine contracts (plan section: ``engine/engine.py``).
 
-Covers the four engine promises and the bind/plan/compute flow:
+Covers the four engine promises (design L3) and the bind/plan/compute flow:
 
 * bind-time ``WiringError`` on incompatible definitions, before any work;
 * totality — N questions ⇒ N records, in declaration order;
 * Absent ``on``/aux input ⇒ NOT_APPLICABLE record preserving the cause
-  (missing key is still a wiring error);
+  (missing key is still a wiring error — design L2);
 * operator exception ⇒ OPERATOR_FAILURE record attributed to the metric;
 * a genuine executor failure (``ExecutorFailure``) raises (fail-closed);
 * candidate budget deaths are data, not infrastructure;
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 from dr_exec import ExecutorFailure
+
 from dr_code.trace import (
     Absent,
     CodeArtifact,
@@ -28,16 +29,17 @@ from dr_code.trace import (
     TraceProducer,
     WiringError,
     deserialize_trace,
-    external_trace,
     serialize_trace,
 )
 
 from metrics.helpers import (
     PRODUCTION_EXECUTOR,
     code_test_trace,
+    evaluation_procedure,
+    external_trace,
     fake_executor_always,
-    full_pass_batch,
     output_budget_run,
+    procedure_trace,
     scripted_batch,
     wall_clock_run,
 )
@@ -49,29 +51,20 @@ from metrics.helpers import (
 
 
 def _definition(questions) -> object:
-    from dr_code.metrics import MetricsDefinition
+    from dr_code.eval import MetricExtractionDefinition
 
-    return MetricsDefinition(
+    return MetricExtractionDefinition(
         definition_id="def", version="1", questions=tuple(questions)
     )
 
 
 def _q(metric_name: str, on: str = "input", **settings) -> object:
-    from dr_code.metrics import MetricName, MetricQuestion
+    from dr_code.eval import MetricQuestionBinding
+    from dr_code.metrics import MetricName
 
-    return MetricQuestion(
+    return MetricQuestionBinding(
         metric=MetricName(metric_name), on=on, settings=settings
     )
-
-
-def _pass_all_executor():
-    """A fake that answers every batch by passing every requested case."""
-
-    def batch_for(call):
-        case_ids = call.request.item_ids
-        return full_pass_batch(case_ids=case_ids)
-
-    return fake_executor_always(batch_for)
 
 
 # ===========================================================================
@@ -92,6 +85,7 @@ def test_missing_on_key_is_a_wiring_error_before_any_work(
 
 
 def test_wrong_artifact_kind_is_a_wiring_error(counting_executor) -> None:
+    """ast_stats requires CODE; a TEXT key is a kind mismatch (bind-time)."""
     trace = external_trace(
         {
             "input": TextArtifact(text="not code"),
@@ -107,20 +101,73 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_executor) -> None:
 def test_invalid_operator_settings_is_a_wiring_error(
     counting_executor,
 ) -> None:
+    """compressed_length requires a valid compression config; bad settings wire."""
+    with pytest.raises(ValueError):
+        _definition(
+            [
+                _q(
+                    "compressed_length",
+                    compression={"method": "gzip", "level": 99},
+                )
+            ]
+        )
+    assert counting_executor.call_count == 0
+
+
+def test_stale_resolved_operator_version_is_rejected_before_execution(
+    counting_executor,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.metrics import MetricName, extract_metrics
+    from dr_code.metrics.registry import REGISTRY
+
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
-    definition = _definition(
-        [_q("compressed_length", compression={"method": "gzip", "level": 99})]
+    definition = _definition([_q("text_stats")])
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+    monkeypatch.setattr(operator_cls, "VERSION", "new-live-version")
+
+    with pytest.raises(ValueError, match="stale resolved operator versions"):
+        extract_metrics(
+            trace,
+            metric_extraction=metric_extraction,
+            evaluation_procedure=procedure,
+            executor=counting_executor,
+        )
+    assert counting_executor.call_count == 0
+
+
+def test_stale_resolved_operator_count_is_rejected_before_execution(
+    counting_executor,
+) -> None:
+    from dr_code.metrics import extract_metrics
+
+    trace = external_trace(
+        {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
-    with pytest.raises(WiringError):
-        _extract(definition, trace, executor=counting_executor)
+    definition = _definition([_q("text_stats")])
+    metric_extraction = definition.materialize().model_copy(
+        update={"resolved_operator_versions": ()}
+    )
+    procedure = evaluation_procedure(definition, metric_extraction)
+
+    with pytest.raises(ValueError, match="stale resolved operator versions"):
+        extract_metrics(
+            trace,
+            metric_extraction=metric_extraction,
+            evaluation_procedure=procedure,
+            executor=counting_executor,
+        )
     assert counting_executor.call_count == 0
 
 
 def test_missing_auxiliary_key_is_a_wiring_error(
     task, counting_executor
 ) -> None:
+    """code_test needs its task key; a key absent from the namespace is wiring."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = external_trace(
         {
@@ -169,23 +216,65 @@ def test_one_record_per_question_in_declaration_order() -> None:
             _q("ast_stats", on="input"),
         ]
     )
-    records = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)
+    records = _extract(definition, trace)
     assert len(records) == 3
-    assert [r.metric.value for r in records] == [
+    assert [r.question for r in records] == [
         "text_stats",
         "code_leakage",
         "ast_stats",
     ]
 
 
+def test_same_metric_and_key_with_different_settings_have_distinct_identity() -> (
+    None
+):
+    questions = (
+        _q(
+            "compressed_length",
+            compression={"method": "gzip", "level": 1},
+        ),
+        _q(
+            "compressed_length",
+            compression={"method": "gzip", "level": 9},
+        ),
+    )
+    definition = _definition(questions)
+    records = _extract(
+        definition,
+        external_trace(
+            {
+                "input": TextArtifact(text="identity-sensitive"),
+                "output": TextArtifact(text="identity-sensitive"),
+            }
+        ),
+    )
+
+    assert [record.question for record in records] == [
+        "compressed_length",
+        "compressed_length",
+    ]
+    concrete_questions = definition.materialize().questions
+    assert [record.question_identity_hash for record in records] == [
+        question.identity_hash() for question in concrete_questions
+    ]
+    assert len({record.question_identity_hash for record in records}) == 2
+    assert all(
+        fact.lineage.question_identity_hash == record.question_identity_hash
+        for record in records
+        for fact in record.facts
+    )
+
+
 def test_no_questions_yields_no_records() -> None:
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
-    assert _extract(_definition([]), trace, executor=PRODUCTION_EXECUTOR) == ()
+    assert _extract(_definition([]), trace) == ()
 
 
 def test_absent_on_key_yields_not_applicable_with_cause() -> None:
+    """Absent input ⇒ NOT_APPLICABLE carrying the Absent lineage (design L3),
+    distinct from a missing key (which is a wiring error)."""
     trace = external_trace(
         {
             "input": Absent(failed_step="extract", cause="no code"),
@@ -195,16 +284,18 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
     )
-    records = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)
+    records = _extract(definition, trace)
     assert len(records) == 2
     for record in records:
         assert record.status.value == "not_applicable"
-        assert record.absence_failed_step == "extract"
-        assert record.absence_cause == "no code"
-        assert record.values == {}
+        assert record.absence_mode.value == "preprocessing_failure"
+        assert record.absence_cause == "extract: no code"
+        assert record.fact_values() == {}
 
 
 def test_absent_auxiliary_yields_not_applicable(task) -> None:
+    """code_test whose task aux is present-but-Absent is not-applicable, not a
+    wiring bug (plan: Absent aux values yield not-applicable records)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     code = CodeArtifact(source=candidate)
     trace = external_trace(
@@ -215,19 +306,22 @@ def test_absent_auxiliary_yields_not_applicable(task) -> None:
         }
     )
     definition = _definition([_q("code_test", on="input")])
-    record = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)[0]
+    record = _extract(definition, trace)[0]
     assert record.status.value == "not_applicable"
-    assert record.absence_failed_step == "load"
+    assert record.absence_mode.value == "preprocessing_failure"
+    assert record.absence_cause == "load: missing task"
 
 
 # ===========================================================================
-# Operator exception ⇒ OPERATOR_FAILURE record (totality).
+# Operator exception ⇒ OPERATOR_FAILURE record (totality, L3).
 # ===========================================================================
 
 
 def test_operator_exception_becomes_an_operator_failure_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """An operator bug on present input is a visible failure record, never a
+    boundary-crossing exception (design L3)."""
     from dr_code.metrics import MetricName
     from dr_code.metrics.registry import REGISTRY
 
@@ -246,16 +340,53 @@ def test_operator_exception_becomes_an_operator_failure_record(
 
     monkeypatch.setattr(operator_cls, "compute", boom)
     definition = _definition([_q("text_stats", on="input")])
-    record = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)[0]
+    record = _extract(definition, trace)[0]
     assert record.status.value == "operator_failure"
     assert record.failure_type == "ValueError"
     assert record.failure_message == "operator bug"
-    assert record.metric is MetricName.TEXT_STATS
+    assert record.question == MetricName.TEXT_STATS
+
+
+def test_operator_exception_with_empty_message_is_a_failure_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.registry import REGISTRY
+
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+
+    def boom(self, value, aux, ctx):  # noqa: ANN001
+        raise ValueError
+
+    monkeypatch.setattr(operator_cls, "compute", boom)
+    definition = _definition([_q("text_stats")])
+    record = _extract(
+        definition,
+        external_trace(
+            {
+                "input": TextArtifact(text="hi"),
+                "output": TextArtifact(text="hi"),
+            }
+        ),
+    )[0]
+
+    assert record.status.value == "operator_failure"
+    assert record.failure_type == "ValueError"
+    assert record.failure_message == ""
+    assert (
+        record.question_identity_hash
+        == definition.questions[0].identity_hash()
+    )
 
 
 def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> (
     None
 ):
+    """CodeArtifact documents "passed a compile check upstream", so unparseable
+    CODE is a producer contract violation -- ast_stats must not mask it as an
+    all-zero (indistinguishable from empty) measurement. It becomes an
+    OPERATOR_FAILURE record, consistent with code_test's SyntaxError-on-parse
+    behavior; parse facts stay the job of parse_outcome."""
     from dr_code.metrics import MetricName
 
     invalid = "def f(:\n    pass\n"
@@ -266,14 +397,14 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
         }
     )
     definition = _definition([_q("ast_stats", on="input")])
-    record = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)[0]
+    record = _extract(definition, trace)[0]
     assert record.status.value == "operator_failure"
-    assert record.metric is MetricName.AST_STATS
-    assert record.values == {}
+    assert record.question == MetricName.AST_STATS
+    assert record.fact_values() == {}
 
 
 # ===========================================================================
-# Executor failures raise; candidate budget deaths are data.
+# Infrastructure errors raise; candidate terminations are data (L3).
 # ===========================================================================
 
 
@@ -294,10 +425,13 @@ def test_executor_failure_raises(task) -> None:
 
 
 def test_missing_execution_outcome_raises_engine_invariant_error(
-    task, monkeypatch: pytest.MonkeyPatch
+    task, real_executor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A compute that plans a request execution_requests never saw is an engine
-    bug: it surfaces as EngineInvariantError, never an operator_failure."""
+    """If CodeTest.compute rebuilds an ExecutionRequest that diverges from
+    what execution_requests planned, ctx.outcome_for's lookup misses. That
+    is an engine bug, not a metric bug: it must surface as
+    EngineInvariantError out of the batch, never get swallowed into an
+    operator_failure record."""
     from dr_code.metrics import EngineInvariantError
     from dr_code.metrics.operators.code_test import CodeTest
 
@@ -310,12 +444,12 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
 
     monkeypatch.setattr(CodeTest, "execution_requests", no_requests)
     with pytest.raises(EngineInvariantError):
-        _extract(definition, trace, executor=PRODUCTION_EXECUTOR)
+        _extract(definition, trace, executor=real_executor)
 
 
 def test_wall_clock_budget_is_candidate_data_not_infrastructure(task) -> None:
     """A wall-clock budget death is scored against the candidate as timeout
-    cases, not a raised failure."""
+    cases, not a raised failure (batch_runner attribution parity)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(
@@ -329,10 +463,15 @@ def test_wall_clock_budget_is_candidate_data_not_infrastructure(task) -> None:
         definition, trace, executor=fake_executor_always(timed_out)
     )[0]
     assert record.status.value == "measured"
-    assert record.values["timeout_count"] == record.values["total_cases"]
+    assert (
+        record.fact_values()["timeout_count"]
+        == record.fact_values()["total_cases"]
+    )
 
 
-def test_output_budget_is_candidate_data_not_infrastructure(task) -> None:
+def test_output_budget_is_candidate_data_not_infrastructure(
+    task,
+) -> None:
     """Candidate output flooding becomes error cases, not an infra raise."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
@@ -345,8 +484,11 @@ def test_output_budget_is_candidate_data_not_infrastructure(task) -> None:
         definition, trace, executor=fake_executor_always(flooded)
     )[0]
     assert record.status.value == "measured"
-    assert record.values["error_count"] == record.values["total_cases"]
-    assert record.values["timeout_count"] == 0
+    assert (
+        record.fact_values()["error_count"]
+        == record.fact_values()["total_cases"]
+    )
+    assert record.fact_values()["timeout_count"] == 0
 
 
 # ===========================================================================
@@ -357,6 +499,7 @@ def test_output_budget_is_candidate_data_not_infrastructure(task) -> None:
 def test_batch_dedupes_identical_code_test_executions(
     task, counting_executor
 ) -> None:
+    """Identical submissions across a sweep execute once (at-most-once)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
@@ -376,14 +519,14 @@ def test_distinct_submissions_execute_separately(
     assert counting_executor.call_count == 2
 
 
-def test_batch_returns_one_record_tuple_per_trace(task) -> None:
+def test_batch_returns_one_record_tuple_per_trace(task, real_executor) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(
         [_q("code_test", on="input", timeout_seconds=5.0)]
     )
     results = _extract_batch(
-        definition, [trace, trace], executor=PRODUCTION_EXECUTOR
+        definition, [trace, trace], executor=real_executor
     )
     assert isinstance(results, tuple)
     assert len(results) == 2
@@ -395,6 +538,7 @@ def test_batch_returns_one_record_tuple_per_trace(task) -> None:
 def test_prepopulated_execution_cache_skips_the_executor(
     task, counting_executor
 ) -> None:
+    """A cache hit means the injected runner is never called."""
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
     candidate = "def add_one(x):\n    return x + 1\n"
@@ -403,18 +547,25 @@ def test_prepopulated_execution_cache_skips_the_executor(
 
     cache = InMemoryExecutionCache()
     _extract(
-        definition, trace, executor=counting_executor, execution_cache=cache
+        definition,
+        trace,
+        executor=counting_executor,
+        execution_cache=cache,
     )
     assert counting_executor.call_count == 1
 
     counting_executor.calls.clear()
     _extract(
-        definition, trace, executor=counting_executor, execution_cache=cache
+        definition,
+        trace,
+        executor=counting_executor,
+        execution_cache=cache,
     )
     assert counting_executor.call_count == 0
 
 
 def test_pure_operators_never_call_the_executor(counting_executor) -> None:
+    """Pure operators declare no execution requests."""
     text = "def f(x):\n    return x\n"
     trace = external_trace(
         {
@@ -435,6 +586,7 @@ def test_pure_operators_never_call_the_executor(counting_executor) -> None:
 
 
 def test_fresh_trace_equals_deserialized_trace() -> None:
+    """Restored traces measure the same as fresh traces (design L2/L3)."""
     text = "def add_one(x):\n    return x + 1\n"
     fresh = external_trace(
         {
@@ -446,12 +598,12 @@ def test_fresh_trace_equals_deserialized_trace() -> None:
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
     )
-    assert _extract(
-        definition, fresh, executor=PRODUCTION_EXECUTOR
-    ) == _extract(definition, restored, executor=PRODUCTION_EXECUTOR)
+    assert _extract(definition, fresh) == _extract(definition, restored)
 
 
 def test_external_trace_matches_preprocessing_producer_trace() -> None:
+    """Any producer's trace yields the same measured answer (X-S2). Producer
+    lineage legitimately differs, so the comparable projection is the answer."""
     text = "def f(x):\n    return x\n"
     values = {
         "input": CodeArtifact(source=text),
@@ -461,7 +613,11 @@ def test_external_trace_matches_preprocessing_producer_trace() -> None:
     preprocessing = Trace(
         values=values,
         producer=TraceProducer(
-            producer_id="pre", version="v1", definition_hash="abc"
+            producer_id="pre",
+            version="v1",
+            definition_hash="a" * 64,
+            preprocessing_config_hash="b" * 64,
+            implementation_hash="c" * 64,
         ),
     )
     definition = _definition(
@@ -470,32 +626,28 @@ def test_external_trace_matches_preprocessing_producer_trace() -> None:
 
     def answer(record):
         return (
-            record.metric,
-            record.metric_version,
+            record.question,
+            record.facts[0].lineage.operator_version,
             record.on_key,
             record.status,
-            tuple(sorted(record.values.items())),
+            tuple(sorted(record.fact_values().items())),
         )
 
-    assert [
-        answer(r)
-        for r in _extract(definition, external, executor=PRODUCTION_EXECUTOR)
-    ] == [
-        answer(r)
-        for r in _extract(
-            definition, preprocessing, executor=PRODUCTION_EXECUTOR
-        )
+    assert [answer(r) for r in _extract(definition, external)] == [
+        answer(r) for r in _extract(definition, preprocessing)
     ]
 
 
-def test_code_test_record_values_exclude_timing(task) -> None:
+def test_code_test_record_values_exclude_timing(task, real_executor) -> None:
+    """Determinism soft spot: timing stays out of record values so identical
+    inputs reproduce (plan section 3)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(
         [_q("code_test", on="input", timeout_seconds=2.0)]
     )
-    record = _extract(definition, trace, executor=PRODUCTION_EXECUTOR)[0]
-    assert "elapsed_seconds" not in record.values
+    record = _extract(definition, trace, executor=real_executor)[0]
+    assert "elapsed_seconds" not in record.fact_values()
 
 
 # ---------------------------------------------------------------------------
@@ -506,10 +658,26 @@ def test_code_test_record_values_exclude_timing(task) -> None:
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
-    return extract_metrics(definition, trace, **kwargs)
+    kwargs.setdefault("executor", PRODUCTION_EXECUTOR)
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    return extract_metrics(
+        procedure_trace(trace, procedure),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
+        **kwargs,
+    )
 
 
 def _extract_batch(definition, traces, **kwargs):
     from dr_code.metrics import extract_metrics_batch
 
-    return extract_metrics_batch(definition, traces, **kwargs)
+    kwargs.setdefault("executor", PRODUCTION_EXECUTOR)
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    return extract_metrics_batch(
+        tuple(procedure_trace(trace, procedure) for trace in traces),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
+        **kwargs,
+    )

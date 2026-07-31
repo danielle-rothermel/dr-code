@@ -30,33 +30,46 @@ from dr_exec import Records
 
 from metrics.helpers import (
     code_test_trace,
+    evaluation_procedure,
     fake_executor_always,
+    procedure_trace,
     scripted_batch,
     wall_clock_run,
 )
 
+_PROCEDURE_HASH = "d" * 64
+
 
 def _code_test_record(trace, *, executor, timeout=5.0):
+    from dr_code.eval import (
+        MetricQuestionBinding,
+        MetricExtractionDefinition,
+    )
     from dr_code.metrics import (
         MetricName,
-        MetricQuestion,
-        MetricsDefinition,
         extract_metrics,
     )
 
-    definition = MetricsDefinition(
+    definition = MetricExtractionDefinition(
         definition_id="policy",
         version="1",
         questions=(
-            MetricQuestion(
+            MetricQuestionBinding(
                 metric=MetricName.CODE_TEST,
                 on="input",
                 settings={"timeout_seconds": timeout},
             ),
         ),
     )
-    records = extract_metrics(definition, trace, executor=executor)
-    code_test = [r for r in records if r.metric is MetricName.CODE_TEST]
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    records = extract_metrics(
+        procedure_trace(trace, procedure),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
+        executor=executor,
+    )
+    code_test = [r for r in records if r.question == MetricName.CODE_TEST]
     assert len(code_test) == 1
     return code_test[0]
 
@@ -169,36 +182,78 @@ def test_code_test_record_carries_no_verdict_fields(
     record = _code_test_record(
         code_test_trace(good_submission, task), executor=real_executor
     )
-    assert "outcome" not in record.values
-    assert "score" not in record.values
-    assert "pass_at_k" not in record.values
-    assert "passed" not in record.values
+    assert "outcome" not in record.fact_values()
+    assert "score" not in record.fact_values()
+    assert "pass_at_k" not in record.fact_values()
+    assert "passed" not in record.fact_values()
 
 
 def test_derive_outcome_rejects_negative_counts() -> None:
     """A corrupt or tampered record cannot cancel failures with negative
     counts (failed_count=-1 + error_count=1 would otherwise read as zero
     failures and derive PASSED)."""
-    from dr_code.metrics import MetricName
-    from dr_code.metrics.records import MetricRecord, RecordStatus
+    from dr_code.eval import (
+        Applicability,
+        MetricFact,
+        MetricRecord,
+        OperatorCoordinates,
+        OperatorLineage,
+    )
+    from dr_code.trace import (
+        EXTERNAL_PRODUCER_ID,
+        ExternalSource,
+        TraceProducer,
+    )
 
-    record = MetricRecord(
-        metric=MetricName.CODE_TEST,
-        metric_version="1",
+    operator = OperatorCoordinates(
+        name="code_test",
+        version="1",
+        implementation_hash="c" * 64,
+        settings=(
+            ("task_key", "task"),
+            ("timeout_seconds", 2.0),
+        ),
+    )
+    question_identity = operator.question_identity_hash(on_key="input")
+    lineage = OperatorLineage(
+        evaluation_procedure_config_hash=_PROCEDURE_HASH,
+        question_identity_hash=question_identity,
+        operator="code_test",
+        operator_version="1",
+        operator_implementation="c" * 64,
+    )
+    record = MetricRecord.measured(
+        question="code_test",
+        question_identity_hash=question_identity,
         on_key="input",
-        producer_id="policy",
-        producer_version="1",
-        producer_definition_hash=None,
-        metrics_definition_id="policy",
-        metrics_definition_version="1",
-        status=RecordStatus.MEASURED,
-        values={
-            "function_count": 1,
-            "failed_count": -1,
-            "error_count": 1,
-            "timeout_count": 0,
-            "coverage_complete": True,
-        },
+        evaluation_procedure_config_hash=_PROCEDURE_HASH,
+        trace_producer=TraceProducer(
+            producer_id=EXTERNAL_PRODUCER_ID,
+            external_source=ExternalSource(
+                source_id="policy-example",
+                content_digest="e" * 64,
+            ),
+        ),
+        operator=operator,
+        facts=tuple(
+            MetricFact(
+                name=name,
+                value=value,
+                unit=unit,
+                applicability=Applicability.APPLICABLE,
+                lineage=lineage,
+            )
+            for name, value, unit in (
+                ("total_cases", 1, "case"),
+                ("passed_count", 1, "case"),
+                ("failed_count", -1, "case"),
+                ("error_count", 1, "case"),
+                ("timeout_count", 0, "case"),
+                ("coverage_complete", True, "boolean"),
+                ("function_count", 1, "function"),
+                ("best_function_name", "candidate", "name"),
+            )
+        ),
     )
     with pytest.raises(ValueError, match="non-negative"):
         _derive_outcome(record)

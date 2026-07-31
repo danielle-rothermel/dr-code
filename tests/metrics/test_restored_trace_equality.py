@@ -17,15 +17,16 @@ from dr_code.trace import (
     Trace,
     TraceProducer,
     deserialize_trace,
-    external_trace,
     serialize_trace,
 )
 
 from metrics.helpers import (
-    PRODUCTION_EXECUTOR,
     code_test_trace,
+    evaluation_procedure,
+    external_trace,
     fake_executor_always,
     full_pass_batch,
+    procedure_trace,
 )
 
 CODE = "def add_one(x):\n    return x + 1\n"
@@ -33,21 +34,25 @@ TEXT = "some prose with def and return keywords\n"
 
 
 def _mixed_definition():
-    from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
+    from dr_code.eval import (
+        MetricQuestionBinding,
+        MetricExtractionDefinition,
+    )
+    from dr_code.metrics import MetricName
 
-    return MetricsDefinition(
+    return MetricExtractionDefinition(
         definition_id="eq",
         version="1",
         questions=(
-            MetricQuestion(metric=MetricName.TEXT_STATS, on="text"),
-            MetricQuestion(
+            MetricQuestionBinding(metric=MetricName.TEXT_STATS, on="text"),
+            MetricQuestionBinding(
                 metric=MetricName.CODE_LEAKAGE,
                 on="text",
                 settings={"task_names": ["add_one"]},
             ),
-            MetricQuestion(metric=MetricName.PARSE_OUTCOME, on="code"),
-            MetricQuestion(metric=MetricName.AST_STATS, on="code"),
-            MetricQuestion(
+            MetricQuestionBinding(metric=MetricName.PARSE_OUTCOME, on="code"),
+            MetricQuestionBinding(metric=MetricName.AST_STATS, on="code"),
+            MetricQuestionBinding(
                 metric=MetricName.COMPRESSED_LENGTH,
                 on="code",
                 settings={"compression": {"method": "gzip", "level": 9}},
@@ -72,19 +77,26 @@ def _answer(record):
     measured answer is what the determinism promise guarantees.
     """
     return (
-        record.metric,
-        record.metric_version,
+        record.question,
+        record.facts[0].lineage.operator_version,
         record.on_key,
         record.status,
-        tuple(sorted(record.values.items())),
+        tuple(sorted(record.fact_values().items())),
     )
 
 
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
-    kwargs.setdefault("executor", PRODUCTION_EXECUTOR)
-    return extract_metrics(definition, trace, **kwargs)
+    kwargs.setdefault("executor", _pass_all_executor())
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    return extract_metrics(
+        procedure_trace(trace, procedure),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
+        **kwargs,
+    )
 
 
 def _pass_all_executor():
@@ -114,7 +126,11 @@ def test_external_trace_measures_identically_to_preprocessing_producer() -> (
     preprocessing = Trace(
         values=_namespace(),
         producer=TraceProducer(
-            producer_id="pre", version="v9", definition_hash="deadbeef"
+            producer_id="pre",
+            version="v9",
+            definition_hash="d" * 64,
+            preprocessing_config_hash="c" * 64,
+            implementation_hash="e" * 64,
         ),
     )
     definition = _mixed_definition()
@@ -148,13 +164,17 @@ def test_fresh_restored_and_external_all_yield_equal_answers() -> None:
 
 
 def _code_test_definition():
-    from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
+    from dr_code.eval import (
+        MetricQuestionBinding,
+        MetricExtractionDefinition,
+    )
+    from dr_code.metrics import MetricName
 
-    return MetricsDefinition(
+    return MetricExtractionDefinition(
         definition_id="ct",
         version="1",
         questions=(
-            MetricQuestion(
+            MetricQuestionBinding(
                 metric=MetricName.CODE_TEST,
                 on="input",
                 settings={"timeout_seconds": 5.0},
@@ -181,9 +201,15 @@ def test_batch_over_identical_traces_yields_equal_record_sets(task) -> None:
     fresh = code_test_trace(CODE, task)
     restored = deserialize_trace(serialize_trace(fresh))
     definition = _code_test_definition()
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
     record_sets = extract_metrics_batch(
-        definition,
-        [fresh, restored, fresh],
+        [
+            procedure_trace(trace, procedure)
+            for trace in (fresh, restored, fresh)
+        ],
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
         executor=_pass_all_executor(),
     )
     answers = [[_answer(r) for r in records] for records in record_sets]

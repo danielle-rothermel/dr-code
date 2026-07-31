@@ -28,13 +28,22 @@ from dr_code.humaneval.batch_runner import (
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
     CodeParserProfile,
-    extract_code_with_profile,
 )
 from dr_code.humaneval.task import (
     EvaluationHarnessError,
     EvaluationCaseStatus,
     EvaluationTaskResult,
     HumanEvalTask,
+)
+from dr_code.preprocessing import (
+    resolve_preprocessing_definition,
+    run_preprocessing,
+)
+from dr_code.trace import (
+    Absent,
+    CodeArtifact,
+    TextArtifact,
+    serialize_trace,
 )
 
 UNKNOWN_FAILURE_CLASS = "unknown"
@@ -109,13 +118,30 @@ def score_humaneval_submission(
     executor: BatchExecutor = PRODUCTION_EXECUTOR,
     records: Records = Records.none(),
 ) -> HumanEvalSubmissionScore:
-    """Score one submission under a parser profile."""
+    """Score one submission through its canonical preprocessing definition."""
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
 
-    extraction = extract_code_with_profile(
-        raw_submission,
-        profile=parser_profile,
+    definition = resolve_preprocessing_definition(
+        definition_id=parser_profile.profile_id,
+        version=parser_profile.version,
+    )
+    trace = run_preprocessing(
+        definition.materialize(),
+        TextArtifact(text=raw_submission),
+    )
+    output = trace.value("output")
+    extraction = CodeExtractionResult(
+        raw_submission=raw_submission,
+        extracted_code=(
+            output.source if isinstance(output, CodeArtifact) else None
+        ),
+        extraction_error=(
+            _extraction_error(raw_submission, output)
+            if isinstance(output, Absent)
+            else None
+        ),
+        trace=serialize_trace(trace),
     )
     if extraction.extracted_code is None:
         outcome = extraction_failure_outcome(extraction)
@@ -164,6 +190,12 @@ def score_humaneval_submission(
         score=1.0 if outcome is SubmissionOutcome.PASSED else 0.0,
         evaluation=evaluation,
     )
+
+
+def _extraction_error(raw_submission: str, output: Absent) -> str:
+    if not raw_submission.strip():
+        return "empty raw submission"
+    return f"{output.failed_step}: {output.cause}"
 
 
 def extraction_failure_outcome(

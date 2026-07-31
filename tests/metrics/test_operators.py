@@ -1,48 +1,30 @@
-"""Operator parity contracts (plan section 2 stubs + the existing-code map).
+"""Behavioral contracts for all registered metric operators.
 
-Each of the six operators ports the behaviour of a former
-``dr_code.humaneval`` implementation:
-
-* ``metrics.text_metrics``          → ``text_stats``
-* ``metrics.python_leakage_metrics``→ ``code_leakage`` (task_names setting)
-* ``metrics.ast_metrics``           → ``parse_outcome`` (parse_ok/error)
-  + ``ast_stats`` (structure counts)
-* ``humaneval/compression.py``      → ``compressed_length``
-  (one codec+level per question, pinned levels)
-* ``batch_runner.evaluate_human_eval_code`` → ``code_test`` (counts + attribution)
-
-The old ``metrics.py`` / ``compression.py`` modules were the parity oracles
-while the operators were being ported. Plan step 5 retires that path in one
-coordinated break, so the pure-function oracles no longer exist. Per the plan
-("moves ... tests, then deletes the old path — no aliases or shims"), parity
-against those deleted oracles is now locked in as golden-value assertions on
-fixed sample inputs; ``code_test`` still parity-checks against the live
-``batch_runner`` oracle, which is kept.
-
-Operators are engine-managed classes registered in ``REGISTRY`` and reached
-only through ``extract_metrics`` — never called as bare functions.
-
-``dr_code.metrics`` is imported lazily inside each test. Compression levels
-are pinned explicitly (gzip 9, zstd 3) to reproduce today's implicit defaults
-exactly.
+Operators are engine-managed classes reached through ``extract_metrics``.
+Compression questions pin codec levels explicitly, and HumanEval execution
+is checked against its owning batch-runner behavior.
 """
 
 from __future__ import annotations
 
 import gzip
+from typing import get_args, get_type_hints
 
 import pytest
 import zstandard
 
-from dr_code.trace import CodeArtifact, TextArtifact, external_trace
+from dr_code.trace import CodeArtifact, TextArtifact
 
 from metrics.helpers import (
     PRODUCTION_EXECUTOR,
     code_test_trace,
     evaluate_oracle,
+    evaluation_procedure,
+    external_trace,
     fake_executor_always,
     killed_run,
     partial_pass_batch,
+    procedure_trace,
     scripted_batch,
 )
 
@@ -65,18 +47,64 @@ SAMPLE_CODE = (
 )
 
 
-def _definition(questions) -> object:
-    from dr_code.metrics import MetricsDefinition
+def test_registry_fact_units_exactly_match_compute_result_models() -> None:
+    from dr_code.metrics.operators.base import OperatorResult
+    from dr_code.metrics.registry import REGISTRY
 
-    return MetricsDefinition(
+    diagnostics: list[str] = []
+    for registry_name, operator in sorted(REGISTRY.items()):
+        return_annotation = get_type_hints(operator.compute).get("return")
+        result_models = get_args(return_annotation) or (return_annotation,)
+        expected_fields: set[str] = set()
+        for result_model in result_models:
+            if not isinstance(result_model, type) or not issubclass(
+                result_model, OperatorResult
+            ):
+                diagnostics.append(
+                    f"{registry_name}: compute return annotation "
+                    f"{return_annotation!r} is not an OperatorResult model"
+                )
+                continue
+            expected_fields.update(result_model.model_fields)
+
+        actual_fields = set(operator.FACT_UNITS)
+        missing = expected_fields - actual_fields
+        unexpected = actual_fields - expected_fields
+        blank_units = sorted(
+            name
+            for name, unit in operator.FACT_UNITS.items()
+            if not isinstance(unit, str) or not unit
+        )
+        if missing or unexpected or blank_units:
+            diagnostics.append(
+                f"{registry_name}: missing units={sorted(missing)!r}, "
+                f"unexpected units={sorted(unexpected)!r}, "
+                f"blank units={blank_units!r}"
+            )
+
+    assert not diagnostics, "\n".join(diagnostics)
+
+
+def test_metric_registry_is_immutable_after_builtin_registration() -> None:
+    from dr_code.metrics.registry import REGISTRY
+
+    with pytest.raises(TypeError):
+        REGISTRY["replacement"] = next(iter(REGISTRY.values()))  # type: ignore[index]
+
+
+def _definition(questions) -> object:
+    from dr_code.eval import MetricExtractionDefinition
+
+    return MetricExtractionDefinition(
         definition_id="parity", version="1", questions=tuple(questions)
     )
 
 
 def _question(metric_name: str, on: str = "input", **settings) -> object:
-    from dr_code.metrics import MetricName, MetricQuestion
+    from dr_code.eval import MetricQuestionBinding
+    from dr_code.metrics import MetricName
 
-    return MetricQuestion(
+    return MetricQuestionBinding(
         metric=MetricName(metric_name), on=on, settings=settings
     )
 
@@ -100,19 +128,26 @@ def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
     kwargs.setdefault("executor", PRODUCTION_EXECUTOR)
-    return extract_metrics(definition, trace, **kwargs)
+    metric_extraction = definition.materialize()
+    procedure = evaluation_procedure(definition, metric_extraction)
+    return extract_metrics(
+        procedure_trace(trace, procedure),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=procedure,
+        **kwargs,
+    )
 
 
 def _value(record, key):
     assert record.status.value == "measured", record
-    return record.values[key]
+    return record.fact_values()[key]
 
 
 # ===========================================================================
 # text_stats  ←  metrics.text_metrics
 # ===========================================================================
 
-# Golden values locked from the retired ``metrics.text_metrics`` oracle.
+# Stable text-stat values for the fixed sample.
 _TEXT_STATS_GOLDEN = {
     "character_count": 141,
     "byte_count": 141,
@@ -146,14 +181,7 @@ def test_text_stats_empty_text_matches_oracle() -> None:
 # code_leakage  ←  metrics.python_leakage_metrics (task_names setting)
 # ===========================================================================
 
-# Golden values locked from the retired ``metrics.python_leakage_metrics``
-# oracle, for task_names=("foo", "HumanEval/x"). ``code_leakage`` now sources
-# its fence/code-like-line matching from ``dr_code.text_analysis`` (review
-# unit 5) instead of local near-duplicate regexes; SAMPLE_TEXT happens to
-# produce identical counts under both the old and unified regexes (no
-# indented-only lines, comments, or extra keyword-only lines), so these
-# values are unchanged. See ``test_code_leakage_pins_shared_heuristic_values``
-# below for a sample that exercises the broadened behavior.
+# Stable code-leakage values for task_names=("foo", "HumanEval/x").
 _CODE_LEAKAGE_GOLDEN = {
     "keyword_count": 7,
     "code_marker_count": 4,
@@ -187,18 +215,12 @@ def test_code_leakage_task_names_are_part_of_identity() -> None:
         _definition([_question("code_leakage", task_names=["foo"])]),
         _text_trace(text),
     )[0]
-    assert none_rec.values["task_name_hit_count"] == 0
-    assert named_rec.values["task_name_hit_count"] >= 1
+    assert none_rec.fact_values()["task_name_hit_count"] == 0
+    assert named_rec.fact_values()["task_name_hit_count"] >= 1
 
 
-# ``code_leakage`` unified on the shared ``dr_code.text_analysis`` regexes
-# (review unit 5) instead of its own near-duplicate ``_CODE_LIKE_LINE_RE`` /
-# ``_FENCED_CODE_RE``. The shared regexes are deliberately broader —
-# indented lines, comments, and more keywords count as code-like, and
-# fences match as whole lines rather than ``` occurrences — so this is a
-# pin of the new, intended values, not a copy of retired-oracle behavior.
-# A future tweak to the shared heuristics (e.g. for extraction quality)
-# will fail this test loudly instead of silently drifting code_leakage.
+# This sample exercises indented lines, comments, augmented assignment,
+# keyword-like prose, and whole-line code fences in the shared heuristics.
 _SHARED_HEURISTIC_SAMPLE = (
     "Explanation text before any code.\n"
     "```python\n"
@@ -223,15 +245,7 @@ _SHARED_HEURISTIC_GOLDEN = {
 
 
 def test_code_leakage_pins_shared_heuristic_values() -> None:
-    """Pins code_leakage's use of the shared text_analysis regexes.
-
-    Under the retired local regexes, this sample's ``code_like_line_count``
-    would be 4 (the comment line and the ``total += item`` augmented-assign
-    line would not match); under the shared, broader
-    ``CODE_LIKE_LINE_RE`` it is 6. ``fenced_code_block_count`` is unchanged
-    here (1) since both regexes agree on whole-line ``` fences in this
-    sample.
-    """
+    """Pin code_leakage's use of the shared text-analysis regexes."""
     record = _extract(
         _definition([_question("code_leakage", task_names=[])]),
         _text_trace(_SHARED_HEURISTIC_SAMPLE),
@@ -270,8 +284,7 @@ def test_parse_outcome_accepts_text_artifacts() -> None:
     assert _value(record, "parse_ok") is True
 
 
-# Golden structure counts locked from the retired ``metrics.ast_metrics``
-# oracle on SAMPLE_CODE.
+# Stable structure counts for SAMPLE_CODE.
 _AST_STATS_GOLDEN = {
     "top_level_function_count": 1,
     "nested_function_count": 0,
@@ -331,8 +344,7 @@ def _reference_trace(text: str, reference: str):
 def test_compressed_length_gzip_level_9_reproduces_default(task) -> None:
     """Pinned gzip level 9 reproduces today's implicit gzip.compress default."""
     reference = task.ground_truth_code
-    # The retired oracle used gzip.compress()'s implicit default (level 9) and
-    # divided the compressed size by the ground-truth byte length.
+    # The question pins gzip level 9 and divides by ground-truth byte length.
     expected_compressed = len(
         gzip.compress(SAMPLE_TEXT.encode("utf-8"), compresslevel=9)
     )
@@ -376,8 +388,8 @@ def test_compressed_length_zstd_level_3_reproduces_default(task) -> None:
         ),
         _reference_trace(SAMPLE_TEXT, reference),
     )[0]
-    # The retired oracle used ZstdCompressor() with its implicit default level.
-    assert record.values["compressed_bytes"] == len(
+    # The question pins zstd level 3.
+    assert record.fact_values()["compressed_bytes"] == len(
         zstandard.ZstdCompressor(level=_ZSTD_DEFAULT_LEVEL).compress(
             SAMPLE_TEXT.encode("utf-8")
         )
@@ -397,11 +409,16 @@ def test_compressed_length_without_reference_has_no_ratio() -> None:
         ),
         _text_trace(SAMPLE_TEXT),
     )[0]
-    assert record.values["compressed_bytes"] == len(
+    assert record.fact_values()["compressed_bytes"] == len(
         gzip.compress(SAMPLE_TEXT.encode("utf-8"), compresslevel=9)
     )
-    assert "representation_bytes" in record.values
-    assert record.values.get("ratio_to_reference") is None
+    assert "representation_bytes" in record.fact_values()
+    assert record.fact_values()["ratio_to_reference"] is None
+    ratio = next(
+        fact for fact in record.facts if fact.name == "ratio_to_reference"
+    )
+    assert ratio.applicability.value == "not_applicable"
+    assert ratio.reason == "no compression reference was configured"
 
 
 def test_compressed_level_is_part_of_identity() -> None:
@@ -429,7 +446,10 @@ def test_compressed_level_is_part_of_identity() -> None:
         ),
         trace,
     )[0]
-    assert r9.values["compressed_bytes"] <= r6.values["compressed_bytes"]
+    assert (
+        r9.fact_values()["compressed_bytes"]
+        <= r6.fact_values()["compressed_bytes"]
+    )
 
 
 # ===========================================================================
@@ -487,20 +507,26 @@ def test_code_test_passing_counts_match_oracle(
         code_test_trace(good_submission, task),
         executor=real_executor,
     )[0]
-    assert record.values["total_cases"] == oracle.total_cases
-    assert record.values["passed_count"] == oracle.status_counts.get(
+    assert record.fact_values()["total_cases"] == oracle.total_cases
+    assert record.fact_values()["passed_count"] == oracle.status_counts.get(
         "passed", 0
     )
-    assert record.values["failed_count"] == oracle.status_counts.get(
+    assert record.fact_values()["failed_count"] == oracle.status_counts.get(
         "failed", 0
     )
-    assert record.values["error_count"] == oracle.status_counts.get("error", 0)
-    assert record.values["timeout_count"] == oracle.status_counts.get(
+    assert record.fact_values()["error_count"] == oracle.status_counts.get(
+        "error", 0
+    )
+    assert record.fact_values()["timeout_count"] == oracle.status_counts.get(
         "timeout", 0
     )
-    assert record.values["coverage_complete"] == oracle.coverage_complete
-    assert record.values["function_count"] == len(oracle.function_names)
-    assert record.values["best_function_name"] == oracle.best_function_name
+    assert (
+        record.fact_values()["coverage_complete"] == oracle.coverage_complete
+    )
+    assert record.fact_values()["function_count"] == len(oracle.function_names)
+    assert (
+        record.fact_values()["best_function_name"] == oracle.best_function_name
+    )
 
 
 def test_code_test_failing_counts_match_oracle(
@@ -514,10 +540,10 @@ def test_code_test_failing_counts_match_oracle(
         code_test_trace(failing_submission, task),
         executor=real_executor,
     )[0]
-    assert record.values["passed_count"] == oracle.status_counts.get(
+    assert record.fact_values()["passed_count"] == oracle.status_counts.get(
         "passed", 0
     )
-    assert record.values["failed_count"] == oracle.status_counts.get(
+    assert record.fact_values()["failed_count"] == oracle.status_counts.get(
         "failed", 0
     )
 
@@ -536,8 +562,11 @@ def test_code_test_candidate_crash_attributed_to_candidate(
         code_test_trace(good_submission, task),
         executor=fake_executor_always(crashed),
     )[0]
-    assert record.values["error_count"] == record.values["total_cases"]
-    assert record.values["passed_count"] == 0
+    assert (
+        record.fact_values()["error_count"]
+        == record.fact_values()["total_cases"]
+    )
+    assert record.fact_values()["passed_count"] == 0
 
 
 def test_code_test_malformed_item_payload_attributed_to_candidate(
@@ -563,8 +592,11 @@ def test_code_test_malformed_item_payload_attributed_to_candidate(
         executor=fake_executor_always(malformed),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["error_count"] == record.values["total_cases"]
-    assert record.values["passed_count"] == 0
+    assert (
+        record.fact_values()["error_count"]
+        == record.fact_values()["total_cases"]
+    )
+    assert record.fact_values()["passed_count"] == 0
 
 
 def test_code_test_executor_failure_still_propagates(
@@ -598,10 +630,10 @@ def test_code_test_best_function_is_mechanical_max_passes(
         code_test_trace(candidate, task),
         executor=real_executor,
     )[0]
-    assert record.values["best_function_name"] == task.entry_point
-    assert record.values["function_count"] == 2
-    assert "score" not in record.values
-    assert "outcome" not in record.values
+    assert record.fact_values()["best_function_name"] == task.entry_point
+    assert record.fact_values()["function_count"] == 2
+    assert "score" not in record.fact_values()
+    assert "outcome" not in record.fact_values()
 
 
 def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
@@ -622,9 +654,9 @@ def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
         executor=fake_executor_always(partial),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["passed_count"] == 1
-    assert record.values["failed_count"] == 0
-    assert record.values["coverage_complete"] is False
+    assert record.fact_values()["passed_count"] == 1
+    assert record.fact_values()["failed_count"] == 0
+    assert record.fact_values()["coverage_complete"] is False
 
 
 def test_code_test_complete_coverage_with_failure_is_covered(
@@ -644,6 +676,6 @@ def test_code_test_complete_coverage_with_failure_is_covered(
         executor=fake_executor_always(complete_with_failure),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["passed_count"] == 1
-    assert record.values["failed_count"] == 1
-    assert record.values["coverage_complete"] is True
+    assert record.fact_values()["passed_count"] == 1
+    assert record.fact_values()["failed_count"] == 1
+    assert record.fact_values()["coverage_complete"] is True

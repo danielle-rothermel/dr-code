@@ -12,9 +12,9 @@ import json
 import pytest
 
 from dr_code.code_analysis import validate_python_source
-from dr_code.preprocessing.definition import (
+from dr_code.eval import (
     PreprocessingDefinition,
-    StepSpec,
+    PreprocessingStepBinding,
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import run_preprocessing
@@ -24,8 +24,8 @@ from dr_code.trace import OUTPUT_KEY, CodeArtifact, TextArtifact, is_absent
 def _escaped_pipeline_definition() -> PreprocessingDefinition:
     """Full normalization + extraction + selection, matching the old path."""
 
-    def _spec(name: str, step: StepName) -> StepSpec:
-        return StepSpec(instance_name=name, step=step)
+    def _spec(name: str, step: StepName) -> PreprocessingStepBinding:
+        return PreprocessingStepBinding(instance_name=name, step=step)
 
     return PreprocessingDefinition(
         definition_id="escaped",
@@ -52,7 +52,7 @@ def _escaped_pipeline_definition() -> PreprocessingDefinition:
 
 def _output_source(source: str) -> CodeArtifact:
     trace = run_preprocessing(
-        _escaped_pipeline_definition(), TextArtifact(text=source)
+        _escaped_pipeline_definition().materialize(), TextArtifact(text=source)
     )
     output = trace.value(OUTPUT_KEY)
     assert isinstance(output, CodeArtifact)
@@ -114,6 +114,6 @@ def test_escaped_pipeline_prose_has_no_candidates() -> None:
     # Applying the fallback does not turn prose into code.
     source = r"Here is a discussion.\nThere is no implementation."
     trace = run_preprocessing(
-        _escaped_pipeline_definition(), TextArtifact(text=source)
+        _escaped_pipeline_definition().materialize(), TextArtifact(text=source)
     )
     assert is_absent(trace.value(OUTPUT_KEY))

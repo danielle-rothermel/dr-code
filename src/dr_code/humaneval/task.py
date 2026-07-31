@@ -29,6 +29,7 @@ from dr_code.humaneval.parsed_tests import (
     SingleCaseCheck,
     parse_human_eval_tests,
 )
+from dr_code.models import FrozenModel
 
 
 class EvaluationCaseStatus(StrEnum):
@@ -38,15 +39,13 @@ class EvaluationCaseStatus(StrEnum):
     TIMEOUT = "timeout"
 
 
-class HumanEvalTask(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class HumanEvalTask(FrozenModel):
     task_id: str
     prompt: str
     canonical_solution: str
     entry_point: str
     test: str
-    notes: list[str] = Field(default_factory=list)
+    notes: tuple[str, ...] = ()
     parsed: ParsedCode | None = None
     parsed_tests: ParsedTests | None = None
 
@@ -64,13 +63,19 @@ class HumanEvalTask(BaseModel):
 
     @model_validator(mode="after")
     def parse_code(self) -> Self:
-        if self.parsed is None:
-            self.parsed = parse_code(
-                display_title=self.task_id,
-                code_str=self.ground_truth_code,
+        parsed = parse_code(
+            display_title=self.task_id,
+            code_str=self.ground_truth_code,
+        )
+        if self.parsed is not None and self.parsed != parsed:
+            raise ValueError(
+                "parsed code must match prompt and canonical_solution"
             )
-        if self.parsed_tests is None:
-            self.parsed_tests = parse_human_eval_tests(self.test)
+        parsed_tests = parse_human_eval_tests(self.test)
+        if self.parsed_tests is not None and self.parsed_tests != parsed_tests:
+            raise ValueError("parsed tests must match the raw test field")
+        object.__setattr__(self, "parsed", parsed)
+        object.__setattr__(self, "parsed_tests", parsed_tests)
         return self
 
 

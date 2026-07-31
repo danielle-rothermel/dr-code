@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -17,9 +19,17 @@ from dr_exec import (
     ScriptedBatch,
     TruncationMark,
 )
+from pydantic import ValidationError
 
 import dr_code.humaneval as humaneval
 from dr_code.code_analysis import validate_python_source
+from dr_code.eval import (
+    RepeatPlan,
+    SamplingDefinition,
+    TaskSet,
+    humaneval_source_content_hash,
+    humaneval_task_identity,
+)
 from dr_code.humaneval import (
     EvaluationCaseStatus,
     HumanEvalTask,
@@ -33,7 +43,6 @@ from dr_code.humaneval.batch_runner import (
     require_parsed_tests,
     run_function_batch,
 )
-from dr_code.humaneval.code_extraction import apply_cleaning
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
 )
@@ -44,8 +53,14 @@ from dr_code.humaneval.parsed_tests import (
     parse_human_eval_tests,
 )
 from dr_code.humaneval.sampling import (
+    DEFAULT_HUMAN_EVAL_DATASET_NAME,
+    DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+    DEFAULT_HUMAN_EVAL_HF_REVISION,
+    DEFAULT_HUMAN_EVAL_SNAPSHOT_SHA256,
     HumanEvalRawRowsSnapshot,
+    SampledHumanEvalTask,
     load_human_eval_rows,
+    run_human_eval_sampling,
     sample_human_eval_tasks_from_rows,
 )
 from dr_code.humaneval.scoring import (
@@ -62,6 +77,11 @@ from dr_code.humaneval.task import (
     HumanEvalOverride,
     apply_human_eval_override,
 )
+from dr_code.preprocessing import (
+    resolve_preprocessing_definition,
+    run_preprocessing,
+)
+from dr_code.trace import CodeArtifact, TextArtifact, is_absent
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
@@ -71,6 +91,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "CompletedScore",
     "DEFAULT_HUMANEVAL_SCORING_PROFILE",
     "DEFAULT_HUMANEVAL_TIMEOUT_SECONDS",
+    "DEFAULT_HUMAN_EVAL_SNAPSHOT_SHA256",
     "EvaluationCaseStatus",
     "EvaluationCaseSummary",
     "EvaluationTaskSummary",
@@ -88,11 +109,11 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "SampledHumanEvalTask",
     "SubmissionOutcome",
     "evaluation_aggregate_metrics",
-    "extract_code_with_profile",
     "load_human_eval_rows",
     "parse_human_eval_dataset",
     "resolve_humaneval_scoring_profile",
     "resolve_parser_profile",
+    "run_human_eval_sampling",
     "sample_human_eval_tasks",
     "sample_human_eval_tasks_from_rows",
     "score_humaneval_submission",
@@ -148,8 +169,25 @@ def _input_result_test() -> str:
     )
 
 
+def _preprocess_submission(source: str) -> CodeArtifact | None:
+    definition = resolve_preprocessing_definition(
+        definition_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.profile_id,
+        version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.version,
+    )
+    output = run_preprocessing(
+        definition.materialize(),
+        TextArtifact(text=source),
+    ).value("output")
+    return None if is_absent(output) else output
+
+
 def test_humaneval_public_api_is_curated() -> None:
     assert set(humaneval.__all__) == EXPECTED_HUMANEVAL_PUBLIC_API
+
+
+# ---------------------------------------------------------------------------
+# dr-exec executor doubles (logic tests that need a specific batch outcome).
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -160,11 +198,6 @@ def real_executor() -> object:
 
 def _no_records() -> Records:
     return Records.none()
-
-
-# ---------------------------------------------------------------------------
-# Scripted dr-exec batch builders (logic tests that need a specific outcome).
-# ---------------------------------------------------------------------------
 
 
 def _measurements(*, stdout: str = "", stderr: str = "") -> Measurements:
@@ -244,6 +277,16 @@ def _passed_case(case_id: str) -> dict[str, object]:
     }
 
 
+def test_humaneval_facade_supports_explicit_star_and_dir_introspection() -> (
+    None
+):
+    assert humaneval.CompletedScore is CompletedScore
+    namespace: dict[str, object] = {}
+    exec("from dr_code.humaneval import *", namespace)
+    assert EXPECTED_HUMANEVAL_PUBLIC_API <= namespace.keys()
+    assert EXPECTED_HUMANEVAL_PUBLIC_API <= set(dir(humaneval))
+
+
 def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
     rows = [_row(f"HumanEval/{index}", index) for index in range(5)]
 
@@ -251,17 +294,279 @@ def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
         rows,
         seed=17,
         sample_count=3,
+        dataset_name=DEFAULT_HUMAN_EVAL_DATASET_NAME,
+        dataset_split=DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+        hf_revision=DEFAULT_HUMAN_EVAL_HF_REVISION,
     )
     second = sample_human_eval_tasks_from_rows(
         rows,
         seed=17,
         sample_count=3,
+        dataset_name=DEFAULT_HUMAN_EVAL_DATASET_NAME,
+        dataset_split=DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+        hf_revision=DEFAULT_HUMAN_EVAL_HF_REVISION,
     )
 
     assert [sample.sample_index for sample in first] == [0, 1, 2]
+    assert [sample.repeat_id.rng_seed for sample in first] == [17, 17, 17]
     assert [sample.task.task_id for sample in first] == [
         sample.task.task_id for sample in second
     ]
+
+
+@pytest.mark.parametrize("sample_count", [True, 1.0, "1"])
+def test_sampling_rejects_non_integer_counts(sample_count: object) -> None:
+    with pytest.raises(TypeError, match="must be an integer"):
+        sample_human_eval_tasks_from_rows(
+            [_row("HumanEval/0", 0)],
+            seed=17,
+            sample_count=sample_count,  # type: ignore[arg-type]
+            dataset_name=DEFAULT_HUMAN_EVAL_DATASET_NAME,
+            dataset_split=DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+            hf_revision=DEFAULT_HUMAN_EVAL_HF_REVISION,
+        )
+
+
+def test_sampling_count_bounds_and_zero_policy() -> None:
+    rows = [_row("HumanEval/0", 0)]
+    common = {
+        "seed": 17,
+        "dataset_name": DEFAULT_HUMAN_EVAL_DATASET_NAME,
+        "dataset_split": DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+        "hf_revision": DEFAULT_HUMAN_EVAL_HF_REVISION,
+    }
+
+    assert (
+        sample_human_eval_tasks_from_rows(
+            rows,
+            sample_count=0,
+            **common,
+        )
+        == []
+    )
+    with pytest.raises(ValueError, match="non-negative"):
+        sample_human_eval_tasks_from_rows(
+            rows,
+            sample_count=-1,
+            **common,
+        )
+    with pytest.raises(ValueError, match="exceeds"):
+        sample_human_eval_tasks_from_rows(
+            rows,
+            sample_count=2,
+            **common,
+        )
+
+
+def test_canonical_sampling_runner_honors_repeats_and_seed_provenance() -> (
+    None
+):
+    tasks = parse_human_eval_dataset(
+        [_row("HumanEval/0", 0), _row("HumanEval/1", 1)]
+    )
+    identities = tuple(humaneval_task_identity(task) for task in tasks)
+    task_set = TaskSet(
+        manifest_id="tasks",
+        version="1",
+        dataset_id="fixture",
+        dataset_split="test",
+        dataset_revision="fixture",
+        source_content_hash=humaneval_source_content_hash(tuple(tasks)),
+        source_task_identities=identities,
+        task_identities=identities,
+    )
+    repeat_plan = RepeatPlan(
+        plan_id="repeats",
+        version="1",
+        task_identities=identities,
+        repeat_count=2,
+        seeds=(
+            (f"{identities[0]}#0", 10),
+            (f"{identities[0]}#1", 11),
+            (f"{identities[1]}#0", 20),
+            (f"{identities[1]}#1", 21),
+        ),
+    )
+    sampling = SamplingDefinition(
+        definition_id="sampling",
+        version="1",
+    ).materialize(task_set=task_set, repeat_plan=repeat_plan)
+    sampled = run_human_eval_sampling(
+        tasks,
+        sampling=sampling,
+    )
+    assert [sample.task.task_id for sample in sampled] == [
+        "HumanEval/0",
+        "HumanEval/0",
+        "HumanEval/1",
+        "HumanEval/1",
+    ]
+    assert [sample.repeat_id.rng_seed for sample in sampled] == [
+        10,
+        11,
+        20,
+        21,
+    ]
+    assert {sample.sampling_config_identity for sample in sampled} == {
+        sampling.config_identity_hash
+    }
+    assert (
+        type(sampled[0]).model_validate_json(
+            sampled[0].model_dump_json(exclude_computed_fields=True)
+        )
+        == sampled[0]
+    )
+    assert len({sample.repeat_id.identity_hash() for sample in sampled}) == 4
+
+
+def test_sampling_authenticates_nondefault_dataset_coordinates() -> None:
+    rows = [_row("HumanEval/0", 0)]
+    first = sample_human_eval_tasks_from_rows(
+        rows,
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset-a",
+        dataset_split="validation",
+        hf_revision="revision-a",
+    )[0]
+    second = sample_human_eval_tasks_from_rows(
+        rows,
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset-b",
+        dataset_split="test",
+        hf_revision="revision-b",
+    )[0]
+    assert first.sampling_config_identity != second.sampling_config_identity
+
+
+def test_sampling_authenticates_the_complete_preselection_population() -> None:
+    rows = [_row(f"HumanEval/{index}", index) for index in range(3)]
+    first = sample_human_eval_tasks_from_rows(
+        rows,
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset",
+        dataset_split="test",
+        hf_revision="revision",
+    )[0]
+    selected_id = first.task.task_id
+    changed_rows = [dict(row) for row in rows]
+    changed_index = next(
+        index
+        for index, row in enumerate(changed_rows)
+        if row["task_id"] != selected_id
+    )
+    changed_rows[changed_index]["prompt"] += "# source changed\n"
+    second = sample_human_eval_tasks_from_rows(
+        changed_rows,
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset",
+        dataset_split="test",
+        hf_revision="revision",
+    )[0]
+
+    assert second.task == first.task
+    assert (
+        second.sampling_config.task_set.source_content_hash
+        != first.sampling_config.task_set.source_content_hash
+    )
+    assert second.sampling_config_identity != first.sampling_config_identity
+    with pytest.raises(ValueError, match="source population"):
+        run_human_eval_sampling(
+            parse_human_eval_dataset(changed_rows),
+            sampling=first.sampling_config,
+        )
+
+
+def test_sampled_task_rejects_negative_and_unrelated_sampling_identity() -> (
+    None
+):
+    sampled = sample_human_eval_tasks_from_rows(
+        [_row("HumanEval/0", 0)],
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset",
+        dataset_split="test",
+        hf_revision="revision",
+    )[0]
+    negative = sampled.model_dump(mode="json")
+    negative["sample_index"] = -1
+    with pytest.raises(ValidationError, match="non-negative"):
+        SampledHumanEvalTask.model_validate(negative)
+
+    unrelated = sampled.model_dump(
+        mode="json",
+        exclude_computed_fields=True,
+    )
+    unrelated["sampling_config_identity"] = "f" * 64
+    with pytest.raises(ValidationError, match="embedded SamplingConfig"):
+        SampledHumanEvalTask.model_validate(unrelated)
+
+
+def test_sampled_task_serializer_has_explicit_authenticated_shape() -> None:
+    sampled = sample_human_eval_tasks_from_rows(
+        [_row("HumanEval/0", 0)],
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset",
+        dataset_split="test",
+        hf_revision="revision",
+    )[0]
+
+    assert set(sampled.model_dump(mode="json")) == {
+        "sample_index",
+        "sampling_config_identity",
+        "sampling_config",
+        "task",
+        "repeat_id",
+        "sample_identity",
+    }
+    assert set(sampled.sample_identity.model_dump(mode="json")) == {
+        "sampling_config_identity",
+        "repeat_identity",
+        "ordinal",
+        "task_identity",
+        "identity_hash",
+    }
+
+
+def test_sampled_task_and_embedded_task_are_frozen() -> None:
+    sampled = sample_human_eval_tasks_from_rows(
+        [_row("HumanEval/0", 0)],
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset",
+        dataset_split="test",
+        hf_revision="revision",
+    )[0]
+
+    with pytest.raises(ValidationError, match="frozen"):
+        sampled.sample_index = 2
+    with pytest.raises(ValidationError, match="frozen"):
+        sampled.task.task_id = "forged"
+
+
+def test_sampled_task_rejects_embedded_task_identity_mismatch() -> None:
+    sampled = sample_human_eval_tasks_from_rows(
+        [_row("HumanEval/0", 0)],
+        seed=17,
+        sample_count=1,
+        dataset_name="dataset",
+        dataset_split="test",
+        hf_revision="revision",
+    )[0]
+    forged = sampled.model_dump(mode="json")
+    forged["task"] = _task().model_dump(
+        mode="json",
+        exclude_computed_fields=True,
+    )
+    with pytest.raises(
+        ValidationError,
+        match="embedded HumanEval task identity",
+    ):
+        SampledHumanEvalTask.model_validate(forged)
 
 
 def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
@@ -286,6 +591,64 @@ def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
     ):
         assert _check_payload_bytes(snapshot_task) == _check_payload_bytes(
             fresh_task
+        )
+
+
+def test_default_snapshot_digest_is_pinned_before_parsing(
+    tmp_path: Path,
+) -> None:
+    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
+    assert (
+        hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+        == DEFAULT_HUMAN_EVAL_SNAPSHOT_SHA256
+    )
+    malformed = tmp_path / "malformed.json"
+    malformed.write_bytes(b"not-json")
+
+    with pytest.raises(ValueError, match="content digest mismatch"):
+        load_human_eval_rows(snapshot_path=malformed)
+
+
+def test_custom_snapshot_coordinates_require_and_verify_digest(
+    tmp_path: Path,
+) -> None:
+    source = Path("tests/corpus/humanevalplus_snapshot.json")
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["header"]["dataset_id"] = "custom/humaneval"
+    custom_path = tmp_path / "custom.json"
+    custom_path.write_text(json.dumps(payload), encoding="utf-8")
+    digest = hashlib.sha256(custom_path.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match="require an explicit"):
+        load_human_eval_rows(
+            dataset_name="custom/humaneval",
+            snapshot_path=custom_path,
+        )
+    rows = load_human_eval_rows(
+        dataset_name="custom/humaneval",
+        snapshot_path=custom_path,
+        expected_snapshot_sha256=digest,
+    )
+    assert rows
+
+
+def test_raw_row_snapshot_rejects_forged_dataset_split(
+    tmp_path: Path,
+) -> None:
+    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    payload["header"]["dataset_id"] = "custom/humaneval"
+    payload["header"]["dataset_split"] = "validation"
+    forged_path = tmp_path / "forged-split.json"
+    forged_path.write_text(json.dumps(payload), encoding="utf-8")
+    digest = hashlib.sha256(forged_path.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match="dataset split mismatch"):
+        load_human_eval_rows(
+            dataset_name="custom/humaneval",
+            dataset_split=DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
+            snapshot_path=forged_path,
+            expected_snapshot_sha256=digest,
         )
 
 
@@ -381,17 +744,17 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
         ),
     ],
 )
-def test_apply_cleaning_extracts_known_submission_shapes(
+def test_canonical_preprocessing_extracts_known_submission_shapes(
     source: str,
     expected_fragment: str,
 ) -> None:
-    candidates = apply_cleaning(source, apply_dedent=True)
+    candidate = _preprocess_submission(source)
 
-    assert candidates
-    assert expected_fragment in candidates[0]
-    assert validate_python_source(candidates[0]).compile_ok
-    assert "if __name__" not in candidates[0]
-    assert "print('trailing')" not in candidates[0]
+    assert isinstance(candidate, CodeArtifact)
+    assert expected_fragment in candidate.source
+    assert validate_python_source(candidate.source).compile_ok
+    assert "if __name__" not in candidate.source
+    assert "print('trailing')" not in candidate.source
 
 
 def test_evaluation_passes_when_best_function_passes(
@@ -576,36 +939,39 @@ def test_python_print_output_does_not_corrupt_runner_protocol(
     )
 
     assert result.passed is True
-    # stdout is the protocol channel: every line is a JSON object.
     assert batch.complete
     assert expected_stderr in batch.run.stderr
     assert expected_stderr not in batch.run.stdout
 
 
-def test_run_function_batch_raises_for_malformed_item_payload() -> None:
-    """A delivered item whose payload the case schema rejects is a harness
-    failure carrying the validated cases up to and including the bad one."""
-    executor = _scripted_executor(
-        case_payloads={
-            "case_0": _passed_case("case_0"),
-            "case_1": {"status": "nonsense"},
-        }
+def test_scoring_uses_canonical_preprocessing_and_persists_its_trace() -> None:
+    result = score_humaneval_submission(
+        raw_submission="def add_one(x):\n    return “ok”\n",
+        task=_task(),
+        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+        timeout_seconds=2.0,
+        executor=_scripted_executor(
+            case_payloads={"case_0": _passed_case("case_0")}
+        ),
+        records=_no_records(),
     )
 
-    with pytest.raises(EvaluationHarnessError) as exc_info:
-        run_function_batch(
-            task=_task(),
-            candidate_code="def add_one(x):\n    return x + 1\n",
-            function_name="add_one",
-            timeout_seconds=2.0,
-            executor=executor,
-            records=_no_records(),
+    assert isinstance(result, CompletedScore)
+    assert result.extraction.extracted_code == (
+        'def add_one(x):\n    return "ok"'
+    )
+    assert result.extraction.trace.producer.producer_id == (
+        BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.profile_id
+    )
+    assert (
+        result.extraction.trace.producer.preprocessing_config_hash
+        == resolve_preprocessing_definition(
+            definition_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.profile_id,
+            version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.version,
         )
-
-    results = exc_info.value.case_results
-    assert results[-1].case_id == "case_1"
-    assert results[-1].status is EvaluationCaseStatus.ERROR
-    assert "Invalid runner output" in results[-1].message
+        .materialize()
+        .config_identity_hash
+    )
 
 
 def _partial_evaluation_result(task: HumanEvalTask) -> EvaluationTaskResult:
@@ -767,17 +1133,17 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.status_counts == {"passed": 1}
 
 
-def test_apply_cleaning_returns_empty_for_blank_input() -> None:
-    assert apply_cleaning("") == []
-    assert apply_cleaning("   \n\t  ") == []
+def test_canonical_preprocessing_returns_absent_for_blank_input() -> None:
+    assert _preprocess_submission("") is None
+    assert _preprocess_submission("   \n\t  ") is None
 
 
-def test_apply_cleaning_supports_tilde_fences() -> None:
+def test_canonical_preprocessing_supports_tilde_fences() -> None:
     source = "~~~python\ndef add_one(x):\n    return x + 1\n~~~"
-    candidates = apply_cleaning(source, apply_dedent=True)
+    candidate = _preprocess_submission(source)
 
-    assert candidates
-    assert "def add_one" in candidates[0]
+    assert isinstance(candidate, CodeArtifact)
+    assert "def add_one" in candidate.source
 
 
 def test_validate_python_source_reports_syntax_errors() -> None:
@@ -831,6 +1197,137 @@ def test_parse_human_eval_tests_rejects_invalid_formats(
 ) -> None:
     with pytest.raises(UnsupportedTestFormatError, match=match):
         parse_human_eval_tests(test_source)
+
+
+def test_candidate_module_level_sys_exit_is_scored(
+    real_executor: object,
+) -> None:
+    result = evaluate_human_eval_code(
+        task=_task(),
+        candidate_code=(
+            "import sys\nsys.exit(5)\ndef add_one(x):\n    return x + 1\n"
+        ),
+        timeout_seconds=2.0,
+        executor=real_executor,
+        records=_no_records(),
+    )
+
+    assert result.passed is False
+    assert result.status_counts == {"error": 2}
+
+
+def test_apply_human_eval_override_passthrough() -> None:
+    row = _row("HumanEval/99", 1)
+    assert apply_human_eval_override(row, {}) == dict(row)
+
+    updated = apply_human_eval_override(
+        row,
+        {
+            "HumanEval/99": HumanEvalOverride(
+                canonical_solution="    return x + 99\n",
+            ),
+        },
+    )
+    assert updated["canonical_solution"] == "    return x + 99\n"
+
+    with pytest.raises(ValueError, match="replacement text not found"):
+        apply_human_eval_override(
+            row,
+            {
+                "HumanEval/99": HumanEvalOverride(
+                    test_replacements={"missing": "text"},
+                ),
+            },
+        )
+
+
+def test_parse_human_eval_dataset_builds_tasks() -> None:
+    tasks = parse_human_eval_dataset([_row("HumanEval/0", 0)])
+
+    assert len(tasks) == 1
+    assert tasks[0].task_id == "HumanEval/0"
+    assert tasks[0].parsed_tests is not None
+
+
+def test_humaneval_task_rejects_derived_fields_from_other_raw_fields() -> None:
+    original = _task()
+    other = HumanEvalTask(
+        task_id="HumanEval/other",
+        prompt="def other(x):\n",
+        canonical_solution="    return x - 1\n",
+        entry_point="other",
+        test=(
+            "def check(candidate):\n"
+            "    inputs = [(1,)]\n"
+            "    results = [0]\n"
+            "    for inp, expected in zip(inputs, results):\n"
+            "        assertion(candidate(*inp), expected)\n"
+        ),
+    )
+    assert other.parsed is not None
+    assert other.parsed_tests is not None
+
+    with pytest.raises(ValidationError, match="parsed code must match"):
+        HumanEvalTask(
+            task_id=original.task_id,
+            prompt=original.prompt,
+            canonical_solution=original.canonical_solution,
+            entry_point=original.entry_point,
+            test=original.test,
+            parsed=other.parsed,
+        )
+    with pytest.raises(ValidationError, match="parsed tests must match"):
+        HumanEvalTask(
+            task_id=original.task_id,
+            prompt=original.prompt,
+            canonical_solution=original.canonical_solution,
+            entry_point=original.entry_point,
+            test=original.test,
+            parsed_tests=other.parsed_tests,
+        )
+
+
+def test_require_parsed_tests_raises_when_missing() -> None:
+    task = HumanEvalTask.model_construct(
+        task_id="HumanEval/fixture",
+        prompt="def add_one(x):\n",
+        canonical_solution="    return x + 1\n",
+        entry_point="add_one",
+        test=_input_result_test(),
+        parsed_tests=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"HumanEvalTask\.parsed_tests is required",
+    ):
+        require_parsed_tests(task)
+
+
+def test_run_function_batch_raises_for_malformed_item_payload() -> None:
+    """A delivered item whose payload the case schema rejects is a harness
+    failure carrying the validated cases up to and including the bad one."""
+    executor = _scripted_executor(
+        case_payloads={
+            "case_0": _passed_case("case_0"),
+            "case_1": {"status": "nonsense"},
+        }
+    )
+
+    with pytest.raises(EvaluationHarnessError) as exc_info:
+        run_function_batch(
+            task=_task(),
+            candidate_code="def add_one(x):\n    return x + 1\n",
+            function_name="add_one",
+            timeout_seconds=2.0,
+            executor=executor,
+            records=_no_records(),
+        )
+
+    results = exc_info.value.case_results
+    assert results[-1].case_id == "case_1"
+    assert results[-1].status is EvaluationCaseStatus.ERROR
+    assert "Invalid runner output" in results[-1].message
 
 
 def test_batch_candidate_kill_returncode_scored_as_error() -> None:
@@ -914,73 +1411,6 @@ def test_batch_executor_attribution_is_a_harness_failure() -> None:
             result=result,
             timeout_seconds=2.0,
         )
-
-
-def test_candidate_module_level_sys_exit_is_scored(
-    real_executor: object,
-) -> None:
-    result = evaluate_human_eval_code(
-        task=_task(),
-        candidate_code=(
-            "import sys\nsys.exit(5)\ndef add_one(x):\n    return x + 1\n"
-        ),
-        timeout_seconds=2.0,
-        executor=real_executor,
-        records=_no_records(),
-    )
-
-    assert result.passed is False
-    assert result.status_counts == {"error": 2}
-
-
-def test_apply_human_eval_override_passthrough() -> None:
-    row = _row("HumanEval/99", 1)
-    assert apply_human_eval_override(row, {}) == dict(row)
-
-    updated = apply_human_eval_override(
-        row,
-        {
-            "HumanEval/99": HumanEvalOverride(
-                canonical_solution="    return x + 99\n",
-            ),
-        },
-    )
-    assert updated["canonical_solution"] == "    return x + 99\n"
-
-    with pytest.raises(ValueError, match="replacement text not found"):
-        apply_human_eval_override(
-            row,
-            {
-                "HumanEval/99": HumanEvalOverride(
-                    test_replacements={"missing": "text"},
-                ),
-            },
-        )
-
-
-def test_parse_human_eval_dataset_builds_tasks() -> None:
-    tasks = parse_human_eval_dataset([_row("HumanEval/0", 0)])
-
-    assert len(tasks) == 1
-    assert tasks[0].task_id == "HumanEval/0"
-    assert tasks[0].parsed_tests is not None
-
-
-def test_require_parsed_tests_raises_when_missing() -> None:
-    task = HumanEvalTask.model_construct(
-        task_id="HumanEval/fixture",
-        prompt="def add_one(x):\n",
-        canonical_solution="    return x + 1\n",
-        entry_point="add_one",
-        test=_input_result_test(),
-        parsed_tests=None,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=r"HumanEvalTask\.parsed_tests is required",
-    ):
-        require_parsed_tests(task)
 
 
 def test_composed_driver_body_compiles() -> None:

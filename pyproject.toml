@@ -1,6 +1,6 @@
 [project]
 name = "dr-code"
-version = "0.1.0"
+version = "0.2.0"
 description = "Producer-blind Python code evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
 readme = "README.md"
 authors = [
@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "datasets>=3.0,<4",
     "dr-exec",
+    "dr-serialize==0.1.0",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
     "zstandard>=0.25.0",

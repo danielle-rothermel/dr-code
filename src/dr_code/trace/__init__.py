@@ -11,9 +11,10 @@ from dr_code.trace.artifacts import (
     parsed_module,
 )
 from dr_code.trace.identity import stable_hash
+from dr_code.trace.observation import SampleIdentity, sample_identity_hash
 from dr_code.trace.provenance import (
-    EXTERNAL_PRODUCER,
     EXTERNAL_PRODUCER_ID,
+    ExternalSource,
     TraceProducer,
 )
 from dr_code.trace.serialization import (
@@ -38,13 +39,14 @@ __all__ = (
     "ArtifactKind",
     "CodeArtifact",
     "CodeCandidateSetArtifact",
-    "EXTERNAL_PRODUCER",
     "EXTERNAL_PRODUCER_ID",
+    "ExternalSource",
     "INPUT_KEY",
     "JsonArtifact",
     "OUTPUT_KEY",
     "RESERVED_KEYS",
     "SerializedTrace",
+    "SampleIdentity",
     "TRACE_SCHEMA_VERSION",
     "TextArtifact",
     "Trace",
@@ -56,5 +58,6 @@ __all__ = (
     "is_absent",
     "parsed_module",
     "serialize_trace",
+    "sample_identity_hash",
     "stable_hash",
 )

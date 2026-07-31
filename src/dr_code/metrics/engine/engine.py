@@ -6,9 +6,22 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from dr_exec import ExecutorFailure, Records
-from pydantic import JsonValue
 
-from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
+from dr_code.eval.facts import (
+    AbsenceMode,
+    Applicability,
+    EvaluationProcedureConfigHash,
+    MetricFact,
+    MetricRecord,
+    OperatorCoordinates,
+    OperatorLineage,
+    validate_evaluation_procedure_config_hash,
+)
+from dr_code.eval.lifecycle import (
+    EvaluationProcedureConfig,
+    MetricExtractionConfig,
+    MetricQuestionBinding,
+)
 from dr_code.metrics.engine.execution import (
     ExecutionCache,
     ExecutionOutcome,
@@ -18,15 +31,11 @@ from dr_code.metrics.engine.execution import (
     run_requests,
 )
 from dr_code.metrics.engine.views import ViewCache
-from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import MetricOperator
-from dr_code.metrics.records import (
-    MetricRecord,
-    MetricScalar,
-    RecordStatus,
-)
-from dr_code.metrics.registry import REGISTRY
-from dr_code.trace import Absent, Artifact, Trace, WiringError
+from dr_code.metrics.validation import validated_metric_operator
+from dr_code.trace import Absent, Artifact, Trace, TraceProducer, WiringError
+from dr_code.eval.resolved_versions import implementation_identity
+from dr_code.trace.observation import SampleIdentity
 
 _NO_RECORDS: Records = Records.none()
 """The default record sink: hot metric sweeps persist no run records."""
@@ -34,7 +43,7 @@ _NO_RECORDS: Records = Records.none()
 
 @dataclass(frozen=True, slots=True)
 class _QuestionBinding:
-    question: MetricQuestion
+    question: MetricQuestionBinding
     operator: MetricOperator
 
 
@@ -50,33 +59,60 @@ class _TraceBinding:
 
 @dataclass(frozen=True, slots=True)
 class _RecordIdentity:
-    metric: MetricName
-    metric_version: str
-    settings: dict[str, JsonValue]
+    question: str
+    question_identity_hash: str
     on_key: str
-    producer_id: str
-    producer_version: str | None
-    producer_definition_hash: str | None
-    metrics_definition_id: str
-    metrics_definition_version: str
+    evaluation_procedure_config_hash: EvaluationProcedureConfigHash
+    trace_producer: TraceProducer
+    sample_identity: SampleIdentity | None
+    operator: OperatorCoordinates
+    lineage: OperatorLineage
+
+    def __post_init__(self) -> None:
+        validate_evaluation_procedure_config_hash(
+            self.evaluation_procedure_config_hash
+        )
 
     @classmethod
     def from_binding(
-        cls, definition: MetricsDefinition, binding: _TraceBinding
+        cls,
+        procedure: EvaluationProcedureConfig,
+        binding: _TraceBinding,
     ) -> _RecordIdentity:
         question_binding = binding.question_binding
         question = question_binding.question
-        producer = binding.trace.producer
         return cls(
-            metric=question.metric,
-            metric_version=question_binding.operator.VERSION,
-            settings=dict(question.settings),
+            question=question.metric,
+            question_identity_hash=question.identity_hash(),
             on_key=question.on,
-            producer_id=producer.producer_id,
-            producer_version=producer.version,
-            producer_definition_hash=producer.definition_hash,
-            metrics_definition_id=definition.definition_id,
-            metrics_definition_version=definition.version,
+            evaluation_procedure_config_hash=(procedure.config_identity_hash),
+            trace_producer=binding.trace.producer,
+            sample_identity=binding.trace.sample_identity,
+            operator=OperatorCoordinates(
+                name=question.metric,
+                version=question_binding.operator.VERSION,
+                implementation_hash=implementation_identity(
+                    type(question_binding.operator)
+                ),
+                settings=tuple(
+                    sorted(
+                        question_binding.operator.settings.model_dump(
+                            mode="json"
+                        ).items()
+                    )
+                ),
+            ),
+            lineage=OperatorLineage(
+                evaluation_procedure_config_hash=(
+                    procedure.config_identity_hash
+                ),
+                question_identity_hash=question.identity_hash(),
+                operator=question.metric,
+                operator_version=question_binding.operator.VERSION,
+                operator_implementation=implementation_identity(
+                    type(question_binding.operator)
+                ),
+            ),
         )
 
 
@@ -106,9 +142,10 @@ class _EngineContext:
 
 
 def extract_metrics(
-    definition: MetricsDefinition,
     trace: Trace,
     *,
+    metric_extraction: MetricExtractionConfig,
+    evaluation_procedure: EvaluationProcedureConfig,
     executor: Executor,
     records: Records = _NO_RECORDS,
     execution_cache: ExecutionCache | None = None,
@@ -116,8 +153,9 @@ def extract_metrics(
     """Extract one record per question from one trace."""
 
     return extract_metrics_batch(
-        definition,
         (trace,),
+        metric_extraction=metric_extraction,
+        evaluation_procedure=evaluation_procedure,
         executor=executor,
         records=records,
         execution_cache=execution_cache,
@@ -125,16 +163,33 @@ def extract_metrics(
 
 
 def extract_metrics_batch(
-    definition: MetricsDefinition,
     traces: Sequence[Trace],
     *,
+    metric_extraction: MetricExtractionConfig,
+    evaluation_procedure: EvaluationProcedureConfig,
     executor: Executor,
     records: Records = _NO_RECORDS,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[tuple[MetricRecord, ...], ...]:
     """Extract records after collecting work across every supplied trace."""
 
-    question_bindings = _bind_questions(definition)
+    metric_extraction = MetricExtractionConfig.model_validate(
+        metric_extraction.model_dump(mode="python")
+    )
+    evaluation_procedure = EvaluationProcedureConfig.model_validate(
+        evaluation_procedure.model_dump(mode="python")
+    )
+    if (
+        evaluation_procedure.metric_extraction_config_hash
+        != metric_extraction.config_identity_hash
+    ):
+        raise WiringError(
+            "evaluation procedure does not reference this metric "
+            "extraction definition"
+        )
+    for trace in traces:
+        evaluation_procedure.validate_trace_producer(trace.producer)
+    question_bindings = _bind_questions(metric_extraction)
     trace_bindings = tuple(
         tuple(
             _bind_trace_question(trace, question_binding)
@@ -176,7 +231,7 @@ def extract_metrics_batch(
     context = _EngineContext(views=ViewCache(), outcomes=outcomes)
     return tuple(
         tuple(
-            _compute_record(definition, binding, context)
+            _compute_record(evaluation_procedure, binding, context)
             for binding in per_trace
         )
         for per_trace in trace_bindings
@@ -184,24 +239,44 @@ def extract_metrics_batch(
 
 
 def _bind_questions(
-    definition: MetricsDefinition,
+    metric_extraction: MetricExtractionConfig,
 ) -> tuple[_QuestionBinding, ...]:
+    if len(metric_extraction.questions) != len(
+        metric_extraction.resolved_operator_versions
+    ):
+        raise WiringError(
+            "metric extraction config has a stale operator resolution count: "
+            f"configured {len(metric_extraction.resolved_operator_versions)}, "
+            f"expected {len(metric_extraction.questions)}"
+        )
     bindings: list[_QuestionBinding] = []
-    for question in definition.questions:
-        operator_class = REGISTRY.get(str(question.metric))
-        if operator_class is None:
-            raise WiringError(
-                f"no metric operator registered for {question.metric!r}"
-            )
+    for question, resolved_operator in zip(
+        metric_extraction.questions,
+        metric_extraction.resolved_operator_versions,
+    ):
         try:
-            settings = operator_class.Settings.model_validate(
-                question.settings
+            operator = validated_metric_operator(
+                name=str(question.metric),
+                settings=question.settings_dict(),
+                expected_version=resolved_operator[2],
+                expected_implementation=resolved_operator[3],
             )
-            operator = operator_class(settings)
         except Exception as exc:
             raise WiringError(
-                f"invalid settings for metric {question.metric}: {exc}"
+                f"invalid executable metric {question.metric}: {exc}"
             ) from exc
+        live_resolution = (
+            question.identity_hash(),
+            question.metric,
+            str(type(operator).VERSION),
+            implementation_identity(type(operator)),
+        )
+        if resolved_operator != live_resolution:
+            raise WiringError(
+                "metric extraction config has a stale operator resolution "
+                f"for metric {question.metric!r}: "
+                f"configured {resolved_operator!r}, live {live_resolution!r}"
+            )
         bindings.append(_QuestionBinding(question=question, operator=operator))
     return tuple(bindings)
 
@@ -266,17 +341,18 @@ def _bind_trace_question(
 
 
 def _compute_record(
-    definition: MetricsDefinition,
+    procedure: EvaluationProcedureConfig,
     binding: _TraceBinding,
     context: _EngineContext,
 ) -> MetricRecord:
-    identity = _RecordIdentity.from_binding(definition, binding)
+    identity = _RecordIdentity.from_binding(procedure, binding)
     if binding.absence is not None:
         return _build_record(
             identity,
-            status=RecordStatus.NOT_APPLICABLE,
-            absence_failed_step=binding.absence.failed_step,
-            absence_cause=binding.absence.cause,
+            absence_mode=AbsenceMode.PREPROCESSING_FAILURE,
+            absence_cause=(
+                f"{binding.absence.failed_step}: {binding.absence.cause}"
+            ),
         )
     if binding.planning_failure is not None:
         return _failure_record(identity, binding.planning_failure)
@@ -288,10 +364,47 @@ def _compute_record(
             binding.auxiliary,
             context,
         )
-        return _build_record(
-            identity,
-            status=RecordStatus.MEASURED,
-            values=result.to_values(),
+        values = result.to_values()
+        unknown_facts = set(values) - set(
+            binding.question_binding.operator.FACT_UNITS
+        )
+        if unknown_facts:
+            raise ValueError(
+                "operator returned undeclared facts: "
+                + ", ".join(sorted(unknown_facts))
+            )
+        facts = tuple(
+            MetricFact(
+                name=name,
+                value=values.get(name),
+                unit=unit,
+                applicability=(
+                    Applicability.APPLICABLE
+                    if values.get(name) is not None
+                    else Applicability.NOT_APPLICABLE
+                ),
+                reason=(
+                    None
+                    if values.get(name) is not None
+                    else binding.question_binding.operator.undefined_fact_reason(
+                        name
+                    )
+                ),
+                lineage=identity.lineage,
+            )
+            for name, unit in binding.question_binding.operator.FACT_UNITS.items()
+        )
+        return MetricRecord.measured(
+            question=identity.question,
+            question_identity_hash=identity.question_identity_hash,
+            on_key=identity.on_key,
+            evaluation_procedure_config_hash=(
+                identity.evaluation_procedure_config_hash
+            ),
+            trace_producer=binding.trace.producer,
+            sample_identity=binding.trace.sample_identity,
+            operator=identity.operator,
+            facts=facts,
         )
     except (ExecutorFailure, EngineInvariantError):
         raise
@@ -303,9 +416,16 @@ def _failure_record(
     identity: _RecordIdentity,
     failure: Exception,
 ) -> MetricRecord:
-    return _build_record(
-        identity,
-        status=RecordStatus.OPERATOR_FAILURE,
+    return MetricRecord.operator_failure(
+        question=identity.question,
+        question_identity_hash=identity.question_identity_hash,
+        on_key=identity.on_key,
+        evaluation_procedure_config_hash=(
+            identity.evaluation_procedure_config_hash
+        ),
+        trace_producer=identity.trace_producer,
+        sample_identity=identity.sample_identity,
+        operator=identity.operator,
         failure_type=type(failure).__name__,
         failure_message=str(failure),
     )
@@ -314,27 +434,20 @@ def _failure_record(
 def _build_record(
     identity: _RecordIdentity,
     *,
-    status: RecordStatus,
-    values: dict[str, MetricScalar] | None = None,
-    absence_failed_step: str | None = None,
+    absence_mode: AbsenceMode,
     absence_cause: str | None = None,
-    failure_type: str | None = None,
-    failure_message: str | None = None,
 ) -> MetricRecord:
-    return MetricRecord(
-        metric=identity.metric,
-        metric_version=identity.metric_version,
-        settings=identity.settings,
+    assert absence_cause is not None
+    return MetricRecord.not_applicable(
+        question=identity.question,
+        question_identity_hash=identity.question_identity_hash,
         on_key=identity.on_key,
-        producer_id=identity.producer_id,
-        producer_version=identity.producer_version,
-        producer_definition_hash=identity.producer_definition_hash,
-        metrics_definition_id=identity.metrics_definition_id,
-        metrics_definition_version=identity.metrics_definition_version,
-        status=status,
-        values=values or {},
-        absence_failed_step=absence_failed_step,
-        absence_cause=absence_cause,
-        failure_type=failure_type,
-        failure_message=failure_message,
+        evaluation_procedure_config_hash=(
+            identity.evaluation_procedure_config_hash
+        ),
+        trace_producer=identity.trace_producer,
+        sample_identity=identity.sample_identity,
+        operator=identity.operator,
+        absence_mode=absence_mode,
+        cause=absence_cause,
     )

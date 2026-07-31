@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dr_code.trace import (
-    EXTERNAL_PRODUCER,
     EXTERNAL_PRODUCER_ID,
+    ExternalSource,
     JsonArtifact,
     TraceProducer,
     stable_hash,
@@ -16,11 +16,16 @@ JSON_ARTIFACT_GOLDEN_HASH = (
 )
 
 
-def test_external_producer_has_canonical_identity() -> None:
+def test_external_producer_requires_caller_owned_identity() -> None:
+    source = ExternalSource(source_id="fixture-a", content_digest="a" * 64)
+    producer = TraceProducer(
+        producer_id=EXTERNAL_PRODUCER_ID,
+        external_source=source,
+    )
     assert EXTERNAL_PRODUCER_ID == "external"
-    assert EXTERNAL_PRODUCER == TraceProducer(producer_id="external")
-    assert EXTERNAL_PRODUCER.version is None
-    assert EXTERNAL_PRODUCER.definition_hash is None
+    assert producer.external_source == source
+    assert producer.version is None
+    assert producer.definition_hash is None
 
 
 def test_stable_hash_matches_golden_identity() -> None:

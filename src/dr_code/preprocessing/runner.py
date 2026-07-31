@@ -9,10 +9,11 @@ with the cause, and the pipeline always completes with a full trace.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
-from pydantic import ValidationError
-
+from dr_code.eval.lifecycle import PreprocessingConfig
+from dr_code.eval.tasks import SampleIdentity
 from dr_code.trace import (
     Absent,
     Artifact,
@@ -25,10 +26,6 @@ from dr_code.trace import (
     TraceProducer,
     WiringError,
     is_absent,
-)
-from dr_code.preprocessing.definition import (
-    PreprocessingDefinition,
-    preprocessing_definition_hash,
 )
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.steps.base import Step, StepFailedError
@@ -51,35 +48,35 @@ class BoundStep:
 
 
 def bind_definition(
-    definition: PreprocessingDefinition,
+    config: PreprocessingConfig,
 ) -> tuple[BoundStep, ...]:
-    """Resolve each ``StepSpec``, validate settings, and chain kinds.
+    """Bind one self-authenticated concrete preprocessing config.
 
-    Any mismatch (unknown step, bad settings, incompatible INPUT/OUTPUT
-    kind chain) raises ``WiringError`` before any input is processed.
+    Definitions are materialized before this boundary, so every variable has
+    already been substituted and every setting is fully validated.
     """
+    config = PreprocessingConfig.model_validate(
+        config.model_dump(mode="python")
+    )
     bound: list[BoundStep] = []
     seen_names: set[str] = set()
     expected_input: ArtifactKind | None = None
 
-    for spec in definition.steps:
+    for spec in config.steps:
         instance_name = spec.instance_name
 
         if instance_name in seen_names:
             raise WiringError(f"duplicate instance name: {instance_name!r}")
         seen_names.add(instance_name)
 
-        step_cls = REGISTRY.get(spec.step.value)
+        step_cls = REGISTRY.get(spec.step)
         if step_cls is None:
-            raise WiringError(f"unknown step: {spec.step.value!r}")
+            raise WiringError(f"unknown step: {spec.step!r}")
 
-        try:
-            settings = step_cls.Settings.model_validate(spec.settings)
-        except ValidationError as exc:
-            raise WiringError(
-                f"invalid settings for step {spec.step.value!r}: {exc}"
-            ) from exc
-
+        settings = step_cls.Settings.model_validate_json(
+            json.dumps(dict(spec.settings), allow_nan=False),
+            strict=True,
+        )
         step = step_cls(settings)
 
         if expected_input is not None and step.INPUT != expected_input:
@@ -96,13 +93,15 @@ def bind_definition(
 
 
 def run_preprocessing(
-    definition: PreprocessingDefinition,
+    config: PreprocessingConfig,
     input_value: Artifact,
+    *,
+    sample_identity: SampleIdentity | None = None,
 ) -> Trace:
     """Run a definition as a single mechanical fold over its steps.
 
       value = input_value
-      for bound in bind_definition(definition):
+      for bound in bind_definition(config):
           value or Absent -> run step / skip-and-propagate
           record value under bound.instance_name; merge facts
 
@@ -111,7 +110,10 @@ def run_preprocessing(
     ``propagated_through`` extended. Always completes: the trace has
     ``input``, one value per instance name, and ``output``.
     """
-    bound_steps = bind_definition(definition)
+    config = PreprocessingConfig.model_validate(
+        config.model_dump(mode="python")
+    )
+    bound_steps = bind_definition(config)
 
     if bound_steps:
         first_input_kind = bound_steps[0].step.INPUT
@@ -154,11 +156,18 @@ def run_preprocessing(
     values["output"] = current
 
     producer = TraceProducer(
-        producer_id=definition.definition_id,
-        version=definition.version,
-        definition_hash=preprocessing_definition_hash(definition),
+        producer_id=config.definition_ref.definition_id,
+        version=config.definition_ref.version,
+        definition_hash=config.definition_ref.identity_hash,
+        preprocessing_config_hash=config.config_identity_hash,
+        implementation_hash=config.implementation_hash,
     )
-    return Trace(values=values, producer=producer, step_facts=step_facts)
+    return Trace(
+        values=values,
+        producer=producer,
+        step_facts=step_facts,
+        sample_identity=sample_identity,
+    )
 
 
 __all__ = ["BoundStep", "bind_definition", "run_preprocessing"]

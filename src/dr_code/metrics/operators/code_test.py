@@ -21,8 +21,8 @@ import math
 from collections.abc import Mapping
 from typing import Self
 
-from dr_exec import BatchResult
-from pydantic import model_validator
+from dr_exec import BatchResult, OverflowPolicy
+from pydantic import StrictInt, model_validator
 
 from dr_code.humaneval import batch_runner
 from dr_code.humaneval.profiles import DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
@@ -55,9 +55,34 @@ from dr_code.trace import (
 _COMPUTATION_ID = "humaneval-runner@v1"
 
 
+class CodeTestBudgets(OperatorSettings):
+    """The output/input execution budgets the code_test lane declares.
+
+    These are part of the operator's identity, not an executor default: the
+    protocol knowledge (how much output a HumanEval batch may emit, how much
+    stdin it may consume) lives at this call site. Declaring them here folds
+    them into ``question_identity_hash`` so a budget change is a loud identity
+    change, and into the execution invocation identity so it invalidates the
+    execution cache.
+    """
+
+    output_bytes: StrictInt = batch_runner.MAX_HUMANEVAL_OUTPUT_BYTES
+    output_overflow_policy: OverflowPolicy = OverflowPolicy.FAIL
+    input_bytes: StrictInt = batch_runner.MAX_HUMANEVAL_INPUT_BYTES
+
+    @model_validator(mode="after")
+    def validate_values(self) -> Self:
+        if self.output_bytes <= 0:
+            raise ValueError("output_bytes must be positive")
+        if self.input_bytes <= 0:
+            raise ValueError("input_bytes must be positive")
+        return self
+
+
 class CodeTestSettings(OperatorSettings):
     task_key: str = "task"
     timeout_seconds: float = DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
+    budgets: CodeTestBudgets = CodeTestBudgets()
 
     @model_validator(mode="after")
     def validate_values(self) -> Self:
@@ -87,6 +112,16 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     VERSION = "1"
     INPUT = ArtifactKind.CODE
     Settings = CodeTestSettings
+    FACT_UNITS = {
+        "total_cases": "case",
+        "passed_count": "case",
+        "failed_count": "case",
+        "error_count": "case",
+        "timeout_count": "case",
+        "coverage_complete": "boolean",
+        "function_count": "function",
+        "best_function_name": "name",
+    }
 
     def auxiliary_keys(self) -> tuple[str, ...]:
         return (self.settings.task_key,)
@@ -185,11 +220,18 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> ExecutionRequest:
         from dr_exec import EXECUTOR_IDENTITY
 
+        budgets = batch_runner.human_eval_budgets(
+            self.settings.timeout_seconds,
+            output_bytes=self.settings.budgets.output_bytes,
+            output_overflow_policy=self.settings.budgets.output_overflow_policy,
+            input_bytes=self.settings.budgets.input_bytes,
+        )
         plan = batch_runner.build_human_eval_batch_plan(
             task=task,
             candidate_code=candidate_code,
             function_name=function_name,
             timeout_seconds=self.settings.timeout_seconds,
+            budgets=budgets,
         )
         identity = InvocationIdentity.of(
             executor_identity=EXECUTOR_IDENTITY,

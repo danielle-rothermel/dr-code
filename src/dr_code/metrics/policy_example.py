@@ -1,14 +1,14 @@
 """Example caller policy derived from a neutral code-test record."""
 
 from dr_code.humaneval.scoring import SubmissionOutcome
+from dr_code.eval.facts import MetricRecord, RecordStatus
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.records import MetricRecord, RecordStatus
 
 
 def derive_outcome(record: MetricRecord) -> SubmissionOutcome:
     """Derive the existing HumanEval outcome taxonomy from execution facts."""
 
-    if record.metric is not MetricName.CODE_TEST:
+    if record.question != MetricName.CODE_TEST:
         raise ValueError("derive_outcome requires a code_test record")
     if record.status is not RecordStatus.MEASURED:
         raise ValueError("derive_outcome requires a measured record")
@@ -33,7 +33,7 @@ def derive_outcome(record: MetricRecord) -> SubmissionOutcome:
 
 
 def _integer_fact(record: MetricRecord, key: str) -> int:
-    value = record.values.get(key)
+    value = _fact_value(record, key)
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(
             f"code_test record requires non-negative integer fact {key!r}"
@@ -42,7 +42,14 @@ def _integer_fact(record: MetricRecord, key: str) -> int:
 
 
 def _boolean_fact(record: MetricRecord, key: str) -> bool:
-    value = record.values.get(key)
+    value = _fact_value(record, key)
     if not isinstance(value, bool):
         raise ValueError(f"code_test record requires boolean fact {key!r}")
     return value
+
+
+def _fact_value(record: MetricRecord, key: str) -> object:
+    for fact in record.facts:
+        if fact.name == key:
+            return fact.value
+    return None

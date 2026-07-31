@@ -45,11 +45,76 @@ from dr_code.humaneval.task import EvaluationCaseStatus, HumanEvalTask
 from dr_code.trace import (
     Absent,
     CodeArtifact,
+    ExternalSource,
     JsonArtifact,
     TextArtifact,
     Trace,
-    external_trace,
+    TraceProducer,
+    external_trace as _external_trace,
 )
+
+TEST_EXTERNAL_SOURCE = ExternalSource(
+    source_id="metrics-test-fixture",
+    content_digest="e" * 64,
+)
+
+
+def external_trace(values, *, step_facts=None):
+    return _external_trace(
+        values,
+        source=TEST_EXTERNAL_SOURCE,
+        step_facts=step_facts,
+    )
+
+
+def _test_preprocessing():
+    from dr_code.eval import PreprocessingDefinition
+
+    return PreprocessingDefinition(
+        definition_id="test-preprocessing",
+        version="1",
+        steps=(),
+    ).materialize()
+
+
+def evaluation_procedure(definition, metric_extraction=None):
+    """Build the minimal procedure that owns ``definition`` in tests."""
+
+    from dr_code.eval import (
+        EvaluationProcedureDefinition,
+    )
+
+    preprocessing = _test_preprocessing()
+    return EvaluationProcedureDefinition(
+        definition_id="test-evaluation-procedure",
+        version="1",
+    ).materialize(
+        preprocessing=preprocessing,
+        metric_extraction=metric_extraction or definition.materialize(),
+    )
+
+
+def procedure_trace(trace: Trace, procedure) -> Trace:
+    """Stamp a test trace with the concrete preprocessing config it uses."""
+
+    preprocessing = _test_preprocessing()
+    assert (
+        procedure.preprocessing_config_hash
+        == preprocessing.config_identity_hash
+    )
+    return Trace(
+        values=trace.values,
+        producer=TraceProducer(
+            producer_id=preprocessing.definition_ref.definition_id,
+            version=preprocessing.definition_ref.version,
+            definition_hash=preprocessing.definition_ref.identity_hash,
+            preprocessing_config_hash=preprocessing.config_identity_hash,
+            implementation_hash=preprocessing.implementation_hash,
+        ),
+        step_facts=trace.step_facts,
+        sample_identity=trace.sample_identity,
+    )
+
 
 # ---------------------------------------------------------------------------
 # HumanEval task fixtures / builders.

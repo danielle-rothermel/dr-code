@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.preprocessing.definition import (
+from dr_code.eval import (
     PreprocessingDefinition,
-    StepSpec,
+    PreprocessingStepBinding,
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
@@ -24,7 +24,7 @@ from dr_code.trace import (
 
 
 def _def(
-    steps: tuple[StepSpec, ...],
+    steps: tuple[PreprocessingStepBinding, ...],
     definition_id: str = "d1",
 ) -> PreprocessingDefinition:
     return PreprocessingDefinition(
@@ -32,75 +32,95 @@ def _def(
     )
 
 
+def _run(definition: PreprocessingDefinition, input_value):
+    return run_preprocessing(definition.materialize(), input_value)
+
+
 # --- bind-time wiring ------------------------------------------------
 
 
 def test_bind_resolves_steps() -> None:
     definition = _def(
-        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+        (
+            PreprocessingStepBinding(
+                instance_name="n", step=StepName.NORMALIZE_UNICODE
+            ),
+        )
     )
-    bound = bind_definition(definition)
+    bound = bind_definition(definition.materialize())
     assert len(bound) == 1
     assert isinstance(bound[0], BoundStep)
     assert bound[0].instance_name == "n"
 
 
 def test_bind_empty_definition() -> None:
-    assert bind_definition(_def(())) == ()
+    assert bind_definition(_def(()).materialize()) == ()
 
 
-def test_bind_unknown_step_raises_wiring_error() -> None:
+def test_materialize_detects_registry_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     definition = _def(
-        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+        (
+            PreprocessingStepBinding(
+                instance_name="n", step=StepName.NORMALIZE_UNICODE
+            ),
+        )
     )
     # monkeypatch the registry to simulate an unregistered name
     import dr_code.preprocessing.runner as runner_mod
 
-    original = runner_mod.REGISTRY.copy()
-    runner_mod.REGISTRY.clear()
-    try:
-        with pytest.raises(WiringError):
-            bind_definition(definition)
-    finally:
-        runner_mod.REGISTRY.update(original)
+    config = definition.materialize()
+    monkeypatch.setattr(runner_mod, "REGISTRY", {})
+    with pytest.raises(WiringError, match="unknown step"):
+        bind_definition(config)
 
 
-def test_bind_bad_settings_raises_wiring_error() -> None:
-    definition = _def(
-        (
-            StepSpec(
-                instance_name="e",
-                step=StepName.EXPAND_TABS,
-                settings={"tab_width": "not-an-int"},
-            ),
+def test_definition_rejects_bad_settings() -> None:
+    with pytest.raises(ValueError):
+        _def(
+            (
+                PreprocessingStepBinding(
+                    instance_name="e",
+                    step=StepName.EXPAND_TABS,
+                    settings={"tab_width": "not-an-int"},
+                ),
+            )
         )
-    )
-    with pytest.raises(WiringError):
-        bind_definition(definition)
 
 
-def test_bind_broken_kind_chain_raises_wiring_error() -> None:
+def test_definition_rejects_broken_kind_chain() -> None:
     # normalize_line_endings (Text->Text) then strip_fences
     # (CandidateSet->CandidateSet): Text != CandidateSet.
-    definition = _def(
-        (
-            StepSpec(instance_name="n", step=StepName.NORMALIZE_LINE_ENDINGS),
-            StepSpec(instance_name="s", step=StepName.STRIP_FENCES),
+    with pytest.raises(ValueError, match="kind chain"):
+        _def(
+            (
+                PreprocessingStepBinding(
+                    instance_name="n",
+                    step=StepName.NORMALIZE_LINE_ENDINGS,
+                ),
+                PreprocessingStepBinding(
+                    instance_name="s", step=StepName.STRIP_FENCES
+                ),
+            )
         )
-    )
-    with pytest.raises(WiringError):
-        bind_definition(definition)
 
 
 def test_bind_accepts_valid_kind_chain() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="s", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="s", step=StepName.STRIP_FENCES
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
-    bound = bind_definition(definition)
+    bound = bind_definition(definition.materialize())
     assert len(bound) == 3
 
 
@@ -109,9 +129,13 @@ def test_bind_accepts_valid_kind_chain() -> None:
 
 def test_run_single_text_step() -> None:
     definition = _def(
-        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+        (
+            PreprocessingStepBinding(
+                instance_name="n", step=StepName.NORMALIZE_UNICODE
+            ),
+        )
     )
-    trace = run_preprocessing(definition, TextArtifact(text="ｄｅｆ"))
+    trace = _run(definition, TextArtifact(text="ｄｅｆ"))
     assert trace.value("output") == TextArtifact(text="def")
     assert trace.value("input") == TextArtifact(text="ｄｅｆ")
     assert trace.value("n") == TextArtifact(text="def")
@@ -119,9 +143,13 @@ def test_run_single_text_step() -> None:
 
 def test_run_produces_trace_with_producer_stamp() -> None:
     definition = _def(
-        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+        (
+            PreprocessingStepBinding(
+                instance_name="n", step=StepName.NORMALIZE_UNICODE
+            ),
+        )
     )
-    trace = run_preprocessing(definition, TextArtifact(text="x"))
+    trace = _run(definition, TextArtifact(text="x"))
     assert isinstance(trace, Trace)
     assert trace.producer.producer_id == "d1"
     assert trace.producer.version == "1"
@@ -129,17 +157,21 @@ def test_run_produces_trace_with_producer_stamp() -> None:
 
 
 def test_run_empty_definition_output_equals_input() -> None:
-    trace = run_preprocessing(_def(()), TextArtifact(text="x"))
+    trace = _run(_def(()), TextArtifact(text="x"))
     assert trace.value("output") == TextArtifact(text="x")
 
 
 def test_run_input_kind_mismatch_raises_wiring_error() -> None:
     definition = _def(
-        (StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),)
+        (
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+        )
     )
     # extract_candidates expects Text; pass a CodeArtifact.
     with pytest.raises(WiringError):
-        run_preprocessing(definition, CodeArtifact(source="x = 1"))
+        _run(definition, CodeArtifact(source="x = 1"))
 
 
 # --- run: Absent propagation -----------------------------------------
@@ -148,12 +180,18 @@ def test_run_input_kind_mismatch_raises_wiring_error() -> None:
 def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="s", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="s", step=StepName.STRIP_FENCES
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
-    trace = run_preprocessing(definition, TextArtifact(text=""))
+    trace = _run(definition, TextArtifact(text=""))
 
     extract_val = trace.value("e")
     assert is_absent(extract_val)
@@ -177,12 +215,18 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
 def test_run_select_first_empty_set_yields_absent() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="flt", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="flt", step=StepName.FILTER_COMPILABLE
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
-    trace = run_preprocessing(definition, TextArtifact(text="def broken(:"))
+    trace = _run(definition, TextArtifact(text="def broken(:"))
     out = trace.value("output")
     assert is_absent(out)
     assert out.failed_step == "sel"
@@ -194,11 +238,15 @@ def test_run_select_first_empty_set_yields_absent() -> None:
 def test_run_step_facts_merged() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
-    trace = run_preprocessing(
+    trace = _run(
         definition,
         TextArtifact(text="```python\ndef f():\n    return 1\n```"),
     )
@@ -208,13 +256,21 @@ def test_run_step_facts_merged() -> None:
 def test_run_propagated_absent_records_each_step() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="a", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="b", step=StepName.DEDENT_CANDIDATES),
-            StepSpec(instance_name="c", step=StepName.SPLIT_ON_NAME_GUARD),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="a", step=StepName.STRIP_FENCES
+            ),
+            PreprocessingStepBinding(
+                instance_name="b", step=StepName.DEDENT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="c", step=StepName.SPLIT_ON_NAME_GUARD
+            ),
         )
     )
-    trace = run_preprocessing(definition, TextArtifact(text=""))
+    trace = _run(definition, TextArtifact(text=""))
     out = trace.value("output")
     assert is_absent(out)
     assert out.propagated_through == ("a", "b", "c")
@@ -226,15 +282,33 @@ def test_run_propagated_absent_records_each_step() -> None:
 def test_run_full_fenced_pipeline() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="ng", step=StepName.SPLIT_ON_NAME_GUARD),
-            StepSpec(instance_name="rr", step=StepName.DROP_AFTER_LAST_RETURN),
-            StepSpec(instance_name="ri", step=StepName.REPAIR_IMPORT_LINES),
-            StepSpec(instance_name="ii", step=StepName.INFER_MISSING_IMPORTS),
-            StepSpec(instance_name="dd", step=StepName.DEDUPE_IMPORTS),
-            StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="sf", step=StepName.STRIP_FENCES
+            ),
+            PreprocessingStepBinding(
+                instance_name="ng", step=StepName.SPLIT_ON_NAME_GUARD
+            ),
+            PreprocessingStepBinding(
+                instance_name="rr", step=StepName.DROP_AFTER_LAST_RETURN
+            ),
+            PreprocessingStepBinding(
+                instance_name="ri", step=StepName.REPAIR_IMPORT_LINES
+            ),
+            PreprocessingStepBinding(
+                instance_name="ii", step=StepName.INFER_MISSING_IMPORTS
+            ),
+            PreprocessingStepBinding(
+                instance_name="dd", step=StepName.DEDUPE_IMPORTS
+            ),
+            PreprocessingStepBinding(
+                instance_name="fc", step=StepName.FILTER_COMPILABLE
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
     raw = (
@@ -242,7 +316,7 @@ def test_run_full_fenced_pipeline() -> None:
         "```python\n"
         "def f(x):\n    return np.array(x)\n```\n"
     )
-    trace = run_preprocessing(definition, TextArtifact(text=raw))
+    trace = _run(definition, TextArtifact(text=raw))
     out = trace.value("output")
     assert isinstance(out, CodeArtifact)
     assert "import numpy as np" in out.source
@@ -268,13 +342,21 @@ def test_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
 
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="sf", step=StepName.STRIP_FENCES
+            ),
+            PreprocessingStepBinding(
+                instance_name="fc", step=StepName.FILTER_COMPILABLE
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
-    trace = run_preprocessing(definition, TextArtifact(text=source))
+    trace = _run(definition, TextArtifact(text=source))
     out = trace.value("output")
     assert isinstance(out, CodeArtifact)
     assert "def f():" in out.source
@@ -287,10 +369,18 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
 
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="sf", step=StepName.STRIP_FENCES
+            ),
+            PreprocessingStepBinding(
+                instance_name="fc", step=StepName.FILTER_COMPILABLE
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
     source = (
@@ -298,7 +388,7 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
         r'    return "\n".join(lines)\n```'
     )
     expected = 'def join_lines(lines):\n    return "\\n".join(lines)'
-    trace = run_preprocessing(definition, TextArtifact(text=source))
+    trace = _run(definition, TextArtifact(text=source))
     out = trace.value("output")
     assert isinstance(out, CodeArtifact)
     assert out.source == expected
@@ -308,11 +398,13 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
 def test_pipeline_prose_only_yields_absent() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            PreprocessingStepBinding(
+                instance_name="e", step=StepName.EXTRACT_CANDIDATES
+            ),
+            PreprocessingStepBinding(
+                instance_name="sel", step=StepName.SELECT_FIRST
+            ),
         )
     )
-    trace = run_preprocessing(
-        definition, TextArtifact(text="just prose, no code at all")
-    )
+    trace = _run(definition, TextArtifact(text="just prose, no code at all"))
     assert is_absent(trace.value("output"))
