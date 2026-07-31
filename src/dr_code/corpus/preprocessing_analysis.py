@@ -91,6 +91,7 @@ class PreprocessingAnalysisArtifacts:
 
 def analyze_preprocessing_corpus(
     *,
+    dataset_id: str,
     corpus_path: Path | str,
     run_dir: Path | str,
     output_dir: Path | str,
@@ -103,6 +104,7 @@ def analyze_preprocessing_corpus(
     try:
         with admitted_run_descriptor(
             label="analysis",
+            dataset_id=dataset_id,
             corpus_path=corpus_path,
             preprocessing=run_dir,
             candidate_evaluation=candidate_evaluation,
@@ -192,6 +194,7 @@ def _summarize(
                 "run": {
                     "run_id": descriptor.run_id,
                     "label": descriptor.label,
+                    "dataset_id": descriptor.dataset_id,
                     "corpus_sha256": descriptor.corpus_sha256,
                     "preprocessing_manifest_sha256": (
                         descriptor.preprocessing_manifest_sha256
@@ -513,6 +516,7 @@ def _write_aggregate_table(
 
 def _input_coordinates(descriptor: RunDescriptor) -> dict[str, object]:
     value: dict[str, object] = {
+        "dataset": {"dataset_id": descriptor.dataset_id},
         "corpus": {
             "sha256": descriptor.corpus_sha256,
             "schema_hex": (

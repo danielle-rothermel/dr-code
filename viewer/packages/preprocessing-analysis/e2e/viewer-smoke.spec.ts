@@ -95,3 +95,85 @@ test("deleting an annotation cancels failed tag creation before navigation", asy
   expect(exported.ok()).toBe(true);
   expect(await exported.json()).toEqual([]);
 });
+
+for (const width of [320, 375]) {
+  test(`maximum task IDs fit a ${width}px viewport`, async ({ page }) => {
+    const datasetId = "d".repeat(256);
+    const taskId = "t".repeat(256);
+    await page.route("**/api/review-examples?*", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as {
+        items: Array<{
+          context: Record<string, unknown>;
+          dataset_id: string | null;
+          task_identity: string | null;
+        }>;
+      };
+      for (const item of body.items) {
+        item.dataset_id = datasetId;
+        item.context.task_id = taskId;
+        item.task_identity = "a".repeat(64);
+      }
+      await route.fulfill({ json: body, response });
+    });
+    await page.setViewportSize({ height: 800, width });
+    await page.goto("/");
+    await page.getByRole("button", { exact: true, name: "Review" }).click();
+    const annotations = page.getByRole("region", {
+      name: "Task annotations for this page",
+    });
+    await expect(annotations).toBeVisible();
+    const identity = annotations.getByText(`${datasetId} · ${taskId}`);
+    await expect(identity).toBeVisible();
+
+    const overflow = await page.evaluate(() => ({
+      document: document.documentElement.scrollWidth
+        - document.documentElement.clientWidth,
+      offenders: [...document.querySelectorAll("*")].flatMap((element) => {
+        const rectangle = element.getBoundingClientRect();
+        const containedByOverflow = (() => {
+          for (
+            let ancestor = element.parentElement;
+            ancestor !== null;
+            ancestor = ancestor.parentElement
+          ) {
+            const overflow = getComputedStyle(ancestor).overflowX;
+            if (["auto", "clip", "hidden", "scroll"].includes(overflow)) {
+              return true;
+            }
+          }
+          return false;
+        })();
+        return rectangle.right
+          > document.documentElement.clientWidth + 0.5
+          && !containedByOverflow
+          ? [{
+            className: element.className,
+            right: rectangle.right,
+            tagName: element.tagName,
+          }]
+          : [];
+      }).slice(0, 10),
+      taskAnnotations: (() => {
+        const element = document.querySelector(".page-task-annotations");
+        if (!(element instanceof HTMLElement)) {
+          throw new Error("task annotation region is missing");
+        }
+        return element.scrollWidth - element.clientWidth;
+      })(),
+      taskIdentity: (() => {
+        const element = document.querySelector(".task-annotation-identity");
+        if (!(element instanceof HTMLElement)) {
+          throw new Error("task annotation identity is missing");
+        }
+        return element.scrollWidth - element.clientWidth;
+      })(),
+    }));
+    expect(overflow).toEqual({
+      document: 0,
+      offenders: [],
+      taskAnnotations: 0,
+      taskIdentity: 0,
+    });
+  });
+}

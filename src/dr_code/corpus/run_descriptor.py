@@ -70,7 +70,13 @@ from dr_code.eval import PreprocessingConfig
 
 PREPROCESSING_MANIFEST_FILENAME: Final = "manifest.json"
 _DESCRIPTOR_FIELDS: Final = frozenset(
-    {"label", "corpus", "preprocessing", "candidate_evaluation"}
+    {
+        "label",
+        "dataset_id",
+        "corpus",
+        "preprocessing",
+        "candidate_evaluation",
+    }
 )
 _SHA256_LENGTH: Final = 64
 _EVALUATION_POINTER_FIELDS: Final = frozenset(
@@ -125,6 +131,7 @@ class RunDescriptor:
 
     run_id: str
     label: str
+    dataset_id: str
     corpus_path: Path
     corpus_sha256: str
     preprocessing_manifest_path: Path
@@ -154,12 +161,14 @@ class RunDescriptor:
         cls,
         *,
         label: str,
+        dataset_id: str,
         corpus_path: str | Path,
         preprocessing: str | Path,
         candidate_evaluation: str | Path | None = None,
     ) -> RunDescriptor:
         with _admit_run_descriptor(
             label=label,
+            dataset_id=dataset_id,
             corpus_path=corpus_path,
             preprocessing=preprocessing,
             candidate_evaluation=candidate_evaluation,
@@ -185,6 +194,11 @@ class RunDescriptor:
         configured_label = value.get("label")
         if not isinstance(configured_label, str):
             raise RunValidationError("run descriptor requires string 'label'")
+        configured_dataset_id = value.get("dataset_id")
+        if not isinstance(configured_dataset_id, str):
+            raise RunValidationError(
+                "run descriptor requires string 'dataset_id'"
+            )
         corpus = _descriptor_path(value, "corpus", required=True)
         preprocessing = _descriptor_path(value, "preprocessing", required=True)
         evaluation = _descriptor_path(
@@ -192,6 +206,7 @@ class RunDescriptor:
         )
         return cls.from_paths(
             label=configured_label,
+            dataset_id=configured_dataset_id,
             corpus_path=_relative_to(descriptor_path, cast(str, corpus)),
             preprocessing=_relative_to(
                 descriptor_path, cast(str, preprocessing)
@@ -238,6 +253,7 @@ class _EvaluationSource:
 def admitted_run_descriptor(
     *,
     label: str,
+    dataset_id: str,
     corpus_path: str | Path,
     preprocessing: str | Path,
     candidate_evaluation: str | Path | None = None,
@@ -246,6 +262,7 @@ def admitted_run_descriptor(
 
     with _admit_run_descriptor(
         label=label,
+        dataset_id=dataset_id,
         corpus_path=corpus_path,
         preprocessing=preprocessing,
         candidate_evaluation=candidate_evaluation,
@@ -257,6 +274,7 @@ def admitted_run_descriptor(
 def _admit_run_descriptor(
     *,
     label: str,
+    dataset_id: str,
     corpus_path: str | Path,
     preprocessing: str | Path,
     candidate_evaluation: str | Path | None,
@@ -266,6 +284,7 @@ def _admit_run_descriptor(
             admitted = _prepare_admitted_descriptor(
                 stack=stack,
                 label=label,
+                dataset_id=dataset_id,
                 corpus_path=corpus_path,
                 preprocessing=preprocessing,
                 candidate_evaluation=candidate_evaluation,
@@ -281,11 +300,13 @@ def _prepare_admitted_descriptor(
     *,
     stack: ExitStack,
     label: str,
+    dataset_id: str,
     corpus_path: str | Path,
     preprocessing: str | Path,
     candidate_evaluation: str | Path | None,
 ) -> tuple[RunDescriptor, Mapping[str, StableFile]]:
     normalized_label = _nonblank(label, "run label")
+    normalized_dataset_id = _exact_nonblank(dataset_id, "dataset_id")
     source_corpus = _required_file(corpus_path, "corpus")
     source_manifest = _resolve_manifest(
         preprocessing,
@@ -316,6 +337,7 @@ def _prepare_admitted_descriptor(
     captured = stack.enter_context(stable_files(capture_paths))
     descriptor = _descriptor_from_captured(
         normalized_label=normalized_label,
+        normalized_dataset_id=normalized_dataset_id,
         captured=captured,
         evaluation_source=evaluation_source,
     )
@@ -325,6 +347,7 @@ def _prepare_admitted_descriptor(
 def _descriptor_from_captured(
     *,
     normalized_label: str,
+    normalized_dataset_id: str,
     captured: Mapping[str, StableFile],
     evaluation_source: _EvaluationSource | None,
 ) -> RunDescriptor:
@@ -406,6 +429,14 @@ def _descriptor_from_captured(
         evaluation_identity = cast(
             str, evaluation_coordinates["evaluation_identity"]
         )
+        authenticated_dataset_id = _evaluation_dataset_id(
+            evaluation_coordinates
+        )
+        if authenticated_dataset_id != normalized_dataset_id:
+            raise RunValidationError(
+                "descriptor dataset_id does not match authenticated "
+                "candidate evaluation dataset_id"
+            )
         evaluation_manifest_sha256 = evaluation_manifest_file.sha256
         hashes["candidate_membership"] = membership_file.sha256
         hashes["candidate_results"] = results_file.sha256
@@ -414,6 +445,7 @@ def _descriptor_from_captured(
     return RunDescriptor(
         run_id=cast(str, manifest["run_id"]),
         label=normalized_label,
+        dataset_id=normalized_dataset_id,
         corpus_path=corpus_file.path,
         corpus_sha256=corpus_file.sha256,
         preprocessing_manifest_path=manifest_file.path,
@@ -926,6 +958,15 @@ def _validate_evaluation(
     }
 
 
+def _evaluation_dataset_id(coordinates: dict[str, object]) -> str:
+    dataset = coordinates.get("dataset")
+    if not isinstance(dataset, dict):
+        raise RunValidationError(
+            "candidate evaluation dataset coordinates are invalid"
+        )
+    return _exact_nonblank(dataset.get("dataset_id"), "evaluation dataset_id")
+
+
 def _required_file(value: str | Path, label: str) -> Path:
     try:
         path = Path(value).expanduser().resolve(strict=True)
@@ -1289,6 +1330,14 @@ def _validate_evaluation_summaries(
         raise RunValidationError(
             "candidate evaluation reused_result_rows exceeds result_rows"
         )
+
+
+def _exact_nonblank(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value or value.strip() != value:
+        raise RunValidationError(
+            f"{label} must be a nonblank string without surrounding whitespace"
+        )
+    return value
 
 
 def _sha256(value: object, label: str) -> str:

@@ -11,16 +11,31 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Final
+from typing import BinaryIO, Final, cast
 
 import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from dr_code.viewer.domain import (
     Annotation,
     InvalidQueryError,
+    InvalidTaskAnnotationError,
+    MachineTaskAnnotationWriteOutcome,
+    MachineTaskAnnotationWriteResult,
     RunDescriptor,
     Tag,
+    TaskAnnotation,
+    TaskAnnotationOrigin,
+    TaskAnnotationProvenance,
+    TaskIdentity,
     Verdict,
+    decode_task_annotation_provenance,
+    encode_task_annotation_provenance,
+    task_annotation_provenance_json,
+    validate_task_annotation,
+    validate_task_identity,
+    validate_task_tag_ids,
     validate_sha256,
 )
 
@@ -35,6 +50,19 @@ _SCHEMA = (
         corpus_sha256 VARCHAR NOT NULL,
         definition_id VARCHAR NOT NULL,
         registered_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS registered_tasks (
+        run_id VARCHAR NOT NULL,
+        dataset_id VARCHAR NOT NULL,
+        task_id VARCHAR NOT NULL,
+        task_identity VARCHAR NOT NULL CHECK (
+            regexp_full_match(task_identity, '[0-9a-f]{64}')
+        ),
+        PRIMARY KEY (run_id, dataset_id, task_id, task_identity),
+        UNIQUE (run_id, dataset_id, task_id),
+        UNIQUE (run_id, dataset_id, task_identity)
     )
     """,
     """
@@ -70,7 +98,46 @@ _SCHEMA = (
         )
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS task_annotations (
+        dataset_id VARCHAR NOT NULL CHECK (
+            length(dataset_id) BETWEEN 1 AND 256
+        ),
+        task_id VARCHAR NOT NULL CHECK (length(task_id) BETWEEN 1 AND 256),
+        task_identity VARCHAR NOT NULL CHECK (
+            regexp_full_match(task_identity, '[0-9a-f]{64}')
+        ),
+        origin VARCHAR NOT NULL CHECK (origin IN ('human', 'machine')),
+        category VARCHAR CHECK (length(category) <= 256),
+        note VARCHAR CHECK (length(note) <= 10000),
+        provenance VARCHAR,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+        PRIMARY KEY (dataset_id, task_id, task_identity)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS task_annotation_tags (
+        dataset_id VARCHAR NOT NULL,
+        task_id VARCHAR NOT NULL,
+        task_identity VARCHAR NOT NULL,
+        tag_id VARCHAR NOT NULL REFERENCES tags(tag_id),
+        PRIMARY KEY (dataset_id, task_id, task_identity, tag_id)
+    )
+    """,
 )
+_SCHEMA_TABLES: Final = frozenset(
+    {
+        "runs",
+        "registered_tasks",
+        "annotations",
+        "tags",
+        "annotation_tags",
+        "task_annotations",
+        "task_annotation_tags",
+    }
+)
+_SCHEMA_VERSION: Final = 1
 _OWNERSHIP_GUARD: Final = threading.Lock()
 _OWNERSHIP_PID = os.getpid()
 _INITIALIZATION_GUARD: Final = threading.Lock()
@@ -105,6 +172,10 @@ def database_owner_lock_path(path: str | Path) -> Path:
         raise ValueError("an in-memory database has no ownership lock path")
     database_path = Path(path).expanduser().resolve()
     return database_path.with_name(f".{database_path.name}.owner.lock")
+
+
+class DatabaseSchemaError(RuntimeError):
+    """The database cannot be opened without ambiguous persisted state."""
 
 
 @contextmanager
@@ -186,6 +257,20 @@ def _serialized_initialization(path: Path | str) -> Iterator[None]:
                 del _INITIALIZATIONS[database_path]
 
 
+_TASK_ANNOTATION_WRITE_ATTEMPTS = 3
+type _TaskAnnotationRow = tuple[
+    str,
+    str,
+    str,
+    str,
+    str | None,
+    str | None,
+    str | None,
+    list[str],
+    list[str],
+]
+
+
 class ViewerDatabase:
     """Own the one-process DuckDB connection used by the viewer."""
 
@@ -230,9 +315,54 @@ class ViewerDatabase:
             raise InvalidQueryError(
                 "run IDs must be unique: " + ", ".join(duplicate_ids)
             )
-        self._transaction(
-            lambda: [self._register_run(descriptor) for descriptor in values]
+
+        def replace() -> None:
+            for descriptor in values:
+                self._connection.execute(
+                    "DELETE FROM registered_tasks WHERE run_id = ?",
+                    [descriptor.run_id],
+                )
+                self._register_run(descriptor)
+
+        self._transaction(replace)
+
+    def task_is_registered(self, identity: TaskIdentity) -> bool:
+        validated = validate_task_identity(
+            identity.dataset_id,
+            identity.task_id,
+            identity.task_identity,
         )
+        row = self._connection.execute(
+            """
+            SELECT 1
+            FROM registered_tasks
+            WHERE dataset_id = ? AND task_id = ? AND task_identity = ?
+            LIMIT 1
+            """,
+            [
+                validated.dataset_id,
+                validated.task_id,
+                validated.task_identity,
+            ],
+        ).fetchone()
+        return row is not None
+
+    def task_identity_for_run(
+        self,
+        run_id: str,
+        dataset_id: str,
+        task_id: str,
+    ) -> str | None:
+        """Return the candidate-evaluation identity registered for one run."""
+        row = self._connection.execute(
+            """
+            SELECT task_identity
+            FROM registered_tasks
+            WHERE run_id = ? AND dataset_id = ? AND task_id = ?
+            """,
+            [run_id, dataset_id, task_id],
+        ).fetchone()
+        return row[0] if row is not None else None
 
     def list_tags(self) -> tuple[Tag, ...]:
         rows = self._connection.execute(
@@ -553,6 +683,158 @@ class ViewerDatabase:
             for row in rows
         ]
 
+    def get_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+    ) -> TaskAnnotation | None:
+        identity = validate_task_identity(dataset_id, task_id, task_identity)
+        return self._get_task_annotation(identity)
+
+    def put_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+        *,
+        category: str | None = None,
+        note: str | None = None,
+        tag_ids: Iterable[str] = (),
+    ) -> TaskAnnotation:
+        """Write a browser annotation, always as human without provenance."""
+        identity = validate_task_identity(dataset_id, task_id, task_identity)
+        selected_tag_ids = validate_task_tag_ids(tag_ids)
+        candidate = validate_task_annotation(
+            identity=identity,
+            origin=TaskAnnotationOrigin.HUMAN,
+            category=category,
+            note=note,
+            tags=(),
+            provenance=None,
+        )
+        written: TaskAnnotation | None = None
+
+        def upsert() -> None:
+            nonlocal written
+            self._validate_known_tags(selected_tag_ids)
+            self._upsert_task_annotation_row(candidate)
+            self._replace_task_annotation_tags(identity, selected_tag_ids)
+            written = self._get_task_annotation(identity)
+
+        self._retry_task_annotation_write(upsert)
+        assert written is not None
+        return written
+
+    def put_machine_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+        *,
+        category: str | None,
+        note: str | None = None,
+        tag_ids: Iterable[str] = (),
+        provenance: TaskAnnotationProvenance,
+    ) -> MachineTaskAnnotationWriteResult:
+        """Atomically write machine state unless a human row is protected."""
+        identity = validate_task_identity(dataset_id, task_id, task_identity)
+        selected_tag_ids = validate_task_tag_ids(tag_ids)
+        candidate = validate_task_annotation(
+            identity=identity,
+            origin=TaskAnnotationOrigin.MACHINE,
+            category=category,
+            note=note,
+            tags=(),
+            provenance=provenance,
+        )
+        result: MachineTaskAnnotationWriteResult | None = None
+
+        def protect_and_upsert() -> None:
+            nonlocal result
+            self._validate_known_tags(selected_tag_ids)
+            row = self._upsert_task_annotation_row(candidate)
+            outcome = (
+                MachineTaskAnnotationWriteOutcome.WRITTEN
+                if row
+                else MachineTaskAnnotationWriteOutcome.PROTECTED
+            )
+            if outcome is MachineTaskAnnotationWriteOutcome.WRITTEN:
+                self._replace_task_annotation_tags(identity, selected_tag_ids)
+            stored = self._get_task_annotation(identity)
+            assert stored is not None
+            result = MachineTaskAnnotationWriteResult(
+                outcome=outcome,
+                annotation=stored,
+            )
+
+        self._retry_task_annotation_write(protect_and_upsert)
+        assert result is not None
+        return result
+
+    def delete_task_annotation(
+        self,
+        dataset_id: str,
+        task_id: str,
+        task_identity: str,
+    ) -> bool:
+        identity = validate_task_identity(dataset_id, task_id, task_identity)
+        deleted = False
+
+        def remove() -> None:
+            nonlocal deleted
+            self._connection.execute(
+                """
+                DELETE FROM task_annotation_tags
+                WHERE dataset_id = ? AND task_id = ? AND task_identity = ?
+                """,
+                [
+                    identity.dataset_id,
+                    identity.task_id,
+                    identity.task_identity,
+                ],
+            )
+            row = self._connection.execute(
+                """
+                DELETE FROM task_annotations
+                WHERE dataset_id = ? AND task_id = ? AND task_identity = ?
+                RETURNING task_id
+                """,
+                [
+                    identity.dataset_id,
+                    identity.task_id,
+                    identity.task_identity,
+                ],
+            ).fetchone()
+            deleted = row is not None
+
+        self._transaction(remove)
+        return deleted
+
+    def export_task_annotations(self) -> list[dict[str, object]]:
+        """Return deterministic nested task annotations without timestamps."""
+        exported: list[dict[str, object]] = []
+        for annotation in self._task_annotations():
+            exported.append(
+                {
+                    "identity": {
+                        "dataset_id": annotation.identity.dataset_id,
+                        "task_id": annotation.identity.task_id,
+                        "task_identity": annotation.identity.task_identity,
+                    },
+                    "origin": annotation.origin.value,
+                    "category": annotation.category,
+                    "note": annotation.note,
+                    "tags": [tag.name for tag in annotation.tags],
+                    "provenance": (
+                        task_annotation_provenance_json(annotation.provenance)
+                        if annotation.provenance is not None
+                        else None
+                    ),
+                }
+            )
+        return exported
+
     def _annotation_tags(
         self, corpus_sha256: str, sample_id: str, decoder_output_sha256: str
     ) -> tuple[Tag, ...]:
@@ -569,12 +851,156 @@ class ViewerDatabase:
         ).fetchall()
         return tuple(Tag(tag_id=row[0], name=row[1]) for row in rows)
 
+    def _get_task_annotation(
+        self, identity: TaskIdentity
+    ) -> TaskAnnotation | None:
+        annotations = self._task_annotations(identity)
+        return annotations[0] if annotations else None
+
+    def _task_annotations(
+        self, identity: TaskIdentity | None = None
+    ) -> tuple[TaskAnnotation, ...]:
+        where = ""
+        parameters: list[str] = []
+        if identity is not None:
+            where = (
+                "WHERE a.dataset_id = ? AND a.task_id = ? "
+                "AND a.task_identity = ?"
+            )
+            parameters = [
+                identity.dataset_id,
+                identity.task_id,
+                identity.task_identity,
+            ]
+        rows = cast(
+            list[_TaskAnnotationRow],
+            self._connection.execute(
+                f"""
+                SELECT
+                    a.dataset_id,
+                    a.task_id,
+                    a.task_identity,
+                    a.origin,
+                    a.category,
+                    a.note,
+                    a.provenance,
+                    coalesce(
+                        list(t.tag_id ORDER BY t.normalized_name, t.tag_id)
+                            FILTER (WHERE t.tag_id IS NOT NULL),
+                        []
+                    ) AS tag_ids,
+                    coalesce(
+                        list(t.name ORDER BY t.normalized_name, t.tag_id)
+                            FILTER (WHERE t.tag_id IS NOT NULL),
+                        []
+                    ) AS tag_names
+                FROM task_annotations AS a
+                LEFT JOIN task_annotation_tags AS atag
+                  USING (dataset_id, task_id, task_identity)
+                LEFT JOIN tags AS t USING (tag_id)
+                {where}
+                GROUP BY
+                    a.dataset_id,
+                    a.task_id,
+                    a.task_identity,
+                    a.origin,
+                    a.category,
+                    a.note,
+                    a.provenance
+                ORDER BY a.dataset_id, a.task_id, a.task_identity
+                """,
+                parameters,
+            ).fetchall(),
+        )
+        return tuple(_decode_task_annotation_row(row) for row in rows)
+
+    def _upsert_task_annotation_row(self, annotation: TaskAnnotation) -> bool:
+        row = self._connection.execute(
+            """
+            INSERT INTO task_annotations(
+                dataset_id, task_id, task_identity, origin, category, note,
+                provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(dataset_id, task_id, task_identity) DO UPDATE SET
+                origin = excluded.origin,
+                category = excluded.category,
+                note = excluded.note,
+                provenance = excluded.provenance,
+                updated_at = now()
+            WHERE
+                excluded.origin = 'human'
+                OR task_annotations.origin = 'machine'
+            RETURNING task_id
+            """,
+            [
+                annotation.identity.dataset_id,
+                annotation.identity.task_id,
+                annotation.identity.task_identity,
+                annotation.origin.value,
+                annotation.category,
+                annotation.note,
+                (
+                    encode_task_annotation_provenance(annotation.provenance)
+                    if annotation.provenance is not None
+                    else None
+                ),
+            ],
+        ).fetchone()
+        return row is not None
+
+    def _replace_task_annotation_tags(
+        self, identity: TaskIdentity, tag_ids: tuple[str, ...]
+    ) -> None:
+        self._connection.execute(
+            """
+            DELETE FROM task_annotation_tags
+            WHERE dataset_id = ? AND task_id = ? AND task_identity = ?
+            """,
+            [
+                identity.dataset_id,
+                identity.task_id,
+                identity.task_identity,
+            ],
+        )
+        for tag_id in tag_ids:
+            self._connection.execute(
+                """
+                INSERT INTO task_annotation_tags(
+                    dataset_id, task_id, task_identity, tag_id
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    identity.dataset_id,
+                    identity.task_id,
+                    identity.task_identity,
+                    tag_id,
+                ],
+            )
+
+    def _validate_known_tags(self, tag_ids: tuple[str, ...]) -> None:
+        if not tag_ids:
+            return
+        placeholders = ", ".join("?" for _ in tag_ids)
+        found = {
+            row[0]
+            for row in self._connection.execute(
+                f"SELECT tag_id FROM tags WHERE tag_id IN ({placeholders})",
+                list(tag_ids),
+            ).fetchall()
+        }
+        missing = sorted(set(tag_ids).difference(found))
+        if missing:
+            raise InvalidTaskAnnotationError(
+                "unknown tag ID(s): " + ", ".join(missing)
+            )
+
     def _register_run(self, descriptor: RunDescriptor) -> None:
         self._connection.execute(
             """
             INSERT INTO runs(
-                run_id, label, descriptor_json, manifest_sha256,
-                corpus_sha256, definition_id
+                run_id, label, descriptor_json, manifest_sha256, corpus_sha256,
+                definition_id
             ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
                 label = excluded.label,
@@ -591,6 +1017,80 @@ class ViewerDatabase:
                 descriptor.preprocessing_manifest_sha256,
                 descriptor.corpus_sha256,
                 descriptor.definition_id,
+            ],
+        )
+        if descriptor.evaluation_coordinates is None:
+            return
+        membership_path = descriptor.candidate_membership_path
+        assert membership_path is not None
+        membership_schema = pq.ParquetFile(membership_path).schema_arrow
+        for field_name in ("task_id", "task_identity"):
+            field_type = membership_schema.field(field_name).type
+            if not (
+                pa.types.is_string(field_type)
+                or pa.types.is_large_string(field_type)
+            ):
+                raise InvalidTaskAnnotationError(
+                    f"{field_name} must be a string"
+                )
+        task_batches = self._connection.execute(
+            """
+            SELECT DISTINCT task_id, task_identity
+            FROM read_parquet(?)
+            """,
+            [str(membership_path)],
+        ).to_arrow_reader(4_096)
+        for batch in task_batches:
+            for task_id, task_identity in zip(
+                batch.column(0), batch.column(1), strict=True
+            ):
+                validate_task_identity(
+                    descriptor.dataset_id,
+                    task_id.as_py(),
+                    task_identity.as_py(),
+                )
+        ambiguous = self._connection.execute(
+            """
+            SELECT task_id
+            FROM read_parquet(?)
+            GROUP BY task_id
+            HAVING count(DISTINCT task_identity) != 1
+            LIMIT 1
+            """,
+            [str(membership_path)],
+        ).fetchone()
+        if ambiguous is not None:
+            raise InvalidTaskAnnotationError(
+                "candidate evaluation maps one task_id to multiple "
+                "task_identity values"
+            )
+        reused_identity = self._connection.execute(
+            """
+            SELECT task_identity
+            FROM read_parquet(?)
+            GROUP BY task_identity
+            HAVING count(DISTINCT task_id) != 1
+            LIMIT 1
+            """,
+            [str(membership_path)],
+        ).fetchone()
+        if reused_identity is not None:
+            raise InvalidTaskAnnotationError(
+                "candidate evaluation maps one task_identity to multiple "
+                "task_id values"
+            )
+        self._connection.execute(
+            """
+            INSERT INTO registered_tasks(
+                run_id, dataset_id, task_id, task_identity
+            )
+            SELECT DISTINCT ?, ?, task_id, task_identity
+            FROM read_parquet(?)
+            """,
+            [
+                descriptor.run_id,
+                descriptor.dataset_id,
+                str(membership_path),
             ],
         )
 
@@ -610,10 +1110,30 @@ class ViewerDatabase:
         self._connection.execute("BEGIN TRANSACTION")
         try:
             operation()
+            self._connection.execute("COMMIT")
         except BaseException:
-            self._connection.execute("ROLLBACK")
+            try:
+                self._connection.execute("ROLLBACK")
+            except duckdb.TransactionException as rollback_error:
+                if not _is_inactive_transaction_error(rollback_error):
+                    raise
             raise
-        self._connection.execute("COMMIT")
+
+    def _retry_task_annotation_write(
+        self, operation: Callable[[], object]
+    ) -> None:
+        for attempt in range(_TASK_ANNOTATION_WRITE_ATTEMPTS):
+            try:
+                self._transaction(operation)
+            except duckdb.Error as error:
+                if (
+                    not _is_retryable_task_annotation_write_conflict(error)
+                    or attempt + 1 == _TASK_ANNOTATION_WRITE_ATTEMPTS
+                ):
+                    raise
+                continue
+            return
+        raise AssertionError("task annotation retry loop exhausted")
 
 
 def _annotation_key(
@@ -662,6 +1182,7 @@ def _duplicates(values: Iterable[str]) -> tuple[str, ...]:
 def _create_schema(connection: duckdb.DuckDBPyConnection) -> None:
     connection.execute("BEGIN TRANSACTION")
     try:
+        _prepare_schema(connection)
         for statement in _SCHEMA:
             connection.execute(statement)
     except BaseException:
@@ -670,8 +1191,141 @@ def _create_schema(connection: duckdb.DuckDBPyConnection) -> None:
     connection.execute("COMMIT")
 
 
+def _prepare_schema(connection: duckdb.DuckDBPyConnection) -> None:
+    tables = {
+        row[0]
+        for row in connection.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'main'
+            """
+        ).fetchall()
+    }
+    if "viewer_schema" in tables:
+        versions = connection.execute(
+            "SELECT schema_version FROM viewer_schema"
+        ).fetchall()
+        if versions != [(_SCHEMA_VERSION,)]:
+            raise DatabaseSchemaError(
+                "viewer database schema version is unsupported: "
+                f"expected {_SCHEMA_VERSION}, found {versions!r}"
+            )
+        missing = sorted(_SCHEMA_TABLES.difference(tables))
+        if missing:
+            raise DatabaseSchemaError(
+                "viewer database schema is incomplete: " + ", ".join(missing)
+            )
+        for table in (
+            "registered_tasks",
+            "task_annotations",
+            "task_annotation_tags",
+        ):
+            if "task_identity" not in _table_columns(connection, table):
+                raise DatabaseSchemaError(
+                    f"viewer database schema is missing {table}.task_identity"
+                )
+        return
+
+    task_tables = {
+        "registered_tasks",
+        "task_annotations",
+        "task_annotation_tags",
+    }.intersection(tables)
+    if task_tables:
+        legacy_tables = {
+            table
+            for table in task_tables
+            if "task_identity" not in _table_columns(connection, table)
+        }
+        if legacy_tables != task_tables:
+            raise DatabaseSchemaError(
+                "viewer database has task tables without schema metadata"
+            )
+        populated = [
+            table
+            for table in ("task_annotations", "task_annotation_tags")
+            if table in legacy_tables
+            if connection.execute(f"SELECT count(*) FROM {table}").fetchone()
+            != (0,)
+        ]
+        if populated:
+            raise DatabaseSchemaError(
+                "legacy task annotation rows lack authenticated "
+                "task_identity and cannot be migrated: " + ", ".join(populated)
+            )
+        for table in (
+            "task_annotation_tags",
+            "task_annotations",
+            "registered_tasks",
+        ):
+            if table in legacy_tables:
+                connection.execute(f"DROP TABLE {table}")
+
+    connection.execute(
+        """
+        CREATE TABLE viewer_schema (
+            schema_version INTEGER PRIMARY KEY
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO viewer_schema(schema_version) VALUES (?)",
+        [_SCHEMA_VERSION],
+    )
+
+
+def _table_columns(
+    connection: duckdb.DuckDBPyConnection,
+    table: str,
+) -> set[str]:
+    return {
+        row[1]
+        for row in connection.execute(
+            f"PRAGMA table_info('{table}')"
+        ).fetchall()
+    }
+
+
+def _is_retryable_task_annotation_write_conflict(
+    error: duckdb.Error,
+) -> bool:
+    if isinstance(error, duckdb.TransactionException):
+        return True
+    message = str(error)
+    return (
+        isinstance(error, duckdb.ConstraintException)
+        and 'Duplicate key "dataset_id:' in message
+        and "task_id:" in message
+        and "violates primary key constraint" in message
+    )
+
+
+def _is_inactive_transaction_error(error: duckdb.TransactionException) -> bool:
+    return "no transaction is active" in str(error)
+
+
+def _decode_task_annotation_row(row: _TaskAnnotationRow) -> TaskAnnotation:
+    return validate_task_annotation(
+        identity=validate_task_identity(row[0], row[1], row[2]),
+        origin=row[3],
+        category=row[4],
+        note=row[5],
+        tags=tuple(
+            Tag(tag_id=tag_id, name=name)
+            for tag_id, name in zip(row[7], row[8], strict=True)
+        ),
+        provenance=(
+            decode_task_annotation_provenance(row[6])
+            if row[6] is not None
+            else None
+        ),
+    )
+
+
 __all__ = (
     "DatabaseOwnershipError",
+    "DatabaseSchemaError",
     "ViewerDatabase",
     "database_owner_lock_path",
     "database_ownership",

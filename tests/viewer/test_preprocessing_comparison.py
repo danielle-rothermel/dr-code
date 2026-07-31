@@ -36,12 +36,14 @@ def test_comparison_is_deterministic_and_schema_pinned(tmp_path: Path) -> None:
         no_code_causes=("changed", "alternate", None),
     )
     first = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
         output_dir=tmp_path / "comparison-one",
     )
     second = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -68,6 +70,60 @@ def test_comparison_is_deterministic_and_schema_pinned(tmp_path: Path) -> None:
     )
 
 
+def test_comparison_identity_includes_preprocessing_only_dataset(
+    tmp_path: Path,
+) -> None:
+    before = write_bundle(
+        tmp_path / "before", run_id="before", with_evaluation=False
+    )
+    after = write_bundle(
+        tmp_path / "after",
+        run_id="after",
+        corpus_path=before.corpus_path,
+        with_evaluation=False,
+    )
+    first = compare_preprocessing_runs(
+        dataset_id="dataset/one",
+        corpus_path=before.corpus_path,
+        before_run=before.preprocessing_manifest_path.parent,
+        after_run=after.preprocessing_manifest_path.parent,
+        output_dir=tmp_path / "dataset-one",
+    )
+    second = compare_preprocessing_runs(
+        dataset_id="dataset/two",
+        corpus_path=before.corpus_path,
+        before_run=before.preprocessing_manifest_path.parent,
+        after_run=after.preprocessing_manifest_path.parent,
+        output_dir=tmp_path / "dataset-two",
+    )
+    first_manifest = json.loads(
+        first.manifest_path.read_text(encoding="utf-8")
+    )
+    second_manifest = json.loads(
+        second.manifest_path.read_text(encoding="utf-8")
+    )
+    first_summary = json.loads(first.summary_path.read_text(encoding="utf-8"))
+    second_summary = json.loads(
+        second.summary_path.read_text(encoding="utf-8")
+    )
+
+    assert first_manifest["before"]["dataset_id"] == "dataset/one"
+    assert first_manifest["after"]["dataset_id"] == "dataset/one"
+    assert second_manifest["before"]["dataset_id"] == "dataset/two"
+    assert second_manifest["after"]["dataset_id"] == "dataset/two"
+    assert first_summary["dataset_id"] == "dataset/one"
+    assert second_summary["dataset_id"] == "dataset/two"
+    assert (
+        first.manifest_path.read_bytes() != second.manifest_path.read_bytes()
+    )
+    assert first.summary_path.read_bytes() != second.summary_path.read_bytes()
+    assert all(
+        first.relation_paths[name].read_bytes()
+        == second.relation_paths[name].read_bytes()
+        for name in first.relation_paths
+    )
+
+
 def test_comparison_includes_optional_evaluation_relations(
     tmp_path: Path,
 ) -> None:
@@ -79,6 +135,7 @@ def test_comparison_includes_optional_evaluation_relations(
     )
 
     artifacts = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -131,6 +188,7 @@ def test_comparison_holds_admitted_relations_through_publication(
         comparison_module, "_comparison_store", replace_then_open
     )
     artifacts = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -184,6 +242,7 @@ def test_comparison_spills_and_streams_many_small_batches(
         )
 
     artifacts = compare_preprocessing_runs(
+        dataset_id=before.dataset_id,
         corpus_path=before.corpus_path,
         before_run=before.preprocessing_manifest_path.parent,
         after_run=after.preprocessing_manifest_path.parent,
@@ -353,6 +412,7 @@ def test_comparison_refuses_existing_output_and_one_sided_evaluation(
 
     with pytest.raises(FileExistsError):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -362,6 +422,7 @@ def test_comparison_refuses_existing_output_and_one_sided_evaluation(
         PreprocessingComparisonError, match="supplied together"
     ):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -390,6 +451,7 @@ def test_comparison_rejects_different_corpora(tmp_path: Path) -> None:
         PreprocessingComparisonError, match="fingerprint mismatch"
     ):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -432,6 +494,7 @@ def test_comparison_rejects_source_changed_under_unchanged_candidate_id(
         match="candidate_id is not content-derived",
     ):
         compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,
@@ -467,6 +530,7 @@ def test_concurrent_comparison_publication_preserves_one_complete_output(
     ) -> PreprocessingComparisonArtifacts:
         barrier.wait()
         return compare_preprocessing_runs(
+            dataset_id=before.dataset_id,
             corpus_path=before.corpus_path,
             before_run=before.preprocessing_manifest_path.parent,
             after_run=after.preprocessing_manifest_path.parent,

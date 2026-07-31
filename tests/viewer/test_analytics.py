@@ -403,6 +403,31 @@ def test_compatible_comparison_preserves_denominators(tmp_path) -> None:
     assert transition.total == 2
 
 
+@pytest.mark.parametrize("with_evaluation", [False, True])
+def test_comparison_rejects_different_dataset_identities(
+    tmp_path,
+    with_evaluation: bool,
+) -> None:
+    baseline = write_bundle(
+        tmp_path / "baseline",
+        run_id="baseline",
+        dataset_id="dataset/one",
+        with_evaluation=with_evaluation,
+    )
+    candidate = write_bundle(
+        tmp_path / "candidate",
+        run_id="candidate",
+        corpus_path=baseline.corpus_path,
+        dataset_id="dataset/two",
+        with_evaluation=with_evaluation,
+    )
+
+    with ViewerDatabase(":memory:") as database:
+        analytics = ViewerAnalytics(database, [baseline, candidate])
+        with pytest.raises(IncompatibleRunsError, match="dataset identities"):
+            analytics.compare("baseline", "candidate")
+
+
 def test_preprocessing_only_comparison_uses_available_stages(tmp_path) -> None:
     baseline = write_bundle(
         tmp_path / "baseline",
@@ -583,6 +608,7 @@ def test_relational_integrity_rejects_orphans_and_null_fingerprints(
     with pytest.raises(RunValidationError, match=message):
         type(descriptor).from_paths(
             label=descriptor.label,
+            dataset_id=descriptor.dataset_id,
             corpus_path=descriptor.corpus_path,
             preprocessing=manifest_path.parent,
         )

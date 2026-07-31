@@ -2,6 +2,7 @@ import { CodeBlock, StatusBadge } from "@dr-code/viewer";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type {
+  Annotation,
   AnnotationIdentity,
   AnnotationInput,
   ExampleDetail,
@@ -12,17 +13,15 @@ import type {
 } from "./api";
 import { CandidateOrigins } from "./candidate-origins";
 import { errorMessage, formatNumber, humanize } from "./format";
+import { TaskAnnotationEditor } from "./task-annotation";
+import { useAutosaveQueue } from "./use-autosave-queue";
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZES = [10, 25, 50] as const;
-const NOTE_AUTOSAVE_DELAY_MS = 300;
-
 type LoadState<T> =
   | { status: "loading" }
   | { error: string; status: "error" }
   | { data: T; status: "success" };
-
-type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 interface AnnotationDraft {
   note: string;
@@ -30,18 +29,19 @@ interface AnnotationDraft {
   verdict: Verdict | null;
 }
 
-interface SaveOperation {
-  identity: AnnotationIdentity;
-  input: AnnotationInput;
-  revision: number;
-}
+type AnnotationMutation =
+  | { input: AnnotationInput; kind: "put" }
+  | { kind: "delete" };
 
-interface CardGuard {
+export interface CardGuard {
   flush: () => Promise<boolean>;
   isUnsafe: () => boolean;
 }
 
-type RegisterCardGuard = (key: string, guard: CardGuard) => () => void;
+export type RegisterCardGuard = (
+  key: string,
+  guard: CardGuard,
+) => () => void;
 
 export type RegisterBeforeLeave = (
   handler: () => Promise<boolean>,
@@ -187,7 +187,6 @@ function AnnotationEditor({
   });
   const [draft, setDraft] = useState<AnnotationDraft>(initialDraft);
   const [newTag, setNewTag] = useState("");
-  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState("");
   const [tagSaveState, setTagSaveState] = useState<"idle" | "saving" | "error">("idle");
   const [tagSaveError, setTagSaveError] = useState("");
@@ -197,122 +196,76 @@ function AnnotationEditor({
     sample_id: example.sample_id,
   };
   const activeRef = useRef(true);
-  const debounceRef = useRef<number | undefined>(undefined);
   const draftRef = useRef(draft);
   const exampleRef = useRef(example);
-  const inFlightRef = useRef(false);
   const onExampleChangeRef = useRef(onExampleChange);
-  const queuedRef = useRef<SaveOperation | null>(null);
-  const revisionRef = useRef(0);
-  const runQueueRef = useRef<() => void>(() => undefined);
-  const saveStateRef = useRef(saveState);
   const tagCreationRef = useRef<Promise<boolean> | null>(null);
   const tagSaveErrorRef = useRef("");
   const pendingTagNameRef = useRef<string | null>(null);
-  const leaveWaitersRef = useRef<Array<(canLeave: boolean) => void>>([]);
   draftRef.current = draft;
   exampleRef.current = example;
   onExampleChangeRef.current = onExampleChange;
-
-  function updateSaveState(next: SaveState) {
-    saveStateRef.current = next;
-    if (activeRef.current) setSaveState(next);
-  }
 
   function updateTagSaveError(message: string) {
     tagSaveErrorRef.current = message;
     if (activeRef.current) setTagSaveError(message);
   }
 
-  function settleLeaveWaiters(canLeave: boolean) {
-    const waiters = leaveWaitersRef.current;
-    leaveWaitersRef.current = [];
-    for (const resolve of waiters) resolve(canLeave);
-  }
-
-  function operationForDraft(value: AnnotationDraft, revision = revisionRef.current): SaveOperation | null {
-    if (annotationIdentity === null) return null;
+  function inputForDraft(value: AnnotationDraft): AnnotationInput {
     return {
-      identity: annotationIdentity,
-      input: {
-        note: value.note,
-        tag_ids: [...value.tagIds].sort(),
-        verdict: value.verdict,
-      },
-      revision,
+      note: value.note,
+      tag_ids: [...value.tagIds].sort(),
+      verdict: value.verdict,
     };
   }
 
-  function queue(operation: SaveOperation) {
-    queuedRef.current = operation;
-    if (activeRef.current) setSaveError("");
-    updateSaveState("saving");
-    runQueueRef.current();
-  }
-
-  runQueueRef.current = () => {
-    if (inFlightRef.current || queuedRef.current === null) return;
-    const operation = queuedRef.current;
-    queuedRef.current = null;
-    inFlightRef.current = true;
-    void api.putAnnotation(operation.identity, operation.input).then(
-      (annotation) => {
-        inFlightRef.current = false;
-        if (operation.revision === revisionRef.current) {
-          updateSaveState("saved");
-          if (activeRef.current) {
-            onExampleChangeRef.current({ ...exampleRef.current, annotation });
-          }
-        }
-        if (queuedRef.current !== null) {
-          runQueueRef.current();
-          return;
-        }
-        if (debounceRef.current === undefined) settleLeaveWaiters(true);
-      },
-      (error: unknown) => {
-        inFlightRef.current = false;
-        if (queuedRef.current !== null) {
-          runQueueRef.current();
-          return;
-        }
-        if (operation.revision !== revisionRef.current && debounceRef.current !== undefined) return;
-        updateSaveState("error");
-        if (activeRef.current) setSaveError(errorMessage(error));
-        settleLeaveWaiters(false);
-      },
-    );
-  };
+  const identityKey = annotationIdentity === null
+    ? `${example.corpus_sha256}:${example.sample_id}:missing`
+    : `${annotationIdentity.corpus_sha256}:${annotationIdentity.sample_id}:${annotationIdentity.decoder_output_sha256}`;
+  const autosave = useAutosaveQueue<AnnotationMutation, Annotation | null>({
+    onError: (error) => {
+      if (activeRef.current) setSaveError(errorMessage(error));
+    },
+    onSaved: (annotation) => {
+      if (!activeRef.current) return;
+      if (annotation === null) {
+        const emptyDraft: AnnotationDraft = {
+          note: "",
+          tagIds: new Set(),
+          verdict: null,
+        };
+        draftRef.current = emptyDraft;
+        setDraft(emptyDraft);
+      }
+      onExampleChangeRef.current({ ...exampleRef.current, annotation });
+    },
+    save: async (mutation) => {
+      if (annotationIdentity === null) {
+        throw new Error("annotation output is unavailable");
+      }
+      if (mutation.kind === "delete") {
+        await api.deleteAnnotation(annotationIdentity);
+        return null;
+      }
+      return api.putAnnotation(annotationIdentity, mutation.input);
+    },
+    scopeKey: identityKey,
+  });
 
   function updateDraft(nextDraft: AnnotationDraft, saveImmediately: boolean) {
-    revisionRef.current += 1;
     draftRef.current = nextDraft;
     setDraft(nextDraft);
     setSaveError("");
-    if (debounceRef.current !== undefined) {
-      window.clearTimeout(debounceRef.current);
-      debounceRef.current = undefined;
+    if (annotationIdentity !== null) {
+      autosave.edit(
+        { input: inputForDraft(nextDraft), kind: "put" },
+        saveImmediately,
+      );
     }
-    const operation = operationForDraft(nextDraft);
-    if (operation === null) return;
-    if (saveImmediately) {
-      queue(operation);
-      return;
-    }
-    updateSaveState("dirty");
-    debounceRef.current = window.setTimeout(() => {
-      debounceRef.current = undefined;
-      const latest = operationForDraft(draftRef.current);
-      if (latest !== null) queue(latest);
-    }, NOTE_AUTOSAVE_DELAY_MS);
   }
 
   function flushDraft() {
-    if (debounceRef.current === undefined) return;
-    window.clearTimeout(debounceRef.current);
-    debounceRef.current = undefined;
-    const operation = operationForDraft(draftRef.current);
-    if (operation !== null) queue(operation);
+    void autosave.flush();
   }
 
   async function flushBeforeLeave(): Promise<boolean> {
@@ -322,21 +275,12 @@ function AnnotationEditor({
       const name = pendingTagNameRef.current;
       if (name === null || !await startTagCreation(name)) return false;
     }
-    flushDraft();
-    if (saveStateRef.current === "error" && !inFlightRef.current && queuedRef.current === null) {
-      const retry = operationForDraft(draftRef.current);
-      if (retry !== null) queue(retry);
-    }
-    if (!inFlightRef.current && queuedRef.current === null) {
-      return saveStateRef.current !== "error";
-    }
-    return new Promise((resolve) => { leaveWaitersRef.current.push(resolve); });
+    return autosave.flush();
   }
 
   useEffect(() => {
     activeRef.current = true;
     return () => {
-      flushDraft();
       activeRef.current = false;
     };
   }, []);
@@ -346,7 +290,11 @@ function AnnotationEditor({
       `${example.corpus_sha256}:${example.sample_id}:${example.decoder_output_sha256 ?? "missing"}`,
       {
         flush: flushBeforeLeave,
-        isUnsafe: () => tagCreationRef.current !== null || tagSaveErrorRef.current !== "" || ["dirty", "saving", "error"].includes(saveStateRef.current),
+        isUnsafe: () => (
+          tagCreationRef.current !== null
+          || tagSaveErrorRef.current !== ""
+          || autosave.isUnsafe()
+        ),
       },
     ),
     [example.corpus_sha256, example.decoder_output_sha256, example.sample_id, registerCardGuard],
@@ -404,52 +352,20 @@ function AnnotationEditor({
     }
   }
 
-  async function deleteSavedAnnotation() {
+  function deleteSavedAnnotation() {
     if (
       annotationIdentity === null
-      || inFlightRef.current
       || tagCreationRef.current !== null
     ) return;
-    if (debounceRef.current !== undefined) {
-      window.clearTimeout(debounceRef.current);
-      debounceRef.current = undefined;
-    }
     discardTagCreationIntent();
-    queuedRef.current = null;
-    inFlightRef.current = true;
-    updateSaveState("saving");
-    if (activeRef.current) setSaveError("");
-    try {
-      await api.deleteAnnotation(annotationIdentity);
-      revisionRef.current += 1;
-      const emptyDraft: AnnotationDraft = {
-        note: "",
-        tagIds: new Set(),
-        verdict: null,
-      };
-      draftRef.current = emptyDraft;
-      if (activeRef.current) {
-        setDraft(emptyDraft);
-        onExampleChangeRef.current({
-          ...exampleRef.current,
-          annotation: null,
-        });
-      }
-      updateSaveState("saved");
-      settleLeaveWaiters(true);
-    } catch (error: unknown) {
-      updateSaveState("error");
-      if (activeRef.current) setSaveError(errorMessage(error));
-      settleLeaveWaiters(false);
-    } finally {
-      inFlightRef.current = false;
-    }
+    setSaveError("");
+    autosave.edit({ kind: "delete" }, true);
   }
 
   const disabled = annotationIdentity === null;
   const displayedSaveState = tagSaveState === "error"
     ? "error"
-    : tagSaveState === "saving" ? "saving" : saveState;
+    : tagSaveState === "saving" ? "saving" : autosave.saveState;
 
   return (
     <form className="annotation-editor" onSubmit={(event) => event.preventDefault()}>
@@ -529,9 +445,9 @@ function AnnotationEditor({
         disabled={
           disabled
           || example.annotation === null
-          || saveState === "saving"
+          || autosave.currentSaveState() === "saving"
         }
-        onClick={() => void deleteSavedAnnotation()}
+        onClick={deleteSavedAnnotation}
         type="button"
       >
         Delete annotation
@@ -710,6 +626,34 @@ export function Review({
   }, [api, appliedSearch, exampleRetry, page, pageSize, runId, selectedGroup]);
 
   const examples = exampleState.status === "success" ? exampleState.data : [];
+  const taskIdentities = useMemo(() => {
+    const identities = new Map<
+      string,
+      { dataset_id: string; task_id: string; task_identity: string }
+    >();
+    for (const example of examples) {
+      const taskId = example.context.task_id;
+      if (
+        example.dataset_id === null
+        || example.task_identity === null
+        || typeof taskId !== "string"
+      ) continue;
+      const identity = {
+        dataset_id: example.dataset_id,
+        task_id: taskId,
+        task_identity: example.task_identity,
+      };
+      identities.set(
+        JSON.stringify([
+          identity.dataset_id,
+          identity.task_id,
+          identity.task_identity,
+        ]),
+        identity,
+      );
+    }
+    return [...identities.values()];
+  }, [examples]);
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -820,24 +764,48 @@ export function Review({
           )}
           {exampleState.status === "success" && examples.length === 0 && <p className="empty-state">No examples match this filter.</p>}
           {exampleState.status === "success" && examples.length > 0 && (
-            <div className="review-example-stack">
-              {examples.map((example) => (
-                <ReviewExampleCard
-                  api={api}
-                  example={example}
-                  key={`${example.corpus_sha256}:${example.sample_id}:${example.decoder_output_sha256 ?? "missing"}`}
-                  onExampleChange={(updated) => {
-                    setExampleState((current) => current.status !== "success" ? current : {
-                      data: current.data.map((item) => item.sample_id === updated.sample_id ? updated : item),
-                      status: "success",
-                    });
-                  }}
-                  onTagCreated={onTagCreated}
-                  registerCardGuard={registerCardGuard}
-                  tags={tags}
-                />
-              ))}
-            </div>
+            <>
+              <section
+                aria-label="Task annotations for this page"
+                className="page-task-annotations"
+              >
+                <h3>Task annotations</h3>
+                <div className="page-task-annotation-grid">
+                  {taskIdentities.map((identity) => (
+                    <TaskAnnotationEditor
+                      api={api}
+                      identity={identity}
+                      key={JSON.stringify([
+                        identity.dataset_id,
+                        identity.task_id,
+                        identity.task_identity,
+                      ])}
+                      onTagCreated={onTagCreated}
+                      registerCardGuard={registerCardGuard}
+                      tags={tags}
+                    />
+                  ))}
+                </div>
+              </section>
+              <div className="review-example-stack">
+                {examples.map((example) => (
+                  <ReviewExampleCard
+                    api={api}
+                    example={example}
+                    key={`${example.corpus_sha256}:${example.sample_id}:${example.decoder_output_sha256 ?? "missing"}`}
+                    onExampleChange={(updated) => {
+                      setExampleState((current) => current.status !== "success" ? current : {
+                        data: current.data.map((item) => item.sample_id === updated.sample_id ? updated : item),
+                        status: "success",
+                      });
+                    }}
+                    onTagCreated={onTagCreated}
+                    registerCardGuard={registerCardGuard}
+                    tags={tags}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}

@@ -55,12 +55,14 @@ Generate compact summaries and schema-pinned comparison relations with:
 
 ```bash
 uv run python scripts/analyze_preprocessing_corpus.py \
+  --dataset-id evalplus/humanevalplus \
   --corpus /data/corpus.parquet \
   --run-dir /data/preprocessing/run-id \
   --candidate-evaluation /data/evaluations/run-id \
   --output-dir analysis/preprocessing/run-id
 
 uv run python scripts/compare_preprocessing_runs.py \
+  --dataset-id evalplus/humanevalplus \
   --corpus /data/corpus.parquet \
   --before-run /data/preprocessing/before \
   --after-run /data/preprocessing/after \

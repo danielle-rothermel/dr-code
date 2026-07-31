@@ -106,4 +106,58 @@ describe("HttpPreprocessingApi", () => {
       new ApiError("Corpus fingerprints differ", 409),
     );
   });
+
+  it("uses the nested task-annotation API without exposing a machine write", async () => {
+    const task = {
+      category: "algorithm",
+      identity: {
+        dataset_id: "evalplus/humanevalplus",
+        task_id: "HumanEval/0",
+        task_identity: "a".repeat(64),
+      },
+      note: null,
+      origin: "human" as const,
+      provenance: null,
+      tags: [],
+    };
+    const transport = vi.fn()
+      .mockResolvedValueOnce(response(task))
+      .mockResolvedValueOnce(response(task))
+      .mockResolvedValueOnce(response(undefined, 204))
+      .mockResolvedValueOnce(response({ detail: "Not Found" }, 404));
+    const api = new HttpPreprocessingApi(transport, "/viewer");
+    const identity = {
+      dataset_id: "evalplus/humanevalplus",
+      task_id: "HumanEval/0",
+      task_identity: "a".repeat(64),
+    };
+
+    await expect(api.getTaskAnnotation(identity)).resolves.toEqual(task);
+    await api.putTaskAnnotation(identity, {
+      category: "algorithm",
+      note: null,
+      tag_ids: [],
+    });
+    await api.deleteTaskAnnotation(identity);
+    await expect(api.getTaskAnnotation(identity)).resolves.toBeNull();
+
+    const path = (
+      "/viewer/api/task-annotations"
+      + "?dataset_id=evalplus%2Fhumanevalplus&task_id=HumanEval%2F0"
+      + `&task_identity=${"a".repeat(64)}`
+    );
+    expect(transport).toHaveBeenNthCalledWith(1, path, undefined);
+    expect(transport).toHaveBeenNthCalledWith(2, path, {
+      body: JSON.stringify({
+        category: "algorithm",
+        note: null,
+        tag_ids: [],
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+    });
+    expect(transport).toHaveBeenNthCalledWith(3, path, {
+      method: "DELETE",
+    });
+  });
 });

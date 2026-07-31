@@ -10,6 +10,7 @@ export type JsonValue =
 
 export interface RunSummary {
   corpus_sha256: string;
+  dataset_id: string;
   definition_id: string;
   has_evaluation: boolean;
   label: string;
@@ -112,6 +113,7 @@ export interface ExampleDetail {
   cause: string | null;
   context: Record<string, string | number | boolean | null>;
   corpus_sha256: string;
+  dataset_id: string | null;
   decoder_output_sha256: string | null;
   failed_step: string | null;
   failure_code: string | null;
@@ -120,6 +122,7 @@ export interface ExampleDetail {
   raw_decoder_output: string | null;
   rejections: Rejection[];
   sample_id: string;
+  task_identity: string | null;
 }
 
 export interface ComparisonStage {
@@ -195,6 +198,41 @@ export interface AnnotationIdentity {
   sample_id: string;
 }
 
+export type TaskAnnotationOrigin = "human" | "machine";
+
+export interface TaskAnnotationIdentity {
+  dataset_id: string;
+  task_id: string;
+  task_identity: string;
+}
+
+export interface TaskAnnotationProvenance {
+  agreement: number | null;
+  extra: Record<string, JsonValue>;
+  model: string | null;
+  repeats: number | null;
+  taxonomy_version: string | null;
+}
+
+export interface TaskAnnotation {
+  category: string | null;
+  identity: TaskAnnotationIdentity;
+  note: string | null;
+  origin: TaskAnnotationOrigin;
+  provenance: TaskAnnotationProvenance | null;
+  tags: Tag[];
+}
+
+export interface TaskAnnotationInput {
+  category: string | null;
+  note: string | null;
+  tag_ids: string[];
+}
+
+export const TASK_CATEGORY_MAX_LENGTH = 256;
+export const TASK_NOTE_MAX_LENGTH = 10_000;
+export const TASK_TAG_IDS_MAX_ITEMS = 100;
+
 export interface PreprocessingApi {
   compare(baselineRunId: string, candidateRunId: string): Promise<CompareResponse>;
   createTag(name: string): Promise<Tag>;
@@ -205,8 +243,14 @@ export interface PreprocessingApi {
   getReviewExamples(runId: string, query: ReviewExamplesQuery): Promise<ReviewExamplesResponse>;
   getRuns(): Promise<RunSummary[]>;
   getTags(): Promise<Tag[]>;
+  getTaskAnnotation(identity: TaskAnnotationIdentity): Promise<TaskAnnotation | null>;
   getWaterfall(runId: string): Promise<WaterfallResponse>;
   putAnnotation(example: AnnotationIdentity, input: AnnotationInput): Promise<Annotation>;
+  putTaskAnnotation(
+    identity: TaskAnnotationIdentity,
+    input: TaskAnnotationInput,
+  ): Promise<TaskAnnotation>;
+  deleteTaskAnnotation(identity: TaskAnnotationIdentity): Promise<void>;
 }
 
 interface FetchResponse {
@@ -332,10 +376,42 @@ export class HttpPreprocessingApi implements PreprocessingApi {
     return this.request(this.annotationPath(example), { method: "DELETE" });
   }
 
+  async getTaskAnnotation(
+    identity: TaskAnnotationIdentity,
+  ): Promise<TaskAnnotation | null> {
+    try {
+      return await this.request(this.taskAnnotationPath(identity));
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  putTaskAnnotation(
+    identity: TaskAnnotationIdentity,
+    input: TaskAnnotationInput,
+  ): Promise<TaskAnnotation> {
+    return this.request(this.taskAnnotationPath(identity), {
+      body: JSON.stringify(input),
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+    });
+  }
+
+  deleteTaskAnnotation(identity: TaskAnnotationIdentity): Promise<void> {
+    return this.request(this.taskAnnotationPath(identity), {
+      method: "DELETE",
+    });
+  }
+
   private annotationPath(
     example: AnnotationIdentity,
   ): string {
     return `/api/annotations/${segment(example.corpus_sha256)}/${segment(example.decoder_output_sha256)}${queryString({ sample_id: example.sample_id })}`;
+  }
+
+  private taskAnnotationPath(identity: TaskAnnotationIdentity): string {
+    return `/api/task-annotations${queryString(identity)}`;
   }
 }
 
@@ -343,4 +419,8 @@ export const defaultApi = new HttpPreprocessingApi();
 
 export function annotationExportUrl(baseUrl = ""): string {
   return `${baseUrl}/api/annotations/export`;
+}
+
+export function taskAnnotationExportUrl(baseUrl = ""): string {
+  return `${baseUrl}/api/task-annotations/export`;
 }

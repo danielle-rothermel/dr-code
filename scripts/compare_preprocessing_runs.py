@@ -21,6 +21,9 @@ app = typer.Typer(
 
 @app.command()
 def run(
+    dataset_id: str = typer.Option(
+        ..., "--dataset-id", help="Canonical dataset identity."
+    ),
     corpus: Path = typer.Option(
         ...,
         "--corpus",
@@ -67,6 +70,7 @@ def run(
     """Write deterministic Parquet identity rows and a reconciled summary."""
 
     artifacts = compare_preprocessing_runs(
+        dataset_id=dataset_id,
         corpus_path=corpus,
         before_run=before_run,
         after_run=after_run,
