@@ -25,6 +25,7 @@ class Corruption(abc.ABC):
     """
 
     NAME: ClassVar[CorruptionName]
+    VERSION: ClassVar[str]
 
     @abc.abstractmethod
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:

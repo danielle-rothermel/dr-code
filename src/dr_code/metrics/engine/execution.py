@@ -1,9 +1,10 @@
-"""Content-addressed execution requests and cache orchestration."""
+"""Execution requests and private cache orchestration."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Sequence
-from functools import cached_property
 from typing import Protocol
 
 from dr_code.humaneval.sandbox import (
@@ -13,7 +14,6 @@ from dr_code.humaneval.sandbox import (
     SandboxTimeoutError,
 )
 from dr_code.models import FrozenModel
-from dr_code.trace import stable_hash
 
 _TIMEOUT_RETURNCODE = -100_000_001
 _OUTPUT_LIMIT_RETURNCODE = -100_000_002
@@ -27,12 +27,6 @@ class ExecutionRequest(FrozenModel):
     timeout_seconds: float
     computation_id: str
 
-    @cached_property
-    def cache_key(self) -> str:
-        """Return a content hash over every execution-affecting field."""
-
-        return stable_hash(self)
-
 
 class ExecutionOutcome(FrozenModel):
     """The cacheable fields returned by the sandbox execution boundary."""
@@ -43,7 +37,7 @@ class ExecutionOutcome(FrozenModel):
 
 
 class ExecutionCache(Protocol):
-    """Outcome cache keyed by ``ExecutionRequest.cache_key``.
+    """Outcome cache keyed by an opaque request implementation detail.
 
     The key hashes only the request fields; the injected ``SandboxRunner``
     is not part of it. A cache instance must therefore be scoped to a single
@@ -74,22 +68,22 @@ def run_requests(
     *,
     run_in_sandbox: SandboxRunner,
     cache: ExecutionCache,
-) -> dict[str, ExecutionOutcome]:
+) -> dict[ExecutionRequest, ExecutionOutcome]:
     """Execute each distinct cache miss at most once.
 
     Timeouts and output-limit failures are candidate-attributable outcomes.
     Other sandbox failures remain infrastructure exceptions and propagate.
     """
 
-    outcomes: dict[str, ExecutionOutcome] = {}
+    outcomes: dict[ExecutionRequest, ExecutionOutcome] = {}
     unique_requests: dict[str, ExecutionRequest] = {}
     for request in requests:
-        unique_requests.setdefault(request.cache_key, request)
+        unique_requests.setdefault(_request_cache_key(request), request)
 
     for key, request in unique_requests.items():
         cached = cache.get(key)
         if cached is not None:
-            outcomes[key] = cached
+            outcomes[request] = cached
             continue
         try:
             completed = run_in_sandbox(
@@ -115,8 +109,19 @@ def run_requests(
                 stderr=str(exc),
             )
         cache.put(key, outcome)
-        outcomes[key] = outcome
+        outcomes[request] = outcome
     return outcomes
+
+
+def _request_cache_key(request: ExecutionRequest) -> str:
+    """Hash a canonical request only for this module's cache lookup."""
+
+    payload = json.dumps(
+        request.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def is_timeout_outcome(outcome: ExecutionOutcome) -> bool:

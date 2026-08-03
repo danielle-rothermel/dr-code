@@ -3,18 +3,41 @@
 from __future__ import annotations
 
 import json
-import subprocess
+from pathlib import Path
+
+import pytest
 
 
-def test_humaneval_dump_bundles_both_models() -> None:
-    result = subprocess.run(
-        ["uv", "run", "python", "-m", "dr_code.schemas", "humaneval"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+def test_humaneval_schema_command_emits_complete_bundle(
+    run_python_module,
+) -> None:
+    result = run_python_module("dr_code.schemas", "humaneval")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
     bundle = json.loads(result.stdout)
     assert bundle["title"] == "HumanEvalLibrarySchemas"
+    assert bundle["type"] == "object"
     assert set(bundle["required"]) == {"task", "case_summary"}
+    assert set(bundle["properties"]) == {"task", "case_summary"}
     assert "HumanEvalTask" in bundle["$defs"]
     assert "EvaluationCaseSummary" in bundle["$defs"]
+
+
+def test_python_module_runner_ignores_inherited_pythonpath(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    run_python_module,
+) -> None:
+    hostile_package = tmp_path / "dr_code"
+    hostile_package.mkdir()
+    (hostile_package / "__init__.py").write_text("")
+    (hostile_package / "schemas.py").write_text(
+        'raise RuntimeError("dr_code import redirected through PYTHONPATH")\n'
+    )
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+
+    result = run_python_module("dr_code.schemas", "humaneval")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["title"] == "HumanEvalLibrarySchemas"

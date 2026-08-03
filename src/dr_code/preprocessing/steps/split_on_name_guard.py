@@ -17,7 +17,7 @@ class SplitOnNameGuard(CandidateMapStep):
     """
 
     NAME: ClassVar[StepName] = StepName.SPLIT_ON_NAME_GUARD
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
 
     def apply_to_candidate(self, source: str) -> list[str]:
         return drop_if_name(source)

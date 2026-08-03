@@ -12,6 +12,7 @@ from dr_code.metrics.engine.execution import (
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.records import MetricScalar
+from dr_code.metrics.settings import OperatorSettings
 from dr_code.models import FrozenModel
 from dr_code.trace import (
     Artifact,
@@ -19,10 +20,6 @@ from dr_code.trace import (
     CodeArtifact,
     TextArtifact,
 )
-
-
-class OperatorSettings(FrozenModel):
-    """Validated parameters that determine an operator's semantics."""
 
 
 SettingsT = TypeVar("SettingsT", bound=OperatorSettings)

@@ -3,7 +3,6 @@
 from dr_code.metrics.definition import (
     MetricQuestion,
     MetricsDefinition,
-    metrics_definition_hash,
 )
 from dr_code.metrics.engine.engine import (
     EngineInvariantError,
@@ -22,6 +21,5 @@ __all__ = (
     "EngineInvariantError",
     "extract_metrics",
     "extract_metrics_batch",
-    "metrics_definition_hash",
     "record_rows",
 )

@@ -13,7 +13,7 @@ class DropAfterLastReturn(CandidateMapStep):
     """Truncate each candidate after its last ``return`` line."""
 
     NAME: ClassVar[StepName] = StepName.DROP_AFTER_LAST_RETURN
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
 
     def apply_to_candidate(self, source: str) -> str:
         return drop_after_last_return(source)

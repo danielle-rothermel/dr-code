@@ -19,6 +19,7 @@ class AddIndentation(Corruption):
     """Indent every line uniformly by N spaces."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_INDENTATION
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         n = rng.choice(_INDENT_CHOICES)

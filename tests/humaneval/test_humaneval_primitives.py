@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -21,9 +22,6 @@ from dr_code.humaneval.batch_runner import (
     runner_script,
 )
 from dr_code.humaneval.code_extraction import apply_cleaning
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-)
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -31,7 +29,9 @@ from dr_code.humaneval.parsed_tests import (
     parse_human_eval_tests,
 )
 from dr_code.humaneval.sampling import (
+    HUMAN_EVAL_OVERRIDE_SET,
     HumanEvalRawRowsSnapshot,
+    validate_snapshot_header,
     load_human_eval_rows,
     sample_human_eval_tasks_from_rows,
 )
@@ -47,7 +47,8 @@ from dr_code.humaneval.task import (
     EvaluationHarnessError,
     EvaluationTaskResult,
     HumanEvalOverride,
-    apply_human_eval_override,
+    HumanEvalTestReplacement,
+    _apply_human_eval_override,
 )
 from dr_code.humaneval.sandbox import (
     SandboxCompletedProcess,
@@ -61,6 +62,7 @@ from dr_code.humaneval.sandbox import (
 EXPECTED_HUMANEVAL_PUBLIC_API = {
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
     "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
+    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION",
     "CodeExtractionResult",
     "CodeParserProfile",
     "CompletedScore",
@@ -71,15 +73,22 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "EvaluationTaskSummary",
     "HUMANEVAL_SCORING_PROFILE_ID",
     "HUMANEVAL_SCORING_PROFILE_VERSION",
+    "HUMANEVAL_METRICS_PROFILE",
+    "HUMAN_EVAL_OVERRIDE_SET",
+    "HUMAN_EVAL_OVERRIDE_SET_ID",
+    "HUMAN_EVAL_OVERRIDE_SET_VERSION",
     "HarnessFailure",
     "HarnessFailureCause",
     "HumanEvalScoringProfile",
+    "HumanEvalMetricsProfile",
+    "HumanEvalOverrideEntry",
+    "HumanEvalOverrideSetCoordinate",
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
-    "PARSER_PROFILE_VERSION",
     "STRICT_FIELD_MARKER_PARSER_PROFILE",
     "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
+    "STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
     "evaluation_aggregate_metrics",
@@ -231,6 +240,7 @@ def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
     raw_snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
         snapshot_path.read_text(encoding="utf-8")
     )
+    assert raw_snapshot.header.override_set == HUMAN_EVAL_OVERRIDE_SET
     fresh_tasks = parse_human_eval_dataset(
         [row.model_dump(mode="json") for row in raw_snapshot.rows]
     )
@@ -248,6 +258,27 @@ def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
     ):
         assert _check_payload_bytes(snapshot_task) == _check_payload_bytes(
             fresh_task
+        )
+
+
+def test_raw_row_snapshot_rejects_structural_override_set_mismatch() -> None:
+    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
+    raw_snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
+        snapshot_path.read_text(encoding="utf-8")
+    )
+    mismatched_header = raw_snapshot.header.model_copy(
+        update={
+            "override_set": raw_snapshot.header.override_set.model_copy(
+                update={"entries": ()}
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="override-set mismatch"):
+        validate_snapshot_header(
+            mismatched_header,
+            dataset_name=raw_snapshot.header.dataset_id,
+            hf_revision=raw_snapshot.header.hf_revision,
         )
 
 
@@ -308,9 +339,7 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
     parsed = parse_code(
         display_title="fixture",
         code_str=(
-            'def add_one(x: int) -> int:\n'
-            '    """doc"""\n'
-            '    return x + 1\n'
+            'def add_one(x: int) -> int:\n    """doc"""\n    return x + 1\n'
         ),
     )
 
@@ -333,9 +362,7 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
             "def add_one",
         ),
         (
-            "def add_one(x):\n"
-            "    return x + 1\n"
-            "print('trailing')\n",
+            "def add_one(x):\n    return x + 1\nprint('trailing')\n",
             "return x + 1",
         ),
         (
@@ -448,24 +475,85 @@ def test_evaluation_uses_highest_pass_count(
     assert result.status_counts == {"passed": 2}
 
 
-def test_evaluate_humaneval_code_reports_timeout_per_case(
-    local_runner: SandboxRunner,
-) -> None:
+def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
+    candidate_code = "def add_one(x):\n    return x + 1\n"
+    timeout_seconds = 0.2
+    forwarded_inputs: list[str] = []
+    forwarded_timeouts: list[float] = []
+    timeout_cause = SandboxTimeoutError("controlled sandbox timeout")
+
+    def timeout_runner(
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess:
+        forwarded_inputs.append(input_json)
+        forwarded_timeouts.append(timeout_seconds)
+        raise timeout_cause
+
     result = evaluate_human_eval_code(
         task=_task(),
-        candidate_code=(
-            "def add_one(x):\n"
-            "    while True:\n"
-            "        pass\n"
-        ),
-        timeout_seconds=0.2,
-        run_in_sandbox=local_runner,
+        candidate_code=candidate_code,
+        timeout_seconds=timeout_seconds,
+        run_in_sandbox=timeout_runner,
     )
 
     assert result.passed is False
     assert result.status_counts == {"timeout": 2}
-    assert {case.case_id for case in result.results} == {"case_0", "case_1"}
-    assert {case.timeout_seconds for case in result.results} == {0.2}
+    assert result.results == [
+        EvaluationCaseResult(
+            task_id="HumanEval/fixture",
+            case_id="case_0",
+            function_name="add_one",
+            status=EvaluationCaseStatus.TIMEOUT,
+            message="Batch timed out after 0.2 seconds",
+            test_type=HumanEvalTestCaseKind.INPUT_RESULT,
+            input_repr="[1]",
+            expected_output_repr="2",
+            elapsed_seconds=0.2,
+            timeout_seconds=0.2,
+        ),
+        EvaluationCaseResult(
+            task_id="HumanEval/fixture",
+            case_id="case_1",
+            function_name="add_one",
+            status=EvaluationCaseStatus.TIMEOUT,
+            message="Batch timed out after 0.2 seconds",
+            test_type=HumanEvalTestCaseKind.INPUT_RESULT,
+            input_repr="[2]",
+            expected_output_repr="3",
+            elapsed_seconds=0.2,
+            timeout_seconds=0.2,
+        ),
+    ]
+    assert len(forwarded_inputs) == 1
+    assert json.loads(forwarded_inputs[0]) == {
+        "task_id": "HumanEval/fixture",
+        "candidate_code": candidate_code,
+        "support_code": "",
+        "function_name": "add_one",
+        "test_type": "input_result",
+        "checks": [
+            {
+                "case_id": "case_0",
+                "code": "assertion(candidate(*[1]), 2, 0.0)",
+                "input_repr": "[1]",
+                "expected_output_repr": "2",
+                "expected_output_expr": None,
+                "actual_output_expr": "candidate(*[1])",
+            },
+            {
+                "case_id": "case_1",
+                "code": "assertion(candidate(*[2]), 3, 0.0)",
+                "input_repr": "[2]",
+                "expected_output_repr": "3",
+                "expected_output_expr": None,
+                "actual_output_expr": "candidate(*[2])",
+            },
+        ],
+    }
+    assert forwarded_timeouts == [timeout_seconds]
     assert evaluation_outcome(result) is SubmissionOutcome.TIMED_OUT
 
 
@@ -560,8 +648,6 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-        timeout_seconds=2.0,
         run_in_sandbox=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
     )
 
@@ -577,8 +663,6 @@ def test_score_humaneval_submission_returns_harness_failure() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-        timeout_seconds=2.0,
         run_in_sandbox=_stub_runner(stdout="not-json"),
     )
 
@@ -609,8 +693,6 @@ def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-        timeout_seconds=2.0,
         run_in_sandbox=broken_sandbox,
     )
 
@@ -623,8 +705,6 @@ def test_score_humaneval_submission_reports_empty_submission() -> None:
     result = score_humaneval_submission(
         raw_submission=" \n\t ",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-        timeout_seconds=2.0,
     )
 
     assert isinstance(result, CompletedScore)
@@ -676,8 +756,6 @@ def test_score_humaneval_submission_rejects_non_string_input() -> None:
         score_humaneval_submission(
             raw_submission={"code": "def add_one(x):\n    return x + 1\n"},  # type: ignore[arg-type]
             task=_task(),
-            parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-            timeout_seconds=2.0,
         )
 
 
@@ -789,10 +867,7 @@ def test_candidate_module_level_sys_exit_is_scored(
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
-            "import sys\n"
-            "sys.exit(5)\n"
-            "def add_one(x):\n"
-            "    return x + 1\n"
+            "import sys\nsys.exit(5)\ndef add_one(x):\n    return x + 1\n"
         ),
         timeout_seconds=2.0,
         run_in_sandbox=local_runner,
@@ -870,9 +945,9 @@ def test_run_subprocess_batch_fallback_case_id_is_harness_detail() -> None:
 
 def test_apply_human_eval_override_passthrough() -> None:
     row = _row("HumanEval/99", 1)
-    assert apply_human_eval_override(row, {}) == dict(row)
+    assert _apply_human_eval_override(row, {}) == dict(row)
 
-    updated = apply_human_eval_override(
+    updated = _apply_human_eval_override(
         row,
         {
             "HumanEval/99": HumanEvalOverride(
@@ -883,11 +958,16 @@ def test_apply_human_eval_override_passthrough() -> None:
     assert updated["canonical_solution"] == "    return x + 99\n"
 
     with pytest.raises(ValueError, match="replacement text not found"):
-        apply_human_eval_override(
+        _apply_human_eval_override(
             row,
             {
                 "HumanEval/99": HumanEvalOverride(
-                    test_replacements={"missing": "text"},
+                    test_replacements=(
+                        HumanEvalTestReplacement(
+                            old="missing",
+                            replacement="text",
+                        ),
+                    ),
                 ),
             },
         )

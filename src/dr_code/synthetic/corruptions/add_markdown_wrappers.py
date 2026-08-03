@@ -34,6 +34,7 @@ class AddMarkdownWrappers(Corruption):
     """Prefix each line with a markdown list/blockquote marker."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_MARKDOWN_WRAPPERS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         mode = rng.choice(list(MarkdownWrapperMode))

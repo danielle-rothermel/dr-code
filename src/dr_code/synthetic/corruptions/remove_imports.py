@@ -15,6 +15,7 @@ class RemoveImports(Corruption):
     """Remove top-level import statements from the source."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.REMOVE_IMPORTS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         try:

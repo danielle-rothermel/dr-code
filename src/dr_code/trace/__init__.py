@@ -10,10 +10,15 @@ from dr_code.trace.artifacts import (
     TextArtifact,
     parsed_module,
 )
-from dr_code.trace.identity import stable_hash
 from dr_code.trace.provenance import (
+    ComponentCoordinate,
+    ComponentSetting,
     EXTERNAL_PRODUCER,
-    EXTERNAL_PRODUCER_ID,
+    ExternalPreprocessingTraceProducer,
+    ExternalTraceProducer,
+    PreprocessingDefinitionCoordinate,
+    PreprocessingTraceProducer,
+    StepCoordinate,
     TraceProducer,
 )
 from dr_code.trace.serialization import (
@@ -38,15 +43,21 @@ __all__ = (
     "ArtifactKind",
     "CodeArtifact",
     "CodeCandidateSetArtifact",
+    "ComponentCoordinate",
+    "ComponentSetting",
     "EXTERNAL_PRODUCER",
-    "EXTERNAL_PRODUCER_ID",
+    "ExternalPreprocessingTraceProducer",
+    "ExternalTraceProducer",
     "INPUT_KEY",
     "JsonArtifact",
     "OUTPUT_KEY",
+    "PreprocessingDefinitionCoordinate",
+    "PreprocessingTraceProducer",
     "RESERVED_KEYS",
     "SerializedTrace",
     "TRACE_SCHEMA_VERSION",
     "TextArtifact",
+    "StepCoordinate",
     "Trace",
     "TraceProducer",
     "TraceValue",
@@ -56,5 +67,4 @@ __all__ = (
     "is_absent",
     "parsed_module",
     "serialize_trace",
-    "stable_hash",
 )

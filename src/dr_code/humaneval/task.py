@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any, Self
 
 from pydantic import (
@@ -24,6 +25,7 @@ from pydantic import (
     model_validator,
 )
 
+from dr_code.models import FrozenModel
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -131,13 +133,10 @@ def _results_for_function(
     ]
 
 
-# PARITY TWIN: duplicated by ``dr_code.metrics.operators.code_test``
-# ``_best_function_name`` (which holds bare statuses, not
-# ``EvaluationCaseResult`` objects). Both stay live while this old scoring path
-# runs; a parity test (tests/metrics/test_operator_parity.py) pins the two
-# selectors equal. RETIREMENT PLAN: when the scoring path retires, this copy
-# goes with it and the parity test is deleted. Any behaviour fix must land in
-# both twins.
+# PARITY COORDINATION: ``dr_code.metrics.operators.code_test`` implements the
+# same selection rule over bare statuses instead of ``EvaluationCaseResult``
+# objects. ``tests/metrics/test_operator_parity.py`` pins the selectors equal;
+# behavior changes must update both implementations.
 def select_best_function_name(
     *,
     function_names: list[str],
@@ -193,8 +192,8 @@ class EvaluationTaskResult(BaseModel):
         ]
 
     # PARITY TWIN: duplicated by the coverage_complete value in
-    # ``dr_code.metrics.operators.code_test.CodeTest.compute``. Retires with
-    # this scoring path; kept equal by the metrics parity test.
+    # ``dr_code.metrics.operators.code_test.CodeTest.compute``. The metrics
+    # parity test keeps both active scoring paths equal.
     @computed_field
     @property
     def coverage_complete(self) -> bool:
@@ -305,23 +304,52 @@ class EvaluationHarnessError(RuntimeError):
         self.cause = cause
 
 
-class HumanEvalOverride(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class HumanEvalTestReplacement(FrozenModel):
+    """One exact source replacement in a registered benchmark override."""
 
-    notes: list[str] = Field(default_factory=list)
+    old: str
+    replacement: str
+
+
+class HumanEvalOverride(FrozenModel):
+    notes: tuple[str, ...] = ()
     canonical_solution: str | None = None
-    test_replacements: dict[str, str] = Field(default_factory=dict)
+    test_replacements: tuple[HumanEvalTestReplacement, ...] = ()
 
 
-HUMAN_EVAL_OVERRIDES: dict[str, HumanEvalOverride] = {
-    "HumanEval/32": HumanEvalOverride(
-        notes=[
-            "Fixed the benchmark test assertion to evaluate the polynomial at "
-            "the returned root with a scaled residual tolerance, and replaced "
-            "the Newton-only canonical solution with a hybrid "
-            "Newton/bisection method."
-        ],
-        canonical_solution="""
+class HumanEvalOverrideEntry(FrozenModel):
+    """One task-specific entry in a registered override set."""
+
+    task_id: str
+    override: HumanEvalOverride
+
+
+class HumanEvalOverrideSetCoordinate(FrozenModel):
+    """Execution bundle and complete provenance for benchmark overrides."""
+
+    override_set_id: str
+    version: str
+    entries: tuple[HumanEvalOverrideEntry, ...]
+
+
+HUMAN_EVAL_OVERRIDE_SET_ID = "humaneval-overrides"
+HUMAN_EVAL_OVERRIDE_SET_VERSION = "0"
+
+
+HUMAN_EVAL_OVERRIDE_SET = HumanEvalOverrideSetCoordinate(
+    override_set_id=HUMAN_EVAL_OVERRIDE_SET_ID,
+    version=HUMAN_EVAL_OVERRIDE_SET_VERSION,
+    entries=(
+        HumanEvalOverrideEntry(
+            task_id="HumanEval/32",
+            override=HumanEvalOverride(
+                notes=(
+                    "Fixed the benchmark test assertion to evaluate the polynomial at "
+                    "the returned root with a scaled residual tolerance, and replaced "
+                    "the Newton-only canonical solution with a hybrid "
+                    "Newton/bisection method.",
+                ),
+                canonical_solution="""
 
     dxs = [xs[i] * i for i in range(1, len(xs))]
 
@@ -371,36 +399,78 @@ HUMAN_EVAL_OVERRIDES: dict[str, HumanEvalOverride] = {
 
     return (lo + hi) / 2.0
 """,
-        test_replacements={
-            "assert _poly(*candidate(*inp), inp) <= 0.0001": (
-                "assert abs(_poly(*inp, (out := candidate(*inp)))) <= max("
-                "1e-4, "
-                "1e-12 * sum("
-                "abs(coeff) * max(1.0, abs(out)) ** j "
-                "for j, coeff in enumerate(inp[0])"
-                ")"
-                ")"
+                test_replacements=(
+                    HumanEvalTestReplacement(
+                        old="assert _poly(*candidate(*inp), inp) <= 0.0001",
+                        replacement=(
+                            "assert abs(_poly(*inp, (out := candidate(*inp)))) <= max("
+                            "1e-4, "
+                            "1e-12 * sum("
+                            "abs(coeff) * max(1.0, abs(out)) ** j "
+                            "for j, coeff in enumerate(inp[0])"
+                            ")"
+                            ")"
+                        ),
+                    ),
+                ),
             ),
-        },
+        ),
     ),
-}
+)
+
+_OVERRIDE_SETS = MappingProxyType(
+    {
+        (
+            HUMAN_EVAL_OVERRIDE_SET.override_set_id,
+            HUMAN_EVAL_OVERRIDE_SET.version,
+        ): HUMAN_EVAL_OVERRIDE_SET
+    }
+)
+
+
+def resolve_human_eval_override_set(
+    *, override_set_id: str, override_set_version: str
+) -> HumanEvalOverrideSetCoordinate:
+    override_set = _OVERRIDE_SETS.get((override_set_id, override_set_version))
+    if override_set is None:
+        raise ValueError(
+            "unsupported HumanEval override set: "
+            f"{override_set_id}@{override_set_version}"
+        )
+    return override_set
 
 
 def parse_human_eval_dataset(
     rows: Iterable[Mapping[str, Any]],
-    *,
-    overrides: dict[str, HumanEvalOverride] | None = None,
 ) -> list[HumanEvalTask]:
-    active_overrides = HUMAN_EVAL_OVERRIDES if overrides is None else overrides
+    """Parse rows using the one registered production override bundle."""
+
+    return _parse_human_eval_dataset(rows, HUMAN_EVAL_OVERRIDE_SET)
+
+
+def _parse_human_eval_dataset(
+    rows: Iterable[Mapping[str, Any]],
+    override_set: HumanEvalOverrideSetCoordinate,
+) -> list[HumanEvalTask]:
+    registered = resolve_human_eval_override_set(
+        override_set_id=override_set.override_set_id,
+        override_set_version=override_set.version,
+    )
+    if override_set != registered:
+        raise ValueError(
+            "override set does not match its registered coordinate: "
+            f"{override_set.override_set_id}@{override_set.version}"
+        )
+    overrides = {entry.task_id: entry.override for entry in registered.entries}
     return [
-        HumanEvalTask(**apply_human_eval_override(row, active_overrides))
+        HumanEvalTask(**_apply_human_eval_override(row, overrides))
         for row in rows
     ]
 
 
-def apply_human_eval_override(
+def _apply_human_eval_override(
     row: Mapping[str, Any],
-    overrides: dict[str, HumanEvalOverride],
+    overrides: Mapping[str, HumanEvalOverride],
 ) -> dict[str, Any]:
     task_id = str(row["task_id"])
     override = overrides.get(task_id)
@@ -411,12 +481,16 @@ def apply_human_eval_override(
     if override.canonical_solution is not None:
         updated["canonical_solution"] = override.canonical_solution
     test = str(updated["test"])
-    for old, new in override.test_replacements.items():
-        if old not in test:
+    for test_replacement in override.test_replacements:
+        if test_replacement.old not in test:
             raise ValueError(
                 f"Override replacement text not found for {task_id}"
             )
-        test = test.replace(old, new, 1)
+        test = test.replace(
+            test_replacement.old,
+            test_replacement.replacement,
+            1,
+        )
     updated["test"] = test
     updated["notes"] = [*updated.get("notes", []), *override.notes]
     return updated

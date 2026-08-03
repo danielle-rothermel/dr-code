@@ -17,7 +17,7 @@ class InferMissingImports(CandidateMapStep):
     """
 
     NAME: ClassVar[StepName] = StepName.INFER_MISSING_IMPORTS
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
 
     def apply_to_candidate(self, source: str) -> str:
         return infer_missing_imports(source)

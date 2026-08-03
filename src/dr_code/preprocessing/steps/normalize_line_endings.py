@@ -14,7 +14,7 @@ class NormalizeLineEndings(Step):
     """Convert CRLF and bare CR line endings to LF."""
 
     NAME: ClassVar[StepName] = StepName.NORMALIZE_LINE_ENDINGS
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
 

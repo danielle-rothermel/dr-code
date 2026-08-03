@@ -22,7 +22,7 @@ class FilterCodeRepr(Step):
     """
 
     NAME: ClassVar[StepName] = StepName.FILTER_CODE_REPR
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 

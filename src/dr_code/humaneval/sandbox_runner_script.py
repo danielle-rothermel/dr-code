@@ -13,11 +13,13 @@ payload = json.loads(input())
 
 FIELD_LIMIT = 8000
 
+
 def clip(text):
     text = str(text)
     if len(text) > FIELD_LIMIT:
         return text[:FIELD_LIMIT] + "...[truncated]"
     return text
+
 
 def assertion(actual, expected, atol=0):
     if atol:
@@ -25,11 +27,13 @@ def assertion(actual, expected, atol=0):
     else:
         assert actual == expected
 
+
 def build_namespace():
     namespace = {"assertion": assertion}
     exec(payload["support_code"], namespace)
     exec(payload["candidate_code"], namespace)
     return namespace
+
 
 def failure_metadata(check):
     metadata = {
@@ -41,34 +45,37 @@ def failure_metadata(check):
         detail_namespace = build_namespace()
         detail_candidate = detail_namespace[payload["function_name"]]
     except BaseException:
-        metadata["actual_output_repr"] = clip(
-            traceback.format_exc(limit=4)
-        )
+        metadata["actual_output_repr"] = clip(traceback.format_exc(limit=4))
         return metadata
 
     try:
         if check.get("actual_output_expr"):
-            metadata["actual_output_repr"] = clip(repr(eval(
-                check["actual_output_expr"],
-                detail_namespace | {"candidate": detail_candidate},
-            )))
+            metadata["actual_output_repr"] = clip(
+                repr(
+                    eval(
+                        check["actual_output_expr"],
+                        detail_namespace | {"candidate": detail_candidate},
+                    )
+                )
+            )
     except BaseException:
-        metadata["actual_output_repr"] = clip(
-            traceback.format_exc(limit=4)
-        )
+        metadata["actual_output_repr"] = clip(traceback.format_exc(limit=4))
 
     try:
         if check.get("expected_output_expr"):
-            metadata["expected_output_repr"] = clip(repr(eval(
-                check["expected_output_expr"],
-                detail_namespace | {"candidate": detail_candidate},
-            )))
+            metadata["expected_output_repr"] = clip(
+                repr(
+                    eval(
+                        check["expected_output_expr"],
+                        detail_namespace | {"candidate": detail_candidate},
+                    )
+                )
+            )
     except BaseException:
-        metadata["expected_output_repr"] = clip(
-            traceback.format_exc(limit=4)
-        )
+        metadata["expected_output_repr"] = clip(traceback.format_exc(limit=4))
 
     return metadata
+
 
 try:
     namespace = build_namespace()
@@ -77,18 +84,20 @@ except BaseException:
     message = clip(traceback.format_exc(limit=4))
     results = []
     for check in payload["checks"]:
-        results.append({
-            "case_id": check["case_id"],
-            "status": "error",
-            "message": message,
-            "input_repr": check.get("input_repr", ""),
-            "expected_output_repr": check.get(
-                "expected_output_repr",
-                "",
-            ),
-            "actual_output_repr": message,
-            "elapsed_seconds": 0.0,
-        })
+        results.append(
+            {
+                "case_id": check["case_id"],
+                "status": "error",
+                "message": message,
+                "input_repr": check.get("input_repr", ""),
+                "expected_output_repr": check.get(
+                    "expected_output_repr",
+                    "",
+                ),
+                "actual_output_repr": message,
+                "elapsed_seconds": 0.0,
+            }
+        )
     print(json.dumps(results))
     raise SystemExit(0)
 
@@ -105,32 +114,38 @@ for check in payload["checks"]:
             namespace | {"candidate": candidate},
         )
     except AssertionError as exc:
-        results.append({
-            "case_id": check["case_id"],
-            "status": "failed",
-            "message": clip(exc),
-            **failure_metadata(check),
-            "elapsed_seconds": time.perf_counter() - started_at,
-        })
+        results.append(
+            {
+                "case_id": check["case_id"],
+                "status": "failed",
+                "message": clip(exc),
+                **failure_metadata(check),
+                "elapsed_seconds": time.perf_counter() - started_at,
+            }
+        )
     except BaseException:
-        results.append({
-            "case_id": check["case_id"],
-            "status": "error",
-            "message": clip(traceback.format_exc(limit=4)),
-            **failure_metadata(check),
-            "elapsed_seconds": time.perf_counter() - started_at,
-        })
+        results.append(
+            {
+                "case_id": check["case_id"],
+                "status": "error",
+                "message": clip(traceback.format_exc(limit=4)),
+                **failure_metadata(check),
+                "elapsed_seconds": time.perf_counter() - started_at,
+            }
+        )
     else:
-        results.append({
-            "case_id": check["case_id"],
-            "status": "passed",
-            "message": "",
-            "input_repr": check.get("input_repr", ""),
-            "expected_output_repr": check.get(
-                "expected_output_repr",
-                "",
-            ),
-            "actual_output_repr": "",
-            "elapsed_seconds": time.perf_counter() - started_at,
-        })
+        results.append(
+            {
+                "case_id": check["case_id"],
+                "status": "passed",
+                "message": "",
+                "input_repr": check.get("input_repr", ""),
+                "expected_output_repr": check.get(
+                    "expected_output_repr",
+                    "",
+                ),
+                "actual_output_repr": "",
+                "elapsed_seconds": time.perf_counter() - started_at,
+            }
+        )
 print(json.dumps(results))

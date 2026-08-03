@@ -33,6 +33,7 @@ class AddTabs(Corruption):
     """Convert leading spaces to tabs."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_TABS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         return CorruptedSample(

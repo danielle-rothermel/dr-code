@@ -12,6 +12,9 @@ the `REGISTRY` below. Add a corruption by:
    the default dataset.
 """
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 from dr_code.synthetic.corruptions.add_blank_lines import AddBlankLines
 from dr_code.synthetic.corruptions.add_code_fences import AddCodeFences
 from dr_code.synthetic.corruptions.add_comments_noise import (
@@ -62,30 +65,32 @@ from dr_code.synthetic.corruptions.remove_imports import RemoveImports
 from dr_code.synthetic.corruptions.rename_locals import RenameLocals
 from dr_code.synthetic.corruptions.truncate import Truncate
 
-REGISTRY: dict[str, type[Corruption]] = {
-    AddCodeFences.NAME: AddCodeFences,
-    AddProseWrapper.NAME: AddProseWrapper,
-    AddSmartQuotes.NAME: AddSmartQuotes,
-    AddIndentation.NAME: AddIndentation,
-    AddTabs.NAME: AddTabs,
-    AddTrailingWhitespace.NAME: AddTrailingWhitespace,
-    AddCrlf.NAME: AddCrlf,
-    AddUnicodeNoise.NAME: AddUnicodeNoise,
-    AddBlankLines.NAME: AddBlankLines,
-    AddMarkdownWrappers.NAME: AddMarkdownWrappers,
-    AddInlineBackticks.NAME: AddInlineBackticks,
-    Truncate.NAME: Truncate,
-    RemoveImports.NAME: RemoveImports,
-    MangleImportLines.NAME: MangleImportLines,
-    DuplicateImports.NAME: DuplicateImports,
-    AddMultipleSolutions.NAME: AddMultipleSolutions,
-    AddCommentsNoise.NAME: AddCommentsNoise,
-    AddDeadCode.NAME: AddDeadCode,
-    ChangeQuoteStyle.NAME: ChangeQuoteStyle,
-    ChangeStringForm.NAME: ChangeStringForm,
-    AddTypeAnnotations.NAME: AddTypeAnnotations,
-    RenameLocals.NAME: RenameLocals,
-}
+REGISTRY: Mapping[str, type[Corruption]] = MappingProxyType(
+    {
+        AddCodeFences.NAME: AddCodeFences,
+        AddProseWrapper.NAME: AddProseWrapper,
+        AddSmartQuotes.NAME: AddSmartQuotes,
+        AddIndentation.NAME: AddIndentation,
+        AddTabs.NAME: AddTabs,
+        AddTrailingWhitespace.NAME: AddTrailingWhitespace,
+        AddCrlf.NAME: AddCrlf,
+        AddUnicodeNoise.NAME: AddUnicodeNoise,
+        AddBlankLines.NAME: AddBlankLines,
+        AddMarkdownWrappers.NAME: AddMarkdownWrappers,
+        AddInlineBackticks.NAME: AddInlineBackticks,
+        Truncate.NAME: Truncate,
+        RemoveImports.NAME: RemoveImports,
+        MangleImportLines.NAME: MangleImportLines,
+        DuplicateImports.NAME: DuplicateImports,
+        AddMultipleSolutions.NAME: AddMultipleSolutions,
+        AddCommentsNoise.NAME: AddCommentsNoise,
+        AddDeadCode.NAME: AddDeadCode,
+        ChangeQuoteStyle.NAME: ChangeQuoteStyle,
+        ChangeStringForm.NAME: ChangeStringForm,
+        AddTypeAnnotations.NAME: AddTypeAnnotations,
+        RenameLocals.NAME: RenameLocals,
+    }
+)
 
 __all__ = [
     "REGISTRY",

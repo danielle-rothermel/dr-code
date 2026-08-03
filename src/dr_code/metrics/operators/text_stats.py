@@ -32,7 +32,7 @@ class TextStatsResult(OperatorResult):
 
 class TextStats(MetricOperator[OperatorSettings]):
     NAME = MetricName.TEXT_STATS
-    VERSION = "1"
+    VERSION = "0"
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
 

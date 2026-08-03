@@ -156,6 +156,7 @@ class ChangeStringForm(Corruption):
     """Convert simple f-strings to `.format()` calls."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.CHANGE_STRING_FORM
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         del (

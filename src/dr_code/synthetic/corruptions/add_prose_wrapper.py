@@ -29,6 +29,7 @@ class AddProseWrapper(Corruption):
     """Prepend an intro and append an outro line."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_PROSE_WRAPPER
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         intro = rng.choice(_INTROS)

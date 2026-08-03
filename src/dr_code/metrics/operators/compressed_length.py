@@ -46,7 +46,7 @@ class CompressedLengthWithReferenceResult(CompressedLengthResult):
 
 class CompressedLength(MetricOperator[CompressedLengthSettings]):
     NAME = MetricName.COMPRESSED_LENGTH
-    VERSION = "1"
+    VERSION = "0"
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
     Settings = CompressedLengthSettings

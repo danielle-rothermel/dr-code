@@ -1,24 +1,25 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import random
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from datasets import load_dataset  # type: ignore[import-not-found]
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
 from dr_code.humaneval.task import (
-    HUMAN_EVAL_OVERRIDES,
-    HumanEvalOverride,
+    HUMAN_EVAL_OVERRIDE_SET,
+    HumanEvalOverrideSetCoordinate,
     HumanEvalTask,
+    _parse_human_eval_dataset,
     parse_human_eval_dataset,
+    resolve_human_eval_override_set,
 )
+from dr_code.models import FrozenModel
 
 HumanEvalRow = Mapping[str, Any]
-HUMAN_EVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION = 1
+HUMAN_EVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION = 2
 DEFAULT_HUMAN_EVAL_DATASET_NAME = "evalplus/humanevalplus"
 DEFAULT_HUMAN_EVAL_DATASET_SPLIT = "test"
 DEFAULT_HUMAN_EVAL_HF_REVISION = "d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
@@ -37,9 +38,7 @@ class SampledHumanEvalTask(BaseModel):
     task: HumanEvalTask
 
 
-class HumanEvalRawRow(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class HumanEvalRawRow(FrozenModel):
     task_id: StrictStr
     prompt: StrictStr
     canonical_solution: StrictStr
@@ -47,35 +46,16 @@ class HumanEvalRawRow(BaseModel):
     test: StrictStr
 
 
-class HumanEvalRawRowsSnapshotHeader(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: StrictInt
+class HumanEvalRawRowsSnapshotHeader(FrozenModel):
+    schema_version: Literal[2]
     dataset_id: StrictStr
     hf_revision: StrictStr
-    overrides_digest: StrictStr
+    override_set: HumanEvalOverrideSetCoordinate
 
 
-class HumanEvalRawRowsSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class HumanEvalRawRowsSnapshot(FrozenModel):
     header: HumanEvalRawRowsSnapshotHeader
-    rows: list[HumanEvalRawRow]
-
-
-def human_eval_overrides_digest(
-    overrides: dict[str, HumanEvalOverride] | None = None,
-) -> str:
-    active_overrides = HUMAN_EVAL_OVERRIDES if overrides is None else overrides
-    payload = {
-        task_id: override.model_dump(mode="json")
-        for task_id, override in sorted(active_overrides.items())
-    }
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
+    rows: tuple[HumanEvalRawRow, ...]
 
 
 def load_human_eval_rows(
@@ -108,13 +88,13 @@ def load_human_eval_snapshot_rows(
     snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
         snapshot_path.read_text(encoding="utf-8")
     )
-    validate_snapshot_header(
+    override_set = validate_snapshot_header(
         snapshot.header,
         dataset_name=dataset_name,
         hf_revision=hf_revision,
     )
     rows = [row.model_dump(mode="json") for row in snapshot.rows]
-    parse_human_eval_dataset(rows)
+    _parse_human_eval_dataset(rows, override_set)
     return rows
 
 
@@ -123,12 +103,7 @@ def validate_snapshot_header(
     *,
     dataset_name: str,
     hf_revision: str,
-) -> None:
-    if header.schema_version != HUMAN_EVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION:
-        raise ValueError(
-            "unsupported HumanEval raw-row snapshot schema version: "
-            f"{header.schema_version}"
-        )
+) -> HumanEvalOverrideSetCoordinate:
     if header.dataset_id != dataset_name:
         raise ValueError(
             "HumanEval raw-row snapshot dataset mismatch: "
@@ -139,12 +114,16 @@ def validate_snapshot_header(
             "HumanEval raw-row snapshot HF revision mismatch: "
             f"{header.hf_revision!r} != {hf_revision!r}"
         )
-    expected_overrides_digest = human_eval_overrides_digest()
-    if header.overrides_digest != expected_overrides_digest:
+    registered = resolve_human_eval_override_set(
+        override_set_id=header.override_set.override_set_id,
+        override_set_version=header.override_set.version,
+    )
+    if header.override_set != registered:
         raise ValueError(
-            "HumanEval raw-row snapshot overrides digest mismatch: "
-            f"{header.overrides_digest!r} != {expected_overrides_digest!r}"
+            "HumanEval raw-row snapshot override-set mismatch: "
+            f"{header.override_set!r} != {registered!r}"
         )
+    return registered
 
 
 def write_human_eval_snapshot_rows(
@@ -159,9 +138,9 @@ def write_human_eval_snapshot_rows(
             schema_version=HUMAN_EVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION,
             dataset_id=dataset_name,
             hf_revision=hf_revision,
-            overrides_digest=human_eval_overrides_digest(),
+            override_set=HUMAN_EVAL_OVERRIDE_SET,
         ),
-        rows=[HumanEvalRawRow.model_validate(row) for row in rows],
+        rows=tuple(HumanEvalRawRow.model_validate(row) for row in rows),
     )
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot_path.write_text(

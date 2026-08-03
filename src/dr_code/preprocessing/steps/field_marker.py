@@ -36,7 +36,7 @@ class FieldMarker(Step[FieldMarkerSettings]):
     """
 
     NAME: ClassVar[StepName] = StepName.FIELD_MARKER_EXTRACT
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     Settings = FieldMarkerSettings

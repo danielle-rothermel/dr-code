@@ -22,7 +22,7 @@ class ParseOutcomeResult(OperatorResult):
 
 class ParseOutcome(MetricOperator[OperatorSettings]):
     NAME = MetricName.PARSE_OUTCOME
-    VERSION = "1"
+    VERSION = "0"
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
 

@@ -1,13 +1,11 @@
-"""Pure builders and fakes for the ``dr_code.metrics`` acceptance suite.
+"""Pure builders and fakes for the ``dr_code.metrics`` contract tests.
 
 Pure helpers (no pytest fixtures) so test modules import them directly. Pytest
 fixtures live in ``conftest.py``. Import as ``from metrics.helpers import ...``.
 
-These tests define the contract of a package that does not exist yet
-(``src/dr_code/metrics/``). The existing ``dr_code.humaneval`` modules are used
-as **oracles**; ``dr_code.trace`` is the input contract. Nothing here touches a
-real container runtime — execution stays behind the injectable
-``SandboxRunner`` seam (design L3).
+``dr_code.humaneval`` supplies comparison implementations, and
+``dr_code.trace`` supplies the input contract. Execution stays behind the
+injectable ``SandboxRunner`` seam.
 """
 
 from __future__ import annotations
@@ -69,11 +67,14 @@ def make_task(
 
 
 # ---------------------------------------------------------------------------
-# Trace builders (X-S2: fresh / deserialized / external all produce equal
-# records).
+# Trace builders: fresh, deserialized, and external traces produce equal
+# records.
 # ---------------------------------------------------------------------------
 
-def text_trace(text: str, namespace: Mapping[str, object] | None = None) -> Trace:
+
+def text_trace(
+    text: str, namespace: Mapping[str, object] | None = None
+) -> Trace:
     values: dict[str, object] = {
         "input": TextArtifact(text=text),
         "output": TextArtifact(text=text),
@@ -83,7 +84,9 @@ def text_trace(text: str, namespace: Mapping[str, object] | None = None) -> Trac
     return external_trace(values)
 
 
-def code_trace(source: str, namespace: Mapping[str, object] | None = None) -> Trace:
+def code_trace(
+    source: str, namespace: Mapping[str, object] | None = None
+) -> Trace:
     code = CodeArtifact(source=source)
     values: dict[str, object] = {
         "input": code,
@@ -138,8 +141,9 @@ def absent_trace(
 
 
 # ---------------------------------------------------------------------------
-# Injectable SandboxRunner fakes (L3: injected runner, never a real container).
+# Injectable SandboxRunner fakes.
 # ---------------------------------------------------------------------------
+
 
 def local_runner() -> SandboxRunner:
     """An injectable runner that runs the trusted program under the host
@@ -175,8 +179,8 @@ def local_runner() -> SandboxRunner:
 class CountingRunner:
     """A runner that records every call and delegates to an inner runner.
 
-    Observes at-most-once execution (X-S4): the engine dedupes by content
-    hash so identical requests execute once per cache lifetime.
+    The engine deduplicates equivalent requests, so identical requests
+    execute once per cache lifetime.
     """
 
     def __init__(self, inner: SandboxRunner) -> None:
@@ -244,6 +248,7 @@ def raising_runner(exc: BaseException) -> SandboxRunner:
 # These script the runner's stdout so parity does not need a subprocess.
 # ---------------------------------------------------------------------------
 
+
 def case_result(
     *,
     case_id: str,
@@ -273,7 +278,9 @@ def full_pass_runner_output(
     """Runner JSON that passes every supplied case id."""
     return json.dumps(
         [
-            case_result(case_id=case_id, status=EvaluationCaseStatus.PASSED.value)
+            case_result(
+                case_id=case_id, status=EvaluationCaseStatus.PASSED.value
+            )
             for case_id in case_ids
         ]
     )
@@ -300,7 +307,9 @@ def kill_runner_process(
     returncode: int = next(iter(CANDIDATE_KILL_RETURNCODES)),
 ) -> SandboxCompletedProcess:
     """A completed-process shape for the candidate-kill attribution path."""
-    return SandboxCompletedProcess(returncode=returncode, stdout="", stderr="killed")
+    return SandboxCompletedProcess(
+        returncode=returncode, stdout="", stderr="killed"
+    )
 
 
 def json_runner(
@@ -325,6 +334,7 @@ def json_runner(
 # ---------------------------------------------------------------------------
 # Oracle runner: delegate to the existing batch_runner for parity comparisons.
 # ---------------------------------------------------------------------------
+
 
 def evaluate_oracle(
     task: HumanEvalTask,

@@ -1,13 +1,15 @@
-"""Frozen, serializable, hashable preprocessing definitions."""
+"""Frozen, serializable preprocessing definitions."""
 
 from __future__ import annotations
 
-import json
+from collections.abc import Mapping
+from typing import Self
 
-from pydantic import JsonValue, model_validator
+from pydantic import Field, SerializeAsAny, model_validator
 
 from dr_code.models import FrozenModel
-from dr_code.trace import RESERVED_KEYS, WiringError, stable_hash
+from dr_code.preprocessing.steps.base import StepSettings
+from dr_code.trace import RESERVED_KEYS, WiringError
 from dr_code.preprocessing.names import StepName
 
 
@@ -15,36 +17,45 @@ class StepSpec(FrozenModel):
     """One named step instance with its settings.
 
     ``instance_name`` becomes the trace key; renaming creates a new
-    definition. ``settings`` stays a ``dict[str, JsonValue]``, validated
-    against the step's ``Settings`` model at bind time.
+    definition. ``settings`` is the registered step's concrete frozen model,
+    resolved while the definition crosses this validation boundary.
     """
 
     instance_name: str
     step: StepName
-    settings: dict[str, JsonValue] = {}
+    settings: SerializeAsAny[StepSettings] = Field(
+        default_factory=StepSettings
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_settings_model(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            return value
+        data = dict(value)
+        step = StepName(data["step"])
+        from dr_code.preprocessing.registry import REGISTRY
+
+        settings_model = REGISTRY[step.value].Settings
+        data["settings"] = settings_model.model_validate(
+            data.get("settings", {})
+        )
+        return data
 
 
 class PreprocessingDefinition(FrozenModel):
     """Ordered, named step instances and settings.
 
-    Frozen, serializable, hashable. Fully describes the pipeline; no
-    hidden defaults.
+    Frozen and serializable. Fully describes the pipeline; no hidden defaults.
     """
 
     definition_id: str
     version: str
     steps: tuple[StepSpec, ...]
-
-    def __hash__(self) -> int:
-        # ``settings`` holds a ``dict[str, JsonValue]`` (unhashable), so
-        # pydantic's generated hash cannot apply. Hash the sorted JSON
-        # form instead — consistent with ``preprocessing_definition_hash``
-        # and ``__eq__`` (equal definitions hash equal).
-        blob = json.dumps(self.model_dump(mode="json"), sort_keys=True)
-        return hash(blob)
+    __hash__ = None
 
     @model_validator(mode="after")
-    def _validate_instance_names(self) -> PreprocessingDefinition:
+    def _validate_instance_names(self) -> Self:
         names = [spec.instance_name for spec in self.steps]
         # instance names must be unique and must not be reserved keys
         reserved = RESERVED_KEYS & set(names)
@@ -61,21 +72,12 @@ class PreprocessingDefinition(FrozenModel):
             seen.add(name)
         if duplicates:
             raise WiringError(
-                "duplicate instance names: "
-                + ", ".join(sorted(duplicates))
+                "duplicate instance names: " + ", ".join(sorted(duplicates))
             )
         return self
-
-
-def preprocessing_definition_hash(
-    definition: PreprocessingDefinition,
-) -> str:
-    """``trace.identity.stable_hash`` — the deterministic identity for sweeps."""
-    return stable_hash(definition)
 
 
 __all__ = [
     "PreprocessingDefinition",
     "StepSpec",
-    "preprocessing_definition_hash",
 ]

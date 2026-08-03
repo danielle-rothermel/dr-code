@@ -10,13 +10,10 @@ from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class TrimOuterBlanks(Step):
-    """Strip a leading/trailing run of newlines.
-
-    Lifted from the final ``text.strip("\\n")`` of ``normalize_text``.
-    """
+    """Strip leading and trailing runs of newlines."""
 
     NAME: ClassVar[StepName] = StepName.TRIM_OUTER_BLANKS
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
 

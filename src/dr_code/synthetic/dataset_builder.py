@@ -2,33 +2,22 @@
 
 from __future__ import annotations
 
-import hashlib
 import random
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from dr_code.synthetic.models import SyntheticSample
+from dr_code.synthetic.models import SyntheticSample, SyntheticSampleCoordinate
 from dr_code.synthetic.corruption_recipes import (
     RECIPES,
     Recipe,
     apply_recipe,
+    recipe_coordinate,
 )
 from dr_code.code_transforms import strip_docstrings
 from dr_code.synthetic.humaneval_loader import (
     HumanEvalPlusTask,
     load_humaneval_plus,
 )
-
-
-def _seed_for(task_id: str, recipe_name: str, seed: int) -> int:
-    """Derive a stable per-sample seed.
-
-    Uses BLAKE2b on the concatenation of (task_id, recipe_name, seed) and
-    reduces the digest to a 64-bit int.
-    """
-    blob = f"{task_id}|{recipe_name}|{seed}".encode()
-    digest = hashlib.blake2b(blob, digest_size=8).digest()
-    return int.from_bytes(digest, "big", signed=False)
 
 
 def build_sample(
@@ -38,12 +27,16 @@ def build_sample(
 ) -> SyntheticSample:
     """Build a single synthetic sample for one (task, recipe) pair."""
     ground_truth = strip_docstrings(task.full_source)
-    rng = random.Random(_seed_for(task.task_id, recipe.name, seed))
+    coordinate = SyntheticSampleCoordinate(
+        humaneval_task_id=task.task_id,
+        generation_seed=seed,
+        recipe=recipe_coordinate(recipe),
+    )
+    rng = random.Random(coordinate.model_dump_json())
     corrupted = apply_recipe(recipe, ground_truth, rng)
     return SyntheticSample(
-        sample_id=SyntheticSample.make_id(task.task_id, recipe.name),
-        humaneval_task_id=task.task_id,
-        recipe_name=recipe.name,
+        sample_id=SyntheticSample.make_id(coordinate),
+        coordinate=coordinate,
         ground_truth_source=ground_truth,
         corrupted_source=corrupted.corrupted_source,
     )

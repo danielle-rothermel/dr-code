@@ -1,56 +1,67 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, StrictFloat, StrictStr
+from types import MappingProxyType
+
+from pydantic import StrictFloat, StrictStr
 
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    LEGACY_PARSER_PROFILE_VERSION,
-    PARSER_PROFILE_VERSION,
+    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
     CodeParserProfile,
     resolve_parser_profile,
 )
+from dr_code.models import FrozenModel
 
 HUMANEVAL_METRICS_PROFILE_ID = "humaneval-metrics"
-HUMANEVAL_METRICS_PROFILE_VERSION = "v1"
+HUMANEVAL_METRICS_PROFILE_VERSION = "0"
 HUMANEVAL_SCORING_PROFILE_ID = "humaneval"
-LEGACY_HUMANEVAL_SCORING_PROFILE_VERSION = "v1"
-HUMANEVAL_SCORING_PROFILE_VERSION = "v2"
+HUMANEVAL_SCORING_PROFILE_VERSION = "0"
 DEFAULT_HUMANEVAL_TIMEOUT_SECONDS = 2.0
 
 
-class HumanEvalScoringProfile(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class HumanEvalScoringProfile(FrozenModel):
     profile_id: StrictStr
     version: StrictStr
     parser_profile: CodeParserProfile
     timeout_seconds: StrictFloat
-    metrics_profile_id: StrictStr
-    metrics_profile_version: StrictStr
+    metrics_profile: HumanEvalMetricsProfile
 
 
-LEGACY_HUMANEVAL_SCORING_PROFILE = HumanEvalScoringProfile(
-    profile_id=HUMANEVAL_SCORING_PROFILE_ID,
-    version=LEGACY_HUMANEVAL_SCORING_PROFILE_VERSION,
-    parser_profile=resolve_parser_profile(
-        parser_profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-        parser_version=LEGACY_PARSER_PROFILE_VERSION,
-    ),
-    timeout_seconds=DEFAULT_HUMANEVAL_TIMEOUT_SECONDS,
-    metrics_profile_id=HUMANEVAL_METRICS_PROFILE_ID,
-    metrics_profile_version=HUMANEVAL_METRICS_PROFILE_VERSION,
+class HumanEvalMetricsProfile(FrozenModel):
+    """Registered score aggregation behavior."""
+
+    profile_id: StrictStr
+    version: StrictStr
+    passed_score: StrictFloat
+    failed_score: StrictFloat
+
+
+HUMANEVAL_METRICS_PROFILE = HumanEvalMetricsProfile(
+    profile_id=HUMANEVAL_METRICS_PROFILE_ID,
+    version=HUMANEVAL_METRICS_PROFILE_VERSION,
+    passed_score=1.0,
+    failed_score=0.0,
 )
+
 
 DEFAULT_HUMANEVAL_SCORING_PROFILE = HumanEvalScoringProfile(
     profile_id=HUMANEVAL_SCORING_PROFILE_ID,
     version=HUMANEVAL_SCORING_PROFILE_VERSION,
     parser_profile=resolve_parser_profile(
         parser_profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-        parser_version=PARSER_PROFILE_VERSION,
+        parser_version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
     ),
     timeout_seconds=DEFAULT_HUMANEVAL_TIMEOUT_SECONDS,
-    metrics_profile_id=HUMANEVAL_METRICS_PROFILE_ID,
-    metrics_profile_version=HUMANEVAL_METRICS_PROFILE_VERSION,
+    metrics_profile=HUMANEVAL_METRICS_PROFILE,
+)
+
+_SCORING_PROFILES = MappingProxyType(
+    {
+        (
+            DEFAULT_HUMANEVAL_SCORING_PROFILE.profile_id,
+            DEFAULT_HUMANEVAL_SCORING_PROFILE.version,
+        ): DEFAULT_HUMANEVAL_SCORING_PROFILE,
+    }
 )
 
 
@@ -59,11 +70,11 @@ def resolve_humaneval_scoring_profile(
     scoring_profile_id: str,
     scoring_profile_version: str,
 ) -> HumanEvalScoringProfile:
-    if scoring_profile_id == HUMANEVAL_SCORING_PROFILE_ID:
-        if scoring_profile_version == HUMANEVAL_SCORING_PROFILE_VERSION:
-            return DEFAULT_HUMANEVAL_SCORING_PROFILE
-        if scoring_profile_version == LEGACY_HUMANEVAL_SCORING_PROFILE_VERSION:
-            return LEGACY_HUMANEVAL_SCORING_PROFILE
+    profile = _SCORING_PROFILES.get(
+        (scoring_profile_id, scoring_profile_version)
+    )
+    if profile is not None:
+        return profile
     raise ValueError(
         "unsupported HumanEval scoring profile: "
         f"{scoring_profile_id}@{scoring_profile_version}"

@@ -43,6 +43,7 @@ class Truncate(Corruption):
     """Cut the source short to simulate token-limit truncation."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.TRUNCATE
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         mode = rng.choice(list(TruncationMode))

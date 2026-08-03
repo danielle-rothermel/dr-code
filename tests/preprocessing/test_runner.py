@@ -12,12 +12,12 @@ from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
     BoundStep,
     bind_definition,
-    run_preprocessing,
+    run_external_preprocessing as run_preprocessing,
+    run_preprocessing as run_registered_preprocessing,
 )
 from dr_code.trace import (
-    Absent,
     CodeArtifact,
-    CodeCandidateSetArtifact,
+    ComponentSetting,
     TextArtifact,
     Trace,
     WiringError,
@@ -30,7 +30,9 @@ def _def(
     definition_id: str = "d1",
 ) -> PreprocessingDefinition:
     return PreprocessingDefinition(
-        definition_id=definition_id, version="1", steps=steps
+        definition_id=definition_id,
+        version="test-version",
+        steps=steps,
     )
 
 
@@ -39,9 +41,7 @@ def _def(
 
 def test_bind_resolves_steps() -> None:
     definition = _def(
-        (
-            StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),
-        )
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
     bound = bind_definition(definition)
     assert len(bound) == 1
@@ -60,27 +60,23 @@ def test_bind_unknown_step_raises_wiring_error() -> None:
     # monkeypatch the registry to simulate an unregistered name
     import dr_code.preprocessing.runner as runner_mod
 
-    original = runner_mod.REGISTRY.copy()
-    runner_mod.REGISTRY.clear()
-    try:
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(runner_mod, "REGISTRY", {})
         with pytest.raises(WiringError):
             bind_definition(definition)
-    finally:
-        runner_mod.REGISTRY.update(original)
 
 
-def test_bind_bad_settings_raises_wiring_error() -> None:
-    definition = _def(
-        (
-            StepSpec(
-                instance_name="e",
-                step=StepName.EXPAND_TABS,
-                settings={"tab_width": "not-an-int"},
-            ),
+def test_step_spec_rejects_bad_settings_at_definition_boundary() -> None:
+    with pytest.raises(Exception):
+        _def(
+            (
+                StepSpec(
+                    instance_name="e",
+                    step=StepName.EXPAND_TABS,
+                    settings={"tab_width": "not-an-int"},
+                ),
+            )
         )
-    )
-    with pytest.raises(WiringError):
-        bind_definition(definition)
 
 
 def test_bind_broken_kind_chain_raises_wiring_error() -> None:
@@ -115,9 +111,7 @@ def test_run_single_text_step() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
-    trace = run_preprocessing(
-        definition, TextArtifact(text="ｄｅｆ")
-    )
+    trace = run_preprocessing(definition, TextArtifact(text="ｄｅｆ"))
     assert trace.value("output") == TextArtifact(text="def")
     assert trace.value("input") == TextArtifact(text="ｄｅｆ")
     assert trace.value("n") == TextArtifact(text="def")
@@ -129,9 +123,62 @@ def test_run_produces_trace_with_producer_stamp() -> None:
     )
     trace = run_preprocessing(definition, TextArtifact(text="x"))
     assert isinstance(trace, Trace)
-    assert trace.producer.producer_id == "d1"
-    assert trace.producer.version == "1"
-    assert trace.producer.definition_hash is not None
+    assert trace.producer.kind == "external_preprocessing"
+    assert trace.producer.definition.definition_id == "d1"
+    assert trace.producer.definition.version == definition.version
+    assert trace.producer.definition.steps[0].component.registered_name == (
+        "normalize_unicode"
+    )
+    assert trace.producer.definition.steps[0].component.version == "0"
+
+
+def test_registered_run_rejects_definition_coordinate_impersonation() -> None:
+    definition = _def(
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),),
+        definition_id="humaneval-best-effort",
+    ).model_copy(update={"version": "0"})
+
+    with pytest.raises(
+        ValueError,
+        match="does not match its registered coordinate",
+    ):
+        run_registered_preprocessing(definition, TextArtifact(text="x"))
+
+
+def test_producer_coordinate_distinguishes_resolved_step_settings() -> None:
+    first = _def(
+        (
+            StepSpec(
+                instance_name="tabs",
+                step=StepName.EXPAND_TABS,
+                settings={"tab_width": 2},
+            ),
+        )
+    )
+    second = _def(
+        (
+            StepSpec(
+                instance_name="tabs",
+                step=StepName.EXPAND_TABS,
+                settings={"tab_width": 8},
+            ),
+        )
+    )
+
+    first_producer = run_preprocessing(
+        first, TextArtifact(text="\tvalue")
+    ).producer
+    second_producer = run_preprocessing(
+        second, TextArtifact(text="\tvalue")
+    ).producer
+
+    assert first.definition_id == second.definition_id
+    assert first.version == second.version
+    assert first_producer != second_producer
+    assert first_producer.kind == "external_preprocessing"
+    assert first_producer.definition.steps[0].component.settings == (
+        ComponentSetting(name="tab_width", value=2),
+    )
 
 
 def test_run_empty_definition_output_equals_input() -> None:
@@ -300,7 +347,7 @@ def test_pipeline_preserves_string_literal_escapes() -> None:
         )
     )
     source = (
-        r'Intro\n```python\ndef join_lines(lines):\n'
+        r"Intro\n```python\ndef join_lines(lines):\n"
         r'    return "\n".join(lines)\n```'
     )
     expected = 'def join_lines(lines):\n    return "\\n".join(lines)'

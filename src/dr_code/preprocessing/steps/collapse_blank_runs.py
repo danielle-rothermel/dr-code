@@ -14,7 +14,7 @@ class CollapseBlankRuns(Step):
     """Collapse runs of three or more newlines down to one blank line."""
 
     NAME: ClassVar[StepName] = StepName.COLLAPSE_BLANK_RUNS
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
 

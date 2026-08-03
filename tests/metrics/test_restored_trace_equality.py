@@ -1,12 +1,9 @@
-"""Restored-trace record equality (plan section 3, deliverable 4; design L2/L3).
+"""Restored-trace record equality.
 
 The determinism promise: *same canonical inputs + same metric
 identity/settings ⇒ same record*. Restored (deserialized) traces start with
-cold caches but must measure identically to fresh traces. This file focuses
-that promise across the three producer origins (X-S2) and the cache-hit path.
-
-``dr_code.metrics`` is imported lazily inside each test so the suite collects
-cleanly against the missing package and fails hard (never skips) when absent.
+cold caches but must measure identically to fresh traces. These tests cover
+that promise across the three producer origins and the cache-hit path.
 """
 
 from __future__ import annotations
@@ -14,9 +11,12 @@ from __future__ import annotations
 from dr_code.humaneval.sandbox import SandboxCompletedProcess
 from dr_code.trace import (
     CodeArtifact,
+    ComponentCoordinate,
+    PreprocessingDefinitionCoordinate,
+    PreprocessingTraceProducer,
+    StepCoordinate,
     TextArtifact,
     Trace,
-    TraceProducer,
     deserialize_trace,
     external_trace,
     serialize_trace,
@@ -26,6 +26,24 @@ from metrics.helpers import code_test_trace
 
 CODE = "def add_one(x):\n    return x + 1\n"
 TEXT = "some prose with def and return keywords\n"
+
+
+def _preprocessing_producer() -> PreprocessingTraceProducer:
+    return PreprocessingTraceProducer(
+        definition=PreprocessingDefinitionCoordinate(
+            definition_id="pre",
+            version="test-version",
+            steps=(
+                StepCoordinate(
+                    instance_name="step",
+                    component=ComponentCoordinate(
+                        registered_name="normalize_unicode",
+                        version="0",
+                    ),
+                ),
+            ),
+        )
+    )
 
 
 def _mixed_definition():
@@ -62,7 +80,7 @@ def _namespace():
 
 
 def _answer(record):
-    """Comparable projection: identity + status + ordered values (X-S2).
+    """Comparable projection: identity, status, and ordered values.
 
     Producer lineage legitimately differs across origins, so equality of the
     measured answer is what the determinism promise guarantees.
@@ -87,8 +105,9 @@ def _stub_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
 
 
 # ===========================================================================
-# Fresh ≡ deserialized ≡ external (X-S2).
+# Fresh, deserialized, and external traces produce equal records.
 # ===========================================================================
+
 
 def test_deserialized_trace_measures_identically_to_fresh() -> None:
     fresh = external_trace(_namespace())
@@ -99,13 +118,13 @@ def test_deserialized_trace_measures_identically_to_fresh() -> None:
     ]
 
 
-def test_external_trace_measures_identically_to_preprocessing_producer() -> None:
+def test_external_trace_measures_identically_to_preprocessing_producer() -> (
+    None
+):
     external = external_trace(_namespace())
     preprocessing = Trace(
         values=_namespace(),
-        producer=TraceProducer(
-            producer_id="pre", version="v9", definition_hash="deadbeef"
-        ),
+        producer=_preprocessing_producer(),
     )
     definition = _mixed_definition()
     assert [_answer(r) for r in _extract(definition, external)] == [
@@ -114,7 +133,7 @@ def test_external_trace_measures_identically_to_preprocessing_producer() -> None
 
 
 def test_serialization_round_trip_is_lossless_for_artifacts() -> None:
-    """Restored artifacts compare value-equal to the originals (design S3)."""
+    """Restored artifacts compare value-equal to the originals."""
     fresh = external_trace(_namespace())
     restored = deserialize_trace(serialize_trace(fresh))
     assert dict(restored.values) == dict(fresh.values)
@@ -133,8 +152,9 @@ def test_fresh_restored_and_external_all_yield_equal_answers() -> None:
 
 
 # ===========================================================================
-# Execution-backed records are deterministic too: restored ≡ fresh (X-S2).
+# Execution-backed records are equal for restored and fresh traces.
 # ===========================================================================
+
 
 def _code_test_definition():
     from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
@@ -158,7 +178,9 @@ def test_code_test_record_equal_across_fresh_and_restored(task) -> None:
     definition = _code_test_definition()
     assert _answer(
         _extract(definition, fresh, run_in_sandbox=_stub_runner)[0]
-    ) == _answer(_extract(definition, restored, run_in_sandbox=_stub_runner)[0])
+    ) == _answer(
+        _extract(definition, restored, run_in_sandbox=_stub_runner)[0]
+    )
 
 
 def test_batch_over_identical_traces_yields_equal_record_sets(task) -> None:

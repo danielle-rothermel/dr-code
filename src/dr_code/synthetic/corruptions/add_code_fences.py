@@ -23,6 +23,7 @@ class AddCodeFences(Corruption):
     """Wrap the source in ```` ``` ```` with a randomly chosen tag (or none)."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_CODE_FENCES
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         tag = rng.choice(_TAG_CHOICES)

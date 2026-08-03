@@ -9,6 +9,9 @@ Add a step by:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 from dr_code.preprocessing.steps.base import Step
 from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
@@ -56,28 +59,30 @@ from dr_code.preprocessing.steps.strip_trailing_whitespace import (
 )
 from dr_code.preprocessing.steps.trim_outer_blanks import TrimOuterBlanks
 
-REGISTRY: dict[str, type[Step]] = {
-    NormalizeLineEndings.NAME: NormalizeLineEndings,
-    NormalizeUnicode.NAME: NormalizeUnicode,
-    NormalizeSmartQuotes.NAME: NormalizeSmartQuotes,
-    ExpandTabs.NAME: ExpandTabs,
-    StripTrailingWhitespace.NAME: StripTrailingWhitespace,
-    CollapseBlankRuns.NAME: CollapseBlankRuns,
-    TrimOuterBlanks.NAME: TrimOuterBlanks,
-    ExtractCandidates.NAME: ExtractCandidates,
-    FieldMarker.NAME: FieldMarker,
-    StripFences.NAME: StripFences,
-    Dedent.NAME: Dedent,
-    SplitOnNameGuard.NAME: SplitOnNameGuard,
-    DropAfterLastReturn.NAME: DropAfterLastReturn,
-    RepairImportLines.NAME: RepairImportLines,
-    InferMissingImports.NAME: InferMissingImports,
-    DedupeImports.NAME: DedupeImports,
-    FilterCompilable.NAME: FilterCompilable,
-    FilterPlainLiteral.NAME: FilterPlainLiteral,
-    FilterCodeRepr.NAME: FilterCodeRepr,
-    SelectFirst.NAME: SelectFirst,
-    ReturnAll.NAME: ReturnAll,
-}
+REGISTRY: Mapping[str, type[Step]] = MappingProxyType(
+    {
+        NormalizeLineEndings.NAME: NormalizeLineEndings,
+        NormalizeUnicode.NAME: NormalizeUnicode,
+        NormalizeSmartQuotes.NAME: NormalizeSmartQuotes,
+        ExpandTabs.NAME: ExpandTabs,
+        StripTrailingWhitespace.NAME: StripTrailingWhitespace,
+        CollapseBlankRuns.NAME: CollapseBlankRuns,
+        TrimOuterBlanks.NAME: TrimOuterBlanks,
+        ExtractCandidates.NAME: ExtractCandidates,
+        FieldMarker.NAME: FieldMarker,
+        StripFences.NAME: StripFences,
+        Dedent.NAME: Dedent,
+        SplitOnNameGuard.NAME: SplitOnNameGuard,
+        DropAfterLastReturn.NAME: DropAfterLastReturn,
+        RepairImportLines.NAME: RepairImportLines,
+        InferMissingImports.NAME: InferMissingImports,
+        DedupeImports.NAME: DedupeImports,
+        FilterCompilable.NAME: FilterCompilable,
+        FilterPlainLiteral.NAME: FilterPlainLiteral,
+        FilterCodeRepr.NAME: FilterCodeRepr,
+        SelectFirst.NAME: SelectFirst,
+        ReturnAll.NAME: ReturnAll,
+    }
+)
 
 __all__ = ["REGISTRY"]

@@ -13,7 +13,7 @@ class StripFences(CandidateMapStep):
     """Drop a leading and/or trailing fence line from each candidate."""
 
     NAME: ClassVar[StepName] = StepName.STRIP_FENCES
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
 
     def apply_to_candidate(self, source: str) -> str:
         return strip_code_fences(source)

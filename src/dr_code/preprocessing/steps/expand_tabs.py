@@ -19,7 +19,7 @@ class ExpandTabs(Step[ExpandTabsSettings]):
     """Expand tabs to spaces using ``str.expandtabs(tab_width)``."""
 
     NAME: ClassVar[StepName] = StepName.EXPAND_TABS
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     Settings = ExpandTabsSettings

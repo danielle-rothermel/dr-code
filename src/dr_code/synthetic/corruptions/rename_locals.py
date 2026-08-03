@@ -18,6 +18,7 @@ class RenameLocals(Corruption):
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.RENAME_LOCALS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         try:

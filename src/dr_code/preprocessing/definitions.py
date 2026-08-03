@@ -1,15 +1,14 @@
 """Named, frozen preprocessing definitions for the code-extraction pipeline.
 
-Each ``PreprocessingDefinition`` here is the best final state of one
-extraction path: the cleaning, candidate generation, and selection expressed
-as atomic declared steps over typed artifacts. The definitions are pure
+Each ``PreprocessingDefinition`` expresses one extraction path as atomic
+cleaning, candidate-generation, and selection steps over typed artifacts. The
+definitions are pure
 data — ordered ``StepSpec`` instances with explicit settings (no hidden
-defaults); adding a step or changing a setting is a new definition whose
-identity is the content hash.
+defaults). Component identity is the explicit definition id and manual
+version; ordered steps and settings remain directly inspectable.
 
-These deliberately diverge from the old ``extract_code_with_profile`` path
-where the old behaviour was wrong: string-aware smart-quote recovery, the
-field-marker code-repr rejection, and the whitespace-only candidate drop.
+The preprocessing definitions use string-aware smart-quote recovery, reject
+field-marker code representations, and drop whitespace-only candidates.
 
 ``resolve_preprocessing_definition`` is an exact ``(definition_id, version)``
 lookup that raises ``ValueError`` for any pair not in the table.
@@ -31,14 +30,12 @@ Step order and composition:
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Final
-
-from pydantic import JsonValue
 
 from dr_code.humaneval.code_parsing import (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
     FIELD_MARKER_NAME,
-    PARSER_PROFILE_VERSION,
     STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
 )
 from dr_code.preprocessing.definition import (
@@ -47,18 +44,15 @@ from dr_code.preprocessing.definition import (
 )
 from dr_code.preprocessing.names import StepName
 
-#: Definition ids reuse ``code_parsing``'s so a definition is named by the
-#: same coordinates as the extraction path it replaces.
+#: Definition ids match ``code_parsing`` parser-profile coordinates.
 BEST_EFFORT_HUMANEVAL_DEFINITION_ID: Final[str] = (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID
 )
 STRICT_FIELD_MARKER_DEFINITION_ID: Final[str] = (
     STRICT_FIELD_MARKER_PARSER_PROFILE_ID
 )
-DEFINITION_VERSION: Final[str] = PARSER_PROFILE_VERSION
-SUPPORTED_DEFINITION_VERSIONS: Final[frozenset[str]] = frozenset(
-    {DEFINITION_VERSION}
-)
+BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION: Final[str] = "0"
+STRICT_FIELD_MARKER_DEFINITION_VERSION: Final[str] = "0"
 
 #: The default extraction ladder: fenced blocks, then the markdown-wrapper
 #: retry, then structural unescape, then the unescape + markdown-wrapper
@@ -74,13 +68,15 @@ _DEFAULT_EXTRACT_ALTERNATIVES: Final[tuple[str, ...]] = (
 def _spec(
     instance_name: str,
     step: StepName,
-    **settings: JsonValue,
+    **settings: object,
 ) -> StepSpec:
-    """Build a ``StepSpec``; settings pass through as JSON values."""
+    """Build a ``StepSpec`` with the registered typed settings model."""
+    from dr_code.preprocessing.registry import REGISTRY
+
     return StepSpec(
         instance_name=instance_name,
         step=step,
-        settings=dict(settings),
+        settings=REGISTRY[step.value].Settings.model_validate(settings),
     )
 
 
@@ -115,10 +111,10 @@ _CANDIDATE_CLEANING: Final[tuple[StepSpec, ...]] = (
 #: best-effort: full normalization, the default extraction ladder,
 #: per-candidate cleaning, then all three selection filters (plain-literal,
 #: code-repr, compilable).
-BEST_EFFORT_V2_DEFINITION: Final[PreprocessingDefinition] = (
+BEST_EFFORT_DEFINITION: Final[PreprocessingDefinition] = (
     PreprocessingDefinition(
         definition_id=BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-        version=DEFINITION_VERSION,
+        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
         steps=(
             *_TEXT_NORMALIZATION,
             _spec(
@@ -140,10 +136,10 @@ BEST_EFFORT_V2_DEFINITION: Final[PreprocessingDefinition] = (
 #: three selection filters as best-effort. The code-repr filter is included
 #: so a ``code = "..."`` marker payload is rejected (symmetrical with
 #: best-effort).
-FIELD_MARKER_V2_DEFINITION: Final[PreprocessingDefinition] = (
+FIELD_MARKER_DEFINITION: Final[PreprocessingDefinition] = (
     PreprocessingDefinition(
         definition_id=STRICT_FIELD_MARKER_DEFINITION_ID,
-        version=DEFINITION_VERSION,
+        version=STRICT_FIELD_MARKER_DEFINITION_VERSION,
         steps=(
             _spec(
                 "field_marker_extract",
@@ -161,16 +157,18 @@ FIELD_MARKER_V2_DEFINITION: Final[PreprocessingDefinition] = (
 
 #: Lookup by (definition_id, version) — the resolver's single source of
 #: truth. Only the registered pairs resolve.
-_DEFINITIONS: Final[dict[tuple[str, str], PreprocessingDefinition]] = {
-    (
-        BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-        DEFINITION_VERSION,
-    ): BEST_EFFORT_V2_DEFINITION,
-    (
-        STRICT_FIELD_MARKER_DEFINITION_ID,
-        DEFINITION_VERSION,
-    ): FIELD_MARKER_V2_DEFINITION,
-}
+_DEFINITIONS: Final = MappingProxyType(
+    {
+        (
+            BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
+            BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
+        ): BEST_EFFORT_DEFINITION,
+        (
+            STRICT_FIELD_MARKER_DEFINITION_ID,
+            STRICT_FIELD_MARKER_DEFINITION_VERSION,
+        ): FIELD_MARKER_DEFINITION,
+    }
+)
 
 #: Supported definition ids.
 SUPPORTED_DEFINITION_IDS: Final[frozenset[str]] = frozenset(
@@ -200,11 +198,11 @@ def resolve_preprocessing_definition(
 
 __all__ = [
     "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
-    "BEST_EFFORT_V2_DEFINITION",
-    "DEFINITION_VERSION",
-    "FIELD_MARKER_V2_DEFINITION",
+    "BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION",
+    "BEST_EFFORT_DEFINITION",
+    "FIELD_MARKER_DEFINITION",
     "STRICT_FIELD_MARKER_DEFINITION_ID",
+    "STRICT_FIELD_MARKER_DEFINITION_VERSION",
     "SUPPORTED_DEFINITION_IDS",
-    "SUPPORTED_DEFINITION_VERSIONS",
     "resolve_preprocessing_definition",
 ]

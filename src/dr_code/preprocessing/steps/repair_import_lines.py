@@ -17,7 +17,7 @@ class RepairImportLines(CandidateMapStep):
     """
 
     NAME: ClassVar[StepName] = StepName.REPAIR_IMPORT_LINES
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
 
     def apply_to_candidate(self, source: str) -> str:
         repaired, _changed = repair_import_lines(source)

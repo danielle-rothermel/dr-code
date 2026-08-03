@@ -14,7 +14,6 @@ from dr_code.preprocessing import (
     resolve_preprocessing_definition,
     run_preprocessing,
 )
-from dr_code.preprocessing.definition import preprocessing_definition_hash
 from dr_code.trace import (
     Absent,
     CodeArtifact,
@@ -33,14 +32,14 @@ FIELD_MARKER_ID = "humaneval-field-marker"
 _FENCED = "Here is the code:\n```python\ndef f(x):\n    return x + 1\n```\n"
 
 
-def _best_effort_v2():
+def _best_effort_current():
     return resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="v2"
+        definition_id=BEST_EFFORT_ID, version="0"
     )
 
 
 def _trace(raw: str) -> Trace:
-    return run_preprocessing(_best_effort_v2(), TextArtifact(text=raw))
+    return run_preprocessing(_best_effort_current(), TextArtifact(text=raw))
 
 
 def _assert_round_trip(trace: Trace) -> Trace:
@@ -83,14 +82,16 @@ def test_round_trip_preserves_code_output_and_facts() -> None:
     }
 
 
-def test_round_trip_preserves_producer_id_and_version() -> None:
+def test_round_trip_preserves_structured_producer_coordinate() -> None:
     trace = _trace(_FENCED)
     restored = _assert_round_trip(trace)
-    assert restored.producer.producer_id == BEST_EFFORT_ID
-    assert restored.producer.version == "v2"
-    assert restored.producer.definition_hash == preprocessing_definition_hash(
-        _best_effort_v2()
-    )
+    assert restored.producer.kind == "preprocessing"
+    assert restored.producer.definition.definition_id == BEST_EFFORT_ID
+    assert restored.producer.definition.version == "0"
+    assert restored.producer.definition.steps
+    assert {
+        step.component.version for step in restored.producer.definition.steps
+    } == {"0"}
 
 
 def test_round_trip_preserves_input_artifact_kind() -> None:

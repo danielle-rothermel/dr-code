@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-08-03
+
+- Established explicit manual component coordinates and reset every current
+  production preprocessing step, metric operator, preprocessing definition,
+  parser profile, scoring profile, and metrics profile to version `"0"`.
+- Added a tooling-only component-version development marker and an exhaustive
+  repository contract test that keeps registered production components at the
+  initial version while the marker is enabled.
+- Removed public semantic hashing, definition hashes, hash-bearing trace and
+  metric-record fields, and the public execution-request cache digest. Cache
+  reuse is now private mechanics tested through execution behavior.
+- Structured preprocessing producers now include the complete ordered step
+  composition, and metric records nest both that producer coordinate and the
+  complete ordered metrics definition. Trace persistence requires schema
+  version 2.
+- HumanEval snapshots carry the explicit versioned override set, and synthetic
+  samples carry independently versioned recipes and ordered corruption
+  coordinates.
+- Strengthened the CI and deterministic test baseline with locked dependency
+  sync, formatting and type checks, current action versions, isolated module
+  execution, state-based timeout translation, and functional boundary tests.
+
 ## 2026-07-15
 
 - Removed superseded design-review and eval-flow hero artifacts, and updated

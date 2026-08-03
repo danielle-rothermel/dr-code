@@ -34,6 +34,7 @@ class AddSmartQuotes(Corruption):
     """Replace `'` and `"` with their Unicode 'smart' counterparts."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_SMART_QUOTES
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         return CorruptedSample(

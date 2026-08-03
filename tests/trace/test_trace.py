@@ -1,4 +1,4 @@
-"""Acceptance tests for Trace, reserved keys, and WiringError."""
+"""Domain tests for trace wiring."""
 
 from __future__ import annotations
 
@@ -8,136 +8,76 @@ from dr_code.trace import (
     EXTERNAL_PRODUCER,
     INPUT_KEY,
     OUTPUT_KEY,
-    RESERVED_KEYS,
     Absent,
     TextArtifact,
     Trace,
-    TraceProducer,
+    TraceValue,
     WiringError,
     external_trace,
 )
 
 
-def _minimal_values() -> dict[str, object]:
-    # A trace must contain both reserved keys.
+def _minimal_values() -> dict[str, TraceValue]:
     return {
-        INPUT_KEY: TextArtifact(text="in"),
-        OUTPUT_KEY: TextArtifact(text="out"),
+        INPUT_KEY: TextArtifact(text="input"),
+        OUTPUT_KEY: TextArtifact(text="output"),
     }
 
 
-# --- reserved keys ---------------------------------------------------
-
-
-def test_reserved_keys_are_input_and_output() -> None:
-    assert INPUT_KEY == "input"
-    assert OUTPUT_KEY == "output"
-    assert RESERVED_KEYS == frozenset({"input", "output"})
-
-
-def test_wiring_error_is_exception_subclass() -> None:
-    assert issubclass(WiringError, Exception)
-
-
-# --- construction / __post_init__ ------------------------------------
-
-
-def test_trace_constructs_with_reserved_keys() -> None:
-    trace = Trace(
-        values=_minimal_values(), producer=EXTERNAL_PRODUCER
-    )
-    assert trace.producer == EXTERNAL_PRODUCER
-
-
-def test_trace_missing_reserved_key_rejected() -> None:
-    # __post_init__ validates RESERVED_KEYS subset of values.
-    with pytest.raises((WiringError, ValueError)):
+def test_trace_requires_both_reserved_values() -> None:
+    with pytest.raises(
+        WiringError,
+        match=r"trace missing reserved key\(s\): output",
+    ):
         Trace(
-            values={INPUT_KEY: TextArtifact(text="in")},
+            values={INPUT_KEY: TextArtifact(text="input")},
             producer=EXTERNAL_PRODUCER,
         )
 
 
-def test_trace_rejects_non_trace_value_entry() -> None:
-    # __post_init__ rejects non-TraceValue entries.
-    bad = _minimal_values()
-    bad["extra"] = "not a trace value"
-    with pytest.raises((WiringError, ValueError, TypeError)):
-        Trace(values=bad, producer=EXTERNAL_PRODUCER)
+def test_trace_rejects_non_trace_values() -> None:
+    values: dict[str, object] = _minimal_values()
+    values["invalid"] = "not a trace value"
+
+    with pytest.raises(
+        WiringError,
+        match="value for key 'invalid' is not a TraceValue: str",
+    ):
+        Trace(values=values, producer=EXTERNAL_PRODUCER)  # type: ignore[arg-type]
 
 
-# --- value() lookup --------------------------------------------------
+def test_trace_rejects_unvalidated_producer_payload() -> None:
+    with pytest.raises(WiringError, match="trace producer"):
+        Trace(
+            values=_minimal_values(),
+            producer={"kind": "external"},  # type: ignore[arg-type]
+        )
 
 
-def test_value_returns_present_artifact() -> None:
-    art = TextArtifact(text="in")
-    trace = Trace(
-        values={INPUT_KEY: art, OUTPUT_KEY: TextArtifact(text="out")},
-        producer=EXTERNAL_PRODUCER,
-    )
-    assert trace.value(INPUT_KEY) == art
-
-
-def test_value_missing_key_raises_wiring_error() -> None:
-    # Missing key raises WiringError (incompatible definitions).
-    trace = Trace(values=_minimal_values(), producer=EXTERNAL_PRODUCER)
-    with pytest.raises(WiringError):
-        trace.value("not_present")
-
-
-def test_value_present_but_absent_returns_absent() -> None:
-    # Present-but-Absent is data: value() returns the Absent, not raise.
-    absent = Absent(failed_step="parse", cause="boom")
+def test_value_distinguishes_causal_absence_from_missing_wiring() -> None:
+    absent = Absent(failed_step="parse", cause="syntax error")
     trace = Trace(
         values={
-            INPUT_KEY: TextArtifact(text="in"),
+            INPUT_KEY: TextArtifact(text="input"),
             OUTPUT_KEY: absent,
         },
         producer=EXTERNAL_PRODUCER,
     )
-    assert trace.value(OUTPUT_KEY) == absent
+
+    assert trace.value(OUTPUT_KEY) is absent
+    with pytest.raises(
+        WiringError,
+        match="trace has no value for key 'unknown'",
+    ):
+        trace.value("unknown")
 
 
-# --- external_trace --------------------------------------------------
+def test_external_trace_stamps_producer_and_carries_boundary_data() -> None:
+    values = _minimal_values()
+    step_facts = {"parse": {"choice": "candidate_0"}}
 
+    trace = external_trace(values, step_facts=step_facts)
 
-def test_external_trace_stamps_external_producer() -> None:
-    # external_trace stamps producer=EXTERNAL_PRODUCER (X-S2).
-    trace = external_trace(_minimal_values())
     assert trace.producer == EXTERNAL_PRODUCER
-
-
-def test_external_trace_carries_values() -> None:
-    art = TextArtifact(text="in")
-    trace = external_trace(
-        {INPUT_KEY: art, OUTPUT_KEY: TextArtifact(text="out")}
-    )
-    assert trace.value(INPUT_KEY) == art
-
-
-def test_external_trace_validates_value_types() -> None:
-    # external_trace validates value types on the way in.
-    with pytest.raises((WiringError, ValueError, TypeError)):
-        external_trace(
-            {
-                INPUT_KEY: TextArtifact(text="in"),
-                OUTPUT_KEY: "not a trace value",  # type: ignore[dict-item]
-            }
-        )
-
-
-def test_external_trace_accepts_step_facts() -> None:
-    trace = external_trace(
-        _minimal_values(),
-        step_facts={"step_a": {"chosen": "candidate_0"}},
-    )
-    assert trace.step_facts["step_a"] == {"chosen": "candidate_0"}
-
-
-# --- producer identity -----------------------------------------------
-
-
-def test_trace_records_non_external_producer() -> None:
-    producer = TraceProducer(producer_id="preproc-1", version="1.0")
-    trace = Trace(values=_minimal_values(), producer=producer)
-    assert trace.producer.producer_id == "preproc-1"
+    assert trace.value(INPUT_KEY) is values[INPUT_KEY]
+    assert trace.step_facts == step_facts

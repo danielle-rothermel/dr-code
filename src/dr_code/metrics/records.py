@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Self, TypeAlias
 
-from pydantic import JsonValue, model_validator
+from pydantic import Field, SerializeAsAny, model_validator
 
+from dr_code.metrics.definition import MetricsDefinition
 from dr_code.metrics.names import MetricName
 from dr_code.models import FrozenModel
+from dr_code.trace import TraceProducer
 
 
 class RecordStatus(StrEnum):
@@ -28,21 +30,32 @@ class MetricRecord(FrozenModel):
 
     metric: MetricName
     metric_version: str
-    settings: dict[str, JsonValue] = {}
+    settings: SerializeAsAny[FrozenModel]
 
     on_key: str
-    producer_id: str
-    producer_version: str | None
-    producer_definition_hash: str | None
-    metrics_definition_id: str
-    metrics_definition_version: str
+    producer: TraceProducer
+    metrics_definition: MetricsDefinition
 
     status: RecordStatus
-    values: dict[str, MetricScalar] = {}
+    values: dict[str, MetricScalar] = Field(default_factory=dict)
     absence_failed_step: str | None = None
     absence_cause: str | None = None
     failure_type: str | None = None
     failure_message: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_settings_model(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            return value
+        data = dict(value)
+        from dr_code.metrics.registry import REGISTRY
+
+        metric = MetricName(data["metric"])
+        data["settings"] = REGISTRY[metric.value].Settings.model_validate(
+            data.get("settings", {})
+        )
+        return data
 
     @model_validator(mode="after")
     def validate_answer_shape(self) -> Self:
@@ -67,10 +80,7 @@ class MetricRecord(FrozenModel):
             raise ValueError("non-measured records cannot carry values")
 
         if self.status is RecordStatus.NOT_APPLICABLE:
-            if (
-                self.absence_failed_step is None
-                or self.absence_cause is None
-            ):
+            if self.absence_failed_step is None or self.absence_cause is None:
                 raise ValueError(
                     "not-applicable records require an absence cause"
                 )

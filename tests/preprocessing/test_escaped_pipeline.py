@@ -17,12 +17,14 @@ from dr_code.preprocessing.definition import (
     StepSpec,
 )
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.runner import run_preprocessing
+from dr_code.preprocessing.runner import (
+    run_external_preprocessing as run_preprocessing,
+)
 from dr_code.trace import OUTPUT_KEY, CodeArtifact, TextArtifact, is_absent
 
 
 def _escaped_pipeline_definition() -> PreprocessingDefinition:
-    """Full normalization + extraction + selection, matching the old path."""
+    """Full normalization, extraction, and selection definition."""
 
     def _spec(name: str, step: StepName) -> StepSpec:
         return StepSpec(instance_name=name, step=step)
@@ -71,7 +73,7 @@ def test_escaped_pipeline_preserves_string_literal_escape() -> None:
     ("source", "expected"),
     [
         (
-            r'Intro\n```python\ndef join_lines(lines):'
+            r"Intro\n```python\ndef join_lines(lines):"
             r'\n    return "\n".join(lines)\n```',
             'def join_lines(lines):\n    return "\\n".join(lines)',
         ),
@@ -80,12 +82,12 @@ def test_escaped_pipeline_preserves_string_literal_escape() -> None:
             'def join_lines(lines):\n    return "\\n".join(lines)',
         ),
         (
-            r'Intro\r```python\rdef join_tabs(parts):'
+            r"Intro\r```python\rdef join_tabs(parts):"
             r'\r\treturn "\t".join(parts)\r```',
             'def join_tabs(parts):\n\treturn "\\t".join(parts)',
         ),
         (
-            r'Intro\r\n```python\r\ndef join_cr(parts):'
+            r"Intro\r\n```python\r\ndef join_cr(parts):"
             r'\r\n\treturn "\r".join(parts)\n```',
             'def join_cr(parts):\n\treturn "\\r".join(parts)',
         ),
@@ -102,8 +104,7 @@ def test_escaped_pipeline_preserves_python_string_literals(
 
 def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
     expected = (
-        'def separators(values):\n'
-        '    return "\\n".join(values), "\\t", "\\r"'
+        'def separators(values):\n    return "\\n".join(values), "\\t", "\\r"'
     )
     source = json.dumps(f"Intro\n```python\n{expected}\n```")
     output = _output_source(source)

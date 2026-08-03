@@ -51,6 +51,7 @@ class MangleImportLines(Corruption):
     """Introduce a parse-blocking error in an import line."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.MANGLE_IMPORT_LINES
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         return CorruptedSample(
