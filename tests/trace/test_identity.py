@@ -1,4 +1,4 @@
-"""Acceptance tests for stable_hash and provenance."""
+"""Stable-hash and producer-provenance contracts."""
 
 from __future__ import annotations
 

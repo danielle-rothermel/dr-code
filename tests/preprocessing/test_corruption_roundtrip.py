@@ -25,10 +25,9 @@ running the best-effort v2 definition partitions the recipes empirically
 
   Exempting these from the *equivalence* assertion is correct behaviour, not a
   gap. For every exempted recipe we still assert something meaningful:
-  **output parity with the old ``extract_code_with_profile``** — the new
-  pipeline must behave exactly as the old one even when neither can recover.
-  So no exempted recipe sits in an assertion-free bucket, and a regression
-  that changed either pipeline's give-up behaviour would fail here.
+  **output parity with ``extract_code_with_profile``**. Both APIs must give up
+  or return the same non-equivalent source. No exempted recipe sits in an
+  assertion-free bucket.
 """
 
 from __future__ import annotations
@@ -87,7 +86,7 @@ RECOVERABLE_RECIPES = [
 ]
 
 #: Recipes that make an unrecoverable semantic/structural change (see module
-#: docstring). Exempted from equivalence; asserted for old-pipeline parity.
+#: docstring). Exempted from equivalence; asserted for parser parity.
 NON_RECOVERABLE_RECIPES = [
     "inline_backticks",
     "dead_code",
@@ -115,7 +114,7 @@ def _run_best_effort(raw: str):
     )
 
 
-def _old_best_effort(raw: str) -> str | None:
+def _parser_best_effort(raw: str) -> str | None:
     profile = resolve_parser_profile(
         parser_profile_id=BEST_EFFORT_ID, parser_version="v2"
     )
@@ -142,22 +141,22 @@ def test_best_effort_recovers_corruption_to_equivalent(
 
 
 @pytest.mark.parametrize("recipe_name", NON_RECOVERABLE_RECIPES)
-def test_non_recoverable_matches_old_pipeline(recipe_name: str) -> None:
+def test_non_recoverable_matches_parser_output(recipe_name: str) -> None:
     # No extraction pipeline can recover equivalence here, so we assert the
-    # honest fallback contract: the new pipeline behaves exactly as the old
-    # one (both give up, or both extract the same non-equivalent source).
+    # fallback contract: preprocessing and parsing both give up, or both
+    # extract the same non-equivalent source.
     raw = _corrupt(recipe_name)
-    old = _old_best_effort(raw)
-    new = _run_best_effort(raw)
-    new_source = None if is_absent(new) else new.source
-    assert new_source == old, (
-        f"{recipe_name}: new pipeline diverged from old — "
-        f"old={old!r} new={new_source!r}"
+    parser = _parser_best_effort(raw)
+    preprocessing = _run_best_effort(raw)
+    source = None if is_absent(preprocessing) else preprocessing.source
+    assert source == parser, (
+        f"{recipe_name}: preprocessing diverged from parser — "
+        f"parser={parser!r} preprocessing={source!r}"
     )
     # And when it does recover code, that code is genuinely not equivalent —
     # confirming the exemption is warranted, not a masked recoverable case.
-    if new_source is not None:
-        assert not equivalent(CLEAN, new_source), (
+    if source is not None:
+        assert not equivalent(CLEAN, source), (
             f"{recipe_name}: unexpectedly recovered equivalent code; "
             f"it should be reclassified as recoverable"
         )

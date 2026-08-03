@@ -1,4 +1,4 @@
-"""Acceptance tests for Trace, reserved keys, and WiringError."""
+"""Trace, reserved-key, and WiringError contracts."""
 
 from __future__ import annotations
 
@@ -43,9 +43,7 @@ def test_wiring_error_is_exception_subclass() -> None:
 
 
 def test_trace_constructs_with_reserved_keys() -> None:
-    trace = Trace(
-        values=_minimal_values(), producer=EXTERNAL_PRODUCER
-    )
+    trace = Trace(values=_minimal_values(), producer=EXTERNAL_PRODUCER)
     assert trace.producer == EXTERNAL_PRODUCER
 
 
@@ -102,7 +100,7 @@ def test_value_present_but_absent_returns_absent() -> None:
 
 
 def test_external_trace_stamps_external_producer() -> None:
-    # external_trace stamps producer=EXTERNAL_PRODUCER (X-S2).
+    # external_trace records the external producer at the boundary.
     trace = external_trace(_minimal_values())
     assert trace.producer == EXTERNAL_PRODUCER
 

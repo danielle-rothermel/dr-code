@@ -19,7 +19,7 @@ _COMMENTS: Final[tuple[str, ...]] = (
 
 
 class AddCommentsNoise(Corruption):
-    """Inject prose comments. Recovery is by stripping comments during L1."""
+    """Inject prose comments without changing the parsed program."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_COMMENTS_NOISE
 

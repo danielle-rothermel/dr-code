@@ -1,15 +1,14 @@
 """Named, frozen preprocessing definitions for the code-extraction pipeline.
 
-Each ``PreprocessingDefinition`` here is the best final state of one
-extraction path: the cleaning, candidate generation, and selection expressed
-as atomic declared steps over typed artifacts. The definitions are pure
+Each ``PreprocessingDefinition`` expresses one extraction path as atomic
+cleaning, candidate-generation, and selection steps over typed artifacts. The
+definitions are pure
 data — ordered ``StepSpec`` instances with explicit settings (no hidden
 defaults); adding a step or changing a setting is a new definition whose
 identity is the content hash.
 
-These deliberately diverge from the old ``extract_code_with_profile`` path
-where the old behaviour was wrong: string-aware smart-quote recovery, the
-field-marker code-repr rejection, and the whitespace-only candidate drop.
+The preprocessing definitions use string-aware smart-quote recovery, reject
+field-marker code representations, and drop whitespace-only candidates.
 
 ``resolve_preprocessing_definition`` is an exact ``(definition_id, version)``
 lookup that raises ``ValueError`` for any pair not in the table.
@@ -47,8 +46,7 @@ from dr_code.preprocessing.definition import (
 )
 from dr_code.preprocessing.names import StepName
 
-#: Definition ids reuse ``code_parsing``'s so a definition is named by the
-#: same coordinates as the extraction path it replaces.
+#: Definition ids match ``code_parsing`` parser-profile coordinates.
 BEST_EFFORT_HUMANEVAL_DEFINITION_ID: Final[str] = (
     BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID
 )

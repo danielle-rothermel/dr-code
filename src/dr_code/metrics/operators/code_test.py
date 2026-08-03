@@ -165,10 +165,8 @@ class CodeTest(MetricOperator[CodeTestSettings]):
                 EvaluationCaseStatus.TIMEOUT.value,
                 0,
             ),
-            # PARITY TWIN of ``EvaluationTaskResult.coverage_complete``
-            # (dr_code.humaneval.task): "did every case produce a result", not a
-            # pass/fail verdict. Pinned equal by the parity test; retires with
-            # the old scoring path.
+            # Matches ``EvaluationTaskResult.coverage_complete``: every case
+            # produced a result, independent of its pass/fail verdict.
             coverage_complete=(
                 best_function_name is not None
                 and len(best_statuses) == total_cases
@@ -234,12 +232,10 @@ def _code_source(value: Artifact) -> str:
     return value.source
 
 
-# PARITY TWIN: duplicates ``dr_code.humaneval.batch_runner``
-# ``top_level_function_names``. Both stay live while the old scoring path runs;
-# retires together with it. Baseline quirk (documented, not fixed): duplicate
-# top-level function names (legal Python) are all returned, so their status
-# counts stack downstream and can defeat coverage_complete -- exact parity with
-# the retired path. Any fix must land in both twins.
+# PARITY COORDINATION: ``dr_code.humaneval.batch_runner`` implements the same
+# top-level-function rule. Legal duplicate names are all returned, so their
+# status counts stack downstream and can prevent ``coverage_complete``. Behavior
+# changes must update both implementations and their parity tests.
 def _top_level_function_names(source: str) -> list[str]:
     tree = ast.parse(source)
     return [
@@ -274,7 +270,7 @@ def _statuses_from_outcome(
         return error_statuses
     if is_candidate_kill_outcome(outcome):
         return error_statuses
-    if outcome.returncode != 0:  # was: raise EvaluationHarnessError
+    if outcome.returncode != 0:
         return error_statuses
 
     # KNOWN LIMITATION (documented, not fixed here): stdout is shared with the
@@ -283,10 +279,9 @@ def _statuses_from_outcome(
     # statuses contains the blast radius (one trace's record, not the whole
     # batch), but does not make stdout trustworthy: a candidate can forge a
     # valid-looking results array and ``os._exit(0)`` before the runner prints
-    # the real one. This forgery hole is baseline (the retired scoring path
-    # parses the same shared stdout); closing it needs a runner protocol change
-    # (a separate result channel or an authenticated sentinel), which is out of
-    # scope for this PR.
+    # the real one. The HumanEval evaluator parses the same shared channel.
+    # Closing this hole requires a separate result channel or an authenticated
+    # sentinel in the runner protocol.
     try:
         raw_results = json.loads(outcome.stdout)
     except json.JSONDecodeError:  # candidate shares the runner's stdout
@@ -296,9 +291,7 @@ def _statuses_from_outcome(
 
     if task.parsed_tests is None:
         raise ValueError("HumanEvalTask.parsed_tests is required")
-    expected_case_ids = {
-        case.case_id for case in task.parsed_tests.cases
-    }
+    expected_case_ids = {case.case_id for case in task.parsed_tests.cases}
     seen_case_ids: set[str] = set()
     adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
     statuses: list[EvaluationCaseStatus] = []
@@ -337,17 +330,14 @@ def _passed_counts(
     }
 
 
-# PARITY TWIN: this selector duplicates
+# PARITY COORDINATION: this selector duplicates
 # ``dr_code.humaneval.task.select_best_function_name`` (and the coverage logic
 # in ``CodeTest.compute`` duplicates
-# ``EvaluationTaskResult.coverage_complete``). Both implementations stay live
-# while the old scoring path still runs; direct reuse is awkward because
-# task.py's selector takes ``EvaluationCaseResult`` objects while the operator
-# holds bare statuses (a gap the ``_passed_counts`` split widens). The guard is
-# a parity test (tests/metrics/test_operator_parity.py) pinning the two
-# selectors equal over the same synthetic status sets. RETIREMENT PLAN: when the
-# scoring path retires, the task.py copy goes with it and the parity test is
-# deleted. Any fix to the duplicate-name quirk must land in BOTH twins.
+# ``EvaluationTaskResult.coverage_complete``). Direct reuse is awkward because
+# the task selector takes ``EvaluationCaseResult`` objects while the operator
+# holds bare statuses. ``tests/metrics/test_operator_parity.py`` pins the two
+# selectors equal over the same synthetic status sets. Changes to selection or
+# duplicate-name handling must update both implementations.
 def _best_function_name(
     *,
     function_names: list[str],

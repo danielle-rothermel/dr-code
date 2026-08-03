@@ -24,10 +24,11 @@ class TextArtifact(FrozenModel):
 
 
 class CodeArtifact(FrozenModel):
-    """Source text that has passed a compile check upstream.
+    """Python source text.
 
-    Canonical value is the source string only; the AST is a derived
-    view (S3).
+    The type itself carries no compilation guarantee; producers and consumers
+    validate source at the boundaries that require it. The source string is
+    canonical, and the AST is a derived view.
     """
 
     kind: Literal[ArtifactKind.CODE] = ArtifactKind.CODE
@@ -35,8 +36,7 @@ class CodeArtifact(FrozenModel):
 
 
 class CodeCandidateSetArtifact(FrozenModel):
-    """Ordered candidate sources, conservative first. Fan-out as data
-    (P-S2)."""
+    """Ordered candidate sources, with conservative candidates first."""
 
     kind: Literal[ArtifactKind.CODE_CANDIDATE_SET] = (
         ArtifactKind.CODE_CANDIDATE_SET
@@ -45,10 +45,10 @@ class CodeCandidateSetArtifact(FrozenModel):
 
 
 class JsonArtifact(FrozenModel):
-    """Escape hatch for externally built traces (X-S2), e.g. a HumanEval
-    task payload for code_test. Consumers revalidate `payload` into their
-    own model at bind time; a payload that fails validation is a
-    WiringError.
+    """JSON payload for externally built traces, such as a HumanEval task.
+
+    Consumers revalidate ``payload`` into their own model at bind time; a
+    payload that fails validation is a ``WiringError``.
     """
 
     kind: Literal[ArtifactKind.JSON] = ArtifactKind.JSON

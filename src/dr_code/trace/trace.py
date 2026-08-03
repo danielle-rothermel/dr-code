@@ -24,9 +24,9 @@ _TRACE_VALUE_TYPES: Final = (*get_args(get_args(Artifact)[0]), Absent)
 
 class WiringError(Exception):
     """Incompatible definitions: missing key, wrong artifact kind, or
-    invalid settings. Raised at bind time — before any input is
-    processed — and never per-input (eval-flow L2). Both systems raise
-    this same type.
+    invalid settings. Trace construction, value lookup, binding, and execution
+    raise this error when they encounter incompatible wiring rather than
+    recording it as a per-input outcome.
     """
 
 
@@ -38,7 +38,7 @@ class Trace:
     step_facts: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     # step_facts: provenance recorded by steps (chosen alternative,
     # rejection reasons, candidate counts) keyed by instance name —
-    # facts, never judgments (P-L2)
+    # descriptive facts, never policy judgments
 
     def __post_init__(self) -> None:
         """Validate RESERVED_KEYS ⊆ values; reject non-TraceValue
@@ -46,8 +46,7 @@ class Trace:
         missing = RESERVED_KEYS - self.values.keys()
         if missing:
             raise WiringError(
-                "trace missing reserved key(s): "
-                + ", ".join(sorted(missing))
+                "trace missing reserved key(s): " + ", ".join(sorted(missing))
             )
         for key, val in self.values.items():
             if not isinstance(val, _TRACE_VALUE_TYPES):
@@ -72,8 +71,7 @@ def external_trace(
     step_facts: Mapping[str, Mapping[str, str]] | None = None,
 ) -> Trace:
     """Boundary constructor for artifacts built outside dr-code:
-    validates value types on the way in, stamps
-    producer=EXTERNAL_PRODUCER (X-S2).
+    validates value types on the way in and stamps the external producer.
     """
     return Trace(
         values=dict(values),

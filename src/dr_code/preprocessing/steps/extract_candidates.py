@@ -52,10 +52,9 @@ def _to_candidate_set(
 ) -> CodeCandidateSetArtifact | None:
     """Apply ``code_like_blocks`` fan-out, drop whitespace-only blocks.
 
-    Mirrors the old pipeline's per-block refinement (``code_like_blocks``
-    filters prose blocks and splits anchored segments); returns None when
-    no code-like candidate survives, so first-success ladder logic falls
-    through to the next strategy.
+    ``code_like_blocks`` filters prose blocks and splits anchored segments.
+    Returning ``None`` when no code-like candidate survives advances the
+    first-success ladder to its next strategy.
     """
     candidates = [block for block in code_like_blocks(blocks) if block.strip()]
     if not candidates:
@@ -89,9 +88,8 @@ def _escaped_markdown_wrapper(
 ) -> CodeCandidateSetArtifact | None:
     """Recover escaped Python, then strip a markdown wrapper per block.
 
-    Mirrors the old pipeline's ``unescaped_markdown_wrapper_fallback``: the
-    unescaped-then-plain rung (``escaped_python``) can miss code hidden
-    behind blockquote/list markers, so this retries with
+    The unescaped-then-plain rung (``escaped_python``) can miss code hidden
+    behind blockquote or list markers, so this strategy retries with
     ``strip_markdown_wrappers`` applied to each block.
     """
     unescaped = recover_escaped_python(text)

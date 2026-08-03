@@ -15,8 +15,8 @@ TRACE_SCHEMA_VERSION: Final = 1
 
 class SerializedTrace(FrozenModel):
     """Canonical artifacts, names, causal absences, and provenance — no
-    derived views (eval-flow L3). BaseModel so it feeds persistence and
-    external schemas.
+    derived views. This boundary model supports persistence and external
+    schemas.
     """
 
     schema_version: int = TRACE_SCHEMA_VERSION
@@ -27,7 +27,7 @@ class SerializedTrace(FrozenModel):
 
 def serialize_trace(trace: Trace) -> SerializedTrace:
     """Total for traces built from TraceValue types. May lose warm
-    caches, never information; round-trip must be value-equal (S3).
+    caches, never canonical values; round-trips remain value-equal.
     """
     return SerializedTrace(
         producer=trace.producer,
@@ -43,7 +43,5 @@ def deserialize_trace(serialized: SerializedTrace) -> Trace:
     return Trace(
         values=dict(serialized.values),
         producer=serialized.producer,
-        step_facts={
-            k: dict(v) for k, v in serialized.step_facts.items()
-        },
+        step_facts={k: dict(v) for k, v in serialized.step_facts.items()},
     )

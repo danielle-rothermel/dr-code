@@ -1,12 +1,9 @@
-"""Vocabulary and record contracts (plan sections ``names.py`` / ``records.py``).
+"""Metrics vocabulary and record contracts.
 
 Covers ``MetricName`` / ``RecordStatus`` (StrEnum members), registry↔enum
 sync, ``MetricRecord`` (identity + lineage + exactly-one-shape-per-status),
 and ``record_rows`` flattening with ``"{metric}.{key}"`` value columns
-(design X-S1, X-S3, L2/L3).
-
-``dr_code.metrics`` is imported lazily inside each test so the suite collects
-cleanly against the missing package and fails hard (never skips) when absent.
+that prevent collisions across metrics.
 """
 
 from __future__ import annotations
@@ -32,6 +29,7 @@ EXPECTED_RECORD_STATUSES = {
 # MetricName / RecordStatus enums.
 # ===========================================================================
 
+
 def test_metric_name_is_a_strenum_of_the_six_families() -> None:
     from dr_code.metrics import MetricName
 
@@ -50,10 +48,14 @@ def test_metric_name_members_round_trip_through_their_string_values() -> None:
 def test_record_status_is_the_three_way_answer_taxonomy() -> None:
     from dr_code.metrics import RecordStatus
 
-    assert {status.value for status in RecordStatus} == EXPECTED_RECORD_STATUSES
+    assert {
+        status.value for status in RecordStatus
+    } == EXPECTED_RECORD_STATUSES
 
 
-def test_record_status_members_round_trip_through_their_string_values() -> None:
+def test_record_status_members_round_trip_through_their_string_values() -> (
+    None
+):
     from dr_code.metrics import RecordStatus
 
     for value in EXPECTED_RECORD_STATUSES:
@@ -62,8 +64,9 @@ def test_record_status_members_round_trip_through_their_string_values() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Registry ↔ enum sync (plan: ``names.py`` registry↔enum sync-tested).
+# Registry and enum synchronization.
 # ---------------------------------------------------------------------------
+
 
 def test_registry_covers_every_metric_name() -> None:
     from dr_code.metrics import MetricName
@@ -85,6 +88,7 @@ def test_registry_has_no_stray_keys() -> None:
 # ===========================================================================
 # MetricRecord schema + identity/lineage.
 # ===========================================================================
+
 
 def _identity_kwargs(**overrides: object) -> dict[str, object]:
     base = dict(
@@ -182,8 +186,9 @@ def test_metric_record_values_accept_all_scalar_types() -> None:
 
 
 # ===========================================================================
-# Exactly-one-shape-per-status (X-S1).
+# Exactly one field shape per status.
 # ===========================================================================
+
 
 def test_measured_record_shape() -> None:
     from dr_code.metrics import RecordStatus
@@ -228,7 +233,7 @@ def test_operator_failure_record_is_attributed_to_the_metric() -> None:
 
 
 def test_measured_record_rejects_absence_and_failure_fields() -> None:
-    """The three-way shape contract (X-S1): MEASURED carries values only."""
+    """The three-way shape contract gives MEASURED records values only."""
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
@@ -303,8 +308,9 @@ def test_records_differ_on_metric_settings_on_key_and_status() -> None:
 
 
 # ===========================================================================
-# record_rows: flat dataframe rows, metric-prefixed value columns (X-S3).
+# record_rows: flat rows with metric-prefixed value columns.
 # ===========================================================================
+
 
 def test_record_rows_returns_one_row_per_record() -> None:
     from dr_code.metrics import MetricName, record_rows
@@ -329,7 +335,7 @@ def test_record_rows_prefix_value_columns_with_metric_and_key() -> None:
     row = rows[0]
     assert row["text_stats.character_count"] == 4
     assert row["text_stats.word_count"] == 1
-    # Raw value keys never appear un-prefixed (collision avoidance, X-S3).
+    # Raw value keys never appear unprefixed, avoiding cross-metric collisions.
     assert "character_count" not in row
     assert "word_count" not in row
 
@@ -360,7 +366,9 @@ def test_record_rows_value_columns_are_collision_free_across_metrics() -> None:
     assert rows[1]["ast_stats.count"] == 2
 
 
-def test_record_rows_status_column_distinguishes_absence_from_measured_zero() -> None:
+def test_record_rows_status_column_distinguishes_absence_from_measured_zero() -> (
+    None
+):
     """Not-applicable ≠ measured zero: a status column, not a magic value."""
     from dr_code.metrics import RecordStatus, record_rows
 

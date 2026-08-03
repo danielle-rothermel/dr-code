@@ -10,8 +10,8 @@ from dr_code.models import FrozenModel
 class Absent(FrozenModel):
     """A step failed for this input; downstream values inherit the cause.
 
-    Present-but-Absent is data (eval-flow L2): consumers emit
-    not-applicable records instead of raising.
+    Present-but-absent values are data. Preprocessing propagates their lineage,
+    and metrics consumers emit not-applicable records instead of raising.
     """
 
     kind: Literal["absent"] = "absent"

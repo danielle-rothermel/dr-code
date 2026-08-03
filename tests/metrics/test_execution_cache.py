@@ -1,13 +1,12 @@
-"""Execution-cache contracts (plan section: ``engine/execution.py``).
+"""Execution-cache contracts.
 
 Covers ``ExecutionRequest`` content-hash ``cache_key`` (deterministic,
 content-addressed), ``ExecutionOutcome`` (SandboxCompletedProcess fields),
-the ``ExecutionCache`` protocol + ``InMemoryExecutionCache`` get/put, and
-``run_requests`` dedupe + at-most-once execution (design X-S4, L3).
+the ``ExecutionCache`` protocol plus ``InMemoryExecutionCache`` get/put, and
+``run_requests`` deduplication with at-most-once execution per cache lifetime.
 
 These tests run without a container: a counting fake runner stands in for the
-injected ``SandboxRunner``. ``dr_code.metrics`` is imported lazily inside each
-test so the suite collects cleanly against the missing package.
+injected ``SandboxRunner``.
 """
 
 from __future__ import annotations
@@ -76,8 +75,9 @@ def _run(requests, *, runner=None, cache=None):
 
 
 # ===========================================================================
-# ExecutionRequest.cache_key — content-addressed + deterministic (L3).
+# ExecutionRequest.cache_key — content-addressed and deterministic.
 # ===========================================================================
+
 
 def test_cache_key_is_a_deterministic_string() -> None:
     assert isinstance(_request().cache_key, str)
@@ -102,6 +102,7 @@ def test_cache_key_depends_on_each_request_field(field, a, b) -> None:
 # ExecutionOutcome — SandboxCompletedProcess fields, frozen.
 # ===========================================================================
 
+
 def test_execution_outcome_holds_sandbox_completed_process_fields() -> None:
     outcome = _outcome(returncode=0, stdout="[{}]", stderr="warn")
     assert outcome.returncode == 0
@@ -118,13 +119,16 @@ def test_execution_outcome_is_frozen() -> None:
 def test_execution_outcome_is_json_serializable() -> None:
     import json
 
-    parsed = json.loads(_outcome(stdout='[{"case_id": "0"}]').model_dump_json())
+    parsed = json.loads(
+        _outcome(stdout='[{"case_id": "0"}]').model_dump_json()
+    )
     assert parsed["returncode"] == 0
 
 
 # ===========================================================================
 # InMemoryExecutionCache get/put.
 # ===========================================================================
+
 
 def test_in_memory_cache_miss_returns_none() -> None:
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
@@ -157,6 +161,7 @@ def test_in_memory_cache_put_overwrites() -> None:
 # ===========================================================================
 # run_requests — dedupe + at-most-once execution.
 # ===========================================================================
+
 
 def test_run_requests_dedupes_identical_requests() -> None:
     runner = _CountingRunner()
@@ -216,7 +221,7 @@ def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
 
 
 def test_run_requests_sandbox_error_propagates() -> None:
-    """SandboxError (infrastructure) propagates through run_requests (L3)."""
+    """SandboxError infrastructure failures propagate through run_requests."""
 
     def infra(*, source, input_json, timeout_seconds):  # noqa: ANN001
         raise SandboxError("infra failed")

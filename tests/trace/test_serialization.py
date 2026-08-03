@@ -1,4 +1,4 @@
-"""Acceptance tests for serialize/deserialize round-trips."""
+"""Serialization round-trip contracts."""
 
 from __future__ import annotations
 
@@ -57,16 +57,14 @@ def test_serialize_carries_producer() -> None:
 
 def test_serialize_carries_artifacts_and_absences() -> None:
     serialized = serialize_trace(_full_trace())
-    # Canonical artifacts AND causal absences are carried (eval-flow L3).
+    # Canonical artifacts and causal absences both cross the boundary.
     assert serialized.values[INPUT_KEY] == _FULL_VALUES[INPUT_KEY]
     assert serialized.values["missing"] == _FULL_VALUES["missing"]
 
 
 def test_serialize_carries_step_facts() -> None:
     serialized = serialize_trace(_full_trace())
-    assert serialized.step_facts == {
-        "parse": {"reason": "unbalanced parens"}
-    }
+    assert serialized.step_facts == {"parse": {"reason": "unbalanced parens"}}
 
 
 # --- round-trip through Trace ----------------------------------------
@@ -92,7 +90,7 @@ def test_deserialize_restores_step_facts() -> None:
 
 
 def test_round_trip_is_value_equal_for_external_trace() -> None:
-    # Round-trip must be value-equal (S3).
+    # Round-trips preserve canonical values and producer identity.
     trace = Trace(
         values={
             INPUT_KEY: TextArtifact(text="in"),

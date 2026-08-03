@@ -1,11 +1,9 @@
-"""Definition contracts (plan section: ``definition.py``).
+"""Metric-definition contracts.
 
 Covers ``MetricQuestion`` / ``MetricsDefinition`` — frozen, equality-based
 comparability, the unique ``(metric, on, settings)`` validator, settings as
 part of identity, and ``metrics_definition_hash`` determinism.
 
-``dr_code.metrics`` is imported lazily inside each test so the suite collects
-cleanly against the missing package and fails hard (never skips) when absent.
 """
 
 from __future__ import annotations
@@ -43,6 +41,7 @@ def _definition(
 # ===========================================================================
 # MetricQuestion.
 # ===========================================================================
+
 
 def test_metric_question_carries_metric_on_settings() -> None:
     question = _question()
@@ -122,6 +121,7 @@ def test_metric_question_settings_are_order_independent() -> None:
 # MetricsDefinition.
 # ===========================================================================
 
+
 def test_metrics_definition_carries_id_version_questions() -> None:
     from dr_code.metrics import MetricName
 
@@ -135,7 +135,9 @@ def test_metrics_definition_carries_id_version_questions() -> None:
     assert len(definition.questions) == 1
 
 
-def test_metrics_definition_field_set_is_exactly_id_version_questions() -> None:
+def test_metrics_definition_field_set_is_exactly_id_version_questions() -> (
+    None
+):
     from dr_code.metrics.definition import MetricsDefinition
 
     assert set(MetricsDefinition.model_fields) == {
@@ -195,12 +197,12 @@ def test_metrics_definition_json_round_trip_is_lossless() -> None:
 # Uniqueness of (metric, on, settings) triples.
 # ---------------------------------------------------------------------------
 
+
 def test_duplicate_metric_on_settings_triple_is_rejected() -> None:
     """Distinct questions need a distinct triple; a duplicate is a wiring bug.
 
-    The import is resolved before the assertion so the test fails hard
-    (ModuleNotFoundError) against the missing package rather than swallowing
-    the import error inside ``pytest.raises``.
+    Resolve the import before ``pytest.raises`` so an import failure cannot be
+    mistaken for the expected validation failure.
     """
     from dr_code.metrics import MetricName  # noqa: F401 — resolve before assert
 
@@ -243,6 +245,7 @@ def test_same_metric_on_key_different_settings_is_allowed() -> None:
 # ===========================================================================
 # metrics_definition_hash (M2) — deterministic, content-addressed identity.
 # ===========================================================================
+
 
 def test_definition_hash_is_a_nonempty_string() -> None:
     from dr_code.metrics import metrics_definition_hash

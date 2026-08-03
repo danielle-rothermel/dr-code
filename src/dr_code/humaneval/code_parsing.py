@@ -71,10 +71,6 @@ class CandidateSelectionTrace(BaseModel):
 class ExtractionTrace(BaseModel):
     """How one submission was parsed, split into contract vs. diagnostic.
 
-    This trace is persisted, returned by the `/explain` HTTP boundary, and
-    rendered by the viewer, so its fields carry two different stability
-    promises:
-
     Product contract (stable; downstream consumers may depend on them):
         `profile`, `extraction_method`, `selected_candidate_index`,
         `extraction_error`. These name the *outcome* of parsing (which

@@ -40,7 +40,7 @@ def _flip_string_quotes(source: str) -> str:
 
 
 class ChangeQuoteStyle(Corruption):
-    """Flip double-quoted strings to single-quoted. Recovery is L2 ruff format."""
+    """Flip double-quoted strings to equivalent single-quoted strings."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.CHANGE_QUOTE_STYLE
 

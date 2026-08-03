@@ -1,7 +1,7 @@
-"""Example policy consumer contracts (plan section: ``policy_example``).
+"""Example policy-consumer contracts.
 
 ``dr_code.metrics.policy_example`` is the example *consumer*: it derives a
-``SubmissionOutcome``-equivalent verdict from a ``code_test`` record (plan S5).
+``SubmissionOutcome``-equivalent verdict from a ``code_test`` record.
 Facts stay in records; thresholds and verdicts stay in the consumer.
 
 The contract is **outcome parity** with
@@ -14,7 +14,6 @@ tested (PASSED, TESTS_FAILED, NO_TOP_LEVEL_FUNCTIONS, TIMED_OUT,
 EVALUATION_INCOMPLETE). Pre-extraction outcomes (EMPTY_SUBMISSION,
 EXTRACTION_FAILED) are upstream of ``code_test`` and out of its record scope.
 
-``dr_code.metrics`` is imported lazily inside each test.
 """
 
 from __future__ import annotations
@@ -91,6 +90,7 @@ def _assert_parity(submission, task, *, runner, timeout=5.0) -> None:
 # Outcome parity vs score_humaneval_submission.
 # ---------------------------------------------------------------------------
 
+
 def test_passed_outcome_parity(task, good_submission, local_runner) -> None:
     _assert_parity(good_submission, task, runner=local_runner)
     record = _code_test_record(
@@ -153,6 +153,7 @@ def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
 # ---------------------------------------------------------------------------
 # Facts stay in records; verdicts stay in the consumer.
 # ---------------------------------------------------------------------------
+
 
 def test_code_test_record_carries_no_verdict_fields(
     task, good_submission, local_runner

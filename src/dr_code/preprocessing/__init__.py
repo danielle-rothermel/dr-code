@@ -1,13 +1,12 @@
 """Preprocessing: atomic, declared steps over typed artifacts.
 
-Rebuilds the code-extraction pipeline as one-operation-per-step so a
-``PreprocessingDefinition`` chooses exactly which operations run. The
-runner produces a ``Trace`` from the ``dr_code.trace`` boundary-contract
-package.
+Each ``PreprocessingDefinition`` chooses an ordered sequence of operations.
+The runner applies those operations and records their artifacts, absences,
+facts, and producer identity in a ``dr_code.trace.Trace``.
 
 Core functions (``text_transforms``, ``text_analysis``, ``code_analysis``)
-are reused as-is as step bodies; import inference lives here in
-``preprocessing.import_inference`` and the old pipeline delegates to it.
+provide step bodies. ``preprocessing.import_inference`` owns the import repair,
+inference, and deduplication logic used by preprocessing and HumanEval parsing.
 """
 
 from __future__ import annotations

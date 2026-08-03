@@ -1,9 +1,8 @@
-"""Old-pipeline import inference — delegates to the preprocessing package.
+"""HumanEval import inference backed by the preprocessing implementation.
 
-The implementation now lives in ``dr_code.preprocessing.import_inference``.
-This module preserves the public surface the old pipeline depends on
-(``infer_necessary_imports``, ``IMPORT_ALIAS_MAP``) so its callers are
-unchanged; the shared fix to bound-name collection flows through here too.
+``infer_necessary_imports`` and ``IMPORT_ALIAS_MAP`` expose the import handling
+used by HumanEval parsing. Their implementation is shared with the atomic
+preprocessing steps in ``dr_code.preprocessing.import_inference``.
 
 The delegation is deferred to call time to avoid an import cycle: the
 preprocessing package's ``definitions`` module imports coordinate constants
@@ -14,7 +13,7 @@ from __future__ import annotations
 
 
 def infer_necessary_imports(source: str) -> str:
-    """Repair, infer, then dedupe imports — the full old-pipeline pass."""
+    """Repair, infer, then deduplicate imports in ``source``."""
     from dr_code.preprocessing.import_inference import (
         infer_necessary_imports as _impl,
     )
@@ -24,7 +23,7 @@ def infer_necessary_imports(source: str) -> str:
 
 def __getattr__(name: str) -> object:
     # ``IMPORT_ALIAS_MAP`` is served lazily (same cycle constraint) while
-    # staying importable from this module for old-pipeline callers. It is
+    # staying importable from this module for HumanEval callers. It is
     # kept out of ``__all__`` because it is not a static module binding.
     if name == "IMPORT_ALIAS_MAP":
         from dr_code.preprocessing.import_inference import IMPORT_ALIAS_MAP

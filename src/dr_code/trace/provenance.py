@@ -10,7 +10,7 @@ EXTERNAL_PRODUCER_ID: Final = "external"
 
 
 class TraceProducer(FrozenModel):
-    """Identifies the producing definition, or `external` (eval-flow L2)."""
+    """Identifies the producing definition or an external producer."""
 
     # preprocessing definition_id, or "external"
     producer_id: str

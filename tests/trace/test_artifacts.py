@@ -1,4 +1,4 @@
-"""Acceptance tests for the Artifact union, Absent, and derived views."""
+"""Artifact-union, absence, and derived-view contracts."""
 
 from __future__ import annotations
 
@@ -19,9 +19,7 @@ from dr_code.trace import (
     parsed_module,
 )
 
-# One representative instance of every artifact kind. The plan gives
-# these models in full, so they must construct from their declared
-# fields.
+# One representative instance of every artifact kind.
 ARTIFACT_CASES = [
     TextArtifact(text="hello"),
     CodeArtifact(source="x = 1\n"),
@@ -47,7 +45,7 @@ def test_code_artifact_carries_source_only() -> None:
 
 def test_code_candidate_set_is_ordered_tuple() -> None:
     art = CodeCandidateSetArtifact(candidates=("first", "second"))
-    # Ordered candidates, conservative first (P-S2).
+    # Candidate order is preserved, with conservative candidates first.
     assert art.candidates == ("first", "second")
     assert art.kind == ArtifactKind.CODE_CANDIDATE_SET
 
@@ -164,8 +162,7 @@ def test_parsed_module_returns_ast_module() -> None:
 
 
 def test_parsed_module_is_a_function_not_a_field() -> None:
-    # Derived views are module functions, never fields (S3): the model
-    # must not store a parsed AST field.
+    # Derived views are module functions; artifacts do not store parsed ASTs.
     assert callable(parsed_module)
     assert "parsed_module" not in CodeArtifact.model_fields
     assert "ast" not in CodeArtifact.model_fields

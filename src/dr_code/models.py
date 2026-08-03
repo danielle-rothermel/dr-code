@@ -6,10 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class FrozenModel(BaseModel):
-    """Immutable, hashable pydantic base for definitions and persisted artifacts.
-
-    Moved verbatim from synthetic/models.py; synthetic now imports it from here.
-    """
+    """Immutable, hashable base for definitions and persisted artifacts."""
 
     model_config = ConfigDict(
         frozen=True,

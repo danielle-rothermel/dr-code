@@ -1,12 +1,9 @@
-"""Pytest fixtures for the ``dr_code.metrics`` acceptance suite.
+"""Pytest fixtures for the ``dr_code.metrics`` contract tests.
 
 Pure builders and runner fakes live in ``metrics.helpers``; this module only
-wires up pytest fixtures (auto-discovered by directory). The planned
-``dr_code.metrics`` package does not exist yet, so this file imports only from
-packages that do (``dr_code.trace``, ``dr_code.humaneval.*``, ``metrics.helpers``).
-Every symbol from ``dr_code.metrics`` is imported lazily inside the test that
-exercises it, so the suite collects cleanly against the missing package and
-fails hard — never skips — when it is absent.
+wires up pytest fixtures discovered from this directory. Metrics symbols are
+imported by the tests that exercise them; shared fixtures depend only on
+``dr_code.trace``, ``dr_code.humaneval.*``, and ``metrics.helpers``.
 
 Nothing here touches a real container runtime.
 """

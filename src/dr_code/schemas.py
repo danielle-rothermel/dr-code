@@ -1,7 +1,7 @@
-"""Dump JSON Schemas for library models (input for generated TS types).
+"""CLI for printing library JSON Schema bundles.
 
-The viewer package generates TypeScript types from this output instead of
-minting facade endpoints for library-only models (ADR 0002).
+The ``humaneval`` command emits validation schemas for ``HumanEvalTask`` and
+``EvaluationCaseSummary`` as one JSON object.
 """
 
 import json
