@@ -134,8 +134,8 @@ def test_named_definitions_are_mutually_distinct() -> None:
 
 
 def test_best_effort_and_field_marker_share_filter_chain_order() -> None:
-    # Both run plain-literal -> code-repr -> compilable in that order; the
-    # field-marker path is no longer missing filter_code_repr.
+    # Both definitions run the same filter chain in the same order:
+    # plain-literal -> code-repr -> compilable.
     be = resolve_preprocessing_definition(
         definition_id=BEST_EFFORT_ID,
         version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,

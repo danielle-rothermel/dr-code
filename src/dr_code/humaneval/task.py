@@ -191,7 +191,7 @@ class EvaluationTaskResult(BaseModel):
             and result.status is not EvaluationCaseStatus.PASSED
         ]
 
-    # PARITY TWIN: duplicated by the coverage_complete value in
+    # PARITY COORDINATION: duplicated by the coverage_complete value in
     # ``dr_code.metrics.operators.code_test.CodeTest.compute``. The metrics
     # parity test keeps both active scoring paths equal.
     @computed_field

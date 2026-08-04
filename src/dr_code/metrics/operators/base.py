@@ -44,6 +44,12 @@ class MetricOperator(Generic[SettingsT]):
     """Question implementation managed by the metrics engine."""
 
     NAME: ClassVar[MetricName]
+    # Manual component version. Bump when the operator changes computed
+    # facts, execution requests, applicability, defaults, or failure
+    # behavior; not for comments, formatting, or behavior-preserving
+    # refactors. Stays ``"0"`` while development mode
+    # (``[tool.dr-code.component-versioning]`` in ``pyproject.toml``) is
+    # enabled.
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     ACCEPTED_INPUTS: ClassVar[frozenset[ArtifactKind]]

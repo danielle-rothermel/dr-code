@@ -28,6 +28,12 @@ dev = [
     "ty>=0.0.51",
 ]
 
+# Development mode: every component is pinned at initial-version while
+# semantics are in flux. This marker is read only by repository contract
+# tests (tests/test_component_versioning.py); production code never imports
+# or branches on it, and it never appears in persisted artifacts. Development
+# mode ends at the first tagged release, at which point this table is removed
+# and real per-component versioning begins.
 [tool.dr-code.component-versioning]
 development-mode = true
 initial-version = "0"

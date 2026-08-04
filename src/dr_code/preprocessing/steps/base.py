@@ -64,6 +64,11 @@ class Step(Generic[SettingsT]):
     """
 
     NAME: ClassVar[StepName]
+    # Manual component version. Bump when the step changes accepted inputs,
+    # produced outputs or facts, defaults, or failure behavior; not for
+    # comments, formatting, or behavior-preserving refactors. Stays ``"0"``
+    # while development mode (``[tool.dr-code.component-versioning]`` in
+    # ``pyproject.toml``) is enabled.
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     OUTPUT: ClassVar[ArtifactKind]

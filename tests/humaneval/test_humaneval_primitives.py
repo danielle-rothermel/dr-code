@@ -57,6 +57,24 @@ from dr_code.humaneval.sandbox import (
     SandboxRunner,
     SandboxTimeoutError,
 )
+from dr_code.synthetic.humaneval_loader import SNAPSHOT_REL_PATH
+
+
+SNAPSHOT_PATH = Path(__file__).resolve().parents[2] / SNAPSHOT_REL_PATH
+
+
+@pytest.fixture(scope="module")
+def raw_snapshot() -> HumanEvalRawRowsSnapshot:
+    return HumanEvalRawRowsSnapshot.model_validate_json(
+        SNAPSHOT_PATH.read_text(encoding="utf-8")
+    )
+
+
+@pytest.fixture(scope="module")
+def snapshot_tasks() -> list[HumanEvalTask]:
+    return parse_human_eval_dataset(
+        load_human_eval_rows(snapshot_path=SNAPSHOT_PATH)
+    )
 
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
@@ -235,22 +253,18 @@ def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
     ]
 
 
-def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
-    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
-    raw_snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
-        snapshot_path.read_text(encoding="utf-8")
-    )
+def test_raw_row_snapshot_rehydrates_byte_equal_checks(
+    raw_snapshot: HumanEvalRawRowsSnapshot,
+    snapshot_tasks: list[HumanEvalTask],
+) -> None:
     assert raw_snapshot.header.override_set == HUMAN_EVAL_OVERRIDE_SET
+    assert [task.task_id for task in snapshot_tasks] == [
+        row.task_id for row in raw_snapshot.rows
+    ]
+
     fresh_tasks = parse_human_eval_dataset(
         [row.model_dump(mode="json") for row in raw_snapshot.rows]
     )
-    snapshot_tasks = parse_human_eval_dataset(
-        load_human_eval_rows(snapshot_path=snapshot_path)
-    )
-
-    assert [task.task_id for task in snapshot_tasks] == [
-        task.task_id for task in fresh_tasks
-    ]
     for fresh_task, snapshot_task in zip(
         fresh_tasks,
         snapshot_tasks,
@@ -261,11 +275,9 @@ def test_raw_row_snapshot_rehydrates_byte_equal_checks() -> None:
         )
 
 
-def test_raw_row_snapshot_rejects_structural_override_set_mismatch() -> None:
-    snapshot_path = Path("tests/corpus/humanevalplus_snapshot.json")
-    raw_snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
-        snapshot_path.read_text(encoding="utf-8")
-    )
+def test_raw_row_snapshot_rejects_structural_override_set_mismatch(
+    raw_snapshot: HumanEvalRawRowsSnapshot,
+) -> None:
     mismatched_header = raw_snapshot.header.model_copy(
         update={
             "override_set": raw_snapshot.header.override_set.model_copy(

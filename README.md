@@ -41,6 +41,9 @@ other runtime artifacts. Package versions, schema versions, dependency
 versions, dataset revisions, and byte-integrity digests are separate
 contracts.
 
+Development mode ends at the first tagged release, at which point the marker
+is removed and real per-component versioning begins.
+
 After development mode ends, component versions remain `"0"` until that
 specific component's semantics change. Bump the owning component when:
 
