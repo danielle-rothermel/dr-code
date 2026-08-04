@@ -39,7 +39,9 @@ TOTAL_TRANSFORMS = (
 )
 
 
-@pytest.mark.parametrize("transform", TOTAL_TRANSFORMS, ids=lambda fn: fn.__name__)
+@pytest.mark.parametrize(
+    "transform", TOTAL_TRANSFORMS, ids=lambda fn: fn.__name__
+)
 @pytest.mark.parametrize("source", GARBAGE_INPUTS)
 def test_text_transforms_are_total(transform, source: str) -> None:
     assert isinstance(transform(source), str)
@@ -117,15 +119,14 @@ def test_recover_escaped_python_preserves_string_literal_escapes() -> None:
     )
 
     assert recover_escaped_python(source) == (
-        "def separators(values):\n"
-        '\treturn "\\n".join(values), "\\t", "\\r"'
+        'def separators(values):\n\treturn "\\n".join(values), "\\t", "\\r"'
     )
 
 
 def test_drop_if_name_splits_before_main_guard() -> None:
-    assert drop_if_name("def f():\n    return 1\nif __name__ == '__main__':") == [
-        "def f():\n    return 1\n"
-    ]
+    assert drop_if_name(
+        "def f():\n    return 1\nif __name__ == '__main__':"
+    ) == ["def f():\n    return 1\n"]
 
 
 def test_drop_after_last_return_truncates_trailing_lines() -> None:

@@ -80,7 +80,7 @@ class NormalizeSmartQuotes(CandidateMapStep):
     """Convert smart quotes to ASCII outside ASCII-quoted string literals."""
 
     NAME: ClassVar[StepName] = StepName.NORMALIZE_SMART_QUOTES
-    VERSION: ClassVar[str] = "2"
+    VERSION: ClassVar[str] = "0"
 
     def apply_to_candidate(self, source: str) -> str:
         return _normalize_outside_ascii_strings(source)

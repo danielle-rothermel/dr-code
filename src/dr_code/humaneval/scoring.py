@@ -21,8 +21,13 @@ from pydantic import (
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
-    CodeParserProfile,
     extract_code_with_profile,
+)
+from dr_code.humaneval.profiles import (
+    HUMANEVAL_SCORING_PROFILE_ID,
+    HUMANEVAL_SCORING_PROFILE_VERSION,
+    HumanEvalScoringProfile,
+    resolve_humaneval_scoring_profile,
 )
 from dr_code.humaneval.sandbox import (
     SandboxRunner,
@@ -34,6 +39,7 @@ from dr_code.humaneval.task import (
     EvaluationTaskResult,
     HumanEvalTask,
 )
+from dr_code.models import FrozenModel
 
 UNKNOWN_FAILURE_CLASS = "unknown"
 
@@ -48,15 +54,14 @@ class SubmissionOutcome(StrEnum):
     TIMED_OUT = "timed_out"
 
 
-class CompletedScore(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CompletedScore(FrozenModel):
     kind: Literal["completed"] = "completed"
     raw_submission: str
     extraction: CodeExtractionResult
     outcome: SubmissionOutcome
     score: float
     evaluation: EvaluationTaskResult | None = None
+    scoring_profile: HumanEvalScoringProfile
 
 
 class HarnessFailureCause(BaseModel):
@@ -66,15 +71,14 @@ class HarnessFailureCause(BaseModel):
     message: StrictStr
 
 
-class HarnessFailure(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class HarnessFailure(FrozenModel):
     kind: Literal["harness_failure"] = "harness_failure"
     raw_submission: str
     extraction: CodeExtractionResult | None = None
     evaluation: EvaluationTaskResult | None = None
     cause: HarnessFailureCause
     failure_class: StrictStr
+    scoring_profile: HumanEvalScoringProfile
 
 
 HumanEvalSubmissionScore = Annotated[
@@ -102,17 +106,21 @@ def score_humaneval_submission(
     *,
     raw_submission: str,
     task: HumanEvalTask,
-    parser_profile: CodeParserProfile,
-    timeout_seconds: float,
+    scoring_profile_id: str = HUMANEVAL_SCORING_PROFILE_ID,
+    scoring_profile_version: str = HUMANEVAL_SCORING_PROFILE_VERSION,
     run_in_sandbox: SandboxRunner = run_python_in_sandbox,
 ) -> HumanEvalSubmissionScore:
-    """Score one submission under a parser profile."""
+    """Score one submission under an exact registered scoring profile."""
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
+    scoring_profile = resolve_humaneval_scoring_profile(
+        scoring_profile_id=scoring_profile_id,
+        scoring_profile_version=scoring_profile_version,
+    )
 
     extraction = extract_code_with_profile(
         raw_submission,
-        profile=parser_profile,
+        profile=scoring_profile.parser_profile,
     )
     if extraction.extracted_code is None:
         outcome = extraction_failure_outcome(extraction)
@@ -120,15 +128,16 @@ def score_humaneval_submission(
             raw_submission=raw_submission,
             extraction=extraction,
             outcome=outcome,
-            score=0.0,
+            score=scoring_profile.metrics_profile.failed_score,
             evaluation=None,
+            scoring_profile=scoring_profile,
         )
 
     try:
         evaluation = evaluate_human_eval_code(
             task=task,
             candidate_code=extraction.extracted_code,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=scoring_profile.timeout_seconds,
             candidate_ast=extraction.parsed_candidate,
             run_in_sandbox=run_in_sandbox,
         )
@@ -139,6 +148,7 @@ def score_humaneval_submission(
             evaluation=exc.evaluation,
             cause=harness_failure_cause(exc),
             failure_class=UNKNOWN_FAILURE_CLASS,
+            scoring_profile=scoring_profile,
         )
     except Exception as exc:
         return HarnessFailure(
@@ -150,6 +160,7 @@ def score_humaneval_submission(
                 message=str(exc),
             ),
             failure_class=UNKNOWN_FAILURE_CLASS,
+            scoring_profile=scoring_profile,
         )
 
     outcome = evaluation_outcome(evaluation)
@@ -157,8 +168,13 @@ def score_humaneval_submission(
         raw_submission=raw_submission,
         extraction=extraction,
         outcome=outcome,
-        score=1.0 if outcome is SubmissionOutcome.PASSED else 0.0,
+        score=(
+            scoring_profile.metrics_profile.passed_score
+            if outcome is SubmissionOutcome.PASSED
+            else scoring_profile.metrics_profile.failed_score
+        ),
         evaluation=evaluation,
+        scoring_profile=scoring_profile,
     )
 
 

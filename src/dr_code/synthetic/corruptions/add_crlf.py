@@ -15,6 +15,7 @@ class AddCrlf(Corruption):
     """Use Windows-style CRLF line endings."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_CRLF
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         # Normalize anything to \n first, then convert to \r\n.

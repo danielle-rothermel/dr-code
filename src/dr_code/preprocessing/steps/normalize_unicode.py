@@ -17,7 +17,7 @@ class NormalizeUnicode(Step):
     """
 
     NAME: ClassVar[StepName] = StepName.NORMALIZE_UNICODE
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
 

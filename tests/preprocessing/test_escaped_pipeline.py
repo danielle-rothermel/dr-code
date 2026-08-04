@@ -17,12 +17,14 @@ from dr_code.preprocessing.definition import (
     StepSpec,
 )
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.runner import run_preprocessing
+from dr_code.preprocessing.runner import (
+    run_external_preprocessing as run_preprocessing,
+)
 from dr_code.trace import OUTPUT_KEY, CodeArtifact, TextArtifact, is_absent
 
 
 def _escaped_pipeline_definition() -> PreprocessingDefinition:
-    """Full normalization + extraction + selection, matching the old path."""
+    """Full normalization, extraction, and selection definition."""
 
     def _spec(name: str, step: StepName) -> StepSpec:
         return StepSpec(instance_name=name, step=step)
@@ -68,10 +70,31 @@ def test_escaped_pipeline_preserves_string_literal_escape() -> None:
 
 
 @pytest.mark.parametrize(
+    "source",
+    [
+        # Fully escaped and fenced.
+        r"Intro\n```python\ndef f():\n    return 1\n```",
+        # Fully escaped and unfenced, including escaped indentation.
+        r"Explanation:\ndef f():\n\treturn 1",
+        # Real newlines around an escaped code region.
+        "Intro\n" + r"```python\ndef f():\n    return 1\n```",
+        # The entire response is a JSON-quoted string.
+        r'"Intro\n```python\ndef f():\n    return 1\n```"',
+    ],
+    ids=["escaped-fenced", "escaped-unfenced", "mixed", "json-string"],
+)
+def test_escaped_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
+    output = _output_source(source)
+    assert "def f():" in output.source
+    # Round-trip: recovery is only correct if the recovered code compiles.
+    assert validate_python_source(output.source).compile_ok
+
+
+@pytest.mark.parametrize(
     ("source", "expected"),
     [
         (
-            r'Intro\n```python\ndef join_lines(lines):'
+            r"Intro\n```python\ndef join_lines(lines):"
             r'\n    return "\n".join(lines)\n```',
             'def join_lines(lines):\n    return "\\n".join(lines)',
         ),
@@ -80,17 +103,30 @@ def test_escaped_pipeline_preserves_string_literal_escape() -> None:
             'def join_lines(lines):\n    return "\\n".join(lines)',
         ),
         (
-            r'Intro\r```python\rdef join_tabs(parts):'
+            r"Intro\r```python\rdef join_tabs(parts):"
             r'\r\treturn "\t".join(parts)\r```',
             'def join_tabs(parts):\n\treturn "\\t".join(parts)',
         ),
         (
-            r'Intro\r\n```python\r\ndef join_cr(parts):'
+            r"Intro\r\n```python\r\ndef join_cr(parts):"
+            r'\r\n\treturn "\r".join(parts)\n```',
+            'def join_cr(parts):\n\treturn "\\r".join(parts)',
+        ),
+        # An escaped CRLF intro followed by an LF-escaped fence opener: the
+        # two escaped line-ending forms mix within one payload.
+        (
+            r"Intro\r\n```python\ndef join_cr(parts):"
             r'\r\n\treturn "\r".join(parts)\n```',
             'def join_cr(parts):\n\treturn "\\r".join(parts)',
         ),
     ],
-    ids=["fenced_lf", "unfenced_lf", "cr_tab", "crlf_cr"],
+    ids=[
+        "fenced_lf",
+        "unfenced_lf",
+        "cr_tab",
+        "crlf_cr",
+        "mixed_endings_fence_lf",
+    ],
 )
 def test_escaped_pipeline_preserves_python_string_literals(
     source: str, expected: str
@@ -102,8 +138,7 @@ def test_escaped_pipeline_preserves_python_string_literals(
 
 def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
     expected = (
-        'def separators(values):\n'
-        '    return "\\n".join(values), "\\t", "\\r"'
+        'def separators(values):\n    return "\\n".join(values), "\\t", "\\r"'
     )
     source = json.dumps(f"Intro\n```python\n{expected}\n```")
     output = _output_source(source)

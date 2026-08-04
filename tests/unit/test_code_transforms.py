@@ -40,7 +40,9 @@ def test_code_transforms_raise_syntax_error_on_unparseable_input(
         transform(UNPARSEABLE)
 
 
-def test_strip_docstrings_removes_module_function_and_class_docstrings() -> None:
+def test_strip_docstrings_removes_module_function_and_class_docstrings() -> (
+    None
+):
     source = (
         '"""Module doc."""\n'
         "class C:\n"
@@ -83,7 +85,9 @@ def test_strip_type_annotations_in_tree_can_keep_selected_sites() -> None:
 
 
 def test_alpha_rename_locals_renames_params_and_locals_by_default() -> None:
-    out = alpha_rename_locals("def f(count):\n    total = count + 1\n    return total\n")
+    out = alpha_rename_locals(
+        "def f(count):\n    total = count + 1\n    return total\n"
+    )
     assert "def f(_v0):" in out
     assert "_v1 = _v0 + 1" in out
 
@@ -98,7 +102,9 @@ def test_alpha_rename_locals_can_preserve_params() -> None:
 
 
 def test_rename_locals_in_function_applies_mapping_to_one_function() -> None:
-    tree = ast.parse("def f(count):\n    total = count + 1\n    return total\n")
+    tree = ast.parse(
+        "def f(count):\n    total = count + 1\n    return total\n"
+    )
     function = tree.body[0]
     assert isinstance(function, ast.FunctionDef)
 
@@ -119,7 +125,9 @@ def test_alpha_rename_locals_in_tree_matches_source_transform() -> None:
 
 
 def test_alpha_rename_locals_preserves_module_level_names() -> None:
-    out = alpha_rename_locals("import math\n\ndef f(x):\n    return math.sqrt(x)\n")
+    out = alpha_rename_locals(
+        "import math\n\ndef f(x):\n    return math.sqrt(x)\n"
+    )
     assert "math.sqrt" in out
     assert "def f(" in out
 

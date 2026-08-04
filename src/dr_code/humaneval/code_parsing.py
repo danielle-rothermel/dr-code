@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import re
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import (
@@ -16,6 +17,7 @@ from pydantic import (
 )
 
 from dr_code.code_analysis import validate_python_source_with_ast
+from dr_code.models import FrozenModel
 from dr_code.humaneval.code_extraction import (
     ExtractionTraceNode,
     TraceCheckVerdict,
@@ -25,12 +27,8 @@ from dr_code.humaneval.code_extraction import (
 
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID = "humaneval-best-effort"
 STRICT_FIELD_MARKER_PARSER_PROFILE_ID = "humaneval-field-marker"
-LEGACY_PARSER_PROFILE_VERSION = "v1"
-PARSER_PROFILE_VERSION = "v2"
-SUPPORTED_PARSER_PROFILE_VERSIONS = {
-    LEGACY_PARSER_PROFILE_VERSION,
-    PARSER_PROFILE_VERSION,
-}
+BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION = "0"
+STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION = "0"
 FIELD_MARKER_NAME = "code"
 FIELD_MARKER_RE = re.compile(
     r"\[\[\s*##\s*(?P<field>[A-Za-z_][A-Za-z0-9_]*)\s*##\s*\]\]"
@@ -44,9 +42,7 @@ class ExtractionMethod(StrEnum):
     FIELD_MARKER = "field_marker"
 
 
-class CodeParserProfile(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CodeParserProfile(FrozenModel):
     profile_id: StrictStr
     version: StrictStr
 
@@ -70,10 +66,6 @@ class CandidateSelectionTrace(BaseModel):
 
 class ExtractionTrace(BaseModel):
     """How one submission was parsed, split into contract vs. diagnostic.
-
-    This trace is persisted, returned by the `/explain` HTTP boundary, and
-    rendered by the viewer, so its fields carry two different stability
-    promises:
 
     Product contract (stable; downstream consumers may depend on them):
         `profile`, `extraction_method`, `selected_candidate_index`,
@@ -126,11 +118,21 @@ class CodeExtractionResult(BaseModel):
 
 BEST_EFFORT_HUMANEVAL_PARSER_PROFILE = CodeParserProfile(
     profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    version=PARSER_PROFILE_VERSION,
+    version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
 )
 STRICT_FIELD_MARKER_PARSER_PROFILE = CodeParserProfile(
     profile_id=STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
-    version=PARSER_PROFILE_VERSION,
+    version=STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION,
+)
+
+_PARSER_PROFILES = MappingProxyType(
+    {
+        (profile.profile_id, profile.version): profile
+        for profile in (
+            BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
+            STRICT_FIELD_MARKER_PARSER_PROFILE,
+        )
+    }
 )
 
 
@@ -139,19 +141,27 @@ def resolve_parser_profile(
     parser_profile_id: str,
     parser_version: str,
 ) -> CodeParserProfile:
-    if parser_version not in SUPPORTED_PARSER_PROFILE_VERSIONS:
+    profile = _PARSER_PROFILES.get((parser_profile_id, parser_version))
+    if profile is None:
         raise ValueError(
-            f"unsupported parser profile version: {parser_version}"
+            f"unsupported parser profile: {parser_profile_id}@{parser_version}"
         )
-    if parser_profile_id not in {
-        BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-        STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
-    }:
-        raise ValueError(f"unsupported parser profile id: {parser_profile_id}")
-    return CodeParserProfile(
-        profile_id=parser_profile_id,
-        version=parser_version,
+    return profile
+
+
+def _registered_parser_profile(
+    profile: CodeParserProfile,
+) -> CodeParserProfile:
+    registered = resolve_parser_profile(
+        parser_profile_id=profile.profile_id,
+        parser_version=profile.version,
     )
+    if profile != registered:
+        raise ValueError(
+            "parser profile does not match its registered coordinate: "
+            f"{profile.profile_id}@{profile.version}"
+        )
+    return registered
 
 
 def extract_code_with_profile(
@@ -161,6 +171,7 @@ def extract_code_with_profile(
 ) -> CodeExtractionResult:
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
+    profile = _registered_parser_profile(profile)
     if profile.profile_id == BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID:
         return extract_best_effort_code(raw_submission, profile=profile)
     if profile.profile_id == STRICT_FIELD_MARKER_PARSER_PROFILE_ID:
@@ -178,10 +189,10 @@ def extract_best_effort_code(
 ) -> CodeExtractionResult:
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
+    profile = _registered_parser_profile(profile)
     cleaning = apply_cleaning_with_trace(
         raw_submission,
         apply_dedent=True,
-        unescape_fallback=profile.version != LEGACY_PARSER_PROFILE_VERSION,
     )
     if not raw_submission.strip():
         trace = build_extraction_trace(
@@ -312,6 +323,7 @@ def extract_strict_field_marker_code(
 ) -> CodeExtractionResult:
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
+    profile = _registered_parser_profile(profile)
     field_value = field_marker_value(
         raw_submission,
         field_name=FIELD_MARKER_NAME,

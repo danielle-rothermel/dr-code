@@ -22,7 +22,7 @@ class ReturnAll(Step):
     """
 
     NAME: ClassVar[StepName] = StepName.RETURN_ALL
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 

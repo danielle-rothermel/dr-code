@@ -7,11 +7,9 @@ import unicodedata
 
 import pytest
 
-from dr_code.code_analysis import validate_python_source
 from dr_code.humaneval.import_inference import infer_necessary_imports
-from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
-from dr_code.preprocessing.steps.base import Step, StepOutput
+from dr_code.preprocessing.steps.base import Step
 from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
 )
@@ -130,9 +128,7 @@ def test_step_is_deterministic(step_cls: type[Step]) -> None:
 def _sample_for(step_cls: type[Step]):
     """An input artifact of the step's INPUT kind, processable by the step."""
     if step_cls.INPUT.value == "text":
-        return TextArtifact(
-            text="```python\ndef f():\n    return 1\n```\n"
-        )
+        return TextArtifact(text="```python\ndef f():\n    return 1\n```\n")
     if step_cls.INPUT.value == "code":
         return CodeArtifact(source="def f():\n    return 1\n")
     return CodeCandidateSetArtifact(
@@ -152,9 +148,7 @@ def test_normalize_line_endings_wraps_function() -> None:
 def test_normalize_unicode_applies_nfkc() -> None:
     raw = "ｄｅｆ"
     out = NormalizeUnicode().apply(TextArtifact(text=raw))
-    assert out.value == TextArtifact(
-        text=unicodedata.normalize("NFKC", raw)
-    )
+    assert out.value == TextArtifact(text=unicodedata.normalize("NFKC", raw))
 
 
 def test_normalize_smart_quotes_converts_delimiters() -> None:
@@ -181,7 +175,7 @@ def test_normalize_smart_quotes_comment_apostrophe_not_a_delimiter() -> None:
 
 def test_normalize_smart_quotes_converts_delimiters_after_comment() -> None:
     src = "# don't\ndef f():\n    return “x”"
-    expected = "# don't\ndef f():\n    return \"x\""
+    expected = '# don\'t\ndef f():\n    return "x"'
     cs = CodeCandidateSetArtifact(candidates=(src,))
     out = NormalizeSmartQuotes().apply(cs)
     assert out.value == CodeCandidateSetArtifact(candidates=(expected,))
@@ -198,9 +192,7 @@ def test_expand_tabs_uses_tab_width_setting() -> None:
 def test_strip_trailing_whitespace_wraps_function() -> None:
     raw = "x = 1  \ny = 2\t\n"
     out = StripTrailingWhitespace().apply(TextArtifact(text=raw))
-    assert out.value == TextArtifact(
-        text=strip_trailing_whitespace(raw)
-    )
+    assert out.value == TextArtifact(text=strip_trailing_whitespace(raw))
 
 
 def test_collapse_blank_runs_wraps_function() -> None:
@@ -308,9 +300,7 @@ def test_import_step_sequence_equals_infer_necessary_imports(
 
 
 def test_filter_compilable_keeps_compilable() -> None:
-    cs = CodeCandidateSetArtifact(
-        candidates=("x = 1\n", "def broken(:\n")
-    )
+    cs = CodeCandidateSetArtifact(candidates=("x = 1\n", "def broken(:\n"))
     out = FilterCompilable().apply(cs)
     assert out.value.candidates == ("x = 1\n",)
     assert "rejected_1" in out.facts
@@ -318,18 +308,14 @@ def test_filter_compilable_keeps_compilable() -> None:
 
 
 def test_filter_plain_literal_drops_literals() -> None:
-    cs = CodeCandidateSetArtifact(
-        candidates=("[1, 2, 3]", "x = 1\n")
-    )
+    cs = CodeCandidateSetArtifact(candidates=("[1, 2, 3]", "x = 1\n"))
     out = FilterPlainLiteral().apply(cs)
     assert out.value.candidates == ("x = 1\n",)
     assert out.facts["rejected_0"] == "plain literal module"
 
 
 def test_filter_code_repr_drops_repr_assignments() -> None:
-    cs = CodeCandidateSetArtifact(
-        candidates=('code = "x = 1"', "x = 1\n")
-    )
+    cs = CodeCandidateSetArtifact(candidates=('code = "x = 1"', "x = 1\n"))
     out = FilterCodeRepr().apply(cs)
     assert out.value.candidates == ("x = 1\n",)
     assert out.facts["rejected_0"] == "code repr assignment"
@@ -403,13 +389,11 @@ def test_extract_candidates_tuple_subset_setting() -> None:
     assert out.facts["alternative"] == "markdown_wrapper"
 
 
-def test_extract_candidates_default_strategies_order() -> None:
-    assert DEFAULT_STRATEGIES == (
-        ExtractionStrategy.FENCED_BLOCKS,
-        ExtractionStrategy.MARKDOWN_WRAPPER,
-        ExtractionStrategy.ESCAPED_PYTHON,
-        ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER,
-    )
+def test_extract_candidates_default_settings_use_the_default_ladder() -> None:
+    # ``DEFAULT_STRATEGIES`` is the one source of truth for the ladder; the
+    # exact order is pinned by the persisted producer coordinate in
+    # ``test_runner``. Here it only has to be what unconfigured settings use.
+    assert ExtractCandidatesSettings().alternatives == DEFAULT_STRATEGIES
 
 
 def test_extract_candidates_escaped_markdown_wrapper_strategy() -> None:
@@ -443,7 +427,9 @@ def test_extract_candidates_empty_input_raises() -> None:
 
 
 def test_field_marker_extracts_code_field() -> None:
-    text = "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"
+    text = (
+        "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"
+    )
     out = FieldMarker().apply(TextArtifact(text=text))
     assert out.value.candidates == ("def f():\n    return 1",)
     assert out.facts["field_name"] == "code"
@@ -458,7 +444,7 @@ def test_field_marker_missing_raises() -> None:
 
 def test_field_marker_custom_field_name() -> None:
     text = "[[ ## solution ## ]]\nx = 1\n"
-    out = FieldMarker(
-        FieldMarkerSettings(field_name="solution")
-    ).apply(TextArtifact(text=text))
+    out = FieldMarker(FieldMarkerSettings(field_name="solution")).apply(
+        TextArtifact(text=text)
+    )
     assert out.value.candidates == ("x = 1",)

@@ -1,19 +1,18 @@
-"""Engine contracts (plan section: ``engine/engine.py``).
+"""Metrics-engine contracts.
 
-Covers the four engine promises (design L3) and the bind/plan/compute flow:
+Covers the bind, plan, execute, and compute flow:
 
 * bind-time ``WiringError`` on incompatible definitions, before any work;
 * totality — N questions ⇒ N records, in declaration order;
 * Absent ``on``/aux input ⇒ NOT_APPLICABLE record preserving the cause
-  (missing key is still a wiring error — design L2);
+  (a missing key remains a wiring error);
 * operator exception ⇒ OPERATOR_FAILURE record attributed to the metric;
 * infrastructure ``SandboxError`` raises (fail-closed);
 * candidate timeout is data, not infrastructure;
-* two-phase execution with content-hash request dedupe (X-S4);
-* determinism across fresh / deserialized / external traces (X-S2).
+* two-phase execution with equivalent-request deduplication;
+* equal answers across fresh, deserialized, and external traces.
 
-``dr_code.metrics`` is imported lazily inside each test. All execution goes
-through the injectable ``SandboxRunner`` seam — never a real container.
+All execution goes through the injectable ``SandboxRunner`` seam.
 """
 
 from __future__ import annotations
@@ -24,9 +23,12 @@ from dr_code.humaneval.sandbox import SandboxError, SandboxTimeoutError
 from dr_code.trace import (
     Absent,
     CodeArtifact,
+    ComponentCoordinate,
+    PreprocessingDefinitionCoordinate,
+    PreprocessingTraceProducer,
+    StepCoordinate,
     TextArtifact,
     Trace,
-    TraceProducer,
     WiringError,
     deserialize_trace,
     external_trace,
@@ -36,9 +38,28 @@ from dr_code.trace import (
 from metrics.helpers import code_test_trace, raising_runner
 
 
+def _preprocessing_producer() -> PreprocessingTraceProducer:
+    return PreprocessingTraceProducer(
+        definition=PreprocessingDefinitionCoordinate(
+            definition_id="pre",
+            version="test-version",
+            steps=(
+                StepCoordinate(
+                    instance_name="step",
+                    component=ComponentCoordinate(
+                        registered_name="normalize_unicode",
+                        version="0",
+                    ),
+                ),
+            ),
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
-# Definition helpers (lazy metrics imports inside).
+# Definition helpers.
 # ---------------------------------------------------------------------------
+
 
 def _definition(questions) -> object:
     from dr_code.metrics import MetricsDefinition
@@ -51,12 +72,15 @@ def _definition(questions) -> object:
 def _q(metric_name: str, on: str = "input", **settings) -> object:
     from dr_code.metrics import MetricName, MetricQuestion
 
-    return MetricQuestion(metric=MetricName(metric_name), on=on, settings=settings)
+    return MetricQuestion(
+        metric=MetricName(metric_name), on=on, settings=settings
+    )
 
 
 # ===========================================================================
 # Bind-time WiringError, before any work.
 # ===========================================================================
+
 
 def test_missing_on_key_is_a_wiring_error_before_any_work(
     counting_runner,
@@ -73,7 +97,10 @@ def test_missing_on_key_is_a_wiring_error_before_any_work(
 def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
     """ast_stats requires CODE; a TEXT key is a kind mismatch (bind-time)."""
     trace = external_trace(
-        {"input": TextArtifact(text="not code"), "output": TextArtifact(text="x")}
+        {
+            "input": TextArtifact(text="not code"),
+            "output": TextArtifact(text="x"),
+        }
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
@@ -81,24 +108,76 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
     assert counting_runner.call_count == 0
 
 
-def test_invalid_operator_settings_is_a_wiring_error(counting_runner) -> None:
-    """compressed_length requires a valid compression config; bad settings wire."""
+def test_record_reads_operator_declared_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.metrics.registry import REGISTRY
+
+    operator = REGISTRY["text_stats"]
+    monkeypatch.setattr(operator, "VERSION", "test-version")
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
-    definition = _definition(
-        [_q("compressed_length", compression={"method": "gzip", "level": 99})]
-    )  # gzip level out of range
-    with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
+
+    record = _extract(_definition([_q("text_stats")]), trace)[0]
+
+    assert record.metric_version == "test-version"
+
+
+def test_records_preserve_complete_metrics_definition_coordinates() -> None:
+    from dr_code.metrics import MetricRecord
+
+    trace = external_trace(
+        {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
+    )
+    text_stats = _q("text_stats")
+    leakage_a = _q("code_leakage", task_names=["a"])
+    leakage_b = _q("code_leakage", task_names=["b"])
+    baseline = _definition([text_stats, leakage_a])
+    reordered = _definition([leakage_a, text_stats])
+    changed_settings = _definition([text_stats, leakage_b])
+
+    baseline_record = _extract(baseline, trace)[0]
+    reordered_record = _extract(reordered, trace)[0]
+    changed_record = _extract(changed_settings, trace)[0]
+
+    assert baseline.definition_id == reordered.definition_id
+    assert baseline.version == reordered.version
+    assert {
+        baseline_record.metrics_definition,
+        reordered_record.metrics_definition,
+        changed_record.metrics_definition,
+    } == {baseline, reordered, changed_settings}
+
+    restored = MetricRecord.model_validate_json(
+        changed_record.model_dump_json()
+    )
+    assert restored == changed_record
+    assert restored.metrics_definition == changed_settings
+
+
+def test_invalid_operator_settings_fail_at_definition_boundary(
+    counting_runner,
+) -> None:
+    """Invalid settings cannot enter a metrics definition."""
+    with pytest.raises(Exception):
+        _q(
+            "compressed_length",
+            compression={"method": "gzip", "level": 99},
+        )
     assert counting_runner.call_count == 0
 
 
-def test_missing_auxiliary_key_is_a_wiring_error(task, counting_runner) -> None:
+def test_missing_auxiliary_key_is_a_wiring_error(
+    task, counting_runner
+) -> None:
     """code_test needs its task key; a key absent from the namespace is wiring."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=candidate), "output": CodeArtifact(source=candidate)}
+        {
+            "input": CodeArtifact(source=candidate),
+            "output": CodeArtifact(source=candidate),
+        }
     )
     definition = _definition([_q("code_test", on="input")])
     with pytest.raises(WiringError):
@@ -106,9 +185,14 @@ def test_missing_auxiliary_key_is_a_wiring_error(task, counting_runner) -> None:
     assert counting_runner.call_count == 0
 
 
-def test_batch_wiring_error_runs_no_sandbox_work(task, counting_runner) -> None:
+def test_batch_wiring_error_runs_no_sandbox_work(
+    task, counting_runner
+) -> None:
     bad = external_trace(
-        {"input": TextArtifact(text="not code"), "output": TextArtifact(text="x")}
+        {
+            "input": TextArtifact(text="not code"),
+            "output": TextArtifact(text="x"),
+        }
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
@@ -120,10 +204,14 @@ def test_batch_wiring_error_runs_no_sandbox_work(task, counting_runner) -> None:
 # Totality — one record per declared question, in declaration order.
 # ===========================================================================
 
+
 def test_one_record_per_question_in_declaration_order() -> None:
     text = "def f(x):\n    return x + 1\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=text), "output": CodeArtifact(source=text)}
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
     )
     definition = _definition(
         [
@@ -149,7 +237,7 @@ def test_no_questions_yields_no_records() -> None:
 
 
 def test_absent_on_key_yields_not_applicable_with_cause() -> None:
-    """Absent input ⇒ NOT_APPLICABLE carrying the Absent lineage (design L3),
+    """Absent input ⇒ NOT_APPLICABLE carrying the Absent lineage,
     distinct from a missing key (which is a wiring error)."""
     trace = external_trace(
         {
@@ -171,7 +259,7 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
 
 def test_absent_auxiliary_yields_not_applicable(task) -> None:
     """code_test whose task aux is present-but-Absent is not-applicable, not a
-    wiring bug (plan: Absent aux values yield not-applicable records)."""
+    wiring bug."""
     candidate = "def add_one(x):\n    return x + 1\n"
     code = CodeArtifact(source=candidate)
     trace = external_trace(
@@ -188,20 +276,24 @@ def test_absent_auxiliary_yields_not_applicable(task) -> None:
 
 
 # ===========================================================================
-# Operator exception ⇒ OPERATOR_FAILURE record (totality, L3).
+# Operator exception ⇒ OPERATOR_FAILURE record.
 # ===========================================================================
+
 
 def test_operator_exception_becomes_an_operator_failure_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An operator bug on present input is a visible failure record, never a
-    boundary-crossing exception (design L3)."""
+    boundary-crossing exception."""
     from dr_code.metrics import MetricName
     from dr_code.metrics.registry import REGISTRY
 
     text = "def f(x):\n    return x + 1\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=text), "output": CodeArtifact(source=text)}
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
     )
 
     operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
@@ -218,7 +310,9 @@ def test_operator_exception_becomes_an_operator_failure_record(
     assert record.metric is MetricName.TEXT_STATS
 
 
-def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> None:
+def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> (
+    None
+):
     """CodeArtifact documents "passed a compile check upstream", so unparseable
     CODE is a producer contract violation -- ast_stats must not mask it as an
     all-zero (indistinguishable from empty) measurement. It becomes an
@@ -228,7 +322,10 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
 
     invalid = "def f(:\n    pass\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=invalid), "output": CodeArtifact(source=invalid)}
+        {
+            "input": CodeArtifact(source=invalid),
+            "output": CodeArtifact(source=invalid),
+        }
     )
     definition = _definition([_q("ast_stats", on="input")])
     record = _extract(definition, trace)[0]
@@ -238,8 +335,9 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
 
 
 # ===========================================================================
-# Infrastructure SandboxError raises; candidate timeout is data (L3).
+# Infrastructure SandboxError raises; candidate timeout is data.
 # ===========================================================================
+
 
 def test_infrastructure_sandbox_error_raises(task) -> None:
     """A SandboxError is infra breakage — it raises, never becomes a record."""
@@ -282,7 +380,9 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(task) -> None:
     cases), not a raised SandboxError (batch_runner attribution parity)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
-    definition = _definition([_q("code_test", on="input", timeout_seconds=1.0)])
+    definition = _definition(
+        [_q("code_test", on="input", timeout_seconds=1.0)]
+    )
     record = _extract(
         definition,
         trace,
@@ -293,8 +393,9 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(task) -> None:
 
 
 # ===========================================================================
-# Two-phase execution + content-hash request dedupe (X-S4).
+# Two-phase execution and equivalent-request deduplication.
 # ===========================================================================
+
 
 def test_batch_dedupes_identical_code_test_executions(
     task, counting_runner
@@ -303,11 +404,15 @@ def test_batch_dedupes_identical_code_test_executions(
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
-    _extract_batch(definition, [trace, trace, trace], run_in_sandbox=counting_runner)
+    _extract_batch(
+        definition, [trace, trace, trace], run_in_sandbox=counting_runner
+    )
     assert counting_runner.call_count == 1
 
 
-def test_distinct_submissions_execute_separately(task, counting_runner) -> None:
+def test_distinct_submissions_execute_separately(
+    task, counting_runner
+) -> None:
     good = code_test_trace("def add_one(x):\n    return x + 1\n", task)
     bad = code_test_trace("def add_one(x):\n    return x - 1\n", task)
     definition = _definition([_q("code_test", on="input")])
@@ -318,8 +423,12 @@ def test_distinct_submissions_execute_separately(task, counting_runner) -> None:
 def test_batch_returns_one_record_tuple_per_trace(task, local_runner) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
-    definition = _definition([_q("code_test", on="input", timeout_seconds=5.0)])
-    results = _extract_batch(definition, [trace, trace], run_in_sandbox=local_runner)
+    definition = _definition(
+        [_q("code_test", on="input", timeout_seconds=5.0)]
+    )
+    results = _extract_batch(
+        definition, [trace, trace], run_in_sandbox=local_runner
+    )
     assert isinstance(results, tuple)
     assert len(results) == 2
     for per_trace in results:
@@ -338,11 +447,21 @@ def test_prepopulated_execution_cache_skips_the_runner(
     definition = _definition([_q("code_test", on="input")])
 
     cache = InMemoryExecutionCache()
-    _extract(definition, trace, run_in_sandbox=counting_runner, execution_cache=cache)
+    _extract(
+        definition,
+        trace,
+        run_in_sandbox=counting_runner,
+        execution_cache=cache,
+    )
     assert counting_runner.call_count == 1
 
     counting_runner.calls.clear()
-    _extract(definition, trace, run_in_sandbox=counting_runner, execution_cache=cache)
+    _extract(
+        definition,
+        trace,
+        run_in_sandbox=counting_runner,
+        execution_cache=cache,
+    )
     assert counting_runner.call_count == 0
 
 
@@ -350,7 +469,10 @@ def test_pure_operators_never_call_the_runner(counting_runner) -> None:
     """Pure operators declare no execution requests."""
     text = "def f(x):\n    return x\n"
     trace = external_trace(
-        {"input": CodeArtifact(source=text), "output": CodeArtifact(source=text)}
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
     )
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
@@ -360,11 +482,12 @@ def test_pure_operators_never_call_the_runner(counting_runner) -> None:
 
 
 # ===========================================================================
-# Record equality across fresh / deserialized / external traces (X-S2).
+# Record equality across fresh, deserialized, and external traces.
 # ===========================================================================
 
+
 def test_fresh_trace_equals_deserialized_trace() -> None:
-    """Restored traces measure the same as fresh traces (design L2/L3)."""
+    """Restored traces measure the same as fresh traces."""
     text = "def add_one(x):\n    return x + 1\n"
     fresh = external_trace(
         {
@@ -380,7 +503,7 @@ def test_fresh_trace_equals_deserialized_trace() -> None:
 
 
 def test_external_trace_matches_preprocessing_producer_trace() -> None:
-    """Any producer's trace yields the same measured answer (X-S2). Producer
+    """Any producer's trace yields the same measured answer. Producer
     lineage legitimately differs, so the comparable projection is the answer."""
     text = "def f(x):\n    return x\n"
     values = {
@@ -390,9 +513,7 @@ def test_external_trace_matches_preprocessing_producer_trace() -> None:
     external = external_trace(values)
     preprocessing = Trace(
         values=values,
-        producer=TraceProducer(
-            producer_id="pre", version="v1", definition_hash="abc"
-        ),
+        producer=_preprocessing_producer(),
     )
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
@@ -414,17 +535,20 @@ def test_external_trace_matches_preprocessing_producer_trace() -> None:
 
 def test_code_test_record_values_exclude_timing(task, local_runner) -> None:
     """Determinism soft spot: timing stays out of record values so identical
-    inputs reproduce (plan section 3)."""
+    inputs reproduce."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
-    definition = _definition([_q("code_test", on="input", timeout_seconds=2.0)])
+    definition = _definition(
+        [_q("code_test", on="input", timeout_seconds=2.0)]
+    )
     record = _extract(definition, trace, run_in_sandbox=local_runner)[0]
     assert "elapsed_seconds" not in record.values
 
 
 # ---------------------------------------------------------------------------
-# Engine call wrappers (keep the lazy import in one place).
+# Engine call wrappers.
 # ---------------------------------------------------------------------------
+
 
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics

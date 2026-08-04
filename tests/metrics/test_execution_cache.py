@@ -1,13 +1,11 @@
-"""Execution-cache contracts (plan section: ``engine/execution.py``).
+"""Execution-cache contracts.
 
-Covers ``ExecutionRequest`` content-hash ``cache_key`` (deterministic,
-content-addressed), ``ExecutionOutcome`` (SandboxCompletedProcess fields),
-the ``ExecutionCache`` protocol + ``InMemoryExecutionCache`` get/put, and
-``run_requests`` dedupe + at-most-once execution (design X-S4, L3).
+Covers ``ExecutionOutcome`` boundary fields, the ``ExecutionCache`` protocol,
+and observable request deduplication with at-most-once execution per cache
+lifetime. Cache keys remain a private implementation detail.
 
 These tests run without a container: a counting fake runner stands in for the
-injected ``SandboxRunner``. ``dr_code.metrics`` is imported lazily inside each
-test so the suite collects cleanly against the missing package.
+injected ``SandboxRunner``.
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ def _request(
     source: str = "print('hi')",
     input_json: str = "{}",
     timeout_seconds: float = 1.0,
-    computation_id: str = "humaneval-runner@v1",
+    computation_id: str = "humaneval-runner@0",
 ):
     from dr_code.metrics.engine.execution import ExecutionRequest
 
@@ -76,31 +74,9 @@ def _run(requests, *, runner=None, cache=None):
 
 
 # ===========================================================================
-# ExecutionRequest.cache_key — content-addressed + deterministic (L3).
-# ===========================================================================
-
-def test_cache_key_is_a_deterministic_string() -> None:
-    assert isinstance(_request().cache_key, str)
-    assert len(_request().cache_key) > 0
-    assert _request().cache_key == _request().cache_key
-
-
-@pytest.mark.parametrize(
-    ("field", "a", "b"),
-    [
-        ("source", "a", "b"),
-        ("input_json", "{}", '{"x":1}'),
-        ("timeout_seconds", 1.0, 2.0),
-        ("computation_id", "a@v1", "a@v2"),
-    ],
-)
-def test_cache_key_depends_on_each_request_field(field, a, b) -> None:
-    assert _request(**{field: a}).cache_key != _request(**{field: b}).cache_key
-
-
-# ===========================================================================
 # ExecutionOutcome — SandboxCompletedProcess fields, frozen.
 # ===========================================================================
+
 
 def test_execution_outcome_holds_sandbox_completed_process_fields() -> None:
     outcome = _outcome(returncode=0, stdout="[{}]", stderr="warn")
@@ -118,13 +94,16 @@ def test_execution_outcome_is_frozen() -> None:
 def test_execution_outcome_is_json_serializable() -> None:
     import json
 
-    parsed = json.loads(_outcome(stdout='[{"case_id": "0"}]').model_dump_json())
+    parsed = json.loads(
+        _outcome(stdout='[{"case_id": "0"}]').model_dump_json()
+    )
     assert parsed["returncode"] == 0
 
 
 # ===========================================================================
 # InMemoryExecutionCache get/put.
 # ===========================================================================
+
 
 def test_in_memory_cache_miss_returns_none() -> None:
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
@@ -135,12 +114,11 @@ def test_in_memory_cache_miss_returns_none() -> None:
 def test_in_memory_cache_get_put_round_trip() -> None:
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
-    request = _request()
     outcome = _outcome()
     cache = InMemoryExecutionCache()
-    assert cache.get(request.cache_key) is None
-    cache.put(request.cache_key, outcome)
-    assert cache.get(request.cache_key) == outcome
+    assert cache.get("opaque-key") is None
+    cache.put("opaque-key", outcome)
+    assert cache.get("opaque-key") == outcome
 
 
 def test_in_memory_cache_put_overwrites() -> None:
@@ -158,6 +136,7 @@ def test_in_memory_cache_put_overwrites() -> None:
 # run_requests — dedupe + at-most-once execution.
 # ===========================================================================
 
+
 def test_run_requests_dedupes_identical_requests() -> None:
     runner = _CountingRunner()
     requests = [_request(), _request(), _request()]
@@ -165,36 +144,47 @@ def test_run_requests_dedupes_identical_requests() -> None:
     assert runner.calls == 1
     # every duplicate resolves to the single executed outcome
     assert len(outcomes) == 1
-    assert set(outcomes) == {requests[0].cache_key}
+    assert set(outcomes) == {requests[0]}
 
 
-def test_run_requests_executes_distinct_requests() -> None:
+@pytest.mark.parametrize(
+    ("field", "first", "second"),
+    [
+        ("source", "a", "b"),
+        ("input_json", "{}", '{"x":1}'),
+        ("timeout_seconds", 1.0, 2.0),
+        ("computation_id", "runner-a", "runner-b"),
+    ],
+)
+def test_run_requests_does_not_alias_distinct_requests(
+    field: str,
+    first: object,
+    second: object,
+) -> None:
     runner = _CountingRunner()
-    _run([_request(input_json="a"), _request(input_json="b")], runner=runner)
+    requests = [
+        _request(**{field: first}),
+        _request(**{field: second}),
+    ]
+
+    outcomes = _run(requests, runner=runner)
+
     assert runner.calls == 2
+    assert set(outcomes) == set(requests)
 
 
-def test_run_requests_serves_cache_hits_without_running() -> None:
+def test_run_requests_serves_cache_hits_without_reexecuting() -> None:
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
     request = _request()
     cache = InMemoryExecutionCache()
-    outcome = _outcome()
-    cache.put(request.cache_key, outcome)  # pre-populate
-
     runner = _CountingRunner()
-    outcomes = _run([request], runner=runner, cache=cache)
-    assert runner.calls == 0
-    assert outcomes[request.cache_key] == outcome
+    first = _run([request], runner=runner, cache=cache)
+    second = _run([request], runner=runner, cache=cache)
 
-
-def test_run_requests_populates_cache_for_misses() -> None:
-    from dr_code.metrics.engine.execution import InMemoryExecutionCache
-
-    cache = InMemoryExecutionCache()
-    request = _request()
-    _run([request], cache=cache)
-    assert cache.get(request.cache_key) is not None
+    assert runner.calls == 1
+    assert second == first
+    assert second[request] == _outcome()
 
 
 def test_run_requests_empty_input_returns_empty_dict() -> None:
@@ -212,11 +202,15 @@ def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
     request = _request()
     with pytest.raises(RuntimeError):
         _run([request], runner=raising, cache=cache)
-    assert cache.get(request.cache_key) is None
+
+    runner = _CountingRunner()
+    outcomes = _run([request], runner=runner, cache=cache)
+    assert runner.calls == 1
+    assert outcomes[request] == _outcome()
 
 
 def test_run_requests_sandbox_error_propagates() -> None:
-    """SandboxError (infrastructure) propagates through run_requests (L3)."""
+    """SandboxError infrastructure failures propagate through run_requests."""
 
     def infra(*, source, input_json, timeout_seconds):  # noqa: ANN001
         raise SandboxError("infra failed")

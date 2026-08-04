@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from pydantic import JsonValue
-
 from dr_code.humaneval.sandbox import (
     SandboxError,
     SandboxRunner,
@@ -22,6 +20,7 @@ from dr_code.metrics.engine.execution import (
 )
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
+from dr_code.metrics.settings import OperatorSettings
 from dr_code.metrics.operators.base import MetricOperator
 from dr_code.metrics.records import (
     MetricRecord,
@@ -29,7 +28,7 @@ from dr_code.metrics.records import (
     RecordStatus,
 )
 from dr_code.metrics.registry import REGISTRY
-from dr_code.trace import Absent, Artifact, Trace, WiringError
+from dr_code.trace import Absent, Artifact, Trace, TraceProducer, WiringError
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,13 +51,10 @@ class _TraceBinding:
 class _RecordIdentity:
     metric: MetricName
     metric_version: str
-    settings: dict[str, JsonValue]
+    settings: OperatorSettings
     on_key: str
-    producer_id: str
-    producer_version: str | None
-    producer_definition_hash: str | None
-    metrics_definition_id: str
-    metrics_definition_version: str
+    producer: TraceProducer
+    metrics_definition: MetricsDefinition
 
     @classmethod
     def from_binding(
@@ -66,17 +62,13 @@ class _RecordIdentity:
     ) -> _RecordIdentity:
         question_binding = binding.question_binding
         question = question_binding.question
-        producer = binding.trace.producer
         return cls(
             metric=question.metric,
             metric_version=question_binding.operator.VERSION,
-            settings=dict(question.settings),
+            settings=question_binding.operator.settings,
             on_key=question.on,
-            producer_id=producer.producer_id,
-            producer_version=producer.version,
-            producer_definition_hash=producer.definition_hash,
-            metrics_definition_id=definition.definition_id,
-            metrics_definition_version=definition.version,
+            producer=binding.trace.producer,
+            metrics_definition=definition,
         )
 
 
@@ -93,15 +85,15 @@ class EngineInvariantError(Exception):
 @dataclass(frozen=True, slots=True)
 class _EngineContext:
     views: ViewCache
-    outcomes: Mapping[str, ExecutionOutcome]
+    outcomes: Mapping[ExecutionRequest, ExecutionOutcome]
 
     def outcome_for(self, request: ExecutionRequest) -> ExecutionOutcome:
         try:
-            return self.outcomes[request.cache_key]
+            return self.outcomes[request]
         except KeyError as exc:
             raise EngineInvariantError(
-                f"no execution outcome planned for request "
-                f"{request.cache_key!r}"
+                "no execution outcome planned for request "
+                f"{request.computation_id!r}"
             ) from exc
 
 
@@ -198,9 +190,7 @@ def _bind_questions(
             raise WiringError(
                 f"invalid settings for metric {question.metric}: {exc}"
             ) from exc
-        bindings.append(
-            _QuestionBinding(question=question, operator=operator)
-        )
+        bindings.append(_QuestionBinding(question=question, operator=operator))
     return tuple(bindings)
 
 
@@ -324,11 +314,8 @@ def _build_record(
         metric_version=identity.metric_version,
         settings=identity.settings,
         on_key=identity.on_key,
-        producer_id=identity.producer_id,
-        producer_version=identity.producer_version,
-        producer_definition_hash=identity.producer_definition_hash,
-        metrics_definition_id=identity.metrics_definition_id,
-        metrics_definition_version=identity.metrics_definition_version,
+        producer=identity.producer,
+        metrics_definition=identity.metrics_definition,
         status=status,
         values=values or {},
         absence_failed_step=absence_failed_step,

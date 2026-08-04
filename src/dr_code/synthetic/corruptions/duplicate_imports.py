@@ -36,6 +36,7 @@ class DuplicateImports(Corruption):
     """Duplicate every top-level import statement once."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.DUPLICATE_IMPORTS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         return CorruptedSample(

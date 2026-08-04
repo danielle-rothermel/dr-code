@@ -1,7 +1,7 @@
-"""Example policy consumer contracts (plan section: ``policy_example``).
+"""Example policy-consumer contracts.
 
 ``dr_code.metrics.policy_example`` is the example *consumer*: it derives a
-``SubmissionOutcome``-equivalent verdict from a ``code_test`` record (plan S5).
+``SubmissionOutcome``-equivalent verdict from a ``code_test`` record.
 Facts stay in records; thresholds and verdicts stay in the consumer.
 
 The contract is **outcome parity** with
@@ -14,14 +14,12 @@ tested (PASSED, TESTS_FAILED, NO_TOP_LEVEL_FUNCTIONS, TIMED_OUT,
 EVALUATION_INCOMPLETE). Pre-extraction outcomes (EMPTY_SUBMISSION,
 EXTRACTION_FAILED) are upstream of ``code_test`` and out of its record scope.
 
-``dr_code.metrics`` is imported lazily inside each test.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.code_parsing import BEST_EFFORT_HUMANEVAL_PARSER_PROFILE
 from dr_code.humaneval.scoring import (
     SubmissionOutcome,
     score_humaneval_submission,
@@ -66,11 +64,10 @@ def _derive_outcome(record):
 
 
 def _score_outcome(submission, task, *, runner, timeout=5.0) -> str:
+    _ = timeout
     result = score_humaneval_submission(
         raw_submission=submission,
         task=task,
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-        timeout_seconds=timeout,
         run_in_sandbox=runner,
     )
     return result.outcome.value
@@ -90,6 +87,7 @@ def _assert_parity(submission, task, *, runner, timeout=5.0) -> None:
 # ---------------------------------------------------------------------------
 # Outcome parity vs score_humaneval_submission.
 # ---------------------------------------------------------------------------
+
 
 def test_passed_outcome_parity(task, good_submission, local_runner) -> None:
     _assert_parity(good_submission, task, runner=local_runner)
@@ -154,6 +152,7 @@ def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
 # Facts stay in records; verdicts stay in the consumer.
 # ---------------------------------------------------------------------------
 
+
 def test_code_test_record_carries_no_verdict_fields(
     task, good_submission, local_runner
 ) -> None:
@@ -171,18 +170,22 @@ def test_derive_outcome_rejects_negative_counts() -> None:
     """A corrupt or tampered record cannot cancel failures with negative
     counts (failed_count=-1 + error_count=1 would otherwise read as zero
     failures and derive PASSED)."""
-    from dr_code.metrics import MetricName
+    from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
     from dr_code.metrics.records import MetricRecord, RecordStatus
+    from dr_code.trace import EXTERNAL_PRODUCER
 
     record = MetricRecord(
         metric=MetricName.CODE_TEST,
         metric_version="1",
         on_key="input",
-        producer_id="policy",
-        producer_version="1",
-        producer_definition_hash=None,
-        metrics_definition_id="policy",
-        metrics_definition_version="1",
+        producer=EXTERNAL_PRODUCER,
+        metrics_definition=MetricsDefinition(
+            definition_id="policy",
+            version="1",
+            questions=(
+                MetricQuestion(metric=MetricName.CODE_TEST, on="input"),
+            ),
+        ),
         status=RecordStatus.MEASURED,
         values={
             "function_count": 1,

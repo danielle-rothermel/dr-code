@@ -16,6 +16,7 @@ class AddTrailingWhitespace(Corruption):
     """Append a few spaces to each non-empty line."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_TRAILING_WHITESPACE
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         n = rng.choice(_TRAILING_LEN_CHOICES)

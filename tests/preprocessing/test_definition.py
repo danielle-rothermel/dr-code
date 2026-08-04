@@ -1,15 +1,17 @@
-"""Tests for PreprocessingDefinition: frozen, hashable, validated."""
+"""Tests for frozen, validated preprocessing definitions."""
 
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from dr_code.preprocessing.definition import (
     PreprocessingDefinition,
     StepSpec,
-    preprocessing_definition_hash,
 )
 from dr_code.preprocessing.names import StepName
+from dr_code.preprocessing.steps.base import StepSettings
+from dr_code.preprocessing.steps.expand_tabs import ExpandTabsSettings
 from dr_code.trace import WiringError
 
 
@@ -29,66 +31,14 @@ def test_definition_is_frozen() -> None:
         definition.definition_id = "other"  # type: ignore[misc]
 
 
-def test_definition_is_hashable() -> None:
-    definition = _norm_definition()
-    assert isinstance(hash(definition), int)
-
-
-def test_definition_hash_is_stable() -> None:
-    d = _norm_definition()
-    # same definition -> same hash
-    assert preprocessing_definition_hash(d) == preprocessing_definition_hash(
-        _norm_definition()
-    )
-
-
-def test_definition_hash_differs_across_versions() -> None:
-    a = PreprocessingDefinition(
-        definition_id="d1",
-        version="1",
-        steps=(
-            StepSpec(instance_name="n", step=StepName.NORMALIZE_LINE_ENDINGS),
-        ),
-    )
-    b = PreprocessingDefinition(
-        definition_id="d1",
-        version="2",
-        steps=(
-            StepSpec(instance_name="n", step=StepName.NORMALIZE_LINE_ENDINGS),
-        ),
-    )
-    assert preprocessing_definition_hash(a) != preprocessing_definition_hash(b)
-
-
-def test_definition_hash_differs_across_settings() -> None:
-    a = PreprocessingDefinition(
-        definition_id="d1",
-        version="1",
-        steps=(
-            StepSpec(
-                instance_name="tabs",
-                step=StepName.EXPAND_TABS,
-                settings={"tab_width": 4},
-            ),
-        ),
-    )
-    b = PreprocessingDefinition(
-        definition_id="d1",
-        version="1",
-        steps=(
-            StepSpec(
-                instance_name="tabs",
-                step=StepName.EXPAND_TABS,
-                settings={"tab_width": 8},
-            ),
-        ),
-    )
-    assert preprocessing_definition_hash(a) != preprocessing_definition_hash(b)
+def test_definition_is_not_hashable() -> None:
+    with pytest.raises(TypeError, match="unhashable type"):
+        hash(_norm_definition())
 
 
 def test_step_spec_settings_default_empty() -> None:
     spec = StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE)
-    assert spec.settings == {}
+    assert spec.settings == StepSettings()
 
 
 def test_step_spec_rejects_unknown_step_name() -> None:
@@ -143,9 +93,7 @@ def test_definition_accepts_unique_non_reserved_names() -> None:
         definition_id="d",
         version="1",
         steps=(
-            StepSpec(
-                instance_name="n1", step=StepName.NORMALIZE_LINE_ENDINGS
-            ),
+            StepSpec(instance_name="n1", step=StepName.NORMALIZE_LINE_ENDINGS),
             StepSpec(instance_name="n2", step=StepName.NORMALIZE_UNICODE),
         ),
     )
@@ -168,4 +116,44 @@ def test_definition_serializable_round_trip() -> None:
         definition.model_dump_json()
     )
     assert restored == definition
-    assert restored.steps[0].settings == {"tab_width": 2}
+    assert restored.steps[0].settings == ExpandTabsSettings(tab_width=2)
+
+
+# ---------------------------------------------------------------------------
+# Settings belong to the named step; the discriminator is required.
+# ---------------------------------------------------------------------------
+
+
+def test_step_spec_rejects_settings_from_another_step() -> None:
+    """Another step's settings model is revalidated, not waved through."""
+    with pytest.raises(ValidationError):
+        StepSpec(
+            instance_name="u",
+            step=StepName.NORMALIZE_UNICODE,
+            settings=ExpandTabsSettings(tab_width=8),
+        )
+
+
+def test_step_spec_accepts_the_named_steps_settings_instance() -> None:
+    spec = StepSpec(
+        instance_name="e",
+        step=StepName.EXPAND_TABS,
+        settings=ExpandTabsSettings(tab_width=8),
+    )
+    assert spec.settings == ExpandTabsSettings(tab_width=8)
+
+
+def test_step_spec_accepts_plain_dict_settings() -> None:
+    spec = StepSpec(
+        instance_name="e",
+        step=StepName.EXPAND_TABS,
+        settings={"tab_width": 3},
+    )
+    assert spec.settings == ExpandTabsSettings(tab_width=3)
+
+
+def test_step_spec_missing_step_raises_validation_error() -> None:
+    """A payload without the discriminator gets pydantic's missing-field
+    error, never a bare KeyError past the validation boundary."""
+    with pytest.raises(ValidationError):
+        StepSpec.model_validate({"instance_name": "n", "settings": {}})

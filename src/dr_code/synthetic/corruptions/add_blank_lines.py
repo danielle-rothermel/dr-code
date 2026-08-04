@@ -17,6 +17,7 @@ class AddBlankLines(Corruption):
     """Sprinkle extra blank lines between lines."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_BLANK_LINES
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         out: list[str] = []

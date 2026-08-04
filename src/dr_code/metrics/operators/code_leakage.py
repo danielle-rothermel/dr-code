@@ -41,7 +41,7 @@ class CodeLeakageResult(OperatorResult):
 
 class CodeLeakage(MetricOperator[CodeLeakageSettings]):
     NAME = MetricName.CODE_LEAKAGE
-    VERSION = "2"
+    VERSION = "0"
     INPUT = ArtifactKind.TEXT
     ACCEPTED_INPUTS = frozenset({ArtifactKind.TEXT, ArtifactKind.CODE})
     Settings = CodeLeakageSettings
@@ -59,9 +59,7 @@ class CodeLeakage(MetricOperator[CodeLeakageSettings]):
             1 for character in text if character in string.punctuation
         )
         return CodeLeakageResult(
-            keyword_count=sum(
-                1 for word in words if keyword.iskeyword(word)
-            ),
+            keyword_count=sum(1 for word in words if keyword.iskeyword(word)),
             code_marker_count=sum(
                 1 for word in words if word in _CODE_MARKERS
             ),

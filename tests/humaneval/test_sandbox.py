@@ -13,11 +13,11 @@ from dr_code.humaneval.sandbox import (
     SandboxOutputLimitError,
     run_python_in_sandbox,
 )
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-)
 from dr_code.humaneval.batch_runner import evaluate_human_eval_code
-from dr_code.humaneval.scoring import CompletedScore, score_humaneval_submission
+from dr_code.humaneval.scoring import (
+    CompletedScore,
+    score_humaneval_submission,
+)
 from dr_code.humaneval.task import HumanEvalTask
 
 
@@ -37,8 +37,8 @@ def _warm_sandbox_container() -> None:
     # `test_known_good_submission_scores_inside_real_sandbox`) and flake as a
     # spurious timeout. Warm the runtime once here with a generous timeout so
     # the timed probes measure steady-state execution, not image/container
-    # startup. Probe timeouts stay unchanged so their timing assertions remain
-    # meaningful.
+    # startup. Probe timeouts remain watchdogs around the asserted sandbox
+    # outcomes.
     run_python_in_sandbox(
         source="input()\nprint('[]')\n",
         input_json="{}",
@@ -74,8 +74,6 @@ def test_known_good_submission_scores_inside_real_sandbox() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        parser_profile=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-        timeout_seconds=2.0,
     )
 
     assert isinstance(result, CompletedScore)
@@ -229,10 +227,7 @@ def test_candidate_sys_exit_is_scored_not_harness_failure() -> None:
     result = evaluate_human_eval_code(
         task=_task(),
         candidate_code=(
-            "import sys\n"
-            "sys.exit(0)\n"
-            "def add_one(x):\n"
-            "    return x + 1\n"
+            "import sys\nsys.exit(0)\ndef add_one(x):\n    return x + 1\n"
         ),
         timeout_seconds=2.0,
     )
@@ -288,4 +283,6 @@ def test_stdout_json_ipc_is_bounded() -> None:
 
 
 def test_ci_uses_the_documented_immutable_image() -> None:
-    assert os.environ.get("DR_CODE_SANDBOX_IMAGE", SANDBOX_IMAGE) == SANDBOX_IMAGE
+    assert (
+        os.environ.get("DR_CODE_SANDBOX_IMAGE", SANDBOX_IMAGE) == SANDBOX_IMAGE
+    )

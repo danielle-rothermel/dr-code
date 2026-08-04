@@ -20,6 +20,7 @@ class AddUnicodeNoise(Corruption):
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_UNICODE_NOISE
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         # Decompose to NFD; for pure-ASCII inputs this is a no-op, but the

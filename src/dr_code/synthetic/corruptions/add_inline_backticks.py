@@ -14,6 +14,7 @@ class AddInlineBackticks(Corruption):
     """Wrap the entire source in a single-backtick inline span."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_INLINE_BACKTICKS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         return CorruptedSample(

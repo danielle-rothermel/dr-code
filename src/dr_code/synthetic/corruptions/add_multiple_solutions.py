@@ -20,6 +20,7 @@ class AddMultipleSolutions(Corruption):
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_MULTIPLE_SOLUTIONS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         alt = "def _alt_solution():\n    raise NotImplementedError\n"

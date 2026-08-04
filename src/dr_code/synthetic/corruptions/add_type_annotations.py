@@ -27,6 +27,7 @@ class AddTypeAnnotations(Corruption):
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_TYPE_ANNOTATIONS
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         return CorruptedSample(

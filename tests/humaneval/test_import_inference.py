@@ -132,10 +132,7 @@ def test_infer_necessary_imports_repairs_trailing_comment_on_import_line() -> (
 
 def test_infer_necessary_imports_repairs_unbalanced_import_parens() -> None:
     source = (
-        "from typing import (List, Dict\n"
-        "\n"
-        "def f():\n"
-        "    return List[int]\n"
+        "from typing import (List, Dict\n\ndef f():\n    return List[int]\n"
     )
     result = infer_necessary_imports(source)
     assert "from typing import (List, Dict)" in result

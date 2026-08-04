@@ -12,6 +12,7 @@ from dr_code.metrics.engine.execution import (
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.records import MetricScalar
+from dr_code.metrics.settings import OperatorSettings
 from dr_code.models import FrozenModel
 from dr_code.trace import (
     Artifact,
@@ -19,10 +20,6 @@ from dr_code.trace import (
     CodeArtifact,
     TextArtifact,
 )
-
-
-class OperatorSettings(FrozenModel):
-    """Validated parameters that determine an operator's semantics."""
 
 
 SettingsT = TypeVar("SettingsT", bound=OperatorSettings)
@@ -47,6 +44,12 @@ class MetricOperator(Generic[SettingsT]):
     """Question implementation managed by the metrics engine."""
 
     NAME: ClassVar[MetricName]
+    # Manual component version. Bump when the operator changes computed
+    # facts, execution requests, applicability, defaults, or failure
+    # behavior; not for comments, formatting, or behavior-preserving
+    # refactors. Stays ``"0"`` while development mode
+    # (``[tool.dr-code.component-versioning]`` in ``pyproject.toml``) is
+    # enabled.
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     ACCEPTED_INPUTS: ClassVar[frozenset[ArtifactKind]]

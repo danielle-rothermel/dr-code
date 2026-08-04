@@ -17,7 +17,7 @@ class DedupeImports(CandidateMapStep):
     """
 
     NAME: ClassVar[StepName] = StepName.DEDUPE_IMPORTS
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
 
     def apply_to_candidate(self, source: str) -> str:
         return dedupe_import_lines(source)

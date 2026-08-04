@@ -20,6 +20,7 @@ class AddDeadCode(Corruption):
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_DEAD_CODE
+    VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
         injected = "import os as _unused_module  # noqa: F401\n"

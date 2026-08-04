@@ -13,8 +13,10 @@ jobs:
       - uses: astral-sh/setup-uv@v8.3.1
         with:
           python-version: "3.13"
-      - run: uv sync
+      - run: uv sync --locked
+      - run: uv run ruff format --check .
       - run: uv run ruff check .
+      - run: uv run ty check
       - name: Preload immutable HumanEval sandbox image
         run: docker pull "$DR_CODE_SANDBOX_IMAGE"
         env:
@@ -23,12 +25,12 @@ jobs:
         env:
           DR_CODE_RUN_SANDBOX_TESTS: "1"
           DR_CODE_SANDBOX_IMAGE: python:3.13.14-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: viewer/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: viewer/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile

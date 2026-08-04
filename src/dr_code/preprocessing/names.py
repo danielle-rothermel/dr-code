@@ -8,7 +8,7 @@ from enum import StrEnum
 class StepName(StrEnum):
     """All preprocessing pipeline steps.
 
-    Atomic text steps are the constituents of today's ``normalize_text``
+    Atomic text steps compose the ``normalize_text`` behavior
     (plus smart quotes as its own step). Candidate-generation steps emit
     ``CodeCandidateSetArtifact`` from text. Elementwise steps map over a
     candidate set. Filters keep/drop candidates; cardinality knobs fix the

@@ -5,6 +5,15 @@ fold over bound steps. Bind-time wiring failures raise ``WiringError``
 before any input is processed — incompatible definitions are wiring bugs,
 not data. Runtime data failures (``StepFailedError``) become ``Absent``
 with the cause, and the pipeline always completes with a full trace.
+
+Two entry points stamp provenance on the resulting trace.
+``run_preprocessing`` resolves the canonical registered definition for the
+caller's ``(definition_id, version)``, rejects a caller-built object that
+claims a registered coordinate without matching it, and stamps
+``PreprocessingTraceProducer``. ``run_external_preprocessing`` accepts an
+unregistered definition and stamps ``ExternalPreprocessingTraceProducer``.
+Traces assembled outside the component system carry
+``ExternalTraceProducer``.
 """
 
 from __future__ import annotations
@@ -19,19 +28,27 @@ from dr_code.trace import (
     ArtifactKind,
     CodeArtifact,
     CodeCandidateSetArtifact,
+    ComponentCoordinate,
+    ExternalPreprocessingTraceProducer,
     JsonArtifact,
+    PreprocessingDefinitionCoordinate,
+    PreprocessingTraceProducer,
+    StepCoordinate,
     TextArtifact,
     Trace,
-    TraceProducer,
     WiringError,
+    coordinate_settings,
     is_absent,
 )
 from dr_code.preprocessing.definition import (
     PreprocessingDefinition,
-    preprocessing_definition_hash,
 )
+from dr_code.preprocessing.definitions import resolve_preprocessing_definition
 from dr_code.preprocessing.registry import REGISTRY
-from dr_code.preprocessing.steps.base import Step, StepFailedError
+from dr_code.preprocessing.steps.base import (
+    Step,
+    StepFailedError,
+)
 
 #: ArtifactKind -> the concrete artifact model a TraceValue may be.
 _KIND_TYPES = {
@@ -48,6 +65,7 @@ class BoundStep:
 
     instance_name: str
     step: Step
+    coordinate: StepCoordinate
 
 
 def bind_definition(
@@ -66,9 +84,7 @@ def bind_definition(
         instance_name = spec.instance_name
 
         if instance_name in seen_names:
-            raise WiringError(
-                f"duplicate instance name: {instance_name!r}"
-            )
+            raise WiringError(f"duplicate instance name: {instance_name!r}")
         seen_names.add(instance_name)
 
         step_cls = REGISTRY.get(spec.step.value)
@@ -79,8 +95,7 @@ def bind_definition(
             settings = step_cls.Settings.model_validate(spec.settings)
         except ValidationError as exc:
             raise WiringError(
-                f"invalid settings for step {spec.step.value!r}: "
-                f"{exc}"
+                f"invalid settings for step {spec.step.value!r}: {exc}"
             ) from exc
 
         step = step_cls(settings)
@@ -93,7 +108,20 @@ def bind_definition(
             )
         expected_input = step.OUTPUT
 
-        bound.append(BoundStep(instance_name=instance_name, step=step))
+        bound.append(
+            BoundStep(
+                instance_name=instance_name,
+                step=step,
+                coordinate=StepCoordinate(
+                    instance_name=instance_name,
+                    component=ComponentCoordinate(
+                        registered_name=step_cls.NAME.value,
+                        version=step_cls.VERSION,
+                        settings=coordinate_settings(settings),
+                    ),
+                ),
+            )
+        )
 
     return tuple(bound)
 
@@ -102,7 +130,34 @@ def run_preprocessing(
     definition: PreprocessingDefinition,
     input_value: Artifact,
 ) -> Trace:
-    """Run a definition as a single mechanical fold over its steps.
+    """Run one exact registered definition as a mechanical fold."""
+    registered = resolve_preprocessing_definition(
+        definition_id=definition.definition_id,
+        version=definition.version,
+    )
+    if definition != registered:
+        raise ValueError(
+            "preprocessing definition does not match its registered "
+            f"coordinate: {definition.definition_id}@{definition.version}"
+        )
+    return _run_definition(registered, input_value, registered=True)
+
+
+def run_external_preprocessing(
+    definition: PreprocessingDefinition,
+    input_value: Artifact,
+) -> Trace:
+    """Run an explicitly unregistered definition with external provenance."""
+    return _run_definition(definition, input_value, registered=False)
+
+
+def _run_definition(
+    definition: PreprocessingDefinition,
+    input_value: Artifact,
+    *,
+    registered: bool,
+) -> Trace:
+    """Execute a validated definition as a single mechanical fold.
 
       value = input_value
       for bound in bind_definition(definition):
@@ -156,12 +211,22 @@ def run_preprocessing(
 
     values["output"] = current
 
-    producer = TraceProducer(
-        producer_id=definition.definition_id,
+    coordinate = PreprocessingDefinitionCoordinate(
+        definition_id=definition.definition_id,
         version=definition.version,
-        definition_hash=preprocessing_definition_hash(definition),
+        steps=tuple(bound.coordinate for bound in bound_steps),
+    )
+    producer = (
+        PreprocessingTraceProducer(definition=coordinate)
+        if registered
+        else ExternalPreprocessingTraceProducer(definition=coordinate)
     )
     return Trace(values=values, producer=producer, step_facts=step_facts)
 
 
-__all__ = ["BoundStep", "bind_definition", "run_preprocessing"]
+__all__ = [
+    "BoundStep",
+    "bind_definition",
+    "run_external_preprocessing",
+    "run_preprocessing",
+]

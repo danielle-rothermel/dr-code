@@ -1,7 +1,7 @@
 """Extract code candidates from text via a first-success strategy ladder.
 
-The constituents of today's extraction ladder (``candidate_blocks`` +
-``strip_markdown_wrappers`` + ``recover_escaped_python``) become an
+The extraction ladder composes ``candidate_blocks``,
+``strip_markdown_wrappers``, and ``recover_escaped_python`` as an
 ordered strategy tuple in settings — first-success alternatives, not a
 sequence of pipeline steps. The ladder stays inside this one step; which
 rungs exist is data.
@@ -52,10 +52,9 @@ def _to_candidate_set(
 ) -> CodeCandidateSetArtifact | None:
     """Apply ``code_like_blocks`` fan-out, drop whitespace-only blocks.
 
-    Mirrors the old pipeline's per-block refinement (``code_like_blocks``
-    filters prose blocks and splits anchored segments); returns None when
-    no code-like candidate survives, so first-success ladder logic falls
-    through to the next strategy.
+    ``code_like_blocks`` filters prose blocks and splits anchored segments.
+    Returning ``None`` when no code-like candidate survives advances the
+    first-success ladder to its next strategy.
     """
     candidates = [block for block in code_like_blocks(blocks) if block.strip()]
     if not candidates:
@@ -89,9 +88,8 @@ def _escaped_markdown_wrapper(
 ) -> CodeCandidateSetArtifact | None:
     """Recover escaped Python, then strip a markdown wrapper per block.
 
-    Mirrors the old pipeline's ``unescaped_markdown_wrapper_fallback``: the
-    unescaped-then-plain rung (``escaped_python``) can miss code hidden
-    behind blockquote/list markers, so this retries with
+    The unescaped-then-plain rung (``escaped_python``) can miss code hidden
+    behind blockquote or list markers, so this strategy retries with
     ``strip_markdown_wrappers`` applied to each block.
     """
     unescaped = recover_escaped_python(text)
@@ -140,7 +138,7 @@ class ExtractCandidates(AlternativesStep[ExtractCandidatesSettings]):
     """
 
     NAME: ClassVar[StepName] = StepName.EXTRACT_CANDIDATES
-    VERSION: ClassVar[str] = "1"
+    VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     Settings = ExtractCandidatesSettings
