@@ -70,6 +70,27 @@ def test_escaped_pipeline_preserves_string_literal_escape() -> None:
 
 
 @pytest.mark.parametrize(
+    "source",
+    [
+        # Fully escaped and fenced.
+        r"Intro\n```python\ndef f():\n    return 1\n```",
+        # Fully escaped and unfenced, including escaped indentation.
+        r"Explanation:\ndef f():\n\treturn 1",
+        # Real newlines around an escaped code region.
+        "Intro\n" + r"```python\ndef f():\n    return 1\n```",
+        # The entire response is a JSON-quoted string.
+        r'"Intro\n```python\ndef f():\n    return 1\n```"',
+    ],
+    ids=["escaped-fenced", "escaped-unfenced", "mixed", "json-string"],
+)
+def test_escaped_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
+    output = _output_source(source)
+    assert "def f():" in output.source
+    # Round-trip: recovery is only correct if the recovered code compiles.
+    assert validate_python_source(output.source).compile_ok
+
+
+@pytest.mark.parametrize(
     ("source", "expected"),
     [
         (

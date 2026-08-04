@@ -311,61 +311,6 @@ def test_run_full_fenced_pipeline() -> None:
     assert trace.step_facts["e"] == {"alternative": "fenced_blocks"}
 
 
-# --- escaped-newline behavior cases, re-expressed against the pipeline
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        r"Intro\n```python\ndef f():\n    return 1\n```",
-        r"Explanation:\ndef f():\n\treturn 1",
-        "Intro\n" + r"```python\ndef f():\n    return 1\n```",
-        r'"Intro\n```python\ndef f():\n    return 1\n```"',
-    ],
-    ids=["escaped-fenced", "escaped-unfenced", "mixed", "json-string"],
-)
-def test_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
-    from dr_code.code_analysis import validate_python_source
-
-    definition = _def(
-        (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
-        )
-    )
-    trace = run_preprocessing(definition, TextArtifact(text=source))
-    out = trace.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert "def f():" in out.source
-    # round-trip: recovered code must compile
-    assert validate_python_source(out.source).compile_ok
-
-
-def test_pipeline_preserves_string_literal_escapes() -> None:
-    from dr_code.code_analysis import validate_python_source
-
-    definition = _def(
-        (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
-        )
-    )
-    source = (
-        r"Intro\n```python\ndef join_lines(lines):\n"
-        r'    return "\n".join(lines)\n```'
-    )
-    expected = 'def join_lines(lines):\n    return "\\n".join(lines)'
-    trace = run_preprocessing(definition, TextArtifact(text=source))
-    out = trace.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert out.source == expected
-    assert validate_python_source(out.source).compile_ok
-
-
 def test_pipeline_prose_only_yields_absent() -> None:
     definition = _def(
         (

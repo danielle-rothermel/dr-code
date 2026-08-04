@@ -12,7 +12,6 @@ from dr_code.humaneval.task import (
     HUMAN_EVAL_OVERRIDE_SET,
     HumanEvalOverrideSetCoordinate,
     HumanEvalTask,
-    _parse_human_eval_dataset,
     parse_human_eval_dataset,
     resolve_human_eval_override_set,
 )
@@ -85,17 +84,22 @@ def load_human_eval_snapshot_rows(
     dataset_name: str = DEFAULT_HUMAN_EVAL_DATASET_NAME,
     hf_revision: str = DEFAULT_HUMAN_EVAL_HF_REVISION,
 ) -> list[HumanEvalRow]:
+    """Return the snapshot's raw rows after checking its provenance header.
+
+    Row-level validation belongs to whichever task model a caller builds:
+    ``parse_human_eval_dataset`` for evaluation tasks, a caller's own model
+    otherwise. This loader only guarantees that the rows come from the
+    expected dataset, revision, and registered override set.
+    """
     snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
         snapshot_path.read_text(encoding="utf-8")
     )
-    override_set = validate_snapshot_header(
+    validate_snapshot_header(
         snapshot.header,
         dataset_name=dataset_name,
         hf_revision=hf_revision,
     )
-    rows = [row.model_dump(mode="json") for row in snapshot.rows]
-    _parse_human_eval_dataset(rows, override_set)
-    return rows
+    return [row.model_dump(mode="json") for row in snapshot.rows]
 
 
 def validate_snapshot_header(
