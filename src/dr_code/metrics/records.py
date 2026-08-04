@@ -8,7 +8,7 @@ from typing import Self, TypeAlias
 
 from pydantic import Field, SerializeAsAny, model_validator
 
-from dr_code.metrics.definition import MetricsDefinition
+from dr_code.metrics.definition import MetricsDefinition, settings_payload
 from dr_code.metrics.names import MetricName
 from dr_code.models import FrozenModel
 from dr_code.trace import TraceProducer
@@ -49,13 +49,40 @@ class MetricRecord(FrozenModel):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
+        if "metric" not in data:
+            # Let pydantic report the missing discriminator as a
+            # ValidationError instead of raising KeyError out of band.
+            return data
         from dr_code.metrics.registry import REGISTRY
 
         metric = MetricName(data["metric"])
         data["settings"] = REGISTRY[metric.value].Settings.model_validate(
-            data.get("settings", {})
+            settings_payload(data.get("settings", {}))
         )
         return data
+
+    @model_validator(mode="after")
+    def validate_answers_a_declared_question(self) -> Self:
+        """The record's identity must name a question it nests.
+
+        Scoped to internal consistency: the nested definition is the record's
+        own lineage, so ``(metric, on_key, settings)`` must match one of its
+        questions exactly as the engine derives them. Deliberately says
+        nothing about the live registry — records serialized under older
+        operator versions stay loadable.
+        """
+
+        for question in self.metrics_definition.questions:
+            if (
+                question.metric is self.metric
+                and question.on == self.on_key
+                and question.settings == self.settings
+            ):
+                return self
+        raise ValueError(
+            f"record for metric {self.metric} on {self.on_key!r} does not "
+            "match any question in its metrics_definition"
+        )
 
     @model_validator(mode="after")
     def validate_answer_shape(self) -> Self:

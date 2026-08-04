@@ -13,6 +13,19 @@ from dr_code.trace import RESERVED_KEYS, WiringError
 from dr_code.preprocessing.names import StepName
 
 
+def _settings_payload(settings: object) -> object:
+    """Reduce a settings model to a plain mapping so it is revalidated.
+
+    Pydantic treats validating an instance of a subclass as a pass-through,
+    which would let another component's settings through unchecked; a
+    mapping always goes through full field validation.
+    """
+
+    if isinstance(settings, FrozenModel):
+        return settings.model_dump()
+    return settings
+
+
 class StepSpec(FrozenModel):
     """One named step instance with its settings.
 
@@ -33,12 +46,16 @@ class StepSpec(FrozenModel):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
+        if "step" not in data:
+            # Let pydantic report the missing discriminator as a
+            # ValidationError instead of raising KeyError out of band.
+            return data
         step = StepName(data["step"])
         from dr_code.preprocessing.registry import REGISTRY
 
         settings_model = REGISTRY[step.value].Settings
         data["settings"] = settings_model.model_validate(
-            data.get("settings", {})
+            _settings_payload(data.get("settings", {}))
         )
         return data
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from dr_code.preprocessing.definition import (
     PreprocessingDefinition,
@@ -116,3 +117,43 @@ def test_definition_serializable_round_trip() -> None:
     )
     assert restored == definition
     assert restored.steps[0].settings == ExpandTabsSettings(tab_width=2)
+
+
+# ---------------------------------------------------------------------------
+# Settings belong to the named step; the discriminator is required.
+# ---------------------------------------------------------------------------
+
+
+def test_step_spec_rejects_settings_from_another_step() -> None:
+    """Another step's settings model is revalidated, not waved through."""
+    with pytest.raises(ValidationError):
+        StepSpec(
+            instance_name="u",
+            step=StepName.NORMALIZE_UNICODE,
+            settings=ExpandTabsSettings(tab_width=8),
+        )
+
+
+def test_step_spec_accepts_the_named_steps_settings_instance() -> None:
+    spec = StepSpec(
+        instance_name="e",
+        step=StepName.EXPAND_TABS,
+        settings=ExpandTabsSettings(tab_width=8),
+    )
+    assert spec.settings == ExpandTabsSettings(tab_width=8)
+
+
+def test_step_spec_accepts_plain_dict_settings() -> None:
+    spec = StepSpec(
+        instance_name="e",
+        step=StepName.EXPAND_TABS,
+        settings={"tab_width": 3},
+    )
+    assert spec.settings == ExpandTabsSettings(tab_width=3)
+
+
+def test_step_spec_missing_step_raises_validation_error() -> None:
+    """A payload without the discriminator gets pydantic's missing-field
+    error, never a bare KeyError past the validation boundary."""
+    with pytest.raises(ValidationError):
+        StepSpec.model_validate({"instance_name": "n", "settings": {}})

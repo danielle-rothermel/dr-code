@@ -130,6 +130,21 @@ def _identity_kwargs(**overrides: object) -> dict[str, object]:
     return base
 
 
+def _matching_definition(
+    metric: object, on_key: object, settings: object
+) -> object:
+    """The nested lineage a record's own identity must be declared in."""
+    from dr_code.metrics import MetricQuestion, MetricsDefinition
+
+    return MetricsDefinition(
+        definition_id="def",
+        version="1",
+        questions=(
+            MetricQuestion(metric=metric, on=on_key, settings=settings),
+        ),
+    )
+
+
 def _record(**overrides: object):
     from dr_code.metrics import MetricName, MetricRecord, RecordStatus
 
@@ -138,6 +153,10 @@ def _record(**overrides: object):
     kw["status"] = RecordStatus.MEASURED
     kw["values"] = {"character_count": 4}
     kw.update(overrides)
+    if "metrics_definition" not in overrides:
+        kw["metrics_definition"] = _matching_definition(
+            kw["metric"], kw["on_key"], kw.get("settings", {})
+        )
     return MetricRecord(**kw)
 
 
@@ -431,3 +450,284 @@ def test_record_rows_preserve_declaration_order() -> None:
         MetricName.CODE_LEAKAGE,
         MetricName.AST_STATS,
     ]
+
+
+# ===========================================================================
+# Settings belong to the named metric; the discriminator is required.
+# ===========================================================================
+
+
+def test_metric_question_rejects_settings_from_another_operator() -> None:
+    """Another operator's settings model is revalidated, not waved through."""
+    from pydantic import ValidationError
+
+    from dr_code.metrics import MetricName, MetricQuestion
+    from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
+
+    with pytest.raises(ValidationError):
+        MetricQuestion(
+            metric=MetricName.TEXT_STATS,
+            on="output",
+            settings=CodeLeakageSettings(task_names=("x",)),
+        )
+
+
+def test_metric_question_accepts_its_own_settings_instance_and_dict() -> None:
+    from dr_code.metrics import MetricName, MetricQuestion
+    from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
+
+    expected = CodeLeakageSettings(task_names=("x",))
+    from_instance = MetricQuestion(
+        metric=MetricName.CODE_LEAKAGE, on="output", settings=expected
+    )
+    from_dict = MetricQuestion(
+        metric=MetricName.CODE_LEAKAGE,
+        on="output",
+        settings={"task_names": ["x"]},
+    )
+    assert from_instance.settings == expected
+    assert from_dict.settings == expected
+
+
+def test_metric_question_missing_metric_raises_validation_error() -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics import MetricQuestion
+
+    with pytest.raises(ValidationError):
+        MetricQuestion.model_validate({"on": "output", "settings": {}})
+
+
+def test_metric_record_rejects_settings_from_another_operator() -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
+
+    with pytest.raises(ValidationError):
+        _record(
+            metric=MetricName.TEXT_STATS,
+            settings=CodeLeakageSettings(task_names=("x",)),
+        )
+
+
+def test_metric_record_accepts_its_own_settings_instance_and_dict() -> None:
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
+
+    expected = CodeLeakageSettings(task_names=("x",))
+    from_instance = _record(metric=MetricName.CODE_LEAKAGE, settings=expected)
+    from_dict = _record(
+        metric=MetricName.CODE_LEAKAGE, settings={"task_names": ["x"]}
+    )
+    assert from_instance.settings == expected
+    assert from_dict.settings == expected
+
+
+def test_metric_record_missing_metric_raises_validation_error() -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics import MetricRecord
+
+    with pytest.raises(ValidationError):
+        MetricRecord.model_validate(
+            {"metric_version": "0", "settings": {}, "on_key": "o"}
+        )
+
+
+# ===========================================================================
+# A record answers a question its own nested definition declares.
+# ===========================================================================
+
+
+def test_record_identity_must_name_a_question_it_nests() -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics import (
+        MetricName,
+        MetricQuestion,
+        MetricsDefinition,
+    )
+
+    elsewhere = MetricsDefinition(
+        definition_id="def",
+        version="1",
+        questions=(MetricQuestion(metric=MetricName.TEXT_STATS, on="output"),),
+    )
+    with pytest.raises(ValidationError):
+        _record(
+            metric=MetricName.AST_STATS,
+            on_key="nowhere",
+            metrics_definition=elsewhere,
+        )
+
+
+def test_record_on_key_must_match_the_questions_on_key() -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics import (
+        MetricName,
+        MetricQuestion,
+        MetricsDefinition,
+    )
+
+    definition = MetricsDefinition(
+        definition_id="def",
+        version="1",
+        questions=(MetricQuestion(metric=MetricName.TEXT_STATS, on="output"),),
+    )
+    with pytest.raises(ValidationError):
+        _record(
+            metric=MetricName.TEXT_STATS,
+            on_key="input",
+            metrics_definition=definition,
+        )
+
+
+def test_record_settings_must_match_the_questions_settings() -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics import (
+        MetricName,
+        MetricQuestion,
+        MetricsDefinition,
+    )
+
+    definition = MetricsDefinition(
+        definition_id="def",
+        version="1",
+        questions=(
+            MetricQuestion(
+                metric=MetricName.CODE_LEAKAGE,
+                on="input",
+                settings={"task_names": ["declared"]},
+            ),
+        ),
+    )
+    with pytest.raises(ValidationError):
+        _record(
+            metric=MetricName.CODE_LEAKAGE,
+            settings={"task_names": ["other"]},
+            metrics_definition=definition,
+        )
+
+
+def test_record_matches_a_question_among_several() -> None:
+    from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
+
+    definition = MetricsDefinition(
+        definition_id="def",
+        version="1",
+        questions=(
+            MetricQuestion(metric=MetricName.AST_STATS, on="output"),
+            MetricQuestion(metric=MetricName.TEXT_STATS, on="input"),
+        ),
+    )
+    record = _record(
+        metric=MetricName.TEXT_STATS,
+        on_key="input",
+        metrics_definition=definition,
+    )
+    assert record.metric is MetricName.TEXT_STATS
+
+
+def test_engine_produced_records_satisfy_the_identity_rule() -> None:
+    """Whatever the engine emits is loadable; the rule mirrors its derivation."""
+    for record in _engine_records():
+        assert record == type(record).model_validate_json(
+            record.model_dump_json()
+        )
+
+
+# ===========================================================================
+# Serialization boundary: every status shape, non-trivial settings.
+# ===========================================================================
+
+
+def _engine_records() -> tuple[object, ...]:
+    from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
+    from dr_code.metrics.engine.engine import extract_metrics
+
+    from metrics.helpers import text_trace
+
+    definition = MetricsDefinition(
+        definition_id="round-trip",
+        version="1",
+        questions=(
+            MetricQuestion(
+                metric=MetricName.COMPRESSED_LENGTH,
+                on="output",
+                settings={"compression": {"method": "gzip", "level": 9}},
+            ),
+            MetricQuestion(
+                metric=MetricName.CODE_LEAKAGE,
+                on="output",
+                settings={"task_names": ["add_one"]},
+            ),
+        ),
+    )
+    return extract_metrics(definition, text_trace("hello world"))
+
+
+_ROUND_TRIP_SETTINGS = (
+    pytest.param(
+        "compressed_length",
+        {"compression": {"method": "gzip", "level": 9}},
+        "CompressedLengthSettings",
+        id="compressed_length-gzip",
+    ),
+    pytest.param(
+        "compressed_length",
+        {"compression": {"method": "zstd", "level": 3}},
+        "CompressedLengthSettings",
+        id="compressed_length-zstd",
+    ),
+    pytest.param(
+        "code_leakage",
+        {"task_names": ["alpha", "beta"]},
+        "CodeLeakageSettings",
+        id="code_leakage-task-names",
+    ),
+)
+
+
+def _shape_overrides(status: object) -> dict[str, object]:
+    from dr_code.metrics import RecordStatus
+
+    if status is RecordStatus.MEASURED:
+        return {"values": {"count": 1}}
+    if status is RecordStatus.NOT_APPLICABLE:
+        return {
+            "values": {},
+            "absence_failed_step": "extract",
+            "absence_cause": "no code extracted",
+        }
+    return {
+        "values": {},
+        "failure_type": "ValueError",
+        "failure_message": "boom",
+    }
+
+
+@pytest.mark.parametrize(
+    "metric_value,settings,settings_class", _ROUND_TRIP_SETTINGS
+)
+def test_record_round_trips_every_status_shape_with_registry_settings(
+    metric_value: str, settings: dict[str, object], settings_class: str
+) -> None:
+    from dr_code.metrics import MetricName, MetricRecord, RecordStatus
+    from dr_code.metrics.settings import OperatorSettings
+
+    metric = MetricName(metric_value)
+    for status in RecordStatus:
+        record = _record(
+            metric=metric,
+            settings=settings,
+            status=status,
+            **_shape_overrides(status),
+        )
+        restored = MetricRecord.model_validate_json(record.model_dump_json())
+        assert restored == record
+        assert type(restored.settings).__name__ == settings_class
+        assert type(restored.settings) is not OperatorSettings
+        assert restored.settings == record.settings
