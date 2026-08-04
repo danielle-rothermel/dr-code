@@ -9,20 +9,7 @@ from pydantic import Field, SerializeAsAny, model_validator
 
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.settings import OperatorSettings
-from dr_code.models import FrozenModel
-
-
-def settings_payload(settings: object) -> object:
-    """Reduce a settings model to a plain mapping so it is revalidated.
-
-    Pydantic treats validating an instance of a subclass as a pass-through,
-    which would let another operator's settings through unchecked; a mapping
-    always goes through full field validation.
-    """
-
-    if isinstance(settings, FrozenModel):
-        return settings.model_dump()
-    return settings
+from dr_code.models import FrozenModel, settings_payload
 
 
 class MetricQuestion(FrozenModel):

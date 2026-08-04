@@ -9,7 +9,7 @@ from typing import Final
 
 from pydantic import Field, SerializeAsAny, model_validator
 
-from dr_code.models import FrozenModel
+from dr_code.models import FrozenModel, settings_payload
 from dr_code.synthetic.models import (
     CorruptedSample,
     CorruptionCoordinate,
@@ -18,7 +18,7 @@ from dr_code.synthetic.models import (
 from dr_code.synthetic.names import CorruptionName, FenceLangTag
 from dr_code.synthetic.corruptions import REGISTRY
 from dr_code.synthetic.corruptions.base import CorruptionSettings
-from dr_code.trace import ComponentSetting
+from dr_code.trace import coordinate_settings
 
 
 class CorruptionSpec(FrozenModel):
@@ -39,10 +39,14 @@ class CorruptionSpec(FrozenModel):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
+        if "corruption" not in data:
+            # Let pydantic report the missing discriminator as a
+            # ValidationError instead of raising KeyError out of band.
+            return data
         corruption = CorruptionName(data["corruption"])
         settings_model = REGISTRY[corruption.value].Settings
         data["settings"] = settings_model.model_validate(
-            data.get("settings", {})
+            settings_payload(data.get("settings", {}))
         )
         return data
 
@@ -321,26 +325,11 @@ def recipe_coordinate(recipe: Recipe) -> RecipeCoordinate:
             CorruptionCoordinate(
                 registered_name=spec.corruption.value,
                 version=REGISTRY[spec.corruption.value].VERSION,
-                settings=_coordinate_settings(spec.settings),
+                settings=coordinate_settings(spec.settings),
             )
             for spec in recipe.corruptions
         ),
     )
-
-
-def _coordinate_settings(
-    settings: CorruptionSettings,
-) -> tuple[ComponentSetting, ...]:
-    """Project typed corruption settings into the bounded persisted shape."""
-    entries: list[ComponentSetting] = []
-    for name, value in settings.model_dump(mode="json").items():
-        if not isinstance(value, str | int | float | bool | type(None)):
-            raise TypeError(
-                f"unsupported persisted setting shape for {name!r}: "
-                f"{type(value).__name__}"
-            )
-        entries.append(ComponentSetting(name=name, value=value))
-    return tuple(entries)
 
 
 __all__ = [

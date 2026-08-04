@@ -20,6 +20,7 @@ from dr_code.trace.provenance import (
     PreprocessingTraceProducer,
     StepCoordinate,
     TraceProducer,
+    coordinate_settings,
 )
 from dr_code.trace.serialization import (
     TRACE_SCHEMA_VERSION,
@@ -62,6 +63,7 @@ __all__ = (
     "TraceProducer",
     "TraceValue",
     "WiringError",
+    "coordinate_settings",
     "deserialize_trace",
     "external_trace",
     "is_absent",

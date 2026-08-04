@@ -7,23 +7,10 @@ from typing import Self
 
 from pydantic import Field, SerializeAsAny, model_validator
 
-from dr_code.models import FrozenModel
+from dr_code.models import FrozenModel, settings_payload
 from dr_code.preprocessing.steps.base import StepSettings
 from dr_code.trace import RESERVED_KEYS, WiringError
 from dr_code.preprocessing.names import StepName
-
-
-def _settings_payload(settings: object) -> object:
-    """Reduce a settings model to a plain mapping so it is revalidated.
-
-    Pydantic treats validating an instance of a subclass as a pass-through,
-    which would let another component's settings through unchecked; a
-    mapping always goes through full field validation.
-    """
-
-    if isinstance(settings, FrozenModel):
-        return settings.model_dump()
-    return settings
 
 
 class StepSpec(FrozenModel):
@@ -55,7 +42,7 @@ class StepSpec(FrozenModel):
 
         settings_model = REGISTRY[step.value].Settings
         data["settings"] = settings_model.model_validate(
-            _settings_payload(data.get("settings", {}))
+            settings_payload(data.get("settings", {}))
         )
         return data
 

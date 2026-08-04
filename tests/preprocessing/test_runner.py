@@ -17,7 +17,6 @@ from dr_code.preprocessing.definitions import (
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
     BoundStep,
-    _coordinate_settings,
     bind_definition,
     run_external_preprocessing as run_preprocessing,
     run_preprocessing as run_registered_preprocessing,
@@ -29,6 +28,7 @@ from dr_code.trace import (
     TextArtifact,
     Trace,
     WiringError,
+    coordinate_settings,
     is_absent,
 )
 
@@ -586,7 +586,7 @@ def test_coordinate_settings_rejects_non_string_tuple() -> None:
         TypeError,
         match="unsupported persisted tuple setting for 'alternatives'",
     ):
-        _coordinate_settings(_IntTupleSettings())
+        coordinate_settings(_IntTupleSettings())
 
 
 def test_coordinate_settings_rejects_unsupported_value_type() -> None:
@@ -597,4 +597,4 @@ def test_coordinate_settings_rejects_unsupported_value_type() -> None:
         TypeError,
         match="unsupported persisted setting shape for 'mapping': dict",
     ):
-        _coordinate_settings(_MappingSettings())
+        coordinate_settings(_MappingSettings())

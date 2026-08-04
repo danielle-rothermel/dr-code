@@ -68,6 +68,18 @@ _DIRECT_INPUTS: dict[str, str] = {
     "name_guard": CLEAN
     + "\nif __name__ == '__main__':\n    print(make_array([1]))\n",
     "escaped_json": '"import numpy as np\\n\\ndef f():\\n    return 1\\n"',
+    # The four escaped-newline recovery shapes, shared verbatim with
+    # ``test_escaped_pipeline``. They keep ``extract_code_with_profile``'s
+    # escaped-newline behavior covered through the parity assertion.
+    "escaped_newline_fenced": (
+        r"Intro\n```python\ndef f():\n    return 1\n```"
+    ),
+    "escaped_newline_unfenced": r"Explanation:\ndef f():\n\treturn 1",
+    "escaped_newline_mixed": "Intro\n"
+    + r"```python\ndef f():\n    return 1\n```",
+    "escaped_newline_json_string": (
+        r'"Intro\n```python\ndef f():\n    return 1\n```"'
+    ),
     "json_wrapped_markdown": json.dumps(
         "- def add(a, b):\n-     return a + b"
     ),

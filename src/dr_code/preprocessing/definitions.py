@@ -43,6 +43,7 @@ from dr_code.preprocessing.definition import (
     StepSpec,
 )
 from dr_code.preprocessing.names import StepName
+from dr_code.preprocessing.steps.extract_candidates import DEFAULT_STRATEGIES
 
 #: Definition ids match ``code_parsing`` parser-profile coordinates.
 BEST_EFFORT_HUMANEVAL_DEFINITION_ID: Final[str] = (
@@ -53,16 +54,6 @@ STRICT_FIELD_MARKER_DEFINITION_ID: Final[str] = (
 )
 BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION: Final[str] = "0"
 STRICT_FIELD_MARKER_DEFINITION_VERSION: Final[str] = "0"
-
-#: The default extraction ladder: fenced blocks, then the markdown-wrapper
-#: retry, then structural unescape, then the unescape + markdown-wrapper
-#: retry.
-_DEFAULT_EXTRACT_ALTERNATIVES: Final[tuple[str, ...]] = (
-    "fenced_blocks",
-    "markdown_wrapper",
-    "escaped_python",
-    "escaped_markdown_wrapper",
-)
 
 
 def _spec(
@@ -120,7 +111,7 @@ BEST_EFFORT_DEFINITION: Final[PreprocessingDefinition] = (
             _spec(
                 "extract_candidates",
                 StepName.EXTRACT_CANDIDATES,
-                alternatives=list(_DEFAULT_EXTRACT_ALTERNATIVES),
+                alternatives=list(DEFAULT_STRATEGIES),
             ),
             *_CANDIDATE_CLEANING,
             _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),

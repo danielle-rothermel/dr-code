@@ -389,13 +389,11 @@ def test_extract_candidates_tuple_subset_setting() -> None:
     assert out.facts["alternative"] == "markdown_wrapper"
 
 
-def test_extract_candidates_default_strategies_order() -> None:
-    assert DEFAULT_STRATEGIES == (
-        ExtractionStrategy.FENCED_BLOCKS,
-        ExtractionStrategy.MARKDOWN_WRAPPER,
-        ExtractionStrategy.ESCAPED_PYTHON,
-        ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER,
-    )
+def test_extract_candidates_default_settings_use_the_default_ladder() -> None:
+    # ``DEFAULT_STRATEGIES`` is the one source of truth for the ladder; the
+    # exact order is pinned by the persisted producer coordinate in
+    # ``test_runner``. Here it only has to be what unconfigured settings use.
+    assert ExtractCandidatesSettings().alternatives == DEFAULT_STRATEGIES
 
 
 def test_extract_candidates_escaped_markdown_wrapper_strategy() -> None:

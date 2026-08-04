@@ -112,8 +112,21 @@ def test_escaped_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
             r'\r\n\treturn "\r".join(parts)\n```',
             'def join_cr(parts):\n\treturn "\\r".join(parts)',
         ),
+        # An escaped CRLF intro followed by an LF-escaped fence opener: the
+        # two escaped line-ending forms mix within one payload.
+        (
+            r"Intro\r\n```python\ndef join_cr(parts):"
+            r'\r\n\treturn "\r".join(parts)\n```',
+            'def join_cr(parts):\n\treturn "\\r".join(parts)',
+        ),
     ],
-    ids=["fenced_lf", "unfenced_lf", "cr_tab", "crlf_cr"],
+    ids=[
+        "fenced_lf",
+        "unfenced_lf",
+        "cr_tab",
+        "crlf_cr",
+        "mixed_endings_fence_lf",
+    ],
 )
 def test_escaped_pipeline_preserves_python_string_literals(
     source: str, expected: str

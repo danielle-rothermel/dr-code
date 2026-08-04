@@ -29,7 +29,6 @@ from dr_code.trace import (
     CodeArtifact,
     CodeCandidateSetArtifact,
     ComponentCoordinate,
-    ComponentSetting,
     ExternalPreprocessingTraceProducer,
     JsonArtifact,
     PreprocessingDefinitionCoordinate,
@@ -38,6 +37,7 @@ from dr_code.trace import (
     TextArtifact,
     Trace,
     WiringError,
+    coordinate_settings,
     is_absent,
 )
 from dr_code.preprocessing.definition import (
@@ -48,7 +48,6 @@ from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.steps.base import (
     Step,
     StepFailedError,
-    StepSettings,
 )
 
 #: ArtifactKind -> the concrete artifact model a TraceValue may be.
@@ -118,37 +117,13 @@ def bind_definition(
                     component=ComponentCoordinate(
                         registered_name=step_cls.NAME.value,
                         version=step_cls.VERSION,
-                        settings=_coordinate_settings(settings),
+                        settings=coordinate_settings(settings),
                     ),
                 ),
             )
         )
 
     return tuple(bound)
-
-
-def _coordinate_settings(
-    settings: StepSettings,
-) -> tuple[ComponentSetting, ...]:
-    """Project typed step settings into the bounded persisted shape."""
-    values = settings.model_dump(mode="python")
-    entries: list[ComponentSetting] = []
-    for name, value in values.items():
-        if isinstance(value, tuple):
-            if not all(isinstance(item, str) for item in value):
-                raise TypeError(
-                    f"unsupported persisted tuple setting for {name!r}"
-                )
-            value = tuple(value)
-        if not isinstance(
-            value, str | int | float | bool | type(None) | tuple
-        ):
-            raise TypeError(
-                f"unsupported persisted setting shape for {name!r}: "
-                f"{type(value).__name__}"
-            )
-        entries.append(ComponentSetting(name=name, value=value))
-    return tuple(entries)
 
 
 def run_preprocessing(

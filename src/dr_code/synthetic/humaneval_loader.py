@@ -6,11 +6,18 @@ for future opt-in execution-based equivalence checks. The plain
 
 If network access is unavailable, callers must explicitly opt into the offline
 JSON snapshot under `tests/corpus/humanevalplus_snapshot.json`.
-The raw-row loading contract is owned by `dr_code.humaneval.sampling`.
+The raw-row loading contract is owned by `dr_code.humaneval.sampling`, which
+guarantees provenance only.
+
+This loader validates rows against the registered task model
+(`parse_human_eval_dataset`) before building synthetic tasks, so a row that
+fails the registered override set — for example an overridden task whose
+replacement anchor is missing — never becomes synthetic ground truth.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
@@ -22,6 +29,7 @@ from dr_code.humaneval.sampling import (
     load_human_eval_rows,
     write_human_eval_snapshot_rows,
 )
+from dr_code.humaneval.task import HumanEvalTask, parse_human_eval_dataset
 from dr_code.models import FrozenModel
 
 #: Hugging Face dataset id and split.
@@ -48,14 +56,26 @@ class HumanEvalPlusTask(FrozenModel):
         return self.prompt + self.canonical_solution
 
 
-def _task_from_row(row: HumanEvalRow) -> HumanEvalPlusTask:
+def _task_from_validated(task: HumanEvalTask) -> HumanEvalPlusTask:
     return HumanEvalPlusTask(
-        task_id=str(row["task_id"]),
-        prompt=str(row["prompt"]),
-        canonical_solution=str(row["canonical_solution"]),
-        entry_point=str(row["entry_point"]),
-        test=str(row["test"]),
+        task_id=task.task_id,
+        prompt=task.prompt,
+        canonical_solution=task.canonical_solution,
+        entry_point=task.entry_point,
+        test=task.test,
     )
+
+
+def _tasks_from_rows(rows: Sequence[HumanEvalRow]) -> list[HumanEvalPlusTask]:
+    """Validate rows against the registered task model, then project them.
+
+    ``parse_human_eval_dataset`` applies the registered override set, so a
+    row that lost its override anchor raises here instead of silently
+    becoming synthetic ground truth.
+    """
+    return [
+        _task_from_validated(task) for task in parse_human_eval_dataset(rows)
+    ]
 
 
 def _load_from_hf() -> list[HumanEvalPlusTask]:
@@ -64,7 +84,7 @@ def _load_from_hf() -> list[HumanEvalPlusTask]:
         dataset_split=HF_SPLIT,
         hf_revision=HF_REVISION,
     )
-    return [_task_from_row(row) for row in rows]
+    return _tasks_from_rows(rows)
 
 
 def _load_from_snapshot(repo_root: Path) -> list[HumanEvalPlusTask]:
@@ -75,7 +95,7 @@ def _load_from_snapshot(repo_root: Path) -> list[HumanEvalPlusTask]:
         hf_revision=HF_REVISION,
         snapshot_path=snap,
     )
-    return [_task_from_row(row) for row in rows]
+    return _tasks_from_rows(rows)
 
 
 def _repo_root() -> Path:
