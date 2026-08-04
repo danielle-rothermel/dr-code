@@ -1,4 +1,12 @@
-"""SerializedTrace + round-trip functions."""
+"""SerializedTrace + round-trip functions.
+
+Deserialization is deliberately permissive: ``deserialize_trace`` and the
+trace models validate structure only — schema version, value shapes, and
+producer discriminators — and never check producer coordinates against the
+live component registries. Archived traces stay loadable after the
+registries move on; semantic validity against the current pipeline is
+enforced at use time by the runner's resolve-and-compare guard.
+"""
 
 from __future__ import annotations
 

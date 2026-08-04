@@ -99,6 +99,3 @@ def test_serialized_trace_rejects_missing_or_unsupported_schema_version(
 
     with pytest.raises(ValidationError):
         SerializedTrace.model_validate(payload)
-    (PreprocessingDefinitionCoordinate,)
-    (PreprocessingTraceProducer,)
-    (StepCoordinate,)

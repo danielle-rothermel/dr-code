@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 import pytest
 
 from dr_code.preprocessing.definition import (
     PreprocessingDefinition,
     StepSpec,
 )
+from dr_code.preprocessing.definitions import (
+    BEST_EFFORT_DEFINITION,
+    FIELD_MARKER_DEFINITION,
+)
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
     BoundStep,
+    _coordinate_settings,
     bind_definition,
     run_external_preprocessing as run_preprocessing,
     run_preprocessing as run_registered_preprocessing,
 )
+from dr_code.preprocessing.steps.base import StepSettings
 from dr_code.trace import (
     CodeArtifact,
     ComponentSetting,
@@ -369,3 +377,279 @@ def test_pipeline_prose_only_yields_absent() -> None:
         definition, TextArtifact(text="just prose, no code at all")
     )
     assert is_absent(trace.value("output"))
+
+
+# --- persisted producer coordinate (wire-format contract) ------------
+
+# The dicts below pin the exact persisted producer coordinate of every
+# registered definition: definition ids, versions, instance names,
+# registered component names, and every setting name and value. Setting
+# names are derived from Python field names, so a field rename silently
+# rewrites stored trace identity. A failure here means the wire format
+# changed and must be a deliberate, versioned decision — never a
+# mechanical test update.
+
+_BEST_EFFORT_PRODUCER_JSON: Final[dict[str, object]] = {
+    "kind": "preprocessing",
+    "definition": {
+        "definition_id": "humaneval-best-effort",
+        "version": "0",
+        "steps": [
+            {
+                "instance_name": "normalize_line_endings",
+                "component": {
+                    "registered_name": "normalize_line_endings",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "normalize_unicode",
+                "component": {
+                    "registered_name": "normalize_unicode",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "expand_tabs",
+                "component": {
+                    "registered_name": "expand_tabs",
+                    "version": "0",
+                    "settings": [{"name": "tab_width", "value": 4}],
+                },
+            },
+            {
+                "instance_name": "strip_trailing_whitespace",
+                "component": {
+                    "registered_name": "strip_trailing_whitespace",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "collapse_blank_runs",
+                "component": {
+                    "registered_name": "collapse_blank_runs",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "trim_outer_blanks",
+                "component": {
+                    "registered_name": "trim_outer_blanks",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "extract_candidates",
+                "component": {
+                    "registered_name": "extract_candidates",
+                    "version": "0",
+                    "settings": [
+                        {
+                            "name": "alternatives",
+                            "value": [
+                                "fenced_blocks",
+                                "markdown_wrapper",
+                                "escaped_python",
+                                "escaped_markdown_wrapper",
+                            ],
+                        }
+                    ],
+                },
+            },
+            {
+                "instance_name": "strip_fences",
+                "component": {
+                    "registered_name": "strip_fences",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "dedent",
+                "component": {
+                    "registered_name": "dedent_candidates",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "normalize_smart_quotes",
+                "component": {
+                    "registered_name": "normalize_smart_quotes",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "split_on_name_guard",
+                "component": {
+                    "registered_name": "split_on_name_guard",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "drop_after_last_return",
+                "component": {
+                    "registered_name": "drop_after_last_return",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "repair_import_lines",
+                "component": {
+                    "registered_name": "repair_import_lines",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "infer_missing_imports",
+                "component": {
+                    "registered_name": "infer_missing_imports",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "dedupe_imports",
+                "component": {
+                    "registered_name": "dedupe_imports",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "filter_plain_literal",
+                "component": {
+                    "registered_name": "filter_plain_literal",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "filter_code_repr",
+                "component": {
+                    "registered_name": "filter_code_repr",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "filter_compilable",
+                "component": {
+                    "registered_name": "filter_compilable",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "select_first",
+                "component": {
+                    "registered_name": "select_first",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+        ],
+    },
+}
+
+_FIELD_MARKER_PRODUCER_JSON: Final[dict[str, object]] = {
+    "kind": "preprocessing",
+    "definition": {
+        "definition_id": "humaneval-field-marker",
+        "version": "0",
+        "steps": [
+            {
+                "instance_name": "field_marker_extract",
+                "component": {
+                    "registered_name": "field_marker_extract",
+                    "version": "0",
+                    "settings": [{"name": "field_name", "value": "code"}],
+                },
+            },
+            {
+                "instance_name": "filter_plain_literal",
+                "component": {
+                    "registered_name": "filter_plain_literal",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "filter_code_repr",
+                "component": {
+                    "registered_name": "filter_code_repr",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "filter_compilable",
+                "component": {
+                    "registered_name": "filter_compilable",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "select_first",
+                "component": {
+                    "registered_name": "select_first",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+        ],
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("definition", "expected"),
+    [
+        (BEST_EFFORT_DEFINITION, _BEST_EFFORT_PRODUCER_JSON),
+        (FIELD_MARKER_DEFINITION, _FIELD_MARKER_PRODUCER_JSON),
+    ],
+    ids=["best-effort", "field-marker"],
+)
+def test_registered_definition_producer_matches_persisted_coordinate(
+    definition: PreprocessingDefinition,
+    expected: dict[str, object],
+) -> None:
+    trace = run_registered_preprocessing(
+        definition, TextArtifact(text="def f():\n    return 1\n")
+    )
+    assert trace.producer.model_dump(mode="json") == expected
+
+
+# --- settings projection: tuple support and rejected shapes ----------
+
+
+def test_coordinate_settings_rejects_non_string_tuple() -> None:
+    class _IntTupleSettings(StepSettings):
+        alternatives: tuple[int, ...] = (1, 2)
+
+    with pytest.raises(
+        TypeError,
+        match="unsupported persisted tuple setting for 'alternatives'",
+    ):
+        _coordinate_settings(_IntTupleSettings())
+
+
+def test_coordinate_settings_rejects_unsupported_value_type() -> None:
+    class _MappingSettings(StepSettings):
+        mapping: dict[str, str] = {}
+
+    with pytest.raises(
+        TypeError,
+        match="unsupported persisted setting shape for 'mapping': dict",
+    ):
+        _coordinate_settings(_MappingSettings())

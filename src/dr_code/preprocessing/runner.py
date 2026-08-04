@@ -5,6 +5,15 @@ fold over bound steps. Bind-time wiring failures raise ``WiringError``
 before any input is processed — incompatible definitions are wiring bugs,
 not data. Runtime data failures (``StepFailedError``) become ``Absent``
 with the cause, and the pipeline always completes with a full trace.
+
+Two entry points stamp provenance on the resulting trace.
+``run_preprocessing`` resolves the canonical registered definition for the
+caller's ``(definition_id, version)``, rejects a caller-built object that
+claims a registered coordinate without matching it, and stamps
+``PreprocessingTraceProducer``. ``run_external_preprocessing`` accepts an
+unregistered definition and stamps ``ExternalPreprocessingTraceProducer``.
+Traces assembled outside the component system carry
+``ExternalTraceProducer``.
 """
 
 from __future__ import annotations

@@ -10,9 +10,6 @@ from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
 from dr_code.trace.provenance import (
     EXTERNAL_PRODUCER,
-    ExternalPreprocessingTraceProducer,
-    ExternalTraceProducer,
-    PreprocessingTraceProducer,
     TraceProducer,
 )
 
@@ -26,6 +23,10 @@ TraceValue = Artifact | Absent
 # Artifact union metadata plus Absent. get_args(Artifact) unwraps the
 # Annotated[Union[...], Field] form to the member model classes.
 _TRACE_VALUE_TYPES: Final = (*get_args(get_args(Artifact)[0]), Absent)
+
+# Concrete producer classes a Trace may be stamped with, derived from the
+# TraceProducer union metadata the same way.
+_TRACE_PRODUCER_TYPES: Final = get_args(get_args(TraceProducer)[0])
 
 
 class WiringError(Exception):
@@ -49,12 +50,7 @@ class Trace:
     def __post_init__(self) -> None:
         """Validate RESERVED_KEYS ⊆ values; reject non-TraceValue
         entries."""
-        if not isinstance(
-            self.producer,
-            ExternalTraceProducer
-            | ExternalPreprocessingTraceProducer
-            | PreprocessingTraceProducer,
-        ):
+        if not isinstance(self.producer, _TRACE_PRODUCER_TYPES):
             raise WiringError(
                 "trace producer must be an external or preprocessing "
                 "producer coordinate"
