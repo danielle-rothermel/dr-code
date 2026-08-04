@@ -125,3 +125,34 @@ def test_dataset_jsonl_roundtrip_preserves_boundary_schema(
         generation_seed=42,
         recipe=recipe_coordinate(RECIPES_BY_NAME["clean"]),
     )
+
+
+def test_sample_id_layout_is_pinned() -> None:
+    # Contract pin: ``sample_id`` is a persisted display label. Its exact
+    # separator and field order are the stored format; changing either
+    # changes every artifact already on disk.
+    coordinate = SyntheticSampleCoordinate(
+        humaneval_task_id="HumanEval/0",
+        generation_seed=1,
+        recipe=recipe_coordinate(RECIPES_BY_NAME["clean"]),
+    )
+
+    assert SyntheticSample.make_id(coordinate) == "HumanEval/0::clean@0::1"
+
+
+def test_sample_coordinate_json_layout_is_pinned() -> None:
+    # Contract pin: the coordinate JSON is the semantic identity and the
+    # RNG seed material for ``build_sample``. Key names, key order, and
+    # setting projection are the stored format.
+    coordinate = SyntheticSampleCoordinate(
+        humaneval_task_id="HumanEval/0",
+        generation_seed=1,
+        recipe=recipe_coordinate(RECIPES_BY_NAME["fenced_tagged"]),
+    )
+
+    assert coordinate.model_dump_json() == (
+        '{"humaneval_task_id":"HumanEval/0","generation_seed":1,'
+        '"recipe":{"recipe_name":"fenced_tagged","version":"0",'
+        '"corruptions":[{"registered_name":"add_code_fences","version":"0",'
+        '"settings":[{"name":"language_tag","value":"python"}]}]}}'
+    )

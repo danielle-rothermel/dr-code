@@ -9,7 +9,12 @@ import unicodedata
 import pytest
 
 from dr_code.synthetic.corruptions import REGISTRY
-from dr_code.synthetic.names import CorruptionName
+from dr_code.synthetic.corruptions.add_code_fences import (
+    AddCodeFences,
+    AddCodeFencesSettings,
+)
+from dr_code.synthetic.corruptions.base import CorruptionSettings
+from dr_code.synthetic.names import CorruptionName, FenceLangTag
 
 SOURCE = (
     "import math\n"
@@ -38,12 +43,35 @@ def test_corruption_is_deterministic_for_seed(name: CorruptionName) -> None:
     assert _apply(name) == _apply(name)
 
 
-def test_add_code_fences_wraps_source_in_one_fenced_block() -> None:
-    corrupted = _apply(CorruptionName.ADD_CODE_FENCES)
+@pytest.mark.parametrize(
+    "tag, opening",
+    [
+        (FenceLangTag.PYTHON, "```python\n"),
+        (FenceLangTag.PY, "```py\n"),
+        (FenceLangTag.PYTHON3, "```python3\n"),
+        (FenceLangTag.NONE, "```\n"),
+    ],
+)
+def test_add_code_fences_emits_its_configured_tag(
+    tag: FenceLangTag, opening: str
+) -> None:
+    transform = AddCodeFences(AddCodeFencesSettings(language_tag=tag))
+    corrupted = transform.apply(SOURCE, random.Random(SEED)).corrupted_source
 
     assert corrupted.count("```") == 2
+    assert corrupted.startswith(opening)
     assert SOURCE in corrupted
     assert corrupted.endswith("```\n")
+
+
+def test_add_code_fences_ignores_rng_state() -> None:
+    transform = AddCodeFences(
+        AddCodeFencesSettings(language_tag=FenceLangTag.PYTHON)
+    )
+
+    assert transform.apply(SOURCE, random.Random(1)).corrupted_source == (
+        transform.apply(SOURCE, random.Random(2)).corrupted_source
+    )
 
 
 def test_add_prose_wrapper_preserves_source_between_prose() -> None:
@@ -260,3 +288,13 @@ def test_every_registered_corruption_declares_its_own_version() -> None:
     assert all(
         "VERSION" in corruption.__dict__ for corruption in REGISTRY.values()
     )
+
+
+@pytest.mark.parametrize("name", CorruptionName)
+def test_registered_corruption_settings_model_is_frozen(
+    name: CorruptionName,
+) -> None:
+    settings_model = REGISTRY[name.value].Settings
+
+    assert issubclass(settings_model, CorruptionSettings)
+    assert settings_model.model_config["frozen"] is True

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dr_code.models import FrozenModel
 from dr_code.synthetic.names import SAMPLE_ID_SEP
+from dr_code.trace import ComponentSetting
 
 
 class CorruptedSample(FrozenModel):
@@ -14,10 +15,16 @@ class CorruptedSample(FrozenModel):
 
 
 class CorruptionCoordinate(FrozenModel):
-    """One registered corruption component in a recipe."""
+    """One registered corruption component in a recipe.
+
+    ``settings`` carries the corruption's resolved tunables, so two recipe
+    entries that differ only in settings are distinct coordinates. A
+    corruption with no tunables carries an empty tuple.
+    """
 
     registered_name: str
     version: str
+    settings: tuple[ComponentSetting, ...] = ()
 
 
 class RecipeCoordinate(FrozenModel):
