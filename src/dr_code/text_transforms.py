@@ -269,8 +269,12 @@ def drop_after_last_return(text: str) -> str | None:
     only once bracket continuations have closed, so a return spanning
     several lines is kept whole instead of being cut mid-bracket. Tokens
     also distinguish the keyword from the same word inside a string or a
-    comment, and `INDENT`/`DEDENT` tracking keeps a module-level `return`
-    — which is not a function body's exit — from being treated as one.
+    comment, and `INDENT`/`DEDENT` tracking keeps a `return` at
+    indentation level zero — which cannot be a function body's exit — from
+    being treated as one. The tracking is indentation depth, not function
+    scope: a `return` inside any indented block counts as a boundary, and
+    a salvage cut at one that is not inside a function does not compile
+    and is dropped by the compilability filter downstream.
 
     Truncation is lossy and this is a best-effort repair over arbitrary
     text, so it fails closed: a malformed token, an unterminated bracket,

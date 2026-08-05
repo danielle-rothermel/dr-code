@@ -21,6 +21,10 @@
   `from __future__` imports. An import above either of those is a defect —
   it makes a `from __future__` candidate uncompilable and demotes a module
   docstring to a bare expression.
+- The speculative repair parse in import inference suppresses
+  `SyntaxWarning` while probing candidate text, so warnings from invalid
+  escape sequences in arbitrary decoder output never leak to the caller's
+  warning filters. The suppression is scoped to the probe parse only.
 - `tests/preprocessing/fixtures/hard_examples.json` pins extraction against
   130 recorded LLM decoder outputs with human verdicts, partitioned into
   development and holdout sets. The cases are evidence, not a
