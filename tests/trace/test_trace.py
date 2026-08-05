@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import operator
 from array import array
+from collections.abc import Callable, Mapping
 from enum import IntEnum, StrEnum
+from typing import cast
 
 import pytest
 
@@ -26,6 +29,14 @@ def _minimal_values() -> dict[str, TraceValue]:
         INPUT_KEY: TextArtifact(text="input"),
         OUTPUT_KEY: TextArtifact(text="output"),
     }
+
+
+def _attempt_public_mutation(action: Callable[[], object]) -> None:
+    """Exercise either a mutable defensive copy or an immutable view."""
+    try:
+        action()
+    except (AttributeError, TypeError):
+        pass
 
 
 def test_trace_requires_both_reserved_values() -> None:
@@ -145,6 +156,67 @@ def test_trace_deep_copies_step_facts_against_later_mutation() -> None:
     nested["rejected_locations"].append(1)
     step_facts["parse"]["extra"] = "added after construction"
     step_facts["late"] = {"reason": "added after construction"}
+
+    assert trace.step_facts == {
+        "parse": {"detail": {"rejected_locations": [0]}}
+    }
+
+
+def test_trace_values_public_view_cannot_change_snapshot() -> None:
+    trace = Trace(values=_minimal_values(), producer=EXTERNAL_PRODUCER)
+
+    _attempt_public_mutation(
+        lambda: operator.setitem(
+            trace.values,
+            "late",
+            TextArtifact(text="added through public view"),
+        )
+    )
+    _attempt_public_mutation(
+        lambda: operator.setitem(
+            trace.values,
+            INPUT_KEY,
+            TextArtifact(text="replaced through public view"),
+        )
+    )
+
+    assert set(trace.values) == {INPUT_KEY, OUTPUT_KEY}
+    assert trace.value(INPUT_KEY) == TextArtifact(text="input")
+
+
+def test_trace_value_public_json_payload_cannot_change_snapshot() -> None:
+    values = _minimal_values()
+    values["task"] = JsonArtifact(payload={"nested": {"names": ["a"]}})
+    trace = Trace(values=values, producer=EXTERNAL_PRODUCER)
+
+    observed = trace.value("task")
+    assert isinstance(observed, JsonArtifact)
+    payload = cast(Mapping[str, object], observed.payload)
+    nested = cast(Mapping[str, object], payload["nested"])
+    names = nested["names"]
+    _attempt_public_mutation(
+        lambda: cast(list[object], names).append("mutated through public view")
+    )
+
+    assert trace.value("task") == JsonArtifact(
+        payload={"nested": {"names": ["a"]}}
+    )
+
+
+def test_trace_step_facts_public_view_cannot_change_snapshot() -> None:
+    trace = Trace(
+        values=_minimal_values(),
+        producer=EXTERNAL_PRODUCER,
+        step_facts={
+            "parse": {"detail": {"rejected_locations": [0]}},
+        },
+    )
+
+    detail = cast(Mapping[str, object], trace.step_facts["parse"]["detail"])
+    rejected_locations = detail["rejected_locations"]
+    _attempt_public_mutation(
+        lambda: cast(list[object], rejected_locations).append(1)
+    )
 
     assert trace.step_facts == {
         "parse": {"detail": {"rejected_locations": [0]}}

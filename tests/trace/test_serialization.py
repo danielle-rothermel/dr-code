@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import operator
+from collections.abc import Callable, Mapping
+from typing import cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -41,6 +45,14 @@ def _candidate(source: str, *, location: int) -> CodeCandidate:
             ),
         ),
     )
+
+
+def _attempt_public_mutation(action: Callable[[], object]) -> None:
+    """Exercise either a mutable defensive copy or an immutable view."""
+    try:
+        action()
+    except (AttributeError, TypeError):
+        pass
 
 
 def _full_trace() -> Trace:
@@ -169,6 +181,29 @@ def test_json_step_facts_survive_the_persistence_round_trip() -> None:
         "detail": {"line": 3, "recoverable": False, "hint": None},
         "confidence": 0.5,
     }
+
+
+def test_serialization_is_stable_across_public_mutation_attempts() -> None:
+    trace = _full_trace()
+    before = serialize_trace(trace).model_dump(mode="json")
+
+    payload_artifact = trace.values["payload"]
+    assert isinstance(payload_artifact, JsonArtifact)
+    payload = cast(Mapping[str, object], payload_artifact.payload)
+    detail = cast(Mapping[str, object], trace.step_facts["parse"]["detail"])
+    _attempt_public_mutation(
+        lambda: operator.setitem(payload, "task", "mutated")
+    )
+    _attempt_public_mutation(lambda: operator.setitem(detail, "line", 99))
+    _attempt_public_mutation(
+        lambda: operator.setitem(
+            trace.values,
+            "late",
+            TextArtifact(text="added through public view"),
+        )
+    )
+
+    assert serialize_trace(trace).model_dump(mode="json") == before
 
 
 def test_serialized_trace_rejects_non_finite_step_fact_floats() -> None:
