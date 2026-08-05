@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import ClassVar, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Generic, Protocol, TypeVar
 
 from dr_code.metrics.engine.execution import (
     ExecutionOutcome,
@@ -11,8 +11,6 @@ from dr_code.metrics.engine.execution import (
 )
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.records import MetricScalar
-from dr_code.metrics.settings import OperatorSettings
 from dr_code.base import FrozenModel
 from dr_code.trace import (
     Artifact,
@@ -20,6 +18,15 @@ from dr_code.trace import (
     CodeArtifact,
     TextArtifact,
 )
+
+if TYPE_CHECKING:
+    # ``records`` imports ``definition``, which imports ``OperatorSettings``
+    # from here; the annotation-only use stays out of the runtime cycle.
+    from dr_code.metrics.records import MetricScalar
+
+
+class OperatorSettings(FrozenModel):
+    """Validated parameters that determine an operator's semantics."""
 
 
 SettingsT = TypeVar("SettingsT", bound=OperatorSettings)

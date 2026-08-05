@@ -7,8 +7,11 @@ import json
 from importlib.util import resolve_name
 from pathlib import Path
 
+IMPORT_PROBE = Path(__file__).parent / "_import_probe.py"
 DR_CODE_PACKAGE = Path(__file__).parents[2] / "src" / "dr_code"
 TRACE_PACKAGE = DR_CODE_PACKAGE / "trace"
+#: The only dr_code roots the trace package may load at runtime.
+APPROVED_DR_CODE_ROOTS = frozenset({"dr_code.base", "dr_code.trace"})
 SIBLING_SYSTEMS = frozenset(
     {
         child.name
@@ -68,14 +71,26 @@ def test_trace_source_does_not_import_sibling_systems() -> None:
     }
 
 
+def _loaded_siblings(report: dict[str, list[str]]) -> list[str]:
+    """Loaded dr_code modules outside the approved roots."""
+    return [
+        name
+        for name in report["loaded_dr_code_modules"]
+        if not any(
+            name == root or name.startswith(f"{root}.")
+            for root in APPROVED_DR_CODE_ROOTS
+        )
+    ]
+
+
 def test_trace_runtime_import_loads_only_approved_boundaries(
-    run_python_module,
+    run_python_script,
 ) -> None:
-    result = run_python_module("dr_code.trace._import_probe")
+    result = run_python_script(IMPORT_PROBE)
 
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
-    assert report["loaded_siblings"] == []
+    assert _loaded_siblings(report) == []
     assert set(report["third_party_roots"]) <= {
         "annotated_types",
         "pydantic",
@@ -86,15 +101,15 @@ def test_trace_runtime_import_loads_only_approved_boundaries(
 
 
 def test_trace_runtime_probe_reports_injected_boundary_crossings(
-    run_python_module,
+    run_python_script,
 ) -> None:
-    result = run_python_module(
-        "dr_code.trace._import_probe",
+    result = run_python_script(
+        IMPORT_PROBE,
         "dr_code.code_analysis",
         "unexpected_dependency",
     )
 
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
-    assert report["loaded_siblings"] == ["dr_code.code_analysis"]
+    assert _loaded_siblings(report) == ["dr_code.code_analysis"]
     assert "unexpected_dependency" in report["third_party_roots"]

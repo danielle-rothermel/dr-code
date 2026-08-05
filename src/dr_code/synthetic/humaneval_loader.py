@@ -4,8 +4,8 @@ The "Plus" variant ships extended unit tests, which are carried on the task
 model's `test` field. The plain `canonical_solution` + `prompt` text is what
 is used for our syntactic ground truth.
 
-If network access is unavailable, callers must explicitly opt into the offline
-JSON snapshot under `tests/corpus/humanevalplus_snapshot.json`.
+If network access is unavailable, callers must explicitly opt into an offline
+JSON snapshot by passing its path; this module invents no location of its own.
 The raw-row loading contract is owned by `dr_code.humaneval.sampling`, which
 guarantees provenance only.
 
@@ -35,9 +35,6 @@ from dr_code.base import FrozenModel
 HF_DATASET_ID: Final[str] = DEFAULT_HUMANEVAL_DATASET_NAME
 HF_SPLIT: Final[str] = DEFAULT_HUMANEVAL_DATASET_SPLIT
 HF_REVISION: Final[str] = DEFAULT_HUMANEVAL_HF_REVISION
-
-#: Path to the offline snapshot, relative to repo root.
-SNAPSHOT_REL_PATH: Final[str] = "tests/corpus/humanevalplus_snapshot.json"
 
 
 class HumanEvalPlusTask(FrozenModel):
@@ -86,40 +83,38 @@ def _load_from_hf() -> list[HumanEvalPlusTask]:
     return _tasks_from_rows(rows)
 
 
-def _load_from_snapshot(repo_root: Path) -> list[HumanEvalPlusTask]:
-    snap = repo_root / SNAPSHOT_REL_PATH
+def _load_from_snapshot(snapshot_path: Path) -> list[HumanEvalPlusTask]:
     rows = load_humaneval_rows(
         dataset_name=HF_DATASET_ID,
         dataset_split=HF_SPLIT,
         hf_revision=HF_REVISION,
-        snapshot_path=snap,
+        snapshot_path=snapshot_path,
     )
     return _tasks_from_rows(rows)
 
 
-def _repo_root() -> Path:
-    """Walk up from this file to the repo root (where pyproject.toml lives)."""
-    here = Path(__file__).resolve()
-    for parent in [here, *here.parents]:
-        if (parent / "pyproject.toml").exists():
-            return parent
-    return Path.cwd()
-
-
 def load_humaneval_plus(
     prefer_snapshot: bool = False,
+    snapshot_path: Path | None = None,
 ) -> list[HumanEvalPlusTask]:
     """Load HumanEvalPlus tasks.
 
     Args:
-        prefer_snapshot: If True, load the local snapshot. Default loads the
+        prefer_snapshot: If True, load ``snapshot_path``. Default loads the
             pinned Hugging Face revision, so stale snapshots are never used
             silently when the network path fails.
+        snapshot_path: The offline snapshot to read. Required when
+            ``prefer_snapshot`` is True; this module knows no default
+            location.
 
     Raises:
+        ValueError: If ``prefer_snapshot`` is True without a snapshot path.
         FileNotFoundError: If the selected source is unavailable.
     """
-    repo_root = _repo_root()
     if prefer_snapshot:
-        return _load_from_snapshot(repo_root)
+        if snapshot_path is None:
+            raise ValueError(
+                "prefer_snapshot=True requires an explicit snapshot_path"
+            )
+        return _load_from_snapshot(snapshot_path)
     return _load_from_hf()

@@ -70,6 +70,15 @@ def build(
         min=1,
         help="Number of HumanEvalPlus snapshot tasks to include.",
     ),
+    snapshot: Path = typer.Option(
+        ...,
+        "--snapshot",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="HumanEvalPlus JSON snapshot to draw tasks from.",
+    ),
     seed: int = typer.Option(
         ...,
         "--seed",
@@ -86,7 +95,9 @@ def build(
 ) -> None:
     """Build a synthetic corruption-corpus JSONL artifact."""
     selected_recipes = _select_recipes(recipes)
-    selected_tasks = load_humaneval_plus(prefer_snapshot=True)[:tasks]
+    selected_tasks = load_humaneval_plus(
+        prefer_snapshot=True, snapshot_path=snapshot
+    )[:tasks]
     samples = build_dataset(
         tasks=selected_tasks, recipes=selected_recipes, seed=seed
     )

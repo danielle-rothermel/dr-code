@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from dr_code.base import FrozenModel
 from dr_code.trace import (
     ComponentCoordinate,
     ComponentSetting,
@@ -14,6 +15,7 @@ from dr_code.trace import (
     PreprocessingTraceProducer,
     StepCoordinate,
     TraceProducer,
+    coordinate_settings,
 )
 
 
@@ -74,3 +76,28 @@ def test_trace_producer_rejects_incomplete_or_mixed_variants(
 ) -> None:
     with pytest.raises(ValidationError):
         TypeAdapter(TraceProducer).validate_python(payload)
+
+
+# --- settings projection: tuple support and rejected shapes ----------
+
+
+def test_coordinate_settings_rejects_non_string_tuple() -> None:
+    class _IntTupleSettings(FrozenModel):
+        alternatives: tuple[int, ...] = (1, 2)
+
+    with pytest.raises(
+        TypeError,
+        match="unsupported persisted tuple setting for 'alternatives'",
+    ):
+        coordinate_settings(_IntTupleSettings())
+
+
+def test_coordinate_settings_rejects_unsupported_value_type() -> None:
+    class _MappingSettings(FrozenModel):
+        mapping: dict[str, str] = {}
+
+    with pytest.raises(
+        TypeError,
+        match="unsupported persisted setting shape for 'mapping': dict",
+    ):
+        coordinate_settings(_MappingSettings())

@@ -1,6 +1,6 @@
 """Example policy-consumer contracts.
 
-``dr_code.metrics.policy_example`` is the example *consumer*: it derives a
+``derive_outcome`` below is the example *consumer*: it derives a
 ``SubmissionOutcome``-equivalent verdict from a ``code_test`` record.
 Facts stay in records; thresholds and verdicts stay in the consumer.
 
@@ -28,8 +28,56 @@ from dr_code.humaneval.sandbox import (
     SandboxCompletedProcess,
     SandboxTimeoutError,
 )
+from dr_code.metrics.names import MetricName
+from dr_code.metrics.records import MetricRecord, RecordStatus
 
-from metrics.helpers import code_test_trace, raising_runner
+
+# ---------------------------------------------------------------------------
+# The example consumer policy: derived from a neutral code-test record.
+# ---------------------------------------------------------------------------
+
+
+def derive_outcome(record: MetricRecord) -> SubmissionOutcome:
+    """Derive the existing HumanEval outcome taxonomy from execution facts."""
+
+    if record.metric is not MetricName.CODE_TEST:
+        raise ValueError("derive_outcome requires a code_test record")
+    if record.status is not RecordStatus.MEASURED:
+        raise ValueError("derive_outcome requires a measured record")
+
+    function_count = _integer_fact(record, "function_count")
+    if function_count == 0:
+        return SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
+
+    failed_count = _integer_fact(record, "failed_count")
+    error_count = _integer_fact(record, "error_count")
+    timeout_count = _integer_fact(record, "timeout_count")
+    failure_count = failed_count + error_count + timeout_count
+    coverage_complete = _boolean_fact(record, "coverage_complete")
+
+    if coverage_complete and failure_count == 0:
+        return SubmissionOutcome.PASSED
+    if timeout_count:
+        return SubmissionOutcome.TIMED_OUT
+    if not coverage_complete and failure_count == 0:
+        return SubmissionOutcome.EVALUATION_INCOMPLETE
+    return SubmissionOutcome.TESTS_FAILED
+
+
+def _integer_fact(record: MetricRecord, key: str) -> int:
+    value = record.values.get(key)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(
+            f"code_test record requires non-negative integer fact {key!r}"
+        )
+    return value
+
+
+def _boolean_fact(record: MetricRecord, key: str) -> bool:
+    value = record.values.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"code_test record requires boolean fact {key!r}")
+    return value
 
 
 def _code_test_record(trace, *, runner, timeout=5.0):
@@ -57,12 +105,6 @@ def _code_test_record(trace, *, runner, timeout=5.0):
     return code_test[0]
 
 
-def _derive_outcome(record):
-    from dr_code.metrics.policy_example import derive_outcome
-
-    return derive_outcome(record)
-
-
 def _score_outcome(submission, task, *, runner, timeout=5.0) -> str:
     _ = timeout
     result = score_humaneval_submission(
@@ -73,13 +115,15 @@ def _score_outcome(submission, task, *, runner, timeout=5.0) -> str:
     return result.outcome.value
 
 
-def _assert_parity(submission, task, *, runner, timeout=5.0) -> None:
-    """policy_example's outcome over the code_test record equals scoring's
+def _assert_parity(
+    submission, task, code_test_trace, *, runner, timeout=5.0
+) -> None:
+    """``derive_outcome``'s outcome over the code_test record equals scoring's
     outcome over the same submission."""
     record = _code_test_record(
         code_test_trace(submission, task), runner=runner, timeout=timeout
     )
-    consumer = _derive_outcome(record)
+    consumer = derive_outcome(record)
     oracle = _score_outcome(submission, task, runner=runner, timeout=timeout)
     assert str(consumer.value) == str(oracle)
 
@@ -89,47 +133,59 @@ def _assert_parity(submission, task, *, runner, timeout=5.0) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_passed_outcome_parity(task, good_submission, local_runner) -> None:
-    _assert_parity(good_submission, task, runner=local_runner)
+def test_passed_outcome_parity(
+    task, good_submission, local_runner, code_test_trace
+) -> None:
+    _assert_parity(good_submission, task, code_test_trace, runner=local_runner)
     record = _code_test_record(
         code_test_trace(good_submission, task), runner=local_runner
     )
-    assert _derive_outcome(record).value == SubmissionOutcome.PASSED.value
+    assert derive_outcome(record).value == SubmissionOutcome.PASSED.value
 
 
 def test_tests_failed_outcome_parity(
-    task, failing_submission, local_runner
+    task, failing_submission, local_runner, code_test_trace
 ) -> None:
-    _assert_parity(failing_submission, task, runner=local_runner)
+    _assert_parity(
+        failing_submission, task, code_test_trace, runner=local_runner
+    )
     record = _code_test_record(
         code_test_trace(failing_submission, task), runner=local_runner
     )
-    assert _derive_outcome(record).value == (
+    assert derive_outcome(record).value == (
         SubmissionOutcome.TESTS_FAILED.value
     )
 
 
-def test_no_top_level_functions_outcome_parity(task, local_runner) -> None:
+def test_no_top_level_functions_outcome_parity(
+    task, local_runner, code_test_trace
+) -> None:
     submission = "x = 1\n"  # compiles, no top-level functions
-    _assert_parity(submission, task, runner=local_runner)
+    _assert_parity(submission, task, code_test_trace, runner=local_runner)
     record = _code_test_record(
         code_test_trace(submission, task), runner=local_runner
     )
-    assert _derive_outcome(record).value == (
+    assert derive_outcome(record).value == (
         SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS.value
     )
 
 
-def test_timed_out_outcome_parity(task, good_submission) -> None:
+def test_timed_out_outcome_parity(
+    task, good_submission, code_test_trace, raising_runner
+) -> None:
     runner = raising_runner(SandboxTimeoutError("timed out"))
-    _assert_parity(good_submission, task, runner=runner, timeout=1.0)
+    _assert_parity(
+        good_submission, task, code_test_trace, runner=runner, timeout=1.0
+    )
     record = _code_test_record(
         code_test_trace(good_submission, task), runner=runner, timeout=1.0
     )
-    assert _derive_outcome(record).value == SubmissionOutcome.TIMED_OUT.value
+    assert derive_outcome(record).value == SubmissionOutcome.TIMED_OUT.value
 
 
-def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
+def test_evaluation_incomplete_outcome_parity(
+    task, good_submission, code_test_trace
+) -> None:
     """Partial runner output (incomplete coverage, no failures) ⇒ incomplete."""
 
     def partial_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
@@ -139,11 +195,13 @@ def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
             stderr="",
         )
 
-    _assert_parity(good_submission, task, runner=partial_runner)
+    _assert_parity(
+        good_submission, task, code_test_trace, runner=partial_runner
+    )
     record = _code_test_record(
         code_test_trace(good_submission, task), runner=partial_runner
     )
-    assert _derive_outcome(record).value == (
+    assert derive_outcome(record).value == (
         SubmissionOutcome.EVALUATION_INCOMPLETE.value
     )
 
@@ -154,7 +212,7 @@ def test_evaluation_incomplete_outcome_parity(task, good_submission) -> None:
 
 
 def test_code_test_record_carries_no_verdict_fields(
-    task, good_submission, local_runner
+    task, good_submission, local_runner, code_test_trace
 ) -> None:
     """No thresholds, verdicts, or 'best'-as-judgement in records."""
     record = _code_test_record(
@@ -170,8 +228,7 @@ def test_derive_outcome_rejects_negative_counts() -> None:
     """A corrupt or tampered record cannot cancel failures with negative
     counts (failed_count=-1 + error_count=1 would otherwise read as zero
     failures and derive PASSED)."""
-    from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
-    from dr_code.metrics.records import MetricRecord, RecordStatus
+    from dr_code.metrics import MetricQuestion, MetricsDefinition
     from dr_code.trace import EXTERNAL_PRODUCER
 
     record = MetricRecord(
@@ -196,4 +253,4 @@ def test_derive_outcome_rejects_negative_counts() -> None:
         },
     )
     with pytest.raises(ValueError, match="non-negative"):
-        _derive_outcome(record)
+        derive_outcome(record)

@@ -40,6 +40,10 @@ initial-version = "0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Test directories carry no package markers, so mirrored basenames
+# (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
+# need importlib import mode rather than sys.path insertion.
+addopts = "--import-mode=importlib"
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]
 line-length = 79

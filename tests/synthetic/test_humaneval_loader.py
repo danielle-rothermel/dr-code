@@ -12,6 +12,15 @@ from dr_code.synthetic import humaneval_loader
 from dr_code.synthetic.humaneval_loader import load_humaneval_plus
 
 
+#: The repository's tracked offline HumanEvalPlus snapshot.
+SNAPSHOT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "tests"
+    / "corpus"
+    / "humanevalplus_snapshot.json"
+)
+
+
 TEST_SOURCE = (
     "def check(candidate):\n"
     "    inputs = [[1, 2]]\n"
@@ -74,13 +83,12 @@ def test_explicit_snapshot_loader_uses_repository_snapshot(
         available_source,
     )
 
-    tasks = load_humaneval_plus(prefer_snapshot=True)
+    tasks = load_humaneval_plus(
+        prefer_snapshot=True, snapshot_path=SNAPSHOT_PATH
+    )
 
     assert [task.task_id for task in tasks] == ["HumanEval/0"]
-    assert calls[0]["snapshot_path"] == (
-        Path(__file__).resolve().parents[2]
-        / humaneval_loader.SNAPSHOT_REL_PATH
-    )
+    assert calls[0]["snapshot_path"] == SNAPSHOT_PATH
 
 
 @pytest.mark.parametrize("prefer_snapshot", [True, False])
@@ -112,4 +120,7 @@ def test_loader_rejects_row_missing_its_override_anchor(
             f"{OVERRIDDEN_ENTRY.task_id}"
         ),
     ):
-        load_humaneval_plus(prefer_snapshot=prefer_snapshot)
+        load_humaneval_plus(
+            prefer_snapshot=prefer_snapshot,
+            snapshot_path=SNAPSHOT_PATH if prefer_snapshot else None,
+        )

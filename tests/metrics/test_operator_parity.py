@@ -21,8 +21,6 @@ import zstandard
 
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 
-from metrics.helpers import code_test_trace, evaluate_oracle
-
 # Golden compressed sizes use gzip level 9 and zstd level 3.
 _ZSTD_GOLDEN_LEVEL = 3
 
@@ -399,7 +397,7 @@ def _code_test_question(timeout_seconds: float = 5.0) -> object:
 
 
 def test_code_test_passing_counts_match_oracle(
-    task, good_submission, local_runner
+    task, good_submission, local_runner, code_test_trace, evaluate_oracle
 ) -> None:
     oracle = evaluate_oracle(
         task, good_submission, timeout_seconds=5.0, run_in_sandbox=local_runner
@@ -426,7 +424,7 @@ def test_code_test_passing_counts_match_oracle(
 
 
 def test_code_test_failing_counts_match_oracle(
-    task, failing_submission, local_runner
+    task, failing_submission, local_runner, code_test_trace, evaluate_oracle
 ) -> None:
     oracle = evaluate_oracle(
         task,
@@ -448,7 +446,7 @@ def test_code_test_failing_counts_match_oracle(
 
 
 def test_code_test_kill_returncode_attributed_to_candidate(
-    task, good_submission
+    task, good_submission, code_test_trace
 ) -> None:
     """A sandbox kill (returncode 137) is candidate data: all cases error."""
     from dr_code.humaneval.sandbox import SandboxCompletedProcess
@@ -468,13 +466,11 @@ def test_code_test_kill_returncode_attributed_to_candidate(
 
 
 def test_code_test_nonzero_exit_attributed_to_candidate(
-    task, good_submission
+    task, good_submission, code_test_trace, scripted_runner
 ) -> None:
     """An unexpected nonzero returncode (e.g. ``os._exit(5)``) is
     candidate-controlled data: it becomes all-ERROR case statuses in a measured
     record, not an ``EvaluationHarnessError`` that aborts the batch."""
-    from metrics.helpers import scripted_runner
-
     record = _extract(
         _definition([_code_test_question()]),
         code_test_trace(good_submission, task),
@@ -486,14 +482,12 @@ def test_code_test_nonzero_exit_attributed_to_candidate(
 
 
 def test_code_test_malformed_stdout_attributed_to_candidate(
-    task, good_submission
+    task, good_submission, code_test_trace, scripted_runner
 ) -> None:
     """Malformed runner stdout (candidate shares the runner's stdout) is
     candidate data: it becomes all-ERROR case statuses in a measured record,
     not a batch-aborting error. Covers the JSON-decode / shape / case-id
     validation branches."""
-    from metrics.helpers import scripted_runner
-
     for bad_stdout in (
         "this is not json{",  # JSON decode failure
         '{"not": "a list"}',  # wrong shape (object, not list)
@@ -513,7 +507,7 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
 
 
 def test_code_test_sandbox_error_still_propagates(
-    task, good_submission
+    task, good_submission, code_test_trace, raising_runner
 ) -> None:
     """``SandboxError`` is raised at the sandbox boundary before candidate code
     runs, so it remains the only propagating infrastructure path and still
@@ -521,8 +515,6 @@ def test_code_test_sandbox_error_still_propagates(
     import pytest
 
     from dr_code.humaneval.sandbox import SandboxError
-
-    from metrics.helpers import raising_runner
 
     with pytest.raises(SandboxError):
         _extract(
@@ -603,7 +595,7 @@ def test_code_test_selector_parity_with_task_selector() -> None:
 
 
 def test_code_test_best_function_is_mechanical_max_passes(
-    task, local_runner
+    task, local_runner, code_test_trace
 ) -> None:
     """best_function_name is an observation (max-passes), not a verdict — it
     stays in values; score/outcome stay in the consumer."""
@@ -621,7 +613,13 @@ def test_code_test_best_function_is_mechanical_max_passes(
     assert "outcome" not in record.values
 
 
-def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
+def test_code_test_partial_coverage_is_measured(
+    task,
+    good_submission,
+    code_test_trace,
+    scripted_runner,
+    partial_pass_runner_output,
+) -> None:
     """Genuinely incomplete runner output (fewer results than cases, no
     failures) is a measured record, not an error, and coverage_complete is the
     fact "did every case produce a result" (False here) — a fact, not a
@@ -631,8 +629,6 @@ def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
     ``EvaluationTaskResult.coverage_complete`` (``result_count ==
     total_cases``); pass/fail thresholds belong in the policy consumer.
     """
-    from metrics.helpers import partial_pass_runner_output, scripted_runner
-
     # Only case_0 is reported for a two-case task: genuine incomplete coverage.
     incomplete_output = partial_pass_runner_output(
         passed=("case_0",), case_ids=("case_0",)
@@ -649,7 +645,11 @@ def test_code_test_partial_coverage_is_measured(task, good_submission) -> None:
 
 
 def test_code_test_complete_coverage_with_failure_is_covered(
-    task, good_submission
+    task,
+    good_submission,
+    code_test_trace,
+    scripted_runner,
+    partial_pass_runner_output,
 ) -> None:
     """Complete coverage with a failing case: coverage_complete is True (every
     case produced a result) even though a case failed — the fact/verdict split.
@@ -659,8 +659,6 @@ def test_code_test_complete_coverage_with_failure_is_covered(
     outcome is ``tests_failed`` — the pass/fail threshold lives in the policy
     consumer, not in coverage_complete.
     """
-    from metrics.helpers import partial_pass_runner_output, scripted_runner
-
     # Both cases reported, one failing: complete coverage, one failure.
     complete_with_failure = partial_pass_runner_output()
     record = _extract(

@@ -20,8 +20,7 @@ from dr_code.metrics.engine.execution import (
 )
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.settings import OperatorSettings
-from dr_code.metrics.operators.base import MetricOperator
+from dr_code.metrics.operators.base import MetricOperator, OperatorSettings
 from dr_code.metrics.records import (
     MetricRecord,
     MetricScalar,

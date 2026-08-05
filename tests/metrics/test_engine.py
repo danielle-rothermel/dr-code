@@ -27,8 +27,6 @@ from dr_code.trace import (
     external_trace,
 )
 
-from metrics.helpers import code_test_trace, raising_runner
-
 
 # ---------------------------------------------------------------------------
 # Definition helpers.
@@ -306,7 +304,9 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
 # ===========================================================================
 
 
-def test_infrastructure_sandbox_error_raises(task) -> None:
+def test_infrastructure_sandbox_error_raises(
+    task, code_test_trace, raising_runner
+) -> None:
     """A SandboxError is infra breakage — it raises, never becomes a record."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
@@ -320,7 +320,10 @@ def test_infrastructure_sandbox_error_raises(task) -> None:
 
 
 def test_missing_execution_outcome_raises_engine_invariant_error(
-    task, local_runner, monkeypatch: pytest.MonkeyPatch
+    task,
+    local_runner,
+    code_test_trace,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If CodeTest.compute rebuilds an ExecutionRequest that diverges from
     what execution_requests planned, ctx.outcome_for's lookup misses. That
@@ -342,7 +345,9 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
         _extract(definition, trace, run_in_sandbox=local_runner)
 
 
-def test_sandbox_timeout_is_candidate_data_not_infrastructure(task) -> None:
+def test_sandbox_timeout_is_candidate_data_not_infrastructure(
+    task, code_test_trace, raising_runner
+) -> None:
     """A candidate timeout is attributed to the candidate as data (timeout
     cases), not a raised SandboxError (batch_runner attribution parity)."""
     candidate = "def add_one(x):\n    return x + 1\n"
@@ -365,7 +370,7 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(task) -> None:
 
 
 def test_batch_dedupes_identical_code_test_executions(
-    task, counting_runner
+    task, counting_runner, code_test_trace
 ) -> None:
     """Identical submissions across a sweep execute once (at-most-once)."""
     candidate = "def add_one(x):\n    return x + 1\n"
@@ -378,7 +383,7 @@ def test_batch_dedupes_identical_code_test_executions(
 
 
 def test_distinct_submissions_execute_separately(
-    task, counting_runner
+    task, counting_runner, code_test_trace
 ) -> None:
     good = code_test_trace("def add_one(x):\n    return x + 1\n", task)
     bad = code_test_trace("def add_one(x):\n    return x - 1\n", task)
@@ -387,7 +392,9 @@ def test_distinct_submissions_execute_separately(
     assert counting_runner.call_count == 2
 
 
-def test_batch_returns_one_record_tuple_per_trace(task, local_runner) -> None:
+def test_batch_returns_one_record_tuple_per_trace(
+    task, local_runner, code_test_trace
+) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(
@@ -404,7 +411,7 @@ def test_batch_returns_one_record_tuple_per_trace(task, local_runner) -> None:
 
 
 def test_prepopulated_execution_cache_skips_the_runner(
-    task, counting_runner
+    task, counting_runner, code_test_trace
 ) -> None:
     """A cache hit means the injected runner is never called."""
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
@@ -448,7 +455,9 @@ def test_pure_operators_never_call_the_runner(counting_runner) -> None:
     assert counting_runner.call_count == 0
 
 
-def test_code_test_record_values_exclude_timing(task, local_runner) -> None:
+def test_code_test_record_values_exclude_timing(
+    task, local_runner, code_test_trace
+) -> None:
     """Determinism soft spot: timing stays out of record values so identical
     inputs reproduce."""
     candidate = "def add_one(x):\n    return x + 1\n"

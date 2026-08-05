@@ -186,7 +186,7 @@ def test_metric_record_is_frozen() -> None:
 
 
 def test_metric_record_defaults_settings_to_empty() -> None:
-    from dr_code.metrics.settings import OperatorSettings
+    from dr_code.metrics.operators.base import OperatorSettings
 
     assert _record().settings == OperatorSettings()
 
@@ -197,7 +197,7 @@ def test_equal_records_compare_equal() -> None:
 
 
 def test_metric_record_carries_identity_and_lineage() -> None:
-    from dr_code.metrics.settings import OperatorSettings
+    from dr_code.metrics.operators.base import OperatorSettings
 
     record = _record()
     assert record.metric_version == "1"
@@ -631,9 +631,9 @@ def test_record_matches_a_question_among_several() -> None:
     assert record.metric is MetricName.TEXT_STATS
 
 
-def test_engine_produced_records_satisfy_the_identity_rule() -> None:
+def test_engine_produced_records_satisfy_the_identity_rule(text_trace) -> None:
     """Whatever the engine emits is loadable; the rule mirrors its derivation."""
-    for record in _engine_records():
+    for record in _engine_records(text_trace):
         assert record == type(record).model_validate_json(
             record.model_dump_json()
         )
@@ -644,11 +644,9 @@ def test_engine_produced_records_satisfy_the_identity_rule() -> None:
 # ===========================================================================
 
 
-def _engine_records() -> tuple[object, ...]:
+def _engine_records(text_trace) -> tuple[object, ...]:
     from dr_code.metrics import MetricName, MetricQuestion, MetricsDefinition
     from dr_code.metrics.engine.engine import extract_metrics
-
-    from metrics.helpers import text_trace
 
     definition = MetricsDefinition(
         definition_id="round-trip",
@@ -716,7 +714,7 @@ def test_record_round_trips_every_status_shape_with_registry_settings(
     metric_value: str, settings: dict[str, object], settings_class: str
 ) -> None:
     from dr_code.metrics import MetricName, MetricRecord, RecordStatus
-    from dr_code.metrics.settings import OperatorSettings
+    from dr_code.metrics.operators.base import OperatorSettings
 
     metric = MetricName(metric_value)
     for status in RecordStatus:

@@ -59,15 +59,17 @@ def build_dataset(
     recipes: Iterable[Recipe] = RECIPES,
     seed: int = 0,
     prefer_snapshot: bool = True,
+    snapshot_path: Path | None = None,
 ) -> list[SyntheticSample]:
     """Build the full dataset list (in-memory).
 
     If `tasks` is None, load HumanEvalPlus through the explicit
-    `prefer_snapshot` source choice.
+    `prefer_snapshot` source choice; `snapshot_path` is then required when
+    `prefer_snapshot` is True.
     """
     if tasks is None:
         tasks_iter: Iterable[HumanEvalPlusTask] = load_humaneval_plus(
-            prefer_snapshot=prefer_snapshot
+            prefer_snapshot=prefer_snapshot, snapshot_path=snapshot_path
         )
     else:
         tasks_iter = tasks

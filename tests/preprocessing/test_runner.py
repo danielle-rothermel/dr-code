@@ -21,14 +21,12 @@ from dr_code.preprocessing.runner import (
     run_external_preprocessing as run_preprocessing,
     run_preprocessing as run_registered_preprocessing,
 )
-from dr_code.preprocessing.steps.base import StepSettings
 from dr_code.trace import (
     CodeArtifact,
     ComponentSetting,
     TextArtifact,
     Trace,
     WiringError,
-    coordinate_settings,
     is_absent,
 )
 
@@ -573,28 +571,3 @@ def test_registered_definition_producer_matches_persisted_coordinate(
         definition, TextArtifact(text="def f():\n    return 1\n")
     )
     assert trace.producer.model_dump(mode="json") == expected
-
-
-# --- settings projection: tuple support and rejected shapes ----------
-
-
-def test_coordinate_settings_rejects_non_string_tuple() -> None:
-    class _IntTupleSettings(StepSettings):
-        alternatives: tuple[int, ...] = (1, 2)
-
-    with pytest.raises(
-        TypeError,
-        match="unsupported persisted tuple setting for 'alternatives'",
-    ):
-        coordinate_settings(_IntTupleSettings())
-
-
-def test_coordinate_settings_rejects_unsupported_value_type() -> None:
-    class _MappingSettings(StepSettings):
-        mapping: dict[str, str] = {}
-
-    with pytest.raises(
-        TypeError,
-        match="unsupported persisted setting shape for 'mapping': dict",
-    ):
-        coordinate_settings(_MappingSettings())

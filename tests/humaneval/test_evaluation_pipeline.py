@@ -68,10 +68,14 @@ from dr_code.humaneval.sandbox import (
     SandboxRunner,
     SandboxTimeoutError,
 )
-from dr_code.synthetic.humaneval_loader import SNAPSHOT_REL_PATH
 
-
-SNAPSHOT_PATH = Path(__file__).resolve().parents[2] / SNAPSHOT_REL_PATH
+#: The repository's tracked offline HumanEvalPlus snapshot.
+SNAPSHOT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "tests"
+    / "corpus"
+    / "humanevalplus_snapshot.json"
+)
 
 
 @pytest.fixture(scope="module")
