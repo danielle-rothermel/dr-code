@@ -18,7 +18,7 @@ from dr_code.preprocessing.definition import (
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
-    run_external_preprocessing as run_preprocessing,
+    run_external_preprocessing,
 )
 from dr_code.trace import OUTPUT_KEY, CodeArtifact, TextArtifact, is_absent
 
@@ -53,7 +53,7 @@ def _escaped_pipeline_definition() -> PreprocessingDefinition:
 
 
 def _output_source(source: str) -> CodeArtifact:
-    trace = run_preprocessing(
+    trace = run_external_preprocessing(
         _escaped_pipeline_definition(), TextArtifact(text=source)
     )
     output = trace.value(OUTPUT_KEY)
@@ -149,7 +149,7 @@ def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
 def test_escaped_pipeline_prose_has_no_candidates() -> None:
     # Applying the fallback does not turn prose into code.
     source = r"Here is a discussion.\nThere is no implementation."
-    trace = run_preprocessing(
+    trace = run_external_preprocessing(
         _escaped_pipeline_definition(), TextArtifact(text=source)
     )
     assert is_absent(trace.value(OUTPUT_KEY))

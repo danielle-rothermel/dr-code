@@ -1,9 +1,9 @@
 """Metrics vocabulary and record contracts.
 
-Covers ``MetricName`` / ``RecordStatus`` (StrEnum members), registry↔enum
-sync, ``MetricRecord`` (identity + lineage + exactly-one-shape-per-status),
-and ``record_rows`` flattening with ``"{metric}.{key}"`` value columns
-that prevent collisions across metrics.
+Covers ``MetricName`` / ``RecordStatus`` (StrEnum members), ``MetricRecord``
+(identity + lineage + exactly-one-shape-per-status), and ``record_rows``
+flattening with ``"{metric}.{key}"`` value columns that prevent collisions
+across metrics.
 """
 
 from __future__ import annotations
@@ -61,28 +61,6 @@ def test_record_status_members_round_trip_through_their_string_values() -> (
     for value in EXPECTED_RECORD_STATUSES:
         status = RecordStatus(value)
         assert status.value == value
-
-
-# ---------------------------------------------------------------------------
-# Registry and enum synchronization.
-# ---------------------------------------------------------------------------
-
-
-def test_registry_covers_every_metric_name() -> None:
-    from dr_code.metrics import MetricName
-    from dr_code.metrics.registry import REGISTRY
-
-    for name in MetricName:
-        assert str(name) in REGISTRY, f"{name} missing from REGISTRY"
-
-
-def test_registry_has_no_stray_keys() -> None:
-    from dr_code.metrics import MetricName
-    from dr_code.metrics.registry import REGISTRY
-
-    enum_values = {str(name) for name in MetricName}
-    for key in REGISTRY:
-        assert key in enum_values, f"registry key {key!r} not in MetricName"
 
 
 # ===========================================================================

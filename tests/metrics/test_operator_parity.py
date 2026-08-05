@@ -340,7 +340,8 @@ def test_compressed_length_zstd_level_3_matches_golden(task) -> None:
 
 
 def test_compressed_length_without_reference_has_no_ratio() -> None:
-    """No reference_key ⇒ ratio stays None (empty-reference behaviour)."""
+    """Without a reference_key the reference columns are absent from the
+    record entirely — no ``ratio_to_reference`` key is emitted."""
     record = _extract(
         _definition(
             [
@@ -356,7 +357,7 @@ def test_compressed_length_without_reference_has_no_ratio() -> None:
         gzip.compress(SAMPLE_TEXT.encode("utf-8"), compresslevel=9)
     )
     assert "representation_bytes" in record.values
-    assert record.values.get("ratio_to_reference") is None
+    assert "ratio_to_reference" not in record.values
 
 
 def test_compressed_level_is_part_of_identity() -> None:

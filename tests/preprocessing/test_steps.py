@@ -7,7 +7,7 @@ import unicodedata
 
 import pytest
 
-from dr_code.humaneval.import_inference import infer_necessary_imports
+from dr_code.preprocessing.import_inference import infer_necessary_imports
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.steps.base import Step
 from dr_code.preprocessing.steps.collapse_blank_runs import (

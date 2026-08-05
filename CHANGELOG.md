@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-04
+
+- Removed dead public API and unreachable code paths across the HumanEval,
+  preprocessing, synthetic, and trace packages, including their re-exports and
+  placeholder residue.
+- Corrected docstrings and comments that described behavior the code no longer
+  has, so every module, step, and operator description matches what it does.
+- The HumanEval identifier spelling is uniform across modules, names, and
+  tests.
+- The shared model base module is `dr_code.base` and the schema command-line
+  entry point is `dr_code.schema_cli`.
+- Misplaced modules and tests live with the code they belong to: operator
+  settings sit with the operator base, the synthetic corruption registry has
+  its own module, and the metrics policy example and trace import probe live in
+  the test suite instead of the wheel.
+- Tests mirror the source layout: the flat `tests/unit` directory is gone, the
+  metrics registry has its own module, and preprocessing tests import each
+  function by its own name from its owning module.
+- Snapshot loading takes an explicit snapshot path argument instead of
+  resolving one implicitly.
+
 ## 2026-08-03
 
 - Established explicit manual component coordinates and reset every current
