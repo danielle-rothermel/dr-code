@@ -34,11 +34,6 @@ SMART_QUOTES: Final[dict[str, tuple[str, str]]] = {
     "'": ("‘", "’"),
     '"': ("“", "”"),
 }
-_SMART_QUOTE_TRANSLATION: Final[dict[int, str]] = {
-    ord(smart): ascii_quote
-    for ascii_quote, pair in SMART_QUOTES.items()
-    for smart in pair
-}
 
 
 def normalize_line_endings(source: str) -> str:
@@ -96,11 +91,6 @@ def strip_markdown_wrappers(source: str) -> str:
         MARKDOWN_WRAPPER_RE.sub("", line, count=1)
         for line in source.splitlines()
     )
-
-
-def normalize_smart_quotes(source: str) -> str:
-    """Replace Unicode "smart" quotes with their ASCII counterparts."""
-    return source.translate(_SMART_QUOTE_TRANSLATION)
 
 
 def recover_escaped_python(source: str) -> str | None:
@@ -281,7 +271,6 @@ __all__ = [
     "drop_after_last_return",
     "drop_if_name",
     "normalize_line_endings",
-    "normalize_smart_quotes",
     "normalize_text",
     "strip_code_fences",
     "strip_markdown_wrappers",

@@ -27,7 +27,6 @@ from dr_code.humaneval.sampling import (
     DEFAULT_HUMAN_EVAL_HF_REVISION,
     HumanEvalRow,
     load_human_eval_rows,
-    write_human_eval_snapshot_rows,
 )
 from dr_code.humaneval.task import HumanEvalTask, parse_human_eval_dataset
 from dr_code.models import FrozenModel
@@ -105,20 +104,6 @@ def _repo_root() -> Path:
         if (parent / "pyproject.toml").exists():
             return parent
     return Path.cwd()
-
-
-def save_snapshot(
-    tasks: list[HumanEvalPlusTask], repo_root: Path | None = None
-) -> Path:
-    """Write a snapshot to disk for offline reuse. Returns the path written."""
-    root = repo_root or _repo_root()
-    snap = root / SNAPSHOT_REL_PATH
-    return write_human_eval_snapshot_rows(
-        [task.model_dump(mode="json") for task in tasks],
-        snapshot_path=snap,
-        dataset_name=HF_DATASET_ID,
-        hf_revision=HF_REVISION,
-    )
 
 
 def load_humaneval_plus(

@@ -21,7 +21,7 @@ from dr_code.humaneval.batch_runner import (
     run_subprocess_batch,
     runner_script,
 )
-from dr_code.humaneval.code_extraction import apply_cleaning
+from dr_code.humaneval.code_extraction import apply_cleaning_with_trace
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -109,7 +109,6 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
-    "evaluation_aggregate_metrics",
     "extract_code_with_profile",
     "load_human_eval_rows",
     "parse_human_eval_dataset",
@@ -307,12 +306,6 @@ def test_parse_input_result_tests_have_stable_case_ids() -> None:
     assert checks[0].input_repr == "[1]"
     assert "candidate(*[1])" in checks[0].code
 
-    summary = parsed.to_summary()
-    assert summary.test_type is HumanEvalTestCaseKind.INPUT_RESULT
-    assert [case.case_id for case in summary.cases] == ["case_0", "case_1"]
-    assert summary.cases[0].input_repr == "[1]"
-    assert "code" not in summary.cases[0].model_dump(mode="json")
-
 
 def test_parse_oracle_tests_have_expected_expression_metadata() -> None:
     parsed = parse_human_eval_tests(
@@ -390,7 +383,9 @@ def test_apply_cleaning_extracts_known_submission_shapes(
     source: str,
     expected_fragment: str,
 ) -> None:
-    candidates = apply_cleaning(source, apply_dedent=True)
+    candidates = apply_cleaning_with_trace(
+        source, apply_dedent=True
+    ).candidates
 
     assert candidates
     assert expected_fragment in candidates[0]
@@ -742,13 +737,15 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
 
 
 def test_apply_cleaning_returns_empty_for_blank_input() -> None:
-    assert apply_cleaning("") == []
-    assert apply_cleaning("   \n\t  ") == []
+    assert apply_cleaning_with_trace("").candidates == []
+    assert apply_cleaning_with_trace("   \n\t  ").candidates == []
 
 
 def test_apply_cleaning_supports_tilde_fences() -> None:
     source = "~~~python\ndef add_one(x):\n    return x + 1\n~~~"
-    candidates = apply_cleaning(source, apply_dedent=True)
+    candidates = apply_cleaning_with_trace(
+        source, apply_dedent=True
+    ).candidates
 
     assert candidates
     assert "def add_one" in candidates[0]

@@ -53,19 +53,6 @@ class CleaningTrace(BaseModel):
     roots: list[ExtractionTraceNode]
 
 
-def apply_cleaning(
-    gen_str: str,
-    apply_dedent: bool = False,
-    *,
-    unescape_fallback: bool = True,
-) -> list[str]:
-    return apply_cleaning_with_trace(
-        gen_str,
-        apply_dedent=apply_dedent,
-        unescape_fallback=unescape_fallback,
-    ).candidates
-
-
 def apply_cleaning_with_trace(
     gen_str: str,
     apply_dedent: bool = False,

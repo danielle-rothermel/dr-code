@@ -11,7 +11,6 @@ class CorruptedSample(FrozenModel):
     """One inverse-transform application result."""
 
     corrupted_source: str
-    notes: str = ""
 
 
 class CorruptionCoordinate(FrozenModel):

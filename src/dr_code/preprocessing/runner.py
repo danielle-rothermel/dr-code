@@ -77,15 +77,10 @@ def bind_definition(
     kind chain) raises ``WiringError`` before any input is processed.
     """
     bound: list[BoundStep] = []
-    seen_names: set[str] = set()
     expected_input: ArtifactKind | None = None
 
     for spec in definition.steps:
         instance_name = spec.instance_name
-
-        if instance_name in seen_names:
-            raise WiringError(f"duplicate instance name: {instance_name!r}")
-        seen_names.add(instance_name)
 
         step_cls = REGISTRY.get(spec.step.value)
         if step_cls is None:

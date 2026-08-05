@@ -9,7 +9,6 @@ from dr_code.text_transforms import (
     drop_after_last_return,
     drop_if_name,
     normalize_line_endings,
-    normalize_smart_quotes,
     normalize_text,
     recover_escaped_python,
     strip_code_fences,
@@ -30,7 +29,6 @@ TOTAL_TRANSFORMS = (
     collapse_blank_runs,
     drop_after_last_return,
     normalize_line_endings,
-    normalize_smart_quotes,
     normalize_text,
     strip_code_fences,
     strip_markdown_wrappers,
@@ -81,10 +79,6 @@ def test_strip_code_fences_leaves_unfenced_text_alone() -> None:
 def test_strip_markdown_wrappers_removes_one_marker_per_line() -> None:
     text = "> quoted\n1. numbered\n- bullet\nplain"
     assert strip_markdown_wrappers(text) == "quoted\nnumbered\nbullet\nplain"
-
-
-def test_normalize_smart_quotes_restores_ascii() -> None:
-    assert normalize_smart_quotes("s = ‘a’ + “b”") == "s = 'a' + \"b\""
 
 
 @pytest.mark.parametrize(

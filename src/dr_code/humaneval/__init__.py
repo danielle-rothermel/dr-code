@@ -33,7 +33,6 @@ from dr_code.humaneval.scoring import (
     HarnessFailureCause,
     HumanEvalSubmissionScore,
     SubmissionOutcome,
-    evaluation_aggregate_metrics,
     score_humaneval_submission,
 )
 from dr_code.humaneval.task import (
@@ -81,7 +80,6 @@ __all__ = (
     "STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
-    "evaluation_aggregate_metrics",
     "extract_code_with_profile",
     "load_human_eval_rows",
     "parse_human_eval_dataset",

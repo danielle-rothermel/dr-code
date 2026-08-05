@@ -37,7 +37,6 @@ def coordinate_settings(
                 raise TypeError(
                     f"unsupported persisted tuple setting for {name!r}"
                 )
-            value = tuple(value)
         if not isinstance(
             value, str | int | float | bool | type(None) | tuple
         ):

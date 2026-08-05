@@ -40,5 +40,4 @@ class AddProseWrapper(Corruption):
         wrapped = "\n".join(parts) + "\n"
         return CorruptedSample(
             corrupted_source=wrapped,
-            notes=f"intro={intro!r} outro={outro!r}",
         )

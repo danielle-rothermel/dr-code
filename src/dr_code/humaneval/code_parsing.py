@@ -450,20 +450,6 @@ def build_extraction_trace(
     )
 
 
-def trace_candidate_selection(
-    candidate: str,
-    *,
-    index: int,
-    include_code_repr_check: bool = True,
-) -> CandidateSelectionTrace:
-    trace, _ = candidate_selection(
-        candidate,
-        index=index,
-        include_code_repr_check=include_code_repr_check,
-    )
-    return trace
-
-
 def candidate_selection(
     candidate: str,
     *,

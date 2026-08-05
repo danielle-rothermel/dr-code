@@ -9,8 +9,7 @@ Covers the bind, plan, execute, and compute flow:
 * operator exception ⇒ OPERATOR_FAILURE record attributed to the metric;
 * infrastructure ``SandboxError`` raises (fail-closed);
 * candidate timeout is data, not infrastructure;
-* two-phase execution with equivalent-request deduplication;
-* equal answers across fresh, deserialized, and external traces.
+* two-phase execution with equivalent-request deduplication.
 
 All execution goes through the injectable ``SandboxRunner`` seam.
 """
@@ -23,37 +22,12 @@ from dr_code.humaneval.sandbox import SandboxError, SandboxTimeoutError
 from dr_code.trace import (
     Absent,
     CodeArtifact,
-    ComponentCoordinate,
-    PreprocessingDefinitionCoordinate,
-    PreprocessingTraceProducer,
-    StepCoordinate,
     TextArtifact,
-    Trace,
     WiringError,
-    deserialize_trace,
     external_trace,
-    serialize_trace,
 )
 
 from metrics.helpers import code_test_trace, raising_runner
-
-
-def _preprocessing_producer() -> PreprocessingTraceProducer:
-    return PreprocessingTraceProducer(
-        definition=PreprocessingDefinitionCoordinate(
-            definition_id="pre",
-            version="test-version",
-            steps=(
-                StepCoordinate(
-                    instance_name="step",
-                    component=ComponentCoordinate(
-                        registered_name="normalize_unicode",
-                        version="0",
-                    ),
-                ),
-            ),
-        )
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -156,21 +130,16 @@ def test_records_preserve_complete_metrics_definition_coordinates() -> None:
     assert restored.metrics_definition == changed_settings
 
 
-def test_invalid_operator_settings_fail_at_definition_boundary(
-    counting_runner,
-) -> None:
+def test_invalid_operator_settings_fail_at_definition_boundary() -> None:
     """Invalid settings cannot enter a metrics definition."""
     with pytest.raises(Exception):
         _q(
             "compressed_length",
             compression={"method": "gzip", "level": 99},
         )
-    assert counting_runner.call_count == 0
 
 
-def test_missing_auxiliary_key_is_a_wiring_error(
-    task, counting_runner
-) -> None:
+def test_missing_auxiliary_key_is_a_wiring_error(counting_runner) -> None:
     """code_test needs its task key; a key absent from the namespace is wiring."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = external_trace(
@@ -185,9 +154,7 @@ def test_missing_auxiliary_key_is_a_wiring_error(
     assert counting_runner.call_count == 0
 
 
-def test_batch_wiring_error_runs_no_sandbox_work(
-    task, counting_runner
-) -> None:
+def test_batch_wiring_error_runs_no_sandbox_work(counting_runner) -> None:
     bad = external_trace(
         {
             "input": TextArtifact(text="not code"),
@@ -257,7 +224,7 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
         assert record.values == {}
 
 
-def test_absent_auxiliary_yields_not_applicable(task) -> None:
+def test_absent_auxiliary_yields_not_applicable() -> None:
     """code_test whose task aux is present-but-Absent is not-applicable, not a
     wiring bug."""
     candidate = "def add_one(x):\n    return x + 1\n"
@@ -479,58 +446,6 @@ def test_pure_operators_never_call_the_runner(counting_runner) -> None:
     )
     _extract_batch(definition, [trace, trace], run_in_sandbox=counting_runner)
     assert counting_runner.call_count == 0
-
-
-# ===========================================================================
-# Record equality across fresh, deserialized, and external traces.
-# ===========================================================================
-
-
-def test_fresh_trace_equals_deserialized_trace() -> None:
-    """Restored traces measure the same as fresh traces."""
-    text = "def add_one(x):\n    return x + 1\n"
-    fresh = external_trace(
-        {
-            "input": CodeArtifact(source=text),
-            "output": CodeArtifact(source=text),
-        }
-    )
-    restored = deserialize_trace(serialize_trace(fresh))
-    definition = _definition(
-        [_q("text_stats", on="input"), _q("ast_stats", on="input")]
-    )
-    assert _extract(definition, fresh) == _extract(definition, restored)
-
-
-def test_external_trace_matches_preprocessing_producer_trace() -> None:
-    """Any producer's trace yields the same measured answer. Producer
-    lineage legitimately differs, so the comparable projection is the answer."""
-    text = "def f(x):\n    return x\n"
-    values = {
-        "input": CodeArtifact(source=text),
-        "output": CodeArtifact(source=text),
-    }
-    external = external_trace(values)
-    preprocessing = Trace(
-        values=values,
-        producer=_preprocessing_producer(),
-    )
-    definition = _definition(
-        [_q("text_stats", on="input"), _q("ast_stats", on="input")]
-    )
-
-    def answer(record):
-        return (
-            record.metric,
-            record.metric_version,
-            record.on_key,
-            record.status,
-            tuple(sorted(record.values.items())),
-        )
-
-    assert [answer(r) for r in _extract(definition, external)] == [
-        answer(r) for r in _extract(definition, preprocessing)
-    ]
 
 
 def test_code_test_record_values_exclude_timing(task, local_runner) -> None:

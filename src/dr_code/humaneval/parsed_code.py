@@ -9,9 +9,7 @@ from dr_code.code_analysis import (
     FunctionArgument,
     FunctionSignatureSite,
     collect_comments,
-    extract_function_args,
     extract_function_signatures,
-    format_function_signature,
 )
 from dr_code.code_transforms import (
     strip_docstrings_in_tree,
@@ -38,7 +36,6 @@ class ParsedCode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     code_str: str
-    signature: FunctionSignature | None = None
     signatures: list[FunctionSignature] = Field(default_factory=list)
     code_without_comments: str = ""
     comments: str = ""
@@ -62,20 +59,6 @@ def function_signature_from_site(
     )
 
 
-def function_signature_from_node(
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> FunctionSignature:
-    return FunctionSignature(
-        code_str=ast.unparse(node),
-        signature_str=format_function_signature(node),
-        function_name=node.name,
-        function_args=[
-            _variable_from_argument(argument)
-            for argument in extract_function_args(node)
-        ],
-    )
-
-
 def remove_comments(tree: ast.AST, *, remove_docstrings: bool = True) -> str:
     if remove_docstrings:
         tree = strip_docstrings_in_tree(copy.deepcopy(tree))
@@ -92,7 +75,6 @@ def parse_code(
     ]
     return ParsedCode(
         code_str=code_str,
-        signature=signatures[0] if signatures else None,
         signatures=signatures,
         code_without_comments=remove_comments(tree, remove_docstrings=True),
         comments=collect_comments(code_str, tree),

@@ -30,5 +30,4 @@ class AddIndentation(Corruption):
         )
         return CorruptedSample(
             corrupted_source=indented,
-            notes=f"n={n}",
         )

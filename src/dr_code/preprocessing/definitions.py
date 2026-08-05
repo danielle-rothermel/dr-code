@@ -161,11 +161,6 @@ _DEFINITIONS: Final = MappingProxyType(
     }
 )
 
-#: Supported definition ids.
-SUPPORTED_DEFINITION_IDS: Final[frozenset[str]] = frozenset(
-    {BEST_EFFORT_HUMANEVAL_DEFINITION_ID, STRICT_FIELD_MARKER_DEFINITION_ID}
-)
-
 
 def resolve_preprocessing_definition(
     *,
@@ -194,6 +189,5 @@ __all__ = [
     "FIELD_MARKER_DEFINITION",
     "STRICT_FIELD_MARKER_DEFINITION_ID",
     "STRICT_FIELD_MARKER_DEFINITION_VERSION",
-    "SUPPORTED_DEFINITION_IDS",
     "resolve_preprocessing_definition",
 ]

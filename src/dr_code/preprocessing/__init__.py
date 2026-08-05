@@ -22,7 +22,6 @@ from dr_code.preprocessing.definitions import (
     FIELD_MARKER_DEFINITION,
     STRICT_FIELD_MARKER_DEFINITION_ID,
     STRICT_FIELD_MARKER_DEFINITION_VERSION,
-    SUPPORTED_DEFINITION_IDS,
     resolve_preprocessing_definition,
 )
 from dr_code.preprocessing.names import StepName
@@ -55,7 +54,6 @@ __all__ = [
     "FIELD_MARKER_DEFINITION",
     "STRICT_FIELD_MARKER_DEFINITION_ID",
     "STRICT_FIELD_MARKER_DEFINITION_VERSION",
-    "SUPPORTED_DEFINITION_IDS",
     "AlternativesStep",
     "BoundStep",
     "CandidateMapStep",
