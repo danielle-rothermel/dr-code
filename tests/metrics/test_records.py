@@ -478,6 +478,17 @@ def test_metric_fact_requires_a_unit_from_the_closed_vocabulary() -> None:
         MetricFact(name="count", value=1, unit="furlongs")
 
 
+@pytest.mark.parametrize("name", ["character_count.unit", "a.b", ".", "x."])
+def test_metric_fact_rejects_a_dotted_name(name: str) -> None:
+    # A fact named ``x.unit`` would occupy fact ``x``'s unit column in
+    # ``record_rows``; banning the separator is what makes that scheme
+    # collision-free.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="must not contain"):
+        _fact(name=name, value=1)
+
+
 def test_facts_preserve_operator_declaration_order() -> None:
     facts = (
         _fact(name="second", value=2),
@@ -633,25 +644,115 @@ def test_golden_literals_load_back_to_an_equal_record() -> None:
     assert restored == _golden_record()
 
 
+# The two non-measured variants share the measured golden's identity block,
+# so these pin what distinguishes them: the status discriminator and the
+# variant-specific payload keys.
+_GOLDEN_NOT_APPLICABLE_RECORD = {
+    "schema_version": 1,
+    "status": "not_applicable",
+    "identity": _GOLDEN_MEASURED_RECORD["identity"],
+    "absence": {
+        "kind": "absent",
+        "failed_step": "extract",
+        "failure_code": "no_candidates_extracted",
+        "cause": "no code extracted",
+        "propagated_through": ["clean"],
+    },
+}
+
+_GOLDEN_OPERATOR_FAILURE_RECORD = {
+    "schema_version": 1,
+    "status": "operator_failure",
+    "identity": _GOLDEN_MEASURED_RECORD["identity"],
+    "failure": {
+        "failure_type": "ValueError",
+        "failure_message": "boom",
+    },
+}
+
+
+def _golden_not_applicable():
+    return _not_applicable(identity=_golden_record().identity)
+
+
+def _golden_operator_failure():
+    return _operator_failure(identity=_golden_record().identity)
+
+
+def test_not_applicable_record_serializes_to_the_golden_literals() -> None:
+    assert (
+        json.loads(_golden_not_applicable().model_dump_json())
+        == _GOLDEN_NOT_APPLICABLE_RECORD
+    )
+
+
+def test_golden_not_applicable_literals_load_back_equal() -> None:
+    from dr_code.metrics import METRIC_RECORD_ADAPTER
+
+    restored = METRIC_RECORD_ADAPTER.validate_python(
+        _GOLDEN_NOT_APPLICABLE_RECORD
+    )
+    assert restored == _golden_not_applicable()
+
+
+def test_operator_failure_record_serializes_to_the_golden_literals() -> None:
+    assert (
+        json.loads(_golden_operator_failure().model_dump_json())
+        == _GOLDEN_OPERATOR_FAILURE_RECORD
+    )
+
+
+def test_golden_operator_failure_literals_load_back_equal() -> None:
+    from dr_code.metrics import METRIC_RECORD_ADAPTER
+
+    restored = METRIC_RECORD_ADAPTER.validate_python(
+        _GOLDEN_OPERATOR_FAILURE_RECORD
+    )
+    assert restored == _golden_operator_failure()
+
+
 # ===========================================================================
 # Registry-free deserialization: archived records outlive the registry.
 # ===========================================================================
+
+
+class _PoisonedRegistry:
+    """A registry that fails any read, however it is reached.
+
+    An empty registry only proves a lookup found nothing; this proves no
+    lookup happens at all, which is the actual guarantee.
+    """
+
+    def __getitem__(self, key: object) -> object:
+        raise AssertionError(
+            f"record deserialization consulted the registry: [{key!r}]"
+        )
+
+    def get(self, key: object, default: object = None) -> object:
+        raise AssertionError(
+            f"record deserialization consulted the registry: get({key!r})"
+        )
+
+    def __contains__(self, key: object) -> bool:
+        raise AssertionError(
+            f"record deserialization consulted the registry: {key!r} in ..."
+        )
+
+    def __iter__(self) -> object:
+        raise AssertionError("record deserialization iterated the registry")
 
 
 def test_record_loads_when_its_metric_is_absent_from_the_live_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Archived records stay loadable after the registry moves on."""
-    from types import MappingProxyType
-
     from dr_code.metrics import METRIC_RECORD_ADAPTER
     import dr_code.metrics.registry as registry_module
 
     payload = json.dumps(_GOLDEN_MEASURED_RECORD)
     monkeypatch.setattr(
-        registry_module, "REGISTRY", MappingProxyType({}), raising=True
+        registry_module, "REGISTRY", _PoisonedRegistry(), raising=True
     )
-    assert registry_module.REGISTRY == {}
 
     restored = METRIC_RECORD_ADAPTER.validate_json(payload)
     assert restored.identity.question.metric.value == "code_leakage"

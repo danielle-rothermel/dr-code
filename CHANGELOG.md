@@ -21,7 +21,11 @@
   registry-free persisted projections of a declaration. Question settings
   persist as ordered `ComponentSetting` entries — nested settings groups
   named by dotted path — so records validate structurally and archived
-  records stay loadable after the operator registry changes.
+  records stay loadable across settings churn and across operator
+  implementation and version churn. Metric names stay a closed enum, so the
+  guarantee does not extend to records naming a deleted metric.
+- `MetricFact` rejects a dot in a fact name, which is what makes the
+  two-column `record_rows` fact scheme collision-free.
 - `OperatorSettings` lives in `dr_code.metrics.settings`.
 - `record_rows` lifts identity fields to top-level columns and emits two
   columns per fact: `"{metric}.{name}"` for the value and

@@ -72,7 +72,9 @@ coordinate instead of flattening or abbreviating either composite coordinate.
 A metrics definition coordinate carries every declared question as a metric
 name, target key, and explicit immutable setting entries, so a record
 validates structurally without consulting the live operator registry and
-archived records stay loadable after it changes.
+archived records stay loadable across settings churn and across operator
+implementation and version churn. Metric names are the exception: they are a
+closed enum, so a record naming a deleted metric does not load.
 
 HumanEval snapshots persist the registered override set as an explicit id,
 version, and ordered concrete entries, including typed source-replacement

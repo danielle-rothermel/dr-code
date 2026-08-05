@@ -6,9 +6,13 @@ loaded record carries exactly the fields its answer has and nothing else.
 
 Records validate structure only. They nest registry-free coordinates for the
 producer, the metrics definition, and the question they answer, so archived
-records stay loadable after the operator registry moves on. The one semantic
-guarantee they enforce is internal: a record's question coordinate must
-appear in the metrics-definition coordinate it nests.
+records stay loadable across settings churn and across operator
+implementation and version churn — no registry lookup happens at load. The
+guarantee stops at metric-name churn: ``MetricQuestionCoordinate.metric`` is
+the closed ``MetricName`` enum, so a record naming a metric that has since
+been deleted does not load. The one semantic guarantee they enforce is
+internal: a record's question coordinate must appear in the
+metrics-definition coordinate it nests.
 """
 
 from __future__ import annotations
@@ -43,7 +47,14 @@ MetricScalar: TypeAlias = float | int | str | bool | None
 
 
 class MetricFact(FrozenModel):
-    """One named, explicitly united observation carried by a record."""
+    """One named, explicitly united observation carried by a record.
+
+    A fact name carries no dot: ``record_rows`` addresses a fact's value and
+    unit as ``"{metric}.{name}"`` and ``"{metric}.{name}.unit"``, so a fact
+    named ``x.unit`` would occupy fact ``x``'s unit column. Banning the
+    separator from names is what makes that two-column scheme
+    collision-free.
+    """
 
     name: str
     value: MetricScalar
@@ -54,6 +65,15 @@ class MetricFact(FrozenModel):
         if isinstance(self.value, float) and not math.isfinite(self.value):
             raise ValueError(
                 f"metric fact {self.name!r} must be a finite value"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def reject_dotted_name(self) -> Self:
+        if "." in self.name:
+            raise ValueError(
+                f"metric fact name {self.name!r} must not contain '.': "
+                "the dot separates a fact column from its unit column"
             )
         return self
 
@@ -155,7 +175,9 @@ def record_rows(
     keeps a row self-describing without multiplying the column space by the
     unit vocabulary, which folding the unit into the value column name would
     do: the same fact measured in two units would then never line up across
-    rows.
+    rows. The scheme is collision-free because ``MetricFact`` rejects a dot
+    in a fact name: without that rule a fact named ``x.unit`` and fact
+    ``x``'s unit column would be the same column.
     """
 
     rows: list[dict[str, object]] = []

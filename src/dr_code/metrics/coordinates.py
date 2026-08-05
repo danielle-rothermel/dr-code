@@ -3,7 +3,11 @@
 A ``MetricsDefinition`` resolves each question's settings against the live
 operator registry, which is what makes a declaration executable. A persisted
 record cannot depend on that: it is read back long after the registry has
-moved on, so it carries a projection instead.
+moved on, so it carries a projection instead. That buys independence from
+settings churn and from operator implementation and version churn, not from
+metric-name churn — ``MetricQuestionCoordinate.metric`` is the closed
+``MetricName`` enum, so a coordinate naming a deleted metric does not
+validate.
 
 ``coordinate_settings`` (``dr_code.trace.provenance``) already solves exactly
 this problem for preprocessing component settings, and these coordinates
