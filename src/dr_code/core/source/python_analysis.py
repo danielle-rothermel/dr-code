@@ -3,9 +3,9 @@
 Every source-level function here assumes its input is parseable Python and
 raises `SyntaxError` when it is not, except documented-total diagnostics such
 as `equivalent`. For transforms that modify parseable Python, see
-`dr_code.code_transforms`; for total best-effort work over text that only
-probably contains code, see `dr_code.text_transforms` and
-`dr_code.text_analysis`.
+`dr_code.core.source.python_transforms`; for total best-effort work over text that only
+probably contains code, see `dr_code.core.source.text_transforms` and
+`dr_code.core.source.text_analysis`.
 """
 
 from __future__ import annotations
@@ -153,7 +153,7 @@ def equivalent(a: str, b: str) -> bool:
     try:
         # Constraint: module-level import would cycle because code transforms
         # compose the analysis enumeration helpers.
-        from dr_code.code_transforms import strip_docstrings
+        from dr_code.core.source.python_transforms import strip_docstrings
 
         return strip_docstrings(a) == strip_docstrings(b)
     except SyntaxError:

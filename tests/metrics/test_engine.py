@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import SandboxError, SandboxTimeoutError
+from dr_code.core.execution.sandbox import SandboxError, SandboxTimeoutError
 from dr_code.trace import (
     Absent,
     CodeArtifact,
@@ -398,7 +398,7 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
     EngineInvariantError out of the batch, never get swallowed into an
     operator_failure record."""
     from dr_code.metrics import EngineInvariantError
-    from dr_code.metrics.operators.code_test import CodeTest
+    from dr_code.humaneval.metric_operator import CodeTest
 
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
@@ -416,7 +416,7 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(
     task, code_test_trace, raising_runner
 ) -> None:
     """A candidate timeout is attributed to the candidate as data (timeout
-    cases), not a raised SandboxError (batch_runner attribution parity)."""
+    cases), not a raised SandboxError (runner attribution parity)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(

@@ -22,7 +22,7 @@ from typing import Any, Final
 
 import pytest
 
-from dr_code.humaneval.code_parsing import (
+from dr_code.humaneval.acceptance import (
     extract_humaneval_code,
     humaneval_runner,
 )

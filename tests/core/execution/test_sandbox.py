@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     MAX_SANDBOX_OUTPUT_BYTES,
     SANDBOX_IMAGE,
     SandboxOutputLimitError,
     run_python_in_sandbox,
 )
-from dr_code.humaneval.batch_runner import evaluate_humaneval_code
+from dr_code.humaneval.runner import evaluate_humaneval_code
 from dr_code.humaneval.scoring import (
     CompletedScore,
     score_humaneval_submission,

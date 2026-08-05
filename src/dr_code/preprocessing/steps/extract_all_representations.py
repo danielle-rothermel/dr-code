@@ -50,8 +50,8 @@ import re
 from enum import StrEnum, verify, UNIQUE
 from typing import ClassVar, Final
 
-from dr_code.text_analysis import code_like_blocks, split_by_fences
-from dr_code.text_transforms import (
+from dr_code.core.source.text_analysis import code_like_blocks, split_by_fences
+from dr_code.core.source.text_transforms import (
     recover_escaped_python,
     strip_markdown_wrappers,
 )

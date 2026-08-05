@@ -1,4 +1,4 @@
-"""CLI for printing library JSON Schema bundles.
+"""CLI for printing HumanEval JSON Schema bundles.
 
 The ``humaneval`` command emits validation schemas for ``HumanEvalTask`` and
 ``EvaluationCaseSummary`` as one JSON object.

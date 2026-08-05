@@ -6,7 +6,7 @@ import abc
 import random
 from typing import ClassVar, Generic, TypeVar, cast
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import CorruptionName
 

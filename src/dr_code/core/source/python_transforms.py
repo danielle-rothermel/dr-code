@@ -4,7 +4,7 @@ Every source-level function here assumes its input is parseable Python and
 raises `SyntaxError` when it is not. Tree-level helpers assume the caller
 owns the tree. For best-effort transforms over text that only probably
 contains code (raw LLM output, markdown, mixed prose), see
-`dr_code.text_transforms` — its functions are total and never raise.
+`dr_code.core.source.text_transforms` — its functions are total and never raise.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import ast
 from collections.abc import Callable, Iterable
 from typing import Final
 
-from dr_code.code_analysis import (
+from dr_code.core.source.python_analysis import (
     AnnotationKind,
     AnnotationSite,
     annotation_sites,

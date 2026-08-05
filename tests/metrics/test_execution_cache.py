@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxCompletedProcess,
     SandboxError,
 )

@@ -5,7 +5,7 @@ outcomes, AST statistics, compressed length, and HumanEval execution.
 
 Pure operators are pinned to golden values on fixed sample inputs.
 ``code_test`` is cross-checked against
-``batch_runner.evaluate_humaneval_code`` for counts and attribution.
+``runner.evaluate_humaneval_code`` for counts and attribution.
 
 Operators are engine-managed classes registered in ``REGISTRY`` and reached
 only through ``extract_metrics`` — never called as bare functions.
@@ -125,7 +125,7 @@ def test_text_stats_empty_text_has_zero_counts() -> None:
 # ===========================================================================
 
 # Golden values for task_names=("foo", "HumanEval/x"). ``code_leakage`` uses
-# the shared fence and code-like-line matching in ``dr_code.text_analysis``.
+# the shared fence and code-like-line matching in ``dr_code.core.source.text_analysis``.
 _CODE_LEAKAGE_GOLDEN = {
     "keyword_count": 7,
     "code_marker_count": 4,
@@ -163,7 +163,7 @@ def test_code_leakage_task_names_are_part_of_identity() -> None:
     assert _value(named_rec, "task_name_hit_count") >= 1
 
 
-# The shared ``dr_code.text_analysis`` regexes count indented lines, comments,
+# The shared ``dr_code.core.source.text_analysis`` regexes count indented lines, comments,
 # and Python keywords as code-like, and match fences as whole lines. These
 # values pin that shared heuristic contract for ``code_leakage``.
 _SHARED_HEURISTIC_SAMPLE = (
@@ -457,7 +457,7 @@ def test_code_test_kill_returncode_attributed_to_candidate(
     task, good_submission, code_test_trace
 ) -> None:
     """A sandbox kill (returncode 137) is candidate data: all cases error."""
-    from dr_code.humaneval.sandbox import SandboxCompletedProcess
+    from dr_code.core.execution.sandbox import SandboxCompletedProcess
 
     def kill_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
         return SandboxCompletedProcess(
@@ -525,7 +525,7 @@ def test_code_test_sandbox_error_still_propagates(
     aborts the batch loudly -- it is not reclassified to case statuses."""
     import pytest
 
-    from dr_code.humaneval.sandbox import SandboxError
+    from dr_code.core.execution.sandbox import SandboxError
 
     with pytest.raises(SandboxError):
         _extract(
@@ -539,14 +539,14 @@ def test_code_test_requests_are_the_canonical_batch_request(task) -> None:
     """The operator does not build its own runner payload.
 
     Both scored paths reach the sandbox through
-    ``batch_runner.build_humaneval_batch_request``, so for one task, candidate,
+    ``runner.build_humaneval_batch_request``, so for one task, candidate,
     and function name the request the operator submits is byte-identical to the
     one the direct batch path submits. Equality on ``input_json`` is the guard
     that matters: it is the payload the runner parses, so any divergence in
     check construction, support code, or field naming shows up here.
     """
-    from dr_code.humaneval.batch_runner import build_humaneval_batch_request
-    from dr_code.metrics.operators.code_test import CodeTest, CodeTestSettings
+    from dr_code.humaneval.runner import build_humaneval_batch_request
+    from dr_code.humaneval.metric_operator import CodeTest, CodeTestSettings
     from dr_code.trace import CodeArtifact, JsonArtifact
 
     candidate = (
@@ -577,11 +577,11 @@ def test_code_test_function_names_come_from_the_shared_rule(task) -> None:
     """One top-level-function rule feeds both paths.
 
     The operator submits one request per name that
-    ``batch_runner.top_level_function_names`` returns, so the two paths cannot
+    ``runner.top_level_function_names`` returns, so the two paths cannot
     disagree about which functions get evaluated.
     """
-    from dr_code.humaneval.batch_runner import top_level_function_names
-    from dr_code.metrics.operators.code_test import CodeTest, CodeTestSettings
+    from dr_code.humaneval.runner import top_level_function_names
+    from dr_code.humaneval.metric_operator import CodeTest, CodeTestSettings
     from dr_code.trace import CodeArtifact, JsonArtifact
 
     # Async and duplicate top-level names are both in scope of the rule.

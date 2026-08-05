@@ -1,4 +1,4 @@
-"""Shared frozen Pydantic base for dr_code."""
+"""Shared frozen Pydantic models for dr-code boundaries."""
 
 from __future__ import annotations
 

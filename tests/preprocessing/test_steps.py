@@ -72,7 +72,7 @@ from dr_code.preprocessing.steps.strip_trailing_whitespace import (
     StripTrailingWhitespace,
 )
 from dr_code.preprocessing.steps.trim_outer_blanks import TrimOuterBlanks
-from dr_code.text_transforms import (
+from dr_code.core.source.text_transforms import (
     collapse_blank_runs,
     drop_after_last_return,
     drop_if_name,

@@ -32,7 +32,7 @@ from typing import Annotated, Literal, Self, TypeAlias
 
 from pydantic import Field, model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import CandidateCoordinate
 from dr_code.evaluation.plan import (
     AggregationPolicy,

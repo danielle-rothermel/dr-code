@@ -5,7 +5,7 @@ and running the registered definition partitions the recipes empirically:
 
 * ``RECOVERABLE`` — formatting / noise / import / wrapper pathologies the
   pipeline undoes. The recovered code is *equivalent* to the original
-  (``dr_code.code_analysis.equivalent``). Because the definition
+  (``dr_code.core.source.python_analysis.equivalent``). Because the definition
   materializes every survivor rather than choosing one, the assertion is
   that an equivalent candidate is *among* the survivors — recovery is a
   question of whether the pipeline found the code, not of which survivor a
@@ -37,7 +37,7 @@ import random
 
 import pytest
 
-from dr_code.code_analysis import equivalent
+from dr_code.core.source.python_analysis import equivalent
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     bind_preprocessing,
@@ -165,7 +165,7 @@ def test_inline_backticks_yields_absent() -> None:
 def test_every_survivor_compiles(recipe_name: str) -> None:
     # The compilability filter reads stored inspections; this asserts the
     # stored inspection actually described the source it accompanied.
-    from dr_code.code_analysis import validate_python_source
+    from dr_code.core.source.python_analysis import validate_python_source
 
     survivors = _survivors(_corrupt(recipe_name))
     if survivors is None:

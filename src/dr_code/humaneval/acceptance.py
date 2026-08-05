@@ -1,4 +1,4 @@
-"""HumanEval's acceptance policy over the preprocessing candidate set.
+"""HumanEval's acceptance policy over prepared candidate sets.
 
 Preprocessing answers "what code did this response contain?" and returns
 every candidate that survived its structural filters. It deliberately does
@@ -22,7 +22,7 @@ import ast
 
 from pydantic import PrivateAttr, StrictInt, StrictStr
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     BoundPreprocessingRunner,

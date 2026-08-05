@@ -23,7 +23,7 @@ def _annotate(source: str) -> str:
 class AddTypeAnnotations(Corruption):
     """Inject an annotated module-level variable.
 
-    Inverse of `dr_code.code_transforms.strip_type_annotations`.
+    Inverse of `dr_code.core.source.python_transforms.strip_type_annotations`.
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_TYPE_ANNOTATIONS

@@ -14,7 +14,7 @@ from typing import Final, Literal
 
 from pydantic import field_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.trace.facts import JsonFactValue, validate_step_facts
 from dr_code.trace.provenance import TraceProducer
 from dr_code.trace.trace import Trace, TraceValue

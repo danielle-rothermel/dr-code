@@ -6,7 +6,7 @@ from typing import Annotated, Final, Literal, TypeAlias
 
 from pydantic import Field
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 
 ComponentSettingValue: TypeAlias = (

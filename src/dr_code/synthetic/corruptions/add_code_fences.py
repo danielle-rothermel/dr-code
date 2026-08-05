@@ -8,7 +8,7 @@ from typing import ClassVar
 from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import FenceLangTag, CorruptionName
 from dr_code.synthetic.corruptions.base import Corruption, CorruptionSettings
-from dr_code.text_transforms import wrap_code_fence
+from dr_code.core.source.text_transforms import wrap_code_fence
 
 
 class AddCodeFencesSettings(CorruptionSettings):

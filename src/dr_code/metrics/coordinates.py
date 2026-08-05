@@ -29,7 +29,7 @@ from typing import Self
 
 from pydantic import model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.settings import OperatorSettings

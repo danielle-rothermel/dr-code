@@ -14,7 +14,7 @@ from dr_code.humaneval.task import (
     parse_humaneval_dataset,
     resolve_humaneval_override_set,
 )
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 HumanEvalRow = Mapping[str, Any]
 HUMANEVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION = 2

@@ -7,7 +7,7 @@ import ast
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from dr_code.code_analysis import validate_python_source_with_ast
+from dr_code.core.source.python_analysis import validate_python_source_with_ast
 from dr_code.trace import (
     Absent,
     Artifact,

@@ -4,7 +4,7 @@ Holds the pydantic/dataclass evaluation models (tasks, case/task results and
 summaries, runner payload shapes), the ``EvaluationHarnessError`` raised for
 sandbox or runtime breakage, best-function selection, and the benchmark
 override table plus dataset parsing. Test parsing lives in
-``parsed_tests``; subprocess batch orchestration lives in ``batch_runner``,
+``parsed_tests``; subprocess batch orchestration lives in ``runner``,
 and the standalone runner program lives in ``sandbox_runner_script``.
 """
 
@@ -25,7 +25,7 @@ from pydantic import (
     model_validator,
 )
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,

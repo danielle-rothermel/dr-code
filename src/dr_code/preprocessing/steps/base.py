@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import ClassVar, Generic, TypeVar, cast
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.trace import (
     Artifact,
     ArtifactKind,

@@ -16,8 +16,8 @@ from pydantic import (
     StrictStr,
 )
 
-from dr_code.humaneval.batch_runner import evaluate_humaneval_code
-from dr_code.humaneval.code_parsing import (
+from dr_code.humaneval.runner import evaluate_humaneval_code
+from dr_code.humaneval.acceptance import (
     CodeExtractionResult,
     extract_humaneval_code,
 )
@@ -28,7 +28,7 @@ from dr_code.humaneval.profiles import (
     HumanEvalScoringProfile,
     resolve_humaneval_scoring_profile,
 )
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxRunner,
     run_python_in_sandbox,
 )
@@ -38,7 +38,7 @@ from dr_code.humaneval.task import (
     EvaluationTaskResult,
     HumanEvalTask,
 )
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 UNKNOWN_FAILURE_CLASS = "unknown"
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.trace import (
     ComponentCoordinate,
     ComponentSetting,

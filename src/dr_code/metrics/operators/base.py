@@ -14,7 +14,7 @@ from dr_code.metrics.names import MetricName
 from dr_code.metrics.records import MetricFact
 from dr_code.metrics.settings import OperatorSettings
 from dr_code.metrics.units import MetricFactUnit
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.trace import (
     Artifact,
     ArtifactKind,

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+import dr_code.synthetic as synthetic
+from dr_code.humaneval import load_humaneval_plus, plus_dataset
 from dr_code.humaneval.task import HUMANEVAL_OVERRIDE_SET
-from dr_code.synthetic import humaneval_loader
-from dr_code.synthetic.humaneval_loader import load_humaneval_plus
 
 
 #: The repository's tracked offline HumanEvalPlus snapshot.
@@ -46,6 +46,11 @@ OVERRIDDEN_ENTRY = next(
 )
 
 
+def test_loader_public_api_is_owned_by_humaneval() -> None:
+    assert "load_humaneval_plus" not in synthetic.__all__
+    assert not hasattr(synthetic, "load_humaneval_plus")
+
+
 def test_default_loader_does_not_fall_back_to_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -56,7 +61,7 @@ def test_default_loader_does_not_fall_back_to_snapshot(
         raise FileNotFoundError("hf unavailable")
 
     monkeypatch.setattr(
-        humaneval_loader,
+        plus_dataset,
         "load_humaneval_rows",
         unavailable_source,
     )
@@ -78,7 +83,7 @@ def test_explicit_snapshot_loader_uses_repository_snapshot(
         return [ROW]
 
     monkeypatch.setattr(
-        humaneval_loader,
+        plus_dataset,
         "load_humaneval_rows",
         available_source,
     )
@@ -108,7 +113,7 @@ def test_loader_rejects_row_missing_its_override_anchor(
         return [corrupt_row]
 
     monkeypatch.setattr(
-        humaneval_loader,
+        plus_dataset,
         "load_humaneval_rows",
         rows_with_corrupt_override,
     )

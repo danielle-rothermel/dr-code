@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from dr_code.text_transforms import collapse_blank_runs
+from dr_code.core.source.text_transforms import collapse_blank_runs
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import Step, StepOutput
 from dr_code.trace import Artifact, ArtifactKind, TextArtifact

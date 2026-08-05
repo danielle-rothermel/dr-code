@@ -1,10 +1,10 @@
-"""Contract and behavior tests for `dr_code.text_transforms`."""
+"""Contract and behavior tests for shared text transforms."""
 
 from __future__ import annotations
 
 import pytest
 
-from dr_code.text_transforms import (
+from dr_code.core.source.text_transforms import (
     collapse_blank_runs,
     drop_after_last_return,
     drop_if_name,

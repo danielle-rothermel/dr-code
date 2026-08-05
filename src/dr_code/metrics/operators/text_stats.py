@@ -14,7 +14,7 @@ from dr_code.metrics.operators.base import (
 )
 from dr_code.metrics.settings import OperatorSettings
 from dr_code.metrics.units import MetricFactUnit
-from dr_code.text_analysis import OPERATOR_CHARS, WORD_RE
+from dr_code.core.source.text_analysis import OPERATOR_CHARS, WORD_RE
 from dr_code.trace import Artifact, ArtifactKind
 
 _TEXT_ENCODING = "utf-8"

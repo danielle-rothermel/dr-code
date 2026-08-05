@@ -12,7 +12,7 @@ from dr_code.synthetic.corruption_recipes import (
     Recipe,
 )
 from dr_code.synthetic.dataset_builder import build_dataset, save_dataset
-from dr_code.synthetic.humaneval_loader import load_humaneval_plus
+from dr_code.humaneval.plus_dataset import load_humaneval_plus
 
 ALL_RECIPES = "all"
 

@@ -8,7 +8,7 @@ from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
 )
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 HUMANEVAL_METRICS_PROFILE_ID = "humaneval-metrics"
 HUMANEVAL_METRICS_PROFILE_VERSION = "0"

@@ -11,7 +11,7 @@ import pytest
 def test_humaneval_schema_command_emits_complete_bundle(
     run_python_module,
 ) -> None:
-    result = run_python_module("dr_code.schema_cli", "humaneval")
+    result = run_python_module("dr_code.humaneval.schema_cli", "humaneval")
 
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
@@ -37,7 +37,7 @@ def test_python_module_runner_ignores_inherited_pythonpath(
     )
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
 
-    result = run_python_module("dr_code.schema_cli", "humaneval")
+    result = run_python_module("dr_code.humaneval.schema_cli", "humaneval")
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["title"] == "HumanEvalLibrarySchemas"

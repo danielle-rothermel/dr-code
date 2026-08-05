@@ -4,7 +4,7 @@ Functions here accept arbitrary text — raw LLM output, markdown, prose with
 embedded code — and never raise; unrepairable input passes through
 unchanged. For transforms that assume their input already *is* parseable
 Python (and raise `SyntaxError` when it is not), see
-`dr_code.code_transforms`.
+`dr_code.core.source.python_transforms`.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import tokenize
 import unicodedata
 from typing import Final
 
-from dr_code.text_analysis import LINE_SEP, fence_marker
+from dr_code.core.source.text_analysis import LINE_SEP, fence_marker
 
 DEFAULT_TAB_WIDTH: Final[int] = 4
 FENCE: Final[str] = "```"

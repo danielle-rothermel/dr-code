@@ -18,7 +18,7 @@ from typing import Self
 
 from pydantic import model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.trace import PreprocessingDefinitionCoordinate
 
 

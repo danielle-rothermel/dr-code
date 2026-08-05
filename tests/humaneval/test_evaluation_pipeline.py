@@ -4,7 +4,7 @@ One file rather than per-module files because the stages compose into a
 single pipeline and are asserted against each other: ``task`` (tasks,
 overrides, dataset parsing), ``sampling`` (row loading and task sampling),
 ``parsed_tests`` and ``parsed_code`` (structured test/code parsing),
-``code_parsing`` (acceptance policy), ``batch_runner`` (subprocess
+``acceptance`` (acceptance policy), ``runner`` (subprocess
 batch execution), and ``scoring`` (submission outcomes). It also pins the
 ``dr_code.humaneval`` package ``__all__``, which spans every stage above.
 """
@@ -21,20 +21,20 @@ import pytest
 from pydantic import ValidationError
 
 import dr_code.humaneval as humaneval
-from dr_code.code_analysis import validate_python_source
+from dr_code.core.source.python_analysis import validate_python_source
 from dr_code.humaneval import (
     EvaluationCaseStatus,
     HumanEvalTask,
     parse_humaneval_dataset,
 )
-from dr_code.humaneval.batch_runner import (
+from dr_code.humaneval.runner import (
     build_humaneval_batch_request,
     evaluate_humaneval_code,
     require_parsed_tests,
     run_subprocess_batch,
     runner_script,
 )
-from dr_code.humaneval.code_parsing import extract_humaneval_code
+from dr_code.humaneval.acceptance import extract_humaneval_code
 from dr_code.preprocessing import PreprocessingFailureCode
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
@@ -64,7 +64,7 @@ from dr_code.humaneval.task import (
     HumanEvalTestReplacement,
     _apply_humaneval_override,
 )
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxCompletedProcess,
     SandboxError,
     SandboxOutputLimitError,
@@ -115,6 +115,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "HumanEvalMetricsProfile",
     "HumanEvalOverrideEntry",
     "HumanEvalOverrideSetCoordinate",
+    "HumanEvalPlusTask",
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
@@ -124,6 +125,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "accept_first_surviving",
     "extract_humaneval_code",
     "humaneval_runner",
+    "load_humaneval_plus",
     "load_humaneval_rows",
     "parse_humaneval_dataset",
     "resolve_humaneval_scoring_profile",

@@ -7,12 +7,12 @@ import json
 from collections.abc import Sequence
 from typing import Protocol
 
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxOutputLimitError,
     SandboxRunner,
     SandboxTimeoutError,
 )
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 _TIMEOUT_RETURNCODE = -100_000_001
 _OUTPUT_LIMIT_RETURNCODE = -100_000_002

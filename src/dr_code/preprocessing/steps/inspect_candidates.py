@@ -19,7 +19,7 @@ from __future__ import annotations
 import ast
 from typing import ClassVar
 
-from dr_code.code_analysis import validate_python_source_with_ast
+from dr_code.core.source.python_analysis import validate_python_source_with_ast
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import (
     Step,

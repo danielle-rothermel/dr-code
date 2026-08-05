@@ -15,7 +15,7 @@ import subprocess
 
 import pytest
 
-from dr_code.humaneval import sandbox
+from dr_code.core.execution import sandbox
 
 
 def test_runtime_environment_excludes_operator_credentials(

@@ -13,8 +13,8 @@ from dr_code.synthetic.corruption_recipes import (
     apply_recipe,
     recipe_coordinate,
 )
-from dr_code.code_transforms import strip_docstrings
-from dr_code.synthetic.humaneval_loader import (
+from dr_code.core.source.python_transforms import strip_docstrings
+from dr_code.humaneval.plus_dataset import (
     HumanEvalPlusTask,
     load_humaneval_plus,
 )

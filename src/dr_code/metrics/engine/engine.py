@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxError,
     SandboxRunner,
     run_python_in_sandbox,

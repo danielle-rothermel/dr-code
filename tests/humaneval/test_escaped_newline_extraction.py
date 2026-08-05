@@ -7,8 +7,8 @@ escaped line-ending shapes lives in
 
 from __future__ import annotations
 
-from dr_code.code_analysis import validate_python_source
-from dr_code.humaneval.code_parsing import extract_humaneval_code
+from dr_code.core.source.python_analysis import validate_python_source
+from dr_code.humaneval.acceptance import extract_humaneval_code
 from dr_code.preprocessing import PreprocessingFailureCode
 
 

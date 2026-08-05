@@ -8,7 +8,7 @@ that promise across the three producer origins and the cache-hit path.
 
 from __future__ import annotations
 
-from dr_code.humaneval.sandbox import SandboxCompletedProcess
+from dr_code.core.execution.sandbox import SandboxCompletedProcess
 from dr_code.trace import (
     CodeArtifact,
     ComponentCoordinate,

@@ -4,7 +4,7 @@ import warnings
 
 import pytest
 
-from dr_code.humaneval.code_parsing import extract_humaneval_code
+from dr_code.humaneval.acceptance import extract_humaneval_code
 from dr_code.preprocessing.import_inference import (
     infer_necessary_imports,
     repair_import_lines,

@@ -2,8 +2,8 @@
 
 Functions here accept arbitrary text and never raise; unclassifiable input
 returns empty blocks or `False`. For transforms over the same best-effort
-text boundary, see `dr_code.text_transforms`; for parseable Python source,
-see `dr_code.code_analysis` and `dr_code.code_transforms`.
+text boundary, see `dr_code.core.source.text_transforms`; for parseable Python source,
+see `dr_code.core.source.python_analysis` and `dr_code.core.source.python_transforms`.
 """
 
 from __future__ import annotations

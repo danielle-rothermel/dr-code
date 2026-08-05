@@ -8,7 +8,7 @@ from typing import ClassVar, Final
 from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import CorruptionName
 from dr_code.synthetic.corruptions.base import Corruption
-from dr_code.text_transforms import DEFAULT_TAB_WIDTH
+from dr_code.core.source.text_transforms import DEFAULT_TAB_WIDTH
 
 _TAB: Final[str] = "\t"
 

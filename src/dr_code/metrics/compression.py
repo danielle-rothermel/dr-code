@@ -9,7 +9,7 @@ from typing import Annotated, Literal, Self
 import zstandard
 from pydantic import Field, model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 
 class CompressionMethod(StrEnum):

@@ -24,7 +24,7 @@ from typing import Annotated, Final, Literal, Self, TypeAlias
 
 from pydantic import Field, TypeAdapter, model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.metrics.coordinates import (
     MetricQuestionCoordinate,
     MetricsDefinitionCoordinate,

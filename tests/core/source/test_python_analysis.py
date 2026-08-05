@@ -1,4 +1,4 @@
-"""Contract and behavior tests for `dr_code.code_analysis`."""
+"""Contract and behavior tests for Python source analysis."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import ast
 
 import pytest
 
-from dr_code.code_analysis import (
+from dr_code.core.source.python_analysis import (
     AnnotationKind,
     TextSiteKind,
     annotation_sites,

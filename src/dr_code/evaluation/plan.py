@@ -22,7 +22,7 @@ from typing import Self
 
 from pydantic import model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import RepeatPlan, TaskSet
 from dr_code.metrics import MetricQuestionCoordinate, MetricsDefinition
 from dr_code.preprocessing import PreprocessingDefinition

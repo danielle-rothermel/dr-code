@@ -33,7 +33,7 @@ from dr_code.humaneval.scoring import (
     SubmissionOutcome,
     score_humaneval_submission,
 )
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxCompletedProcess,
     SandboxTimeoutError,
 )

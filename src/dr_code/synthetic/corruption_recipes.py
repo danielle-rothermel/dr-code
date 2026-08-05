@@ -9,7 +9,7 @@ from typing import Final
 
 from pydantic import Field, SerializeAsAny, model_validator
 
-from dr_code.base import FrozenModel, settings_payload
+from dr_code.core.models import FrozenModel, settings_payload
 from dr_code.synthetic.models import (
     CorruptedSample,
     CorruptionCoordinate,

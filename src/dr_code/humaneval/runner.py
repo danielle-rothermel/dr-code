@@ -42,7 +42,7 @@ from dr_code.humaneval.parsed_tests import (
     SingleCaseCheck,
     TestCase,
 )
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     CANDIDATE_KILL_RETURNCODES,
     SandboxCompletedProcess,
     SandboxOutputLimitError,

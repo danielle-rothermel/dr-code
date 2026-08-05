@@ -12,7 +12,7 @@ from dr_code.synthetic import (
     load_dataset,
     save_dataset,
 )
-from dr_code.synthetic.humaneval_loader import HumanEvalPlusTask
+from dr_code.humaneval.plus_dataset import HumanEvalPlusTask
 from dr_code.synthetic.corruption_recipes import recipe_coordinate
 from dr_code.synthetic.models import (
     RecipeCoordinate,

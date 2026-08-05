@@ -1,10 +1,10 @@
-"""Contract and behavior tests for `dr_code.text_analysis`."""
+"""Contract and behavior tests for shared text analysis."""
 
 from __future__ import annotations
 
 import pytest
 
-from dr_code.text_analysis import (
+from dr_code.core.source.text_analysis import (
     anchored_code_blocks,
     candidate_blocks,
     code_like_blocks,

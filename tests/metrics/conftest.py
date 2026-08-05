@@ -20,7 +20,7 @@ from collections.abc import Callable, Mapping
 
 import pytest
 
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxCompletedProcess,
     SandboxRunner,
     SandboxTimeoutError,
@@ -315,7 +315,7 @@ def partial_pass_runner_output() -> Callable[..., str]:
 
 
 # ---------------------------------------------------------------------------
-# Oracle runner: delegate to the existing batch_runner for parity comparisons.
+# Oracle runner: delegate to the existing runner for parity comparisons.
 # ---------------------------------------------------------------------------
 
 
@@ -326,8 +326,8 @@ def _evaluate_oracle(
     timeout_seconds: float,
     run_in_sandbox: SandboxRunner,
 ) -> EvaluationTaskResult:
-    """Run the existing batch_runner to get the oracle EvaluationTaskResult."""
-    from dr_code.humaneval.batch_runner import evaluate_humaneval_code
+    """Run the existing runner to get the oracle EvaluationTaskResult."""
+    from dr_code.humaneval.runner import evaluate_humaneval_code
 
     return evaluate_humaneval_code(
         task=task,
@@ -339,5 +339,5 @@ def _evaluate_oracle(
 
 @pytest.fixture
 def evaluate_oracle() -> Callable[..., EvaluationTaskResult]:
-    """Evaluate a candidate through ``batch_runner`` for parity comparison."""
+    """Evaluate a candidate through ``runner`` for parity comparison."""
     return _evaluate_oracle

@@ -1,4 +1,4 @@
-"""Contract and behavior tests for `dr_code.code_transforms`."""
+"""Contract and behavior tests for Python source transforms."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import ast
 
 import pytest
 
-from dr_code.code_transforms import (
+from dr_code.core.source.python_transforms import (
     alpha_rename_locals_in_tree,
     alpha_rename_locals,
     dedupe_imports,

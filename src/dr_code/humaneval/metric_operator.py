@@ -1,16 +1,16 @@
-"""Sandbox-backed HumanEval case execution facts.
+"""HumanEval's sandbox-backed metric operator.
 
 This operator is HumanEval-specific by construction, not merely by its type
 annotations: it uses the HumanEval batch request and result protocol owned by
-``dr_code.humaneval.batch_runner`` and depends on ``HumanEvalTask.parsed_tests``
+``dr_code.humaneval.runner`` and depends on ``HumanEvalTask.parsed_tests``
 semantics. There is deliberately no generic ``Task`` supertype -- a
 single-implementation abstraction with a guessed interface would be premature.
 The shared interface gets extracted when a second benchmark exists to constrain
 it; until then the HumanEval scope is kept honest through naming and
 docstrings.
 
-Requests are built by ``batch_runner.build_humaneval_batch_request`` and
-outcomes are read by ``batch_runner.interpret_subprocess_batch_result``, so
+Requests are built by ``runner.build_humaneval_batch_request`` and
+outcomes are read by ``runner.interpret_subprocess_batch_result``, so
 this operator and the direct batch path share one protocol implementation.
 Only the failure *attribution* differs: metrics turns runner-protocol breakage
 into candidate-attributable case errors instead of raising.
@@ -24,9 +24,9 @@ from typing import Self
 
 from pydantic import model_validator
 
-from dr_code.humaneval import batch_runner
+from dr_code.humaneval import runner
 from dr_code.humaneval.profiles import DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxCompletedProcess,
     SandboxOutputLimitError,
 )
@@ -125,7 +125,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> tuple[ExecutionRequest, ...]:
         source = _code_source(value)
         task = self._task(aux)
-        function_names = batch_runner.top_level_function_names(source)
+        function_names = runner.top_level_function_names(source)
         return tuple(
             self._request(
                 task=task,
@@ -143,7 +143,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> CodeTestResult:
         source = _code_source(value)
         task = self._task(aux)
-        function_names = batch_runner.top_level_function_names(source)
+        function_names = runner.top_level_function_names(source)
         case_results: list[EvaluationCaseResult] = []
         for function_name in function_names:
             request = self._request(
@@ -164,7 +164,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
             task_id=task.task_id,
             entry_point=task.entry_point,
             function_names=function_names,
-            total_cases=len(batch_runner.require_parsed_tests(task).cases),
+            total_cases=len(runner.require_parsed_tests(task).cases),
             results=case_results,
         )
         counts = evaluation.status_counts
@@ -195,7 +195,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         candidate_code: str,
         function_name: str,
     ) -> ExecutionRequest:
-        request = batch_runner.build_humaneval_batch_request(
+        request = runner.build_humaneval_batch_request(
             task=task,
             candidate_code=candidate_code,
             function_name=function_name,
@@ -228,13 +228,13 @@ def _results_from_outcome(
     """
 
     if is_timeout_outcome(outcome):
-        return batch_runner.timeout_results(
+        return runner.timeout_results(
             task=task,
             function_name=function_name,
             timeout_seconds=timeout_seconds,
         )
     if is_output_limit_outcome(outcome):
-        return batch_runner.error_results(
+        return runner.error_results(
             task=task,
             function_name=function_name,
             message=f"{SandboxOutputLimitError.__name__}: {outcome.stderr}",
@@ -246,14 +246,14 @@ def _results_from_outcome(
         stderr=outcome.stderr,
     )
     try:
-        return batch_runner.interpret_subprocess_batch_result(
+        return runner.interpret_subprocess_batch_result(
             task=task,
             function_name=function_name,
             completed=completed,
             elapsed_seconds=0.0,
         )
     except EvaluationHarnessError as exc:
-        return batch_runner.error_results(
+        return runner.error_results(
             task=task,
             function_name=function_name,
             message=str(exc),

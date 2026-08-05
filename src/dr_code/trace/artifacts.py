@@ -8,7 +8,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, JsonValue, model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 
 class ArtifactKind(StrEnum):
