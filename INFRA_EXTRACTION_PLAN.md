@@ -10,8 +10,8 @@ superseded by dr-exec adoption.
 ## PR 1 — Trace v3
 
 - `Trace` construction snapshots `values` and deep-copies `step_facts`;
-  `JsonArtifact.payload` is not deep-copied (snapshot claim scoped to the
-  containers and step facts).
+  `JsonArtifact.payload` is copied at validation, so the snapshot claim
+  covers the containers, the step facts, and artifact payloads.
 - Step facts widen from `Mapping[str, str]` to validated finite JSON:
   string keys, finite floats, no cycles, no non-JSON values.
 - `Absent` gains `failure_code: str` — a plain string at the trace layer;

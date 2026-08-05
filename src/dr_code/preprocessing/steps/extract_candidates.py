@@ -60,8 +60,10 @@ def _to_candidate_set(
     ``code_like_blocks`` filters prose blocks and splits anchored segments.
     Returning ``None`` when no code-like candidate survives advances the
     first-success ladder to its next strategy. Each surviving candidate's
-    single origin names the winning strategy and the ordinal of the block
-    it was extracted from.
+    single origin names the winning strategy and its own ordinal within
+    the candidate list this operation produces — a position after the
+    fan-out and the blank-block filter, not an index into the blocks the
+    operation read.
     """
     sources = [block for block in code_like_blocks(blocks) if block.strip()]
     if not sources:

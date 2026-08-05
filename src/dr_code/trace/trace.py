@@ -49,10 +49,9 @@ class Trace:
     ``values`` is shallow-copied into a plain dict and ``step_facts`` is
     deep-copied by ``validate_step_facts``, so mutating the caller's
     mappings afterwards cannot change an existing trace. The individual
-    values are frozen models, with one documented exception:
-    ``JsonArtifact.payload`` is held by reference, so the snapshot claim
-    covers the containers and the step facts, not a payload a caller
-    mutates in place.
+    values are frozen models whose own containers are copied at validation
+    — ``JsonArtifact.payload`` included — so mutating a payload a caller
+    still holds cannot change the artifact recorded in the trace.
     """
 
     # flat namespace; must contain input & output

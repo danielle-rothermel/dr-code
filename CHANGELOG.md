@@ -5,8 +5,8 @@
 - Trace persistence requires schema version 3.
 - Trace construction snapshots the supplied values mapping and deep-copies
   step facts, so later caller mutation cannot change an existing trace.
-  `JsonArtifact.payload` is held by reference and is documented as outside
-  that snapshot.
+  Artifact payloads, `JsonArtifact.payload` included, are copied at
+  validation, so the snapshot covers them too.
 - Step facts widened from string values to validated finite JSON: string
   keys, finite floats, no container cycles, and no non-JSON values, enforced
   at both trace construction and the persistence boundary.

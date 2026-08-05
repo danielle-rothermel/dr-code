@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from array import array
+from enum import IntEnum, StrEnum
+
 import pytest
 
 from dr_code.trace import (
@@ -154,6 +157,13 @@ def test_trace_accepts_finite_json_step_facts() -> None:
         {"parse": {"value": object()}},
         {"parse": {"value": {"nested": object()}}},
         {"parse": "not a mapping"},
+        # The bytes family is Sequence-shaped but has no JSON form; it must
+        # be rejected rather than coerced into a list of ints.
+        {"parse": {"value": b"raw"}},
+        {"parse": {"value": bytearray(b"raw")}},
+        {"parse": {"value": memoryview(b"raw")}},
+        {"parse": {"value": array("i", [1, 2])}},
+        {"parse": {"value": {"nested": b"raw"}}},
     ),
 )
 def test_trace_rejects_non_json_step_facts(facts: object) -> None:
@@ -163,6 +173,40 @@ def test_trace_rejects_non_json_step_facts(facts: object) -> None:
             producer=EXTERNAL_PRODUCER,
             step_facts=facts,  # type: ignore[arg-type]
         )
+
+
+def test_trace_narrows_enum_step_fact_leaves_to_plain_builtins() -> None:
+    class Alternative(StrEnum):
+        FENCED_BLOCKS = "fenced_blocks"
+
+    class Attempts(IntEnum):
+        TWO = 2
+
+    trace = Trace(
+        values=_minimal_values(),
+        producer=EXTERNAL_PRODUCER,
+        step_facts={
+            "parse": {
+                "alternative": Alternative.FENCED_BLOCKS,
+                "attempts": Attempts.TWO,
+                "nested": {"alternative": Alternative.FENCED_BLOCKS},
+            }
+        },
+    )
+
+    stored = trace.step_facts["parse"]
+    assert stored == {
+        "alternative": "fenced_blocks",
+        "attempts": 2,
+        "nested": {"alternative": "fenced_blocks"},
+    }
+    # Equality alone would pass for the live enum members; the stored facts
+    # must hold plain containers, so pin the exact leaf types.
+    assert type(stored["alternative"]) is str
+    assert type(stored["attempts"]) is int
+    nested = stored["nested"]
+    assert isinstance(nested, dict)
+    assert type(nested["alternative"]) is str
 
 
 def test_trace_rejects_step_facts_with_a_container_cycle() -> None:

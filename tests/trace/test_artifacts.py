@@ -154,6 +154,7 @@ def test_candidate_requires_at_least_one_origin() -> None:
 
 def test_candidate_extended_appends_origin_and_keeps_prior_lineage() -> None:
     candidate = _candidate("x = 1\n")
+    origins_before = candidate.origins
     origin = CandidateOrigin(
         operation=ExtractionOperation(operation_name="dedent_candidates"),
         input_location=3,
@@ -162,9 +163,10 @@ def test_candidate_extended_appends_origin_and_keeps_prior_lineage() -> None:
     extended = candidate.extended(origin, source="x = 2\n")
 
     assert extended.source == "x = 2\n"
-    assert extended.origins == (*candidate.origins, origin)
+    assert extended.origins == (*origins_before, origin)
     # The original record is untouched: lineage is appended, never replaced.
-    assert candidate.origins == candidate.origins[:1]
+    assert candidate.origins == origins_before
+    assert candidate.source == "x = 1\n"
 
 
 def test_candidate_inspection_records_structure_without_verdicts() -> None:

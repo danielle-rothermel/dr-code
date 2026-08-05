@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import ClassVar, Final, Generic, TypeVar, cast
+from enum import UNIQUE, StrEnum, verify
+from typing import ClassVar, Generic, TypeVar, cast
 
 from dr_code.base import FrozenModel
 from dr_code.trace import (
@@ -24,19 +25,26 @@ from dr_code.trace import (
 from dr_code.preprocessing.names import StepName
 
 
-class FailureCode:
-    """Provisional snake_case failure codes raised by preprocessing steps.
+@verify(UNIQUE)
+class FailureCode(StrEnum):
+    """The failure vocabulary preprocessing steps raise.
 
-    Preprocessing owns this vocabulary; the trace layer stores whichever
-    string is stamped into ``Absent.failure_code`` without interpreting it.
+    Preprocessing owns these codes; the trace layer stores whichever string
+    a producer stamps into ``Absent.failure_code`` without interpreting it.
+
+    Never build a payload by iterating this enum: the set of members is a
+    closed vocabulary, not an ordered list, and its iteration order is not
+    part of any persisted format. Reference members individually by name.
     """
 
-    NO_ALTERNATIVE_PRODUCED_CANDIDATES: Final = (
-        "no_alternative_produced_candidates"
-    )
-    MISSING_FIELD_MARKER: Final = "missing_field_marker"
-    EMPTY_FIELD_MARKER_VALUE: Final = "empty_field_marker_value"
-    NO_CANDIDATE_SURVIVED_FILTERING: Final = "no_candidate_survived_filtering"
+    #: No alternative in a step's first-success ladder produced candidates.
+    NO_ALTERNATIVE_PRODUCED_CANDIDATES = "no_alternative_produced_candidates"
+    #: The configured field marker is absent from the input.
+    MISSING_FIELD_MARKER = "missing_field_marker"
+    #: The configured field marker is present but its value is empty.
+    EMPTY_FIELD_MARKER_VALUE = "empty_field_marker_value"
+    #: Every extracted candidate was dropped by the structural filters.
+    NO_CANDIDATE_SURVIVED_FILTERING = "no_candidate_survived_filtering"
 
 
 class StepSettings(FrozenModel):
@@ -52,15 +60,17 @@ SettingsT = TypeVar("SettingsT", bound=StepSettings)
 class StepFailedError(Exception):
     """A data failure: the step cannot produce output without guessing.
 
-    Carries a machine-readable ``code`` naming the failure kind plus a
-    free-form ``cause`` detailing it. Converted to ``Absent`` by the
-    runner, which copies both through; never escapes ``run_preprocessing``.
+    Raised with a ``FailureCode`` member naming the failure kind plus a
+    free-form ``cause`` detailing it; ``code`` is stored as that member's
+    plain string, the form the trace layer records. Converted to
+    ``Absent`` by the runner, which copies both through; never escapes
+    ``run_preprocessing``.
     Distinct from ``WiringError`` (a definition bug raised at bind time).
     """
 
-    def __init__(self, code: str, cause: str) -> None:
+    def __init__(self, code: FailureCode, cause: str) -> None:
         super().__init__(cause)
-        self.code = code
+        self.code = code.value
         self.cause = cause
 
 

@@ -14,7 +14,7 @@ persisted document without having been checked.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import TypeAlias
 
 from pydantic import JsonValue
@@ -38,6 +38,9 @@ def validate_step_facts(
 
     The returned mapping shares no mutable container with the caller, so a
     later caller mutation cannot change the trace it was recorded in.
+    Leaves are narrowed to their plain builtin, so an ``str``/``int``
+    subclass such as a ``StrEnum`` member is stored as the ``str``/``int``
+    it serializes to rather than as the live enum object.
     """
     if not isinstance(step_facts, Mapping):
         raise FactError(
@@ -80,14 +83,19 @@ def _validate_value(
     ``seen`` carries the identities of the containers currently being
     validated; a repeat identity is a cycle, which has no JSON form.
     """
-    if value is None or isinstance(value, bool | str):
+    if value is None or isinstance(value, bool):
         return value
+    # Subclass leaves (``StrEnum``/``IntEnum`` members and the like) are
+    # narrowed to their plain builtin, so the stored facts hold only plain
+    # containers and never a live domain object.
+    if isinstance(value, str):
+        return value if type(value) is str else str(value)
     if isinstance(value, int):
-        return value
+        return value if type(value) is int else int(value)
     if isinstance(value, float):
         if not math.isfinite(value):
             raise FactError(f"step fact {path} is a non-finite float: {value}")
-        return value
+        return value if type(value) is float else float(value)
     if isinstance(value, Mapping):
         _reject_cycle(value, path=path, seen=seen)
         nested = (*seen, id(value))
@@ -102,7 +110,11 @@ def _validate_value(
                 item, path=f"{path}.{key}", seen=nested
             )
         return mapping
-    if isinstance(value, Sequence):
+    # Only the two builtin JSON array shapes are accepted. A wider
+    # ``Sequence`` test would silently coerce the bytes family — ``bytes``,
+    # ``bytearray``, ``memoryview``, ``array.array`` — into lists of ints
+    # here while the serialization boundary rejects them.
+    if isinstance(value, list | tuple):
         _reject_cycle(value, path=path, seen=seen)
         nested = (*seen, id(value))
         return [
