@@ -9,8 +9,11 @@ Python (and raise `SyntaxError` when it is not), see
 
 from __future__ import annotations
 
+import io
 import json
 import re
+import token
+import tokenize
 import unicodedata
 from typing import Final
 
@@ -23,7 +26,6 @@ MARKDOWN_WRAPPER_RE: Final[re.Pattern[str]] = re.compile(
     r"^[ \t]*(?:>+[ \t]?|\d+[.)][ \t]?|[*+\-][ \t])"
 )
 BLANK_RUN_RE: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
-RETURN_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*return(?:\b|$)")
 PYTHON_ANCHOR_RE: Final[re.Pattern[str]] = re.compile(
     r"(?:def |async def |class |import |from |@|if __name__)"
 )
@@ -254,13 +256,76 @@ def drop_if_name(text: str) -> list[str]:
     return splits
 
 
-def drop_after_last_return(text: str) -> str:
-    """Truncate `text` after its last `return` line; unchanged when none."""
-    lines = text.split(LINE_SEP)
-    for index in range(len(lines) - 1, -1, -1):
-        if RETURN_LINE_RE.match(lines[index]):
-            return LINE_SEP.join(lines[: index + 1])
-    return text
+def drop_after_last_return(text: str) -> str | None:
+    """Truncate `text` after its last complete `return` statement.
+
+    Returns `None` when there is no such boundary to truncate at — no
+    `return` inside a function body, or text whose tokenization never
+    reaches one. A salvage that cannot be located is not performed, so
+    `None` means "nothing to salvage", never "salvaged to nothing".
+
+    The boundary is found by tokenizing rather than by matching lines,
+    which is what makes it a *complete* statement: a `NEWLINE` token fires
+    only once bracket continuations have closed, so a return spanning
+    several lines is kept whole instead of being cut mid-bracket. Tokens
+    also distinguish the keyword from the same word inside a string or a
+    comment, and `INDENT`/`DEDENT` tracking keeps a module-level `return`
+    — which is not a function body's exit — from being treated as one.
+
+    Truncation is lossy and this is a best-effort repair over arbitrary
+    text, so it fails closed: a malformed token, an unterminated bracket,
+    or inconsistent indentation stops the walk, and only a boundary whose
+    own statement had already completed is trusted. A `return` still
+    pending when the walk stops yields `None`.
+    """
+    pending_return = False
+    at_statement_start = True
+    indent_level = 0
+    boundary: tuple[int, int] | None = None
+    try:
+        for item in tokenize.generate_tokens(io.StringIO(text).readline):
+            if item.type == token.ERRORTOKEN and not item.string.isspace():
+                break
+            if item.type == token.INDENT:
+                indent_level += 1
+                continue
+            if item.type == token.DEDENT:
+                indent_level = max(0, indent_level - 1)
+                continue
+            if item.type in {token.COMMENT, token.NL, token.ENDMARKER}:
+                continue
+            if item.type == token.NEWLINE or (
+                item.type == token.OP and item.string == ";"
+            ):
+                if pending_return:
+                    boundary = item.end
+                pending_return = False
+                at_statement_start = True
+                continue
+            if (
+                at_statement_start
+                and indent_level > 0
+                and item.type == token.NAME
+                and item.string == "return"
+            ):
+                pending_return = True
+            at_statement_start = False
+    except (SyntaxError, ValueError, tokenize.TokenError):
+        # ``SyntaxError`` covers ``IndentationError``; ``ValueError`` covers
+        # text the tokenizer cannot even encode, such as a lone surrogate.
+        pass
+    if boundary is None or pending_return:
+        return None
+    return text[: _source_offset(text, boundary)]
+
+
+def _source_offset(text: str, position: tuple[int, int]) -> int:
+    """The character offset of a 1-based (row, column) token position."""
+    row, column = position
+    lines = text.splitlines(keepends=True)
+    if row > len(lines):
+        return len(text)
+    return sum(len(line) for line in lines[: row - 1]) + column
 
 
 __all__ = [

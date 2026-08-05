@@ -26,13 +26,13 @@ class AddLastReturnSalvage(Step[StepSettings]):
     """Append a truncated-at-last-return salvage of each candidate.
 
     Trailing prose after a function body defeats compilation, and dropping
-    everything after the last ``return`` line recovers a compilable
-    candidate from it. Truncation is lossy, though: applied in place it
-    would destroy a candidate whose real content continues past its last
-    ``return``. So the truncation is added as an *additional* candidate,
-    immediately after the one it was salvaged from, and the original is
-    kept intact. A candidate that the truncation would leave unchanged
-    contributes nothing.
+    everything after the last complete ``return`` statement recovers a
+    compilable candidate from it. Truncation is lossy, though: applied in
+    place it would destroy a candidate whose real content continues past
+    its last ``return``. So the truncation is added as an *additional*
+    candidate, immediately after the one it was salvaged from, and the
+    original is kept intact. A candidate with no boundary to truncate at,
+    and one the truncation would leave unchanged, both contribute nothing.
 
     Salvages carry the lineage of the candidate they came from, extended
     with this step's operation and that candidate's ordinal.
@@ -50,7 +50,7 @@ class AddLastReturnSalvage(Step[StepSettings]):
         for index, candidate in enumerate(candidate_set(value).candidates):
             result.append(candidate)
             truncated = drop_after_last_return(candidate.source)
-            if truncated == candidate.source:
+            if truncated is None or truncated == candidate.source:
                 continue
             result.append(
                 candidate.extended(

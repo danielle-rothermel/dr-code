@@ -347,7 +347,7 @@ def test_import_step_sequence_equals_infer_necessary_imports(
 def test_salvage_adds_a_candidate_and_keeps_the_original() -> None:
     src = "def f():\n    return 1\nprint('trailing')"
     out = AddLastReturnSalvage().apply(_candidate_set(src))
-    assert _sources(out.value) == (src, drop_after_last_return(src))
+    assert _sources(out.value) == (src, "def f():\n    return 1\n")
     assert out.facts["salvaged_count"] == 1
 
 
@@ -357,14 +357,33 @@ def test_salvage_appends_immediately_after_its_source() -> None:
     out = AddLastReturnSalvage().apply(_candidate_set(a, b))
     assert _sources(out.value) == (
         a,
-        drop_after_last_return(a),
+        "def a():\n    return 1\n",
         b,
-        drop_after_last_return(b),
+        "def b():\n    return 2\n",
     )
+
+
+def test_salvage_keeps_a_bracketed_return_whole() -> None:
+    """The salvage of a multi-line return compiles, not cut mid-bracket."""
+    src = "def f(x):\n    return (\n        x +\n        1\n    )\nProse.\n"
+    out = AddLastReturnSalvage().apply(_candidate_set(src))
+    _original, salvage = _sources(out.value)
+    assert (
+        salvage == "def f(x):\n    return (\n        x +\n        1\n    )\n"
+    )
+    compile(salvage, "<salvaged>", "exec")
 
 
 def test_salvage_contributes_nothing_when_truncation_is_a_no_op() -> None:
     src = "def f():\n    return 1"
+    out = AddLastReturnSalvage().apply(_candidate_set(src))
+    assert _sources(out.value) == (src,)
+    assert out.facts["salvaged_count"] == 0
+
+
+def test_salvage_contributes_nothing_without_a_return_boundary() -> None:
+    src = "def f():\n    pass\nProse."
+    assert drop_after_last_return(src) is None
     out = AddLastReturnSalvage().apply(_candidate_set(src))
     assert _sources(out.value) == (src,)
     assert out.facts["salvaged_count"] == 0
