@@ -739,6 +739,61 @@ def _partial_evaluation_result(task: HumanEvalTask) -> EvaluationTaskResult:
     )
 
 
+def test_evaluation_task_result_round_trips_through_its_own_dump() -> None:
+    """The model's own dump revalidates, and the readings come back.
+
+    Under ``extra="forbid"`` a serialized derived reading would be rejected on
+    the way back in, so the five readings never serialize; they are recomputed
+    from ``results``.
+    """
+    evaluation = _partial_evaluation_result(_task())
+    payload = evaluation.model_dump()
+
+    assert not {
+        "best_function_name",
+        "failures",
+        "coverage_complete",
+        "passed",
+        "status_counts",
+    } & set(payload)
+
+    restored = EvaluationTaskResult.model_validate(payload)
+
+    assert restored == evaluation
+    assert restored.best_function_name == evaluation.best_function_name
+    assert restored.coverage_complete == evaluation.coverage_complete
+    assert restored.passed == evaluation.passed
+    assert restored.status_counts == evaluation.status_counts
+    assert restored.failures == evaluation.failures
+
+
+def test_evaluation_task_result_round_trips_through_json() -> None:
+    """The JSON dump revalidates too, readings intact."""
+    evaluation = _partial_evaluation_result(_task())
+
+    restored = EvaluationTaskResult.model_validate_json(
+        evaluation.model_dump_json()
+    )
+
+    assert restored == evaluation
+
+
+def test_evaluation_task_summary_still_carries_the_readings() -> None:
+    """Readings cross a boundary as a summary, not as a task result.
+
+    Excluding them from ``EvaluationTaskResult`` does not make them
+    unpublishable: ``to_summary`` is the shape that carries them.
+    """
+    evaluation = _partial_evaluation_result(_task())
+    summary = evaluation.to_summary()
+    payload = summary.model_dump()
+
+    assert payload["best_function_name"] == evaluation.best_function_name
+    assert payload["passed"] == evaluation.passed
+    assert payload["status_counts"] == evaluation.status_counts
+    assert payload["failure_count"] == len(evaluation.failures)
+
+
 def test_evaluation_outcome_reports_incomplete_for_partial_coverage() -> None:
     evaluation = _partial_evaluation_result(_task())
 
