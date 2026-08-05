@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Never
 
 import pytest
 from pydantic import ValidationError
@@ -20,6 +20,7 @@ from dr_code.preprocessing import (
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.trace import (
+    Artifact,
     CodeArtifact,
     ComponentSetting,
     InspectedCodeCandidateSetArtifact,
@@ -277,6 +278,25 @@ def test_run_input_kind_mismatch_raises_wiring_error() -> None:
     # extract_all_representations expects Text; pass a CodeArtifact.
     with pytest.raises(WiringError):
         run_external_preprocessing(definition, CodeArtifact(source="x = 1"))
+
+
+def test_run_unexpected_step_exception_escapes_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bound = bind_external_preprocessing(
+        _def((StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),))
+    )
+    unexpected = RuntimeError("unexpected step defect")
+
+    def raise_unexpected(_value: Artifact) -> Never:
+        raise unexpected
+
+    monkeypatch.setattr(bound.steps[0].step, "apply", raise_unexpected)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        bound.run(TextArtifact(text="x"))
+
+    assert exc_info.value is unexpected
 
 
 # --- run: Absent propagation -----------------------------------------

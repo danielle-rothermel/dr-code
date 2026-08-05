@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from ._builders import (
     _absent,
@@ -95,8 +96,12 @@ def test_record_variant_fields_are_the_documented_schema() -> None:
 
 def test_records_are_frozen() -> None:
     record = _measured()
-    with pytest.raises(Exception):  # noqa: PT011 — FrozenModel raises
+    with pytest.raises(ValidationError) as exc_info:
         record.facts = record.facts  # type: ignore[misc]
+
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "frozen_instance"
+    assert error["loc"] == ("facts",)
 
 
 def test_equal_records_compare_equal() -> None:
