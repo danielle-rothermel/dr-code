@@ -25,4 +25,16 @@ describe("StatusBadge", () => {
 
     expect(screen.getByText("ready").dataset.theme).toBe("dark");
   });
+
+  it("preserves its base class when adding a caller class", () => {
+    render(
+      <StatusBadge status="success" className="result-status">
+        ready
+      </StatusBadge>,
+    );
+
+    expect(screen.getByText("ready").className).toBe(
+      "drv-status-badge result-status",
+    );
+  });
 });
