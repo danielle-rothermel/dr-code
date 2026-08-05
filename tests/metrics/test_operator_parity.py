@@ -5,7 +5,7 @@ outcomes, AST statistics, compressed length, and HumanEval execution.
 
 Pure operators are pinned to golden values on fixed sample inputs.
 ``code_test`` is cross-checked against
-``batch_runner.evaluate_human_eval_code`` for counts and attribution.
+``batch_runner.evaluate_humaneval_code`` for counts and attribution.
 
 Operators are engine-managed classes registered in ``REGISTRY`` and reached
 only through ``extract_metrics`` — never called as bare functions.
@@ -24,7 +24,7 @@ from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 from metrics.helpers import code_test_trace, evaluate_oracle
 
 # Golden compressed sizes use gzip level 9 and zstd level 3.
-_ZSTD_DEFAULT_LEVEL = 3
+_ZSTD_GOLDEN_LEVEL = 3
 
 SAMPLE_TEXT = (
     "Here is some text with a `code` fence:\n"
@@ -287,7 +287,7 @@ def _reference_trace(text: str, reference: str):
     )
 
 
-def test_compressed_length_gzip_level_9_reproduces_default(task) -> None:
+def test_compressed_length_gzip_level_9_matches_golden(task) -> None:
     """Pinned gzip level 9 determines the compressed-length result."""
     reference = task.ground_truth_code
     # The ratio divides gzip-compressed bytes by ground-truth source bytes.
@@ -318,7 +318,7 @@ def test_compressed_length_gzip_level_9_reproduces_default(task) -> None:
     assert _value(record, "percent_reduction") == expected_percent_reduction
 
 
-def test_compressed_length_zstd_level_3_reproduces_default(task) -> None:
+def test_compressed_length_zstd_level_3_matches_golden(task) -> None:
     """Pinned zstd level 3 determines the compressed-length result."""
     reference = task.ground_truth_code
 
@@ -335,7 +335,7 @@ def test_compressed_length_zstd_level_3_reproduces_default(task) -> None:
         _reference_trace(SAMPLE_TEXT, reference),
     )[0]
     assert record.values["compressed_bytes"] == len(
-        zstandard.ZstdCompressor(level=_ZSTD_DEFAULT_LEVEL).compress(
+        zstandard.ZstdCompressor(level=_ZSTD_GOLDEN_LEVEL).compress(
             SAMPLE_TEXT.encode("utf-8")
         )
     )

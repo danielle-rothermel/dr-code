@@ -102,7 +102,7 @@ _CANDIDATE_CLEANING: Final[tuple[StepSpec, ...]] = (
 #: best-effort: full normalization, the default extraction ladder,
 #: per-candidate cleaning, then all three selection filters (plain-literal,
 #: code-repr, compilable).
-BEST_EFFORT_DEFINITION: Final[PreprocessingDefinition] = (
+BEST_EFFORT_HUMANEVAL_DEFINITION: Final[PreprocessingDefinition] = (
     PreprocessingDefinition(
         definition_id=BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
         version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
@@ -127,7 +127,7 @@ BEST_EFFORT_DEFINITION: Final[PreprocessingDefinition] = (
 #: three selection filters as best-effort. The code-repr filter is included
 #: so a ``code = "..."`` marker payload is rejected (symmetrical with
 #: best-effort).
-FIELD_MARKER_DEFINITION: Final[PreprocessingDefinition] = (
+STRICT_FIELD_MARKER_DEFINITION: Final[PreprocessingDefinition] = (
     PreprocessingDefinition(
         definition_id=STRICT_FIELD_MARKER_DEFINITION_ID,
         version=STRICT_FIELD_MARKER_DEFINITION_VERSION,
@@ -153,11 +153,11 @@ _DEFINITIONS: Final = MappingProxyType(
         (
             BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
             BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-        ): BEST_EFFORT_DEFINITION,
+        ): BEST_EFFORT_HUMANEVAL_DEFINITION,
         (
             STRICT_FIELD_MARKER_DEFINITION_ID,
             STRICT_FIELD_MARKER_DEFINITION_VERSION,
-        ): FIELD_MARKER_DEFINITION,
+        ): STRICT_FIELD_MARKER_DEFINITION,
     }
 )
 
@@ -185,8 +185,8 @@ def resolve_preprocessing_definition(
 __all__ = [
     "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
     "BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION",
-    "BEST_EFFORT_DEFINITION",
-    "FIELD_MARKER_DEFINITION",
+    "BEST_EFFORT_HUMANEVAL_DEFINITION",
+    "STRICT_FIELD_MARKER_DEFINITION",
     "STRICT_FIELD_MARKER_DEFINITION_ID",
     "STRICT_FIELD_MARKER_DEFINITION_VERSION",
     "resolve_preprocessing_definition",

@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 
 from dr_code.trace import (
+    INPUT_KEY,
+    OUTPUT_KEY,
     Absent,
     Artifact,
     ArtifactKind,
@@ -176,7 +178,7 @@ def _run_definition(
                 f"{first_input_kind.value!r}"
             )
 
-    values: dict[str, Artifact | Absent] = {"input": input_value}
+    values: dict[str, Artifact | Absent] = {INPUT_KEY: input_value}
     step_facts: dict[str, dict[str, str]] = {}
 
     current: Artifact | Absent = input_value
@@ -204,7 +206,7 @@ def _run_definition(
                     step_facts[bound.instance_name] = dict(output.facts)
         values[bound.instance_name] = current
 
-    values["output"] = current
+    values[OUTPUT_KEY] = current
 
     coordinate = PreprocessingDefinitionCoordinate(
         definition_id=definition.definition_id,

@@ -13,7 +13,7 @@ from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.records import MetricScalar
 from dr_code.metrics.settings import OperatorSettings
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 from dr_code.trace import (
     Artifact,
     ArtifactKind,

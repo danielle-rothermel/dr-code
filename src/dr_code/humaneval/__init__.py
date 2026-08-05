@@ -23,9 +23,9 @@ from dr_code.humaneval.profiles import (
 )
 from dr_code.humaneval.sampling import (
     SampledHumanEvalTask,
-    load_human_eval_rows,
-    sample_human_eval_tasks,
-    sample_human_eval_tasks_from_rows,
+    load_humaneval_rows,
+    sample_humaneval_tasks,
+    sample_humaneval_tasks_from_rows,
 )
 from dr_code.humaneval.scoring import (
     CompletedScore,
@@ -39,13 +39,13 @@ from dr_code.humaneval.task import (
     EvaluationCaseStatus,
     EvaluationCaseSummary,
     EvaluationTaskSummary,
-    HUMAN_EVAL_OVERRIDE_SET,
-    HUMAN_EVAL_OVERRIDE_SET_ID,
-    HUMAN_EVAL_OVERRIDE_SET_VERSION,
+    HUMANEVAL_OVERRIDE_SET,
+    HUMANEVAL_OVERRIDE_SET_ID,
+    HUMANEVAL_OVERRIDE_SET_VERSION,
     HumanEvalOverrideEntry,
     HumanEvalOverrideSetCoordinate,
     HumanEvalTask,
-    parse_human_eval_dataset,
+    parse_humaneval_dataset,
 )
 
 __all__ = (
@@ -63,9 +63,9 @@ __all__ = (
     "HUMANEVAL_SCORING_PROFILE_ID",
     "HUMANEVAL_SCORING_PROFILE_VERSION",
     "HUMANEVAL_METRICS_PROFILE",
-    "HUMAN_EVAL_OVERRIDE_SET",
-    "HUMAN_EVAL_OVERRIDE_SET_ID",
-    "HUMAN_EVAL_OVERRIDE_SET_VERSION",
+    "HUMANEVAL_OVERRIDE_SET",
+    "HUMANEVAL_OVERRIDE_SET_ID",
+    "HUMANEVAL_OVERRIDE_SET_VERSION",
     "HarnessFailure",
     "HarnessFailureCause",
     "HumanEvalScoringProfile",
@@ -81,11 +81,11 @@ __all__ = (
     "SampledHumanEvalTask",
     "SubmissionOutcome",
     "extract_code_with_profile",
-    "load_human_eval_rows",
-    "parse_human_eval_dataset",
+    "load_humaneval_rows",
+    "parse_humaneval_dataset",
     "resolve_humaneval_scoring_profile",
     "resolve_parser_profile",
-    "sample_human_eval_tasks",
-    "sample_human_eval_tasks_from_rows",
+    "sample_humaneval_tasks",
+    "sample_humaneval_tasks_from_rows",
     "score_humaneval_submission",
 )

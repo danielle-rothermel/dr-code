@@ -16,7 +16,7 @@ from pydantic import (
     StrictStr,
 )
 
-from dr_code.humaneval.batch_runner import evaluate_human_eval_code
+from dr_code.humaneval.batch_runner import evaluate_humaneval_code
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
     extract_code_with_profile,
@@ -37,7 +37,7 @@ from dr_code.humaneval.task import (
     EvaluationTaskResult,
     HumanEvalTask,
 )
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 UNKNOWN_FAILURE_CLASS = "unknown"
 
@@ -117,7 +117,7 @@ def score_humaneval_submission(
         )
 
     try:
-        evaluation = evaluate_human_eval_code(
+        evaluation = evaluate_humaneval_code(
             task=task,
             candidate_code=extraction.extracted_code,
             timeout_seconds=scoring_profile.timeout_seconds,

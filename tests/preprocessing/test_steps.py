@@ -14,7 +14,7 @@ from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
 )
 from dr_code.preprocessing.steps.dedupe_imports import DedupeImports
-from dr_code.preprocessing.steps.dedent import Dedent
+from dr_code.preprocessing.steps.dedent_candidates import DedentCandidates
 from dr_code.preprocessing.steps.drop_after_last_return import (
     DropAfterLastReturn,
 )
@@ -25,9 +25,9 @@ from dr_code.preprocessing.steps.extract_candidates import (
     ExtractCandidatesSettings,
     ExtractionStrategy,
 )
-from dr_code.preprocessing.steps.field_marker import (
-    FieldMarker,
-    FieldMarkerSettings,
+from dr_code.preprocessing.steps.field_marker_extract import (
+    FieldMarkerExtract,
+    FieldMarkerExtractSettings,
 )
 from dr_code.preprocessing.steps.filter_code_repr import FilterCodeRepr
 from dr_code.preprocessing.steps.filter_compilable import (
@@ -239,7 +239,7 @@ def test_strip_fences_wraps_function() -> None:
 
 def test_dedent_wraps_textwrap() -> None:
     cs = CodeCandidateSetArtifact(candidates=("    x = 1\n    y = 2\n",))
-    out = Dedent().apply(cs)
+    out = DedentCandidates().apply(cs)
     assert out.value == CodeCandidateSetArtifact(
         candidates=("x = 1\ny = 2\n",)
     )
@@ -430,7 +430,7 @@ def test_field_marker_extracts_code_field() -> None:
     text = (
         "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"
     )
-    out = FieldMarker().apply(TextArtifact(text=text))
+    out = FieldMarkerExtract().apply(TextArtifact(text=text))
     assert out.value.candidates == ("def f():\n    return 1",)
     assert out.facts["field_name"] == "code"
 
@@ -439,12 +439,12 @@ def test_field_marker_missing_raises() -> None:
     from dr_code.preprocessing.steps.base import StepFailedError
 
     with pytest.raises(StepFailedError):
-        FieldMarker().apply(TextArtifact(text="no markers here"))
+        FieldMarkerExtract().apply(TextArtifact(text="no markers here"))
 
 
 def test_field_marker_custom_field_name() -> None:
     text = "[[ ## solution ## ]]\nx = 1\n"
-    out = FieldMarker(FieldMarkerSettings(field_name="solution")).apply(
-        TextArtifact(text=text)
-    )
+    out = FieldMarkerExtract(
+        FieldMarkerExtractSettings(field_name="solution")
+    ).apply(TextArtifact(text=text))
     assert out.value.candidates == ("x = 1",)

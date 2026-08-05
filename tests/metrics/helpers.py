@@ -344,9 +344,9 @@ def evaluate_oracle(
     run_in_sandbox: SandboxRunner,
 ):
     """Run the existing batch_runner to get the oracle EvaluationTaskResult."""
-    from dr_code.humaneval.batch_runner import evaluate_human_eval_code
+    from dr_code.humaneval.batch_runner import evaluate_humaneval_code
 
-    return evaluate_human_eval_code(
+    return evaluate_humaneval_code(
         task=task,
         candidate_code=candidate_code,
         timeout_seconds=timeout_seconds,

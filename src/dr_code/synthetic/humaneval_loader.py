@@ -10,7 +10,7 @@ The raw-row loading contract is owned by `dr_code.humaneval.sampling`, which
 guarantees provenance only.
 
 This loader validates rows against the registered task model
-(`parse_human_eval_dataset`) before building synthetic tasks, so a row that
+(`parse_humaneval_dataset`) before building synthetic tasks, so a row that
 fails the registered override set — for example an overridden task whose
 replacement anchor is missing — never becomes synthetic ground truth.
 """
@@ -22,19 +22,19 @@ from pathlib import Path
 from typing import Final
 
 from dr_code.humaneval.sampling import (
-    DEFAULT_HUMAN_EVAL_DATASET_NAME,
-    DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
-    DEFAULT_HUMAN_EVAL_HF_REVISION,
+    DEFAULT_HUMANEVAL_DATASET_NAME,
+    DEFAULT_HUMANEVAL_DATASET_SPLIT,
+    DEFAULT_HUMANEVAL_HF_REVISION,
     HumanEvalRow,
-    load_human_eval_rows,
+    load_humaneval_rows,
 )
-from dr_code.humaneval.task import HumanEvalTask, parse_human_eval_dataset
-from dr_code.models import FrozenModel
+from dr_code.humaneval.task import HumanEvalTask, parse_humaneval_dataset
+from dr_code.base import FrozenModel
 
 #: Hugging Face dataset id and split.
-HF_DATASET_ID: Final[str] = DEFAULT_HUMAN_EVAL_DATASET_NAME
-HF_SPLIT: Final[str] = DEFAULT_HUMAN_EVAL_DATASET_SPLIT
-HF_REVISION: Final[str] = DEFAULT_HUMAN_EVAL_HF_REVISION
+HF_DATASET_ID: Final[str] = DEFAULT_HUMANEVAL_DATASET_NAME
+HF_SPLIT: Final[str] = DEFAULT_HUMANEVAL_DATASET_SPLIT
+HF_REVISION: Final[str] = DEFAULT_HUMANEVAL_HF_REVISION
 
 #: Path to the offline snapshot, relative to repo root.
 SNAPSHOT_REL_PATH: Final[str] = "tests/corpus/humanevalplus_snapshot.json"
@@ -68,17 +68,17 @@ def _task_from_validated(task: HumanEvalTask) -> HumanEvalPlusTask:
 def _tasks_from_rows(rows: Sequence[HumanEvalRow]) -> list[HumanEvalPlusTask]:
     """Validate rows against the registered task model, then project them.
 
-    ``parse_human_eval_dataset`` applies the registered override set, so a
+    ``parse_humaneval_dataset`` applies the registered override set, so a
     row that lost its override anchor raises here instead of silently
     becoming synthetic ground truth.
     """
     return [
-        _task_from_validated(task) for task in parse_human_eval_dataset(rows)
+        _task_from_validated(task) for task in parse_humaneval_dataset(rows)
     ]
 
 
 def _load_from_hf() -> list[HumanEvalPlusTask]:
-    rows = load_human_eval_rows(
+    rows = load_humaneval_rows(
         dataset_name=HF_DATASET_ID,
         dataset_split=HF_SPLIT,
         hf_revision=HF_REVISION,
@@ -88,7 +88,7 @@ def _load_from_hf() -> list[HumanEvalPlusTask]:
 
 def _load_from_snapshot(repo_root: Path) -> list[HumanEvalPlusTask]:
     snap = repo_root / SNAPSHOT_REL_PATH
-    rows = load_human_eval_rows(
+    rows = load_humaneval_rows(
         dataset_name=HF_DATASET_ID,
         dataset_split=HF_SPLIT,
         hf_revision=HF_REVISION,

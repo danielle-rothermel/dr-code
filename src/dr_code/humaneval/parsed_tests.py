@@ -17,7 +17,7 @@ __all__ = [
     "TestCase",
     "UnsupportedTestFormatError",
     "find_check_function",
-    "parse_human_eval_tests",
+    "parse_humaneval_tests",
     "support_code_without_check",
 ]
 
@@ -307,7 +307,7 @@ def support_code_without_check(tree: ast.Module) -> str:
     return ast.unparse(module)
 
 
-def parse_human_eval_tests(test_str: str) -> ParsedTests:
+def parse_humaneval_tests(test_str: str) -> ParsedTests:
     tree = ast.parse(test_str)
     check_node = find_check_function(tree)
     if len(check_node.args.args) != 1:

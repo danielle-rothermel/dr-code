@@ -11,8 +11,8 @@ from dr_code.preprocessing.definition import (
     StepSpec,
 )
 from dr_code.preprocessing.definitions import (
-    BEST_EFFORT_DEFINITION,
-    FIELD_MARKER_DEFINITION,
+    BEST_EFFORT_HUMANEVAL_DEFINITION,
+    STRICT_FIELD_MARKER_DEFINITION,
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
@@ -560,8 +560,8 @@ _FIELD_MARKER_PRODUCER_JSON: Final[dict[str, object]] = {
 @pytest.mark.parametrize(
     ("definition", "expected"),
     [
-        (BEST_EFFORT_DEFINITION, _BEST_EFFORT_PRODUCER_JSON),
-        (FIELD_MARKER_DEFINITION, _FIELD_MARKER_PRODUCER_JSON),
+        (BEST_EFFORT_HUMANEVAL_DEFINITION, _BEST_EFFORT_PRODUCER_JSON),
+        (STRICT_FIELD_MARKER_DEFINITION, _FIELD_MARKER_PRODUCER_JSON),
     ],
     ids=["best-effort", "field-marker"],
 )

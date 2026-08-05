@@ -12,8 +12,8 @@ from dr_code.humaneval.profiles import (
     _SCORING_PROFILES,
 )
 from dr_code.humaneval.task import (
-    HUMAN_EVAL_OVERRIDE_SET_ID,
-    HUMAN_EVAL_OVERRIDE_SET_VERSION,
+    HUMANEVAL_OVERRIDE_SET_ID,
+    HUMANEVAL_OVERRIDE_SET_VERSION,
 )
 from dr_code.metrics.registry import REGISTRY as METRIC_REGISTRY
 from dr_code.preprocessing.definitions import _DEFINITIONS
@@ -54,8 +54,8 @@ def _component_versions() -> dict[str, str]:
             f"synthetic-recipe:{recipe.name}": recipe.version
             for recipe in RECIPES
         },
-        f"override-set:{HUMAN_EVAL_OVERRIDE_SET_ID}": (
-            HUMAN_EVAL_OVERRIDE_SET_VERSION
+        f"override-set:{HUMANEVAL_OVERRIDE_SET_ID}": (
+            HUMANEVAL_OVERRIDE_SET_VERSION
         ),
         f"metrics-profile:{HUMANEVAL_METRICS_PROFILE_ID}": (
             HUMANEVAL_METRICS_PROFILE_VERSION

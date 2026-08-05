@@ -9,7 +9,7 @@ from types import ModuleType
 
 def _report() -> dict[str, list[str]]:
     """Describe trace boundary crossings in the current interpreter."""
-    approved_dr_code_roots = {"dr_code.models", "dr_code.trace"}
+    approved_dr_code_roots = {"dr_code.base", "dr_code.trace"}
     loaded_siblings = sorted(
         name
         for name in sys.modules

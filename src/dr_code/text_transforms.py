@@ -14,11 +14,10 @@ import re
 import unicodedata
 from typing import Final
 
-from dr_code.text_analysis import fence_marker
+from dr_code.text_analysis import LINE_SEP, fence_marker
 
 DEFAULT_TAB_WIDTH: Final[int] = 4
 FENCE: Final[str] = "```"
-LINE_SEP: Final[str] = "\n"
 
 MARKDOWN_WRAPPER_RE: Final[re.Pattern[str]] = re.compile(
     r"^[ \t]*(?:>+[ \t]?|\d+[.)][ \t]?|[*+\-][ \t])"

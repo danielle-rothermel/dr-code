@@ -19,7 +19,7 @@ SIBLING_SYSTEMS = frozenset(
     | {
         child.stem
         for child in DR_CODE_PACKAGE.glob("*.py")
-        if child.stem not in {"__init__", "models"}
+        if child.stem not in {"__init__", "base"}
     }
 )
 

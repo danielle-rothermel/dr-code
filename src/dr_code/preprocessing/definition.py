@@ -7,7 +7,7 @@ from typing import Self
 
 from pydantic import Field, SerializeAsAny, model_validator
 
-from dr_code.models import FrozenModel, settings_payload
+from dr_code.base import FrozenModel, settings_payload
 from dr_code.preprocessing.steps.base import StepSettings
 from dr_code.trace import RESERVED_KEYS, WiringError
 from dr_code.preprocessing.names import StepName

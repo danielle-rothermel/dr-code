@@ -9,7 +9,7 @@ from typing import Annotated, Literal, Self
 import zstandard
 from pydantic import Field, model_validator
 
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 
 class CompressionMethod(StrEnum):
@@ -18,7 +18,7 @@ class CompressionMethod(StrEnum):
 
 
 class GzipConfig(FrozenModel):
-    method: Literal["gzip"] = "gzip"
+    method: Literal[CompressionMethod.GZIP] = CompressionMethod.GZIP
     level: int
 
     @model_validator(mode="after")
@@ -29,7 +29,7 @@ class GzipConfig(FrozenModel):
 
 
 class ZstdConfig(FrozenModel):
-    method: Literal["zstd"] = "zstd"
+    method: Literal[CompressionMethod.ZSTD] = CompressionMethod.ZSTD
     level: int
 
     @model_validator(mode="after")

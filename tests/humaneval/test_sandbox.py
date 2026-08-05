@@ -13,7 +13,7 @@ from dr_code.humaneval.sandbox import (
     SandboxOutputLimitError,
     run_python_in_sandbox,
 )
-from dr_code.humaneval.batch_runner import evaluate_human_eval_code
+from dr_code.humaneval.batch_runner import evaluate_humaneval_code
 from dr_code.humaneval.scoring import (
     CompletedScore,
     score_humaneval_submission,
@@ -63,7 +63,7 @@ def _task() -> HumanEvalTask:
 
 
 def _evaluate(candidate_code: str, *, timeout: float = 2.0) -> bool:
-    return evaluate_human_eval_code(
+    return evaluate_humaneval_code(
         task=_task(),
         candidate_code=candidate_code,
         timeout_seconds=timeout,
@@ -190,7 +190,7 @@ def test_additional_processes_are_denied(candidate: str) -> None:
 
 
 def test_timeout_kills_the_complete_container() -> None:
-    result = evaluate_human_eval_code(
+    result = evaluate_humaneval_code(
         task=_task(),
         candidate_code=(
             "import os\n"
@@ -224,7 +224,7 @@ def test_timeout_kills_the_complete_container() -> None:
 
 
 def test_candidate_sys_exit_is_scored_not_harness_failure() -> None:
-    result = evaluate_human_eval_code(
+    result = evaluate_humaneval_code(
         task=_task(),
         candidate_code=(
             "import sys\nsys.exit(0)\ndef add_one(x):\n    return x + 1\n"
@@ -237,7 +237,7 @@ def test_candidate_sys_exit_is_scored_not_harness_failure() -> None:
 
 
 def test_memory_exhaustion_is_scored_not_harness_failure() -> None:
-    result = evaluate_human_eval_code(
+    result = evaluate_humaneval_code(
         task=_task(),
         candidate_code=(
             "def add_one(x):\n"
@@ -252,7 +252,7 @@ def test_memory_exhaustion_is_scored_not_harness_failure() -> None:
 
 
 def test_output_flood_is_scored_not_harness_failure() -> None:
-    result = evaluate_human_eval_code(
+    result = evaluate_humaneval_code(
         task=_task(),
         candidate_code=(
             "import sys\n"

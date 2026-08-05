@@ -9,7 +9,7 @@ from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import CandidateMapStep
 
 
-class Dedent(CandidateMapStep):
+class DedentCandidates(CandidateMapStep):
     """``textwrap.dedent`` each candidate.
 
     Definitions choose whether this step participates in candidate cleaning.
@@ -22,4 +22,4 @@ class Dedent(CandidateMapStep):
         return textwrap.dedent(source)
 
 
-__all__ = ["Dedent"]
+__all__ = ["DedentCandidates"]

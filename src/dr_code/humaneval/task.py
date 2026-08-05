@@ -25,13 +25,13 @@ from pydantic import (
     model_validator,
 )
 
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
     ParsedTests,
     SingleCaseCheck,
-    parse_human_eval_tests,
+    parse_humaneval_tests,
 )
 
 
@@ -74,7 +74,7 @@ class HumanEvalTask(BaseModel):
                 code_str=self.ground_truth_code,
             )
         if self.parsed_tests is None:
-            self.parsed_tests = parse_human_eval_tests(self.test)
+            self.parsed_tests = parse_humaneval_tests(self.test)
         return self
 
 
@@ -332,13 +332,13 @@ class HumanEvalOverrideSetCoordinate(FrozenModel):
     entries: tuple[HumanEvalOverrideEntry, ...]
 
 
-HUMAN_EVAL_OVERRIDE_SET_ID = "humaneval-overrides"
-HUMAN_EVAL_OVERRIDE_SET_VERSION = "0"
+HUMANEVAL_OVERRIDE_SET_ID = "humaneval-overrides"
+HUMANEVAL_OVERRIDE_SET_VERSION = "0"
 
 
-HUMAN_EVAL_OVERRIDE_SET = HumanEvalOverrideSetCoordinate(
-    override_set_id=HUMAN_EVAL_OVERRIDE_SET_ID,
-    version=HUMAN_EVAL_OVERRIDE_SET_VERSION,
+HUMANEVAL_OVERRIDE_SET = HumanEvalOverrideSetCoordinate(
+    override_set_id=HUMANEVAL_OVERRIDE_SET_ID,
+    version=HUMANEVAL_OVERRIDE_SET_VERSION,
     entries=(
         HumanEvalOverrideEntry(
             task_id="HumanEval/32",
@@ -421,14 +421,14 @@ HUMAN_EVAL_OVERRIDE_SET = HumanEvalOverrideSetCoordinate(
 _OVERRIDE_SETS = MappingProxyType(
     {
         (
-            HUMAN_EVAL_OVERRIDE_SET.override_set_id,
-            HUMAN_EVAL_OVERRIDE_SET.version,
-        ): HUMAN_EVAL_OVERRIDE_SET
+            HUMANEVAL_OVERRIDE_SET.override_set_id,
+            HUMANEVAL_OVERRIDE_SET.version,
+        ): HUMANEVAL_OVERRIDE_SET
     }
 )
 
 
-def resolve_human_eval_override_set(
+def resolve_humaneval_override_set(
     *, override_set_id: str, override_set_version: str
 ) -> HumanEvalOverrideSetCoordinate:
     override_set = _OVERRIDE_SETS.get((override_set_id, override_set_version))
@@ -440,19 +440,19 @@ def resolve_human_eval_override_set(
     return override_set
 
 
-def parse_human_eval_dataset(
+def parse_humaneval_dataset(
     rows: Iterable[Mapping[str, Any]],
 ) -> list[HumanEvalTask]:
     """Parse rows using the one registered production override bundle."""
 
-    return _parse_human_eval_dataset(rows, HUMAN_EVAL_OVERRIDE_SET)
+    return _parse_humaneval_dataset(rows, HUMANEVAL_OVERRIDE_SET)
 
 
-def _parse_human_eval_dataset(
+def _parse_humaneval_dataset(
     rows: Iterable[Mapping[str, Any]],
     override_set: HumanEvalOverrideSetCoordinate,
 ) -> list[HumanEvalTask]:
-    registered = resolve_human_eval_override_set(
+    registered = resolve_humaneval_override_set(
         override_set_id=override_set.override_set_id,
         override_set_version=override_set.version,
     )
@@ -463,12 +463,12 @@ def _parse_human_eval_dataset(
         )
     overrides = {entry.task_id: entry.override for entry in registered.entries}
     return [
-        HumanEvalTask(**_apply_human_eval_override(row, overrides))
+        HumanEvalTask(**_apply_humaneval_override(row, overrides))
         for row in rows
     ]
 
 
-def _apply_human_eval_override(
+def _apply_humaneval_override(
     row: Mapping[str, Any],
     overrides: Mapping[str, HumanEvalOverride],
 ) -> dict[str, Any]:

@@ -1,7 +1,7 @@
 """Corruption round-trips over the frozen recipe set.
 
 Applying each ``dr_code.synthetic`` recipe to clean HumanEval-shaped code and
-running the best-effort current definition partitions the recipes empirically
+running the best-effort definition partitions the recipes empirically
 (verified across seeds 0, 1, 7, 42, 1234):
 
 * ``RECOVERABLE`` — formatting / noise / import / wrapper pathologies the
@@ -61,7 +61,7 @@ CLEAN = (
     "    return np.array([total, total])\n"
 )
 
-#: Recipes whose corruption the best-effort current definition undoes, recovering
+#: Recipes whose corruption the best-effort definition undoes, recovering
 #: code equivalent to the original at every tested seed.
 RECOVERABLE_RECIPES = [
     "clean",
@@ -102,16 +102,16 @@ def _corrupt(recipe_name: str) -> str:
     return apply_recipe(recipe, CLEAN, random.Random(SEED)).corrupted_source
 
 
-def _best_effort_current():
+def _best_effort():
     return resolve_preprocessing_definition(
         definition_id=BEST_EFFORT_ID, version="0"
     )
 
 
 def _run_best_effort(raw: str):
-    return run_preprocessing(
-        _best_effort_current(), TextArtifact(text=raw)
-    ).value("output")
+    return run_preprocessing(_best_effort(), TextArtifact(text=raw)).value(
+        "output"
+    )
 
 
 def _parser_best_effort(raw: str) -> str | None:

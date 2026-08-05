@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from dr_code.humaneval.task import HUMAN_EVAL_OVERRIDE_SET
+from dr_code.humaneval.task import HUMANEVAL_OVERRIDE_SET
 from dr_code.synthetic import humaneval_loader
 from dr_code.synthetic.humaneval_loader import load_humaneval_plus
 
@@ -32,7 +32,7 @@ ROW = {
 #: anchor is what a corrupt snapshot row can silently lose.
 OVERRIDDEN_ENTRY = next(
     entry
-    for entry in HUMAN_EVAL_OVERRIDE_SET.entries
+    for entry in HUMANEVAL_OVERRIDE_SET.entries
     if entry.override.test_replacements
 )
 
@@ -48,7 +48,7 @@ def test_default_loader_does_not_fall_back_to_snapshot(
 
     monkeypatch.setattr(
         humaneval_loader,
-        "load_human_eval_rows",
+        "load_humaneval_rows",
         unavailable_source,
     )
 
@@ -70,7 +70,7 @@ def test_explicit_snapshot_loader_uses_repository_snapshot(
 
     monkeypatch.setattr(
         humaneval_loader,
-        "load_human_eval_rows",
+        "load_humaneval_rows",
         available_source,
     )
 
@@ -101,7 +101,7 @@ def test_loader_rejects_row_missing_its_override_anchor(
 
     monkeypatch.setattr(
         humaneval_loader,
-        "load_human_eval_rows",
+        "load_humaneval_rows",
         rows_with_corrupt_override,
     )
 

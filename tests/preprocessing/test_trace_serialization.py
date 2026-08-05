@@ -32,14 +32,14 @@ FIELD_MARKER_ID = "humaneval-field-marker"
 _FENCED = "Here is the code:\n```python\ndef f(x):\n    return x + 1\n```\n"
 
 
-def _best_effort_current():
+def _best_effort():
     return resolve_preprocessing_definition(
         definition_id=BEST_EFFORT_ID, version="0"
     )
 
 
 def _trace(raw: str) -> Trace:
-    return run_preprocessing(_best_effort_current(), TextArtifact(text=raw))
+    return run_preprocessing(_best_effort(), TextArtifact(text=raw))
 
 
 def _assert_round_trip(trace: Trace) -> Trace:

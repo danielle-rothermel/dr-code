@@ -10,7 +10,7 @@ from pydantic import Field, SerializeAsAny, model_validator
 
 from dr_code.metrics.definition import MetricsDefinition
 from dr_code.metrics.names import MetricName
-from dr_code.models import FrozenModel, settings_payload
+from dr_code.base import FrozenModel, settings_payload
 from dr_code.trace import TraceProducer
 
 

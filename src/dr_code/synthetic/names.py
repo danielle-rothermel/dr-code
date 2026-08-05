@@ -52,6 +52,14 @@ class MarkdownWrapperMode(StrEnum):
     BULLET_LIST = "bullet_list"
 
 
+class ImportMangleMode(StrEnum):
+    """Ways the import-mangling corruption breaks an import line."""
+
+    TRAILING_PROSE = "trailing_prose"
+    UNBALANCED_PAREN = "unbalanced_paren"
+    TRAILING_COMMA = "trailing_comma"
+
+
 class FenceLangTag(StrEnum):
     """Code-fence language tags emitted by the fence corruption."""
 

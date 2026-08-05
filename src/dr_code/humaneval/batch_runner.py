@@ -52,7 +52,7 @@ from dr_code.humaneval.task import (
 )
 
 
-def evaluate_human_eval_code(
+def evaluate_humaneval_code(
     *,
     task: HumanEvalTask,
     candidate_code: str,

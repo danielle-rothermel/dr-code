@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 from dr_code.synthetic.names import SAMPLE_ID_SEP
 from dr_code.trace import ComponentSetting
 

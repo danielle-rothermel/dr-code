@@ -1,6 +1,6 @@
 """Output parity between preprocessing and ``extract_code_with_profile``.
 
-The named current definitions reproduce ``extract_code_with_profile`` output on
+The named definitions reproduce ``extract_code_with_profile`` output on
 their shared cases, including every corruption recipe and both-absent cases.
 The comparison covers extracted strings (parser ``None`` corresponds to a
 preprocessing ``Absent``), not trace shapes, because the APIs record
@@ -131,7 +131,7 @@ _PROFILES = [
 @pytest.mark.parametrize(
     "profile_id, version",
     _PROFILES,
-    ids=["best-effort-current", "field-marker-current"],
+    ids=["best-effort", "field-marker"],
 )
 @pytest.mark.parametrize("input_name", sorted(_ALL_INPUTS))
 def test_preprocessing_output_matches_parser_output(
@@ -152,7 +152,7 @@ def test_preprocessing_output_matches_parser_output(
 @pytest.mark.parametrize(
     "profile_id, version",
     _PROFILES,
-    ids=["best-effort-current", "field-marker-current"],
+    ids=["best-effort", "field-marker"],
 )
 def test_both_pipelines_absent_on_empty_input(
     profile_id: str, version: str

@@ -13,7 +13,7 @@ from dr_code.humaneval.sandbox import (
     SandboxRunner,
     SandboxTimeoutError,
 )
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 _TIMEOUT_RETURNCODE = -100_000_001
 _OUTPUT_LIMIT_RETURNCODE = -100_000_002

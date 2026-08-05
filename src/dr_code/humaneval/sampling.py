@@ -9,19 +9,19 @@ from datasets import load_dataset  # type: ignore[import-not-found]
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
 from dr_code.humaneval.task import (
-    HUMAN_EVAL_OVERRIDE_SET,
+    HUMANEVAL_OVERRIDE_SET,
     HumanEvalOverrideSetCoordinate,
     HumanEvalTask,
-    parse_human_eval_dataset,
-    resolve_human_eval_override_set,
+    parse_humaneval_dataset,
+    resolve_humaneval_override_set,
 )
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 HumanEvalRow = Mapping[str, Any]
-HUMAN_EVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION = 2
-DEFAULT_HUMAN_EVAL_DATASET_NAME = "evalplus/humanevalplus"
-DEFAULT_HUMAN_EVAL_DATASET_SPLIT = "test"
-DEFAULT_HUMAN_EVAL_HF_REVISION = "d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
+HUMANEVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION = 2
+DEFAULT_HUMANEVAL_DATASET_NAME = "evalplus/humanevalplus"
+DEFAULT_HUMANEVAL_DATASET_SPLIT = "test"
+DEFAULT_HUMANEVAL_HF_REVISION = "d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
 
 
 class HumanEvalDataset(Protocol):
@@ -57,15 +57,15 @@ class HumanEvalRawRowsSnapshot(FrozenModel):
     rows: tuple[HumanEvalRawRow, ...]
 
 
-def load_human_eval_rows(
+def load_humaneval_rows(
     *,
-    dataset_name: str = DEFAULT_HUMAN_EVAL_DATASET_NAME,
-    dataset_split: str = DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
-    hf_revision: str = DEFAULT_HUMAN_EVAL_HF_REVISION,
+    dataset_name: str = DEFAULT_HUMANEVAL_DATASET_NAME,
+    dataset_split: str = DEFAULT_HUMANEVAL_DATASET_SPLIT,
+    hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
     snapshot_path: str | Path | None = None,
 ) -> list[HumanEvalRow]:
     if snapshot_path is not None:
-        return load_human_eval_snapshot_rows(
+        return load_humaneval_snapshot_rows(
             snapshot_path=Path(snapshot_path),
             dataset_name=dataset_name,
             hf_revision=hf_revision,
@@ -78,16 +78,16 @@ def load_human_eval_rows(
     return [dataset[index] for index in range(len(dataset))]
 
 
-def load_human_eval_snapshot_rows(
+def load_humaneval_snapshot_rows(
     *,
     snapshot_path: Path,
-    dataset_name: str = DEFAULT_HUMAN_EVAL_DATASET_NAME,
-    hf_revision: str = DEFAULT_HUMAN_EVAL_HF_REVISION,
+    dataset_name: str = DEFAULT_HUMANEVAL_DATASET_NAME,
+    hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
 ) -> list[HumanEvalRow]:
     """Return the snapshot's raw rows after checking its provenance header.
 
     Row-level validation belongs to whichever task model a caller builds:
-    ``parse_human_eval_dataset`` for evaluation tasks, a caller's own model
+    ``parse_humaneval_dataset`` for evaluation tasks, a caller's own model
     otherwise. This loader only guarantees that the rows come from the
     expected dataset, revision, and registered override set.
     """
@@ -118,7 +118,7 @@ def validate_snapshot_header(
             "HumanEval raw-row snapshot HF revision mismatch: "
             f"{header.hf_revision!r} != {hf_revision!r}"
         )
-    registered = resolve_human_eval_override_set(
+    registered = resolve_humaneval_override_set(
         override_set_id=header.override_set.override_set_id,
         override_set_version=header.override_set.version,
     )
@@ -130,19 +130,19 @@ def validate_snapshot_header(
     return registered
 
 
-def write_human_eval_snapshot_rows(
+def write_humaneval_snapshot_rows(
     rows: Sequence[HumanEvalRow],
     *,
     snapshot_path: Path,
-    dataset_name: str = DEFAULT_HUMAN_EVAL_DATASET_NAME,
-    hf_revision: str = DEFAULT_HUMAN_EVAL_HF_REVISION,
+    dataset_name: str = DEFAULT_HUMANEVAL_DATASET_NAME,
+    hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
 ) -> Path:
     snapshot = HumanEvalRawRowsSnapshot(
         header=HumanEvalRawRowsSnapshotHeader(
-            schema_version=HUMAN_EVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION,
+            schema_version=HUMANEVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION,
             dataset_id=dataset_name,
             hf_revision=hf_revision,
-            override_set=HUMAN_EVAL_OVERRIDE_SET,
+            override_set=HUMANEVAL_OVERRIDE_SET,
         ),
         rows=tuple(HumanEvalRawRow.model_validate(row) for row in rows),
     )
@@ -154,13 +154,13 @@ def write_human_eval_snapshot_rows(
     return snapshot_path
 
 
-def sample_human_eval_tasks_from_rows(
+def sample_humaneval_tasks_from_rows(
     rows: Sequence[HumanEvalRow],
     *,
     seed: int,
     sample_count: int,
 ) -> list[SampledHumanEvalTask]:
-    tasks = parse_human_eval_dataset(rows)
+    tasks = parse_humaneval_dataset(rows)
     indices = list(range(len(tasks)))
     random.Random(seed).shuffle(indices)
     return [
@@ -169,17 +169,17 @@ def sample_human_eval_tasks_from_rows(
     ]
 
 
-def sample_human_eval_tasks(
+def sample_humaneval_tasks(
     *,
     seed: int,
     sample_count: int,
-    dataset_name: str = DEFAULT_HUMAN_EVAL_DATASET_NAME,
-    dataset_split: str = DEFAULT_HUMAN_EVAL_DATASET_SPLIT,
-    hf_revision: str = DEFAULT_HUMAN_EVAL_HF_REVISION,
+    dataset_name: str = DEFAULT_HUMANEVAL_DATASET_NAME,
+    dataset_split: str = DEFAULT_HUMANEVAL_DATASET_SPLIT,
+    hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
     snapshot_path: str | Path | None = None,
 ) -> list[SampledHumanEvalTask]:
-    return sample_human_eval_tasks_from_rows(
-        load_human_eval_rows(
+    return sample_humaneval_tasks_from_rows(
+        load_humaneval_rows(
             dataset_name=dataset_name,
             dataset_split=dataset_split,
             hf_revision=hf_revision,

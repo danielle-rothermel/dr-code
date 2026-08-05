@@ -17,7 +17,7 @@ from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
 )
 from dr_code.preprocessing.steps.dedupe_imports import DedupeImports
-from dr_code.preprocessing.steps.dedent import Dedent
+from dr_code.preprocessing.steps.dedent_candidates import DedentCandidates
 from dr_code.preprocessing.steps.drop_after_last_return import (
     DropAfterLastReturn,
 )
@@ -25,7 +25,7 @@ from dr_code.preprocessing.steps.expand_tabs import ExpandTabs
 from dr_code.preprocessing.steps.extract_candidates import (
     ExtractCandidates,
 )
-from dr_code.preprocessing.steps.field_marker import FieldMarker
+from dr_code.preprocessing.steps.field_marker_extract import FieldMarkerExtract
 from dr_code.preprocessing.steps.filter_code_repr import FilterCodeRepr
 from dr_code.preprocessing.steps.filter_compilable import (
     FilterCompilable,
@@ -69,9 +69,9 @@ REGISTRY: Mapping[str, type[Step]] = MappingProxyType(
         CollapseBlankRuns.NAME: CollapseBlankRuns,
         TrimOuterBlanks.NAME: TrimOuterBlanks,
         ExtractCandidates.NAME: ExtractCandidates,
-        FieldMarker.NAME: FieldMarker,
+        FieldMarkerExtract.NAME: FieldMarkerExtract,
         StripFences.NAME: StripFences,
-        Dedent.NAME: Dedent,
+        DedentCandidates.NAME: DedentCandidates,
         SplitOnNameGuard.NAME: SplitOnNameGuard,
         DropAfterLastReturn.NAME: DropAfterLastReturn,
         RepairImportLines.NAME: RepairImportLines,

@@ -17,7 +17,7 @@ from pydantic import (
 )
 
 from dr_code.code_analysis import validate_python_source_with_ast
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 from dr_code.humaneval.code_extraction import (
     ExtractionTraceNode,
     TraceCheckVerdict,
