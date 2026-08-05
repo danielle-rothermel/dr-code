@@ -79,10 +79,10 @@ def bind_preprocessing(
 
 ### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
 
-A trace is an immutable snapshot of typed artifacts or explicit absences,
-together with structured facts and the coordinate of the producer that made
-it. Its serialized form preserves those canonical values without depending on
-the current component registries.
+A trace is a stable snapshot of typed artifacts or explicit absences, together
+with structured facts and the coordinate of the producer that made it. Public
+reads are defensive projections, and persisted traces remain loadable without
+consulting the current component registries.
 
 ```python
 class CodeArtifact(FrozenModel):
@@ -93,11 +93,19 @@ class CodeArtifact(FrozenModel):
 TraceValue = Artifact | Absent
 
 
-@dataclass(frozen=True, slots=True)
 class Trace:
-    values: Mapping[str, TraceValue]
-    producer: TraceProducer
-    step_facts: Mapping[str, Mapping[str, JsonFactValue]]
+    def __init__(
+        self,
+        values: Mapping[str, TraceValue],
+        producer: TraceProducer,
+        step_facts: Mapping[str, Mapping[str, JsonFactValue]] = ...,
+    ) -> None: ...
+
+    @property
+    def values(self) -> Mapping[str, TraceValue]: ...
+
+    @property
+    def step_facts(self) -> Mapping[str, Mapping[str, JsonFactValue]]: ...
 
     def value(self, key: str) -> TraceValue: ...
 ```
