@@ -94,6 +94,10 @@ class Trace:
                 "trace missing reserved key(s): " + ", ".join(sorted(missing))
             )
         for key, val in self.values.items():
+            if not isinstance(key, str):
+                raise WiringError(
+                    f"trace value keys must be strings: {type(key).__name__}"
+                )
             if not isinstance(val, _TRACE_VALUE_TYPES):
                 raise WiringError(
                     f"value for key {key!r} is not a TraceValue: "
