@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from _builders import _row
+from _humaneval_builders import _row
 from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
 from dr_code.humaneval.runner import require_parsed_tests
 from dr_code.humaneval.sampling import (

@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import json
 
-from _builders import _task
+from _humaneval_builders import _task
 from dr_code.core.execution.sandbox import SandboxRunner
 from dr_code.humaneval.runner import (
     build_humaneval_batch_request,

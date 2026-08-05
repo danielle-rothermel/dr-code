@@ -7,7 +7,7 @@ import ast
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from _builders import (
+from _humaneval_builders import (
     _PARTIAL_RUNNER_PASSED_CASE_0,
     _stub_runner,
     _task,

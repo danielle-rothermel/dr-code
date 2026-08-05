@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from _builders import _input_result_test
+from _humaneval_builders import _input_result_test
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
     UnsupportedTestFormatError,

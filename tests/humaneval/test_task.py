@@ -7,7 +7,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from _builders import _input_result_test, _row, _task
+from _humaneval_builders import _input_result_test, _row, _task
 from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
 from dr_code.humaneval.task import (
     HumanEvalOverride,

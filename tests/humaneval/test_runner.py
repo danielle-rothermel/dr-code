@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from _builders import (
+from _humaneval_builders import (
     _PARTIAL_RUNNER_PASSED_CASE_0,
     _input_result_test,
     _stub_runner,
