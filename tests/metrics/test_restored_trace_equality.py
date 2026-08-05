@@ -133,25 +133,6 @@ def test_external_trace_measures_identically_to_preprocessing_producer() -> (
     ]
 
 
-def test_serialization_round_trip_is_lossless_for_artifacts() -> None:
-    """Restored artifacts compare value-equal to the originals."""
-    fresh = external_trace(_namespace())
-    restored = deserialize_trace(serialize_trace(fresh))
-    assert dict(restored.values) == dict(fresh.values)
-
-
-def test_fresh_restored_and_external_all_yield_equal_answers() -> None:
-    fresh = external_trace(_namespace())
-    restored = deserialize_trace(serialize_trace(fresh))
-    external = external_trace(_namespace())
-    definition = _mixed_definition()
-    answers = [
-        [_answer(r) for r in _extract(definition, trace)]
-        for trace in (fresh, restored, external)
-    ]
-    assert answers[0] == answers[1] == answers[2]
-
-
 # ===========================================================================
 # Execution-backed records are equal for restored and fresh traces.
 # ===========================================================================

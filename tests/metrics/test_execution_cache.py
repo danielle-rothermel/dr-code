@@ -11,10 +11,12 @@ injected ``SandboxRunner``.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from dr_code.core.execution.sandbox import (
     SandboxCompletedProcess,
     SandboxError,
+    SandboxOutputLimitError,
 )
 
 
@@ -87,8 +89,12 @@ def test_execution_outcome_holds_sandbox_completed_process_fields() -> None:
 
 def test_execution_outcome_is_frozen() -> None:
     outcome = _outcome()
-    with pytest.raises(Exception):  # noqa: PT011
+    with pytest.raises(ValidationError) as exc_info:
         outcome.returncode = 1  # type: ignore[misc]
+
+    assert [
+        (error["type"], error["loc"]) for error in exc_info.value.errors()
+    ] == [("frozen_instance", ("returncode",))]
 
 
 def test_execution_outcome_is_json_serializable() -> None:
@@ -217,3 +223,29 @@ def test_run_requests_sandbox_error_propagates() -> None:
 
     with pytest.raises(SandboxError):
         _run([_request()], runner=infra)
+
+
+def test_run_requests_caches_output_limit_outcome() -> None:
+    """Candidate output flooding becomes a reusable sentinel outcome."""
+    from dr_code.metrics.engine.execution import (
+        InMemoryExecutionCache,
+        is_output_limit_outcome,
+    )
+
+    calls = 0
+
+    def output_limited(*, source, input_json, timeout_seconds):  # noqa: ANN001
+        nonlocal calls
+        calls += 1
+        raise SandboxOutputLimitError("output limit reached")
+
+    request = _request()
+    cache = InMemoryExecutionCache()
+
+    first = _run([request], runner=output_limited, cache=cache)
+    second = _run([request], runner=output_limited, cache=cache)
+
+    assert calls == 1
+    assert second == first
+    assert is_output_limit_outcome(second[request])
+    assert second[request].stdout == ""

@@ -14,6 +14,7 @@ from typing import Final
 import pytest
 
 from dr_code.preprocessing import (
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID as EXHAUSTIVE_ID,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION as EXHAUSTIVE_VERSION,
     PreprocessingDefinition,
@@ -66,8 +67,15 @@ def _definition() -> PreprocessingDefinition:
 def test_resolve_returns_the_registered_definition() -> None:
     definition = _definition()
     assert isinstance(definition, PreprocessingDefinition)
-    assert definition.definition_id == EXHAUSTIVE_ID
-    assert definition.version == EXHAUSTIVE_VERSION
+    assert definition is EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
+    assert (definition.definition_id, definition.version) == (
+        EXHAUSTIVE_ID,
+        EXHAUSTIVE_VERSION,
+    )
+    assert (EXHAUSTIVE_ID, EXHAUSTIVE_VERSION) == (
+        "exhaustive-function-candidates",
+        "0",
+    )
 
 
 def test_resolver_is_keyword_only() -> None:
@@ -103,28 +111,6 @@ def test_resolve_rejects_non_registered_pair(
         resolve_preprocessing_definition(
             definition_id=definition_id, version=version
         )
-
-
-# --- the resolved definition is frozen and stable --------------------
-
-
-def test_resolved_definition_is_frozen() -> None:
-    with pytest.raises(Exception):
-        _definition().definition_id = "other"  # type: ignore[misc]
-
-
-def test_resolution_is_stable() -> None:
-    assert _definition() == _definition()
-
-
-# --- the definition owns its own coordinate --------------------------
-
-
-def test_definition_id_is_preprocessing_owned() -> None:
-    # The id names what the pipeline does, not a dataset that consumes it:
-    # extraction behavior is independent of who scores against it.
-    assert EXHAUSTIVE_ID == "exhaustive-function-candidates"
-    assert EXHAUSTIVE_VERSION == "0"
 
 
 # --- the step chain is exactly this, in this order -------------------

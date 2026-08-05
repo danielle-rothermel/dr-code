@@ -9,6 +9,7 @@ as part of the explicit declaration.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
 from dr_code.metrics.settings import OperatorSettings
@@ -81,8 +82,10 @@ def test_metric_question_field_set_is_exactly_metric_on_settings() -> None:
 
 def test_metric_question_is_frozen() -> None:
     question = _question()
-    with pytest.raises(Exception):  # noqa: PT011 — FrozenModel raises
+    with pytest.raises(ValidationError) as exc_info:
         question.on = "output"  # type: ignore[misc]
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == ("frozen_instance", ("on",))
 
 
 def test_metric_questions_compare_equal_by_value() -> None:
@@ -160,16 +163,23 @@ def test_metrics_definition_questions_is_a_tuple() -> None:
 
 def test_metrics_definition_is_frozen() -> None:
     definition = _definition()
-    with pytest.raises(Exception):  # noqa: PT011
+    with pytest.raises(ValidationError) as exc_info:
         definition.version = "2"  # type: ignore[misc]
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == (
+        "frozen_instance",
+        ("version",),
+    )
 
 
 def test_metrics_definition_questions_are_required() -> None:
     """Definitions require an explicit question sequence."""
     from dr_code.metrics import MetricsDefinition
 
-    with pytest.raises(Exception):  # noqa: PT011
+    with pytest.raises(ValidationError) as exc_info:
         MetricsDefinition(definition_id="def", version="1")  # type: ignore[call-arg]
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == ("missing", ("questions",))
 
 
 def test_metrics_definitions_compare_equal_by_value() -> None:
@@ -213,13 +223,15 @@ def test_duplicate_metric_on_settings_triple_is_rejected() -> None:
     from dr_code.metrics import MetricName  # noqa: F401 — resolve before assert
 
     assert _question().metric == MetricName.TEXT_STATS
-    with pytest.raises(Exception):  # noqa: PT011 — validator raises
+    with pytest.raises(ValidationError) as exc_info:
         _definition(
             questions=(
                 _question(),
                 _question(),
             ),
         )
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == ("value_error", ())
 
 
 def test_same_metric_different_on_key_is_allowed() -> None:

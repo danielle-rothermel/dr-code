@@ -17,6 +17,7 @@ All execution goes through the injectable ``SandboxRunner`` seam.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from dr_code.core.execution.sandbox import SandboxError, SandboxTimeoutError
 from dr_code.trace import (
@@ -139,11 +140,15 @@ def test_records_preserve_complete_metrics_definition_coordinates() -> None:
 
 def test_invalid_operator_settings_fail_at_definition_boundary() -> None:
     """Invalid settings cannot enter a metrics definition."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError) as exc_info:
         _q(
             "compressed_length",
             compression={"method": "gzip", "level": 99},
         )
+
+    assert [
+        (error["type"], error["loc"]) for error in exc_info.value.errors()
+    ] == [("value_error", ("compression", "gzip"))]
 
 
 def test_missing_auxiliary_key_is_a_wiring_error(counting_runner) -> None:
@@ -364,6 +369,68 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
     assert record.status.value == "operator_failure"
     assert record.identity.question.metric is MetricName.AST_STATS
     assert not hasattr(record, "facts")
+
+
+def test_planning_failure_is_isolated_from_unaffected_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One ordinary planning failure does not suppress another measurement."""
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.registry import REGISTRY
+
+    source = "def f(x):\n    return x\n"
+    trace = external_trace(
+        {
+            "input": CodeArtifact(source=source),
+            "output": CodeArtifact(source=source),
+        }
+    )
+
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+
+    def fail_planning(self, value, aux):  # noqa: ANN001
+        raise ValueError("invalid execution plan")
+
+    monkeypatch.setattr(operator_cls, "execution_requests", fail_planning)
+    records = _extract(
+        _definition(
+            [_q("text_stats", on="input"), _q("ast_stats", on="input")]
+        ),
+        trace,
+    )
+
+    by_metric = {record.identity.question.metric: record for record in records}
+    failed = by_metric[MetricName.TEXT_STATS]
+    assert failed.status.value == "operator_failure"
+    assert failed.failure.failure_type == "ValueError"
+    assert by_metric[MetricName.AST_STATS].status.value == "measured"
+
+
+def test_planning_sandbox_error_propagates_before_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    counting_runner,
+) -> None:
+    """Infrastructure failure during planning aborts before sandbox work."""
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.registry import REGISTRY
+
+    trace = external_trace(
+        {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
+    )
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+
+    def fail_planning(self, value, aux):  # noqa: ANN001
+        raise SandboxError("planning infrastructure failed")
+
+    monkeypatch.setattr(operator_cls, "execution_requests", fail_planning)
+
+    with pytest.raises(SandboxError):
+        _extract(
+            _definition([_q("text_stats")]),
+            trace,
+            run_in_sandbox=counting_runner,
+        )
+    assert counting_runner.call_count == 0
 
 
 # ===========================================================================

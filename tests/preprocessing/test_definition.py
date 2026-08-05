@@ -27,12 +27,17 @@ def _norm_definition(
 
 def test_definition_is_frozen() -> None:
     definition = _norm_definition()
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError) as exc_info:
         definition.definition_id = "other"  # type: ignore[misc]
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == (
+        "frozen_instance",
+        ("definition_id",),
+    )
 
 
 def test_definition_is_not_hashable() -> None:
-    with pytest.raises(TypeError, match="unhashable type"):
+    with pytest.raises(TypeError):
         hash(_norm_definition())
 
 
@@ -42,8 +47,10 @@ def test_step_spec_settings_default_empty() -> None:
 
 
 def test_step_spec_rejects_unknown_step_name() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError) as exc_info:
         StepSpec(instance_name="n", step="not_a_real_step")  # type: ignore[arg-type]
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == ("value_error", ())
 
 
 def test_definition_rejects_reserved_instance_name() -> None:

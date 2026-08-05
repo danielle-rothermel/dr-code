@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import gzip
 
+import pytest
 import zstandard
+from pydantic import ValidationError
 
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 
@@ -118,6 +120,15 @@ def test_text_stats_empty_text_has_zero_counts() -> None:
     ]
     assert _value(record, "character_count") == 0
     assert _value(record, "line_count") == 0
+
+
+def test_text_stats_distinguishes_unicode_characters_from_utf8_bytes() -> None:
+    record = _extract(
+        _definition([_question("text_stats")]), _text_trace("é🙂")
+    )[0]
+
+    assert _value(record, "character_count") == 2
+    assert _value(record, "byte_count") == 6
 
 
 # ===========================================================================
@@ -275,6 +286,47 @@ def test_ast_stats_match_golden_structure_counts() -> None:
         assert _value(record, field) == expected, field
 
 
+def test_ast_stats_positive_category_and_nested_depth_witnesses() -> None:
+    source = (
+        "import os\n"
+        "class C:\n"
+        "    @staticmethod\n"
+        "    async def outer(a, /, *args, flag=True, **kwargs) -> int:\n"
+        "        transform = lambda x: x + 1\n"
+        "        async def nested():\n"
+        "            yield 1\n"
+        "        values = [transform(x) for x in args]\n"
+        "        if flag:\n"
+        "            for item in values:\n"
+        "                while item:\n"
+        "                    item -= 1\n"
+        "        return sum(values)\n"
+    )
+    record = _extract(
+        _definition([_question("ast_stats")]), _code_trace(source)
+    )[0]
+    facts = _facts(record)
+
+    for name in (
+        "nested_function_count",
+        "async_function_count",
+        "lambda_count",
+        "class_count",
+        "import_count",
+        "yield_count",
+        "call_count",
+        "comprehension_count",
+        "positional_only_argument_count",
+        "keyword_only_argument_count",
+        "vararg_count",
+        "kwarg_count",
+        "decorated_function_count",
+        "annotated_return_count",
+    ):
+        assert facts[name] > 0, name
+    assert facts["max_branch_depth"] == 3
+
+
 # ===========================================================================
 # compressed_length with pinned gzip 9 and zstd 3
 # ===========================================================================
@@ -365,10 +417,94 @@ def test_compressed_length_without_reference_has_no_ratio() -> None:
     assert "ratio_to_reference" not in _facts(record)
 
 
+@pytest.mark.parametrize(
+    ("method", "level"),
+    [
+        pytest.param("gzip", 0, id="gzip-min"),
+        pytest.param("gzip", 9, id="gzip-max"),
+        pytest.param("zstd", -1, id="zstd-negative"),
+        pytest.param("zstd", 1, id="zstd-min-positive"),
+        pytest.param("zstd", 22, id="zstd-max"),
+    ],
+)
+def test_compressed_length_accepts_valid_level_edges(
+    method: str,
+    level: int,
+) -> None:
+    question = _question(
+        "compressed_length",
+        compression={"method": method, "level": level},
+    )
+
+    record = _extract(_definition([question]), _text_trace(SAMPLE_TEXT))[0]
+
+    assert record.status.value == "measured"
+    assert _value(record, "compressed_bytes") > 0
+
+
+@pytest.mark.parametrize(
+    ("settings", "error_type", "error_loc"),
+    [
+        pytest.param(
+            {"compression": {"method": "gzip", "level": -1}},
+            "value_error",
+            ("compression", "gzip"),
+            id="gzip-below-min",
+        ),
+        pytest.param(
+            {"compression": {"method": "gzip", "level": 10}},
+            "value_error",
+            ("compression", "gzip"),
+            id="gzip-above-max",
+        ),
+        pytest.param(
+            {"compression": {"method": "zstd", "level": 0}},
+            "value_error",
+            ("compression", "zstd"),
+            id="zstd-zero",
+        ),
+        pytest.param(
+            {"compression": {"method": "zstd", "level": 23}},
+            "value_error",
+            ("compression", "zstd"),
+            id="zstd-above-max",
+        ),
+        pytest.param(
+            {"compression": {"method": "brotli", "level": 1}},
+            "union_tag_invalid",
+            ("compression",),
+            id="unknown-method",
+        ),
+        pytest.param(
+            {
+                "compression": {"method": "gzip", "level": 1},
+                "reference_key": "",
+            },
+            "value_error",
+            (),
+            id="empty-reference-key",
+        ),
+    ],
+)
+def test_compressed_length_rejects_invalid_settings(
+    settings: dict[str, object],
+    error_type: str,
+    error_loc: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        _question("compressed_length", **settings)
+
+    assert [
+        (error["type"], error["loc"]) for error in exc_info.value.errors()
+    ] == [(error_type, error_loc)]
+
+
 def test_compressed_level_is_part_of_identity() -> None:
-    """A different level is a different question."""
+    """Compression level is persisted as part of metric identity."""
+    from dr_code.metrics import METRIC_RECORD_ADAPTER
+
     trace = _text_trace(SAMPLE_TEXT)
-    r6 = _extract(
+    level_1 = _extract(
         _definition(
             [
                 _question(
@@ -379,7 +515,7 @@ def test_compressed_level_is_part_of_identity() -> None:
         ),
         trace,
     )[0]
-    r9 = _extract(
+    level_9 = _extract(
         _definition(
             [
                 _question(
@@ -390,7 +526,34 @@ def test_compressed_level_is_part_of_identity() -> None:
         ),
         trace,
     )[0]
-    assert _value(r9, "compressed_bytes") <= _value(r6, "compressed_bytes")
+    restored_1 = METRIC_RECORD_ADAPTER.validate_json(level_1.model_dump_json())
+    restored_9 = METRIC_RECORD_ADAPTER.validate_json(level_9.model_dump_json())
+
+    assert restored_1.identity != restored_9.identity
+    assert {
+        setting.name: setting.value
+        for setting in restored_1.identity.question.settings
+    } == {
+        "compression.method": "gzip",
+        "compression.level": 1,
+        "reference_key": None,
+    }
+    assert {
+        setting.name: setting.value
+        for setting in restored_9.identity.question.settings
+    } == {
+        "compression.method": "gzip",
+        "compression.level": 9,
+        "reference_key": None,
+    }
+    assert (
+        restored_1.identity.question.settings
+        == restored_1.identity.metrics_definition.questions[0].settings
+    )
+    assert (
+        restored_9.identity.question.settings
+        == restored_9.identity.metrics_definition.questions[0].settings
+    )
 
 
 # ===========================================================================

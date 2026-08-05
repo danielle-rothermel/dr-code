@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 import pytest
+from pydantic import ValidationError
 
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
@@ -72,7 +73,7 @@ def test_bind_unknown_step_raises_wiring_error() -> None:
 
 
 def test_step_spec_rejects_bad_settings_at_definition_boundary() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError) as exc_info:
         _def(
             (
                 StepSpec(
@@ -82,6 +83,8 @@ def test_step_spec_rejects_bad_settings_at_definition_boundary() -> None:
                 ),
             )
         )
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == ("int_parsing", ("tab_width",))
 
 
 def test_bind_broken_kind_chain_raises_wiring_error() -> None:

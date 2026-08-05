@@ -52,6 +52,22 @@ def test_dataset_size_matches_cross_product() -> None:
     assert len(samples) == len(TASKS) * len(RECIPES)
 
 
+def test_one_shot_recipe_generator_covers_full_task_cross_product() -> None:
+    samples = build_dataset(
+        tasks=TASKS,
+        recipes=(recipe for recipe in RECIPES),
+        seed=123,
+    )
+
+    assert [
+        (
+            sample.coordinate.humaneval_task_id,
+            sample.coordinate.recipe.recipe_name,
+        )
+        for sample in samples
+    ] == [(task.task_id, recipe.name) for task in TASKS for recipe in RECIPES]
+
+
 @pytest.mark.parametrize(
     ("snapshot_path", "prefer_snapshot"),
     [(None, False), (Path("offline-snapshot.json"), True)],
@@ -123,6 +139,15 @@ def test_same_coordinate_produces_same_generated_sample() -> None:
     assert build_sample(TASKS[0], recipe, 7) == build_sample(
         TASKS[0], recipe, 7
     )
+
+
+def test_different_seeds_produce_different_corruption_witnesses() -> None:
+    recipe = RECIPES_BY_NAME["kitchen_sink"]
+
+    first = build_sample(TASKS[0], recipe, 7)
+    second = build_sample(TASKS[0], recipe, 8)
+
+    assert first.corrupted_source != second.corrupted_source
 
 
 def test_structured_sample_coordinate_distinguishes_complete_inputs() -> None:
