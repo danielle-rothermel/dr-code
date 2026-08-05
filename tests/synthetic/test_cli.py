@@ -7,7 +7,8 @@ from pathlib import Path
 from dr_code.synthetic.models import SyntheticSample
 
 
-#: The repository's tracked offline HumanEvalPlus snapshot.
+#: The repository's tracked offline HumanEvalPlus snapshot, passed to the
+#: CLI so these subprocess runs never reach the network.
 SNAPSHOT_PATH = (
     Path(__file__).resolve().parents[2]
     / "tests"
