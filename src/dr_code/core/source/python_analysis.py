@@ -161,24 +161,8 @@ def equivalent(a: str, b: str) -> bool:
 
 
 def module_level_names(tree: ast.Module) -> set[str]:
-    """Top-level names that must not be renamed."""
-    names: set[str] = set()
-    for stmt in tree.body:
-        if isinstance(
-            stmt, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-        ):
-            names.add(stmt.name)
-        elif isinstance(stmt, ast.Import):
-            for alias in stmt.names:
-                names.add(alias.asname or alias.name.split(".")[0])
-        elif isinstance(stmt, ast.ImportFrom):
-            for alias in stmt.names:
-                names.add(alias.asname or alias.name)
-        elif isinstance(stmt, ast.Assign):
-            for target in stmt.targets:
-                if isinstance(target, ast.Name):
-                    names.add(target.id)
-    return names
+    """Names bound directly in `tree`'s module scope."""
+    return set(_scope_bindings(tree.body))
 
 
 def top_level_import_linenos(tree: ast.Module) -> set[int]:
@@ -348,55 +332,234 @@ def _target_names(targets: Iterable[ast.expr]) -> Iterable[str]:
     for target in targets:
         if isinstance(target, ast.Name):
             yield target.id
+        elif isinstance(target, ast.Starred):
+            yield from _target_names((target.value,))
+        elif isinstance(target, ast.List | ast.Tuple):
+            yield from _target_names(target.elts)
+
+
+class _ScopeDeclarationVisitor(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.globals: set[str] = set()
+        self.nonlocals: set[str] = set()
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.globals.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.nonlocals.update(node.names)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+
+def _scope_declarations(body: Iterable[ast.stmt]) -> tuple[set[str], set[str]]:
+    """Return direct `global` and `nonlocal` declarations in `body`."""
+    visitor = _ScopeDeclarationVisitor()
+    for statement in body:
+        visitor.visit(statement)
+    return visitor.globals, visitor.nonlocals
+
+
+class _ScopeBindingVisitor(ast.NodeVisitor):
+    def __init__(self, excluded: set[str]) -> None:
+        self._excluded = excluded
+        self.names: list[str] = []
+        self._seen: set[str] = set()
+
+    def _add(self, name: str | None) -> None:
+        if name is None or name in self._excluded or name in self._seen:
+            return
+        self._seen.add(name)
+        self.names.append(name)
+
+    def _add_targets(self, targets: Iterable[ast.expr]) -> None:
+        for name in _target_names(targets):
+            self._add(name)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self._add_targets(node.targets)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self._add_targets((node.target,))
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self._add_targets((node.target,))
+        self.generic_visit(node)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self._add(node.target.id)
+        self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._add_targets((node.target,))
+        self.generic_visit(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._add_targets((node.target,))
+        self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                self._add_targets((item.optional_vars,))
+                self.visit(item.optional_vars)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                self._add_targets((item.optional_vars,))
+                self.visit(item.optional_vars)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        self._add(node.name)
+        self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self._add(alias.asname or alias.name.split(".")[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            self._add(alias.asname or alias.name)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._add(node.name)
+        self._visit_definition_expressions(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._add(node.name)
+        self._visit_definition_expressions(node)
+
+    def _visit_definition_expressions(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> None:
+        for expression in (
+            *node.decorator_list,
+            *node.args.defaults,
+            *(item for item in node.args.kw_defaults if item is not None),
+            *(
+                argument.annotation
+                for argument in function_params(node)
+                if argument.annotation is not None
+            ),
+            *(item for item in (node.returns,) if item is not None),
+        ):
+            self.visit(expression)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._add(node.name)
+        for expression in (
+            *node.decorator_list,
+            *node.bases,
+            *(keyword.value for keyword in node.keywords),
+        ):
+            self.visit(expression)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for expression in (
+            *node.args.defaults,
+            *(item for item in node.args.kw_defaults if item is not None),
+        ):
+            self.visit(expression)
+
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:
+        self.generic_visit(node)
+        self._add(node.name)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:
+        self._add(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
+        self.generic_visit(node)
+        self._add(node.rest)
+
+    def visit_TypeAlias(self, node: ast.TypeAlias) -> None:
+        self._add_targets((node.name,))
+        self.generic_visit(node)
+
+
+def _scope_bindings(
+    body: Iterable[ast.stmt],
+    *,
+    initial: Iterable[str] = (),
+) -> list[str]:
+    globals_, nonlocals = _scope_declarations(body)
+    visitor = _ScopeBindingVisitor(globals_ | nonlocals)
+    for name in initial:
+        visitor._add(name)
+    for statement in body:
+        visitor.visit(statement)
+    return visitor.names
 
 
 def function_locals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """Names `node` binds, first-seen order: params, then assignment targets."""
-    local_names: list[str] = []
-    seen: set[str] = set()
+    """Names owned by `node`, in first-binding order.
 
-    def add(name: str) -> None:
-        if name in seen:
-            return
-        seen.add(name)
-        local_names.append(name)
+    Child lexical scopes are excluded. Names declared `global` or `nonlocal`
+    belong to another scope and are excluded even when assigned in this body.
+    """
+    return _scope_bindings(
+        node.body,
+        initial=(argument.arg for argument in function_params(node)),
+    )
 
-    for arg in function_params(node):
-        add(arg.arg)
 
-    class LocalAssignmentVisitor(ast.NodeVisitor):
-        def visit_Assign(self, node: ast.Assign) -> None:
-            for name in _target_names(node.targets):
-                add(name)
-            self.generic_visit(node)
+def _lambda_locals(node: ast.Lambda) -> set[str]:
+    """Names owned by `node`'s lambda scope."""
+    arguments = (
+        *node.args.posonlyargs,
+        *node.args.args,
+        *node.args.kwonlyargs,
+        *(item for item in (node.args.vararg, node.args.kwarg) if item),
+    )
+    visitor = _ScopeBindingVisitor(set())
+    for argument in arguments:
+        visitor._add(argument.arg)
+    visitor.visit(node.body)
+    return set(visitor.names)
 
-        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-            if isinstance(node.target, ast.Name):
-                add(node.target.id)
-            self.generic_visit(node)
 
-        def visit_AugAssign(self, node: ast.AugAssign) -> None:
-            if isinstance(node.target, ast.Name):
-                add(node.target.id)
-            self.generic_visit(node)
-
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-            return
-
-        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-            return
-
-        def visit_ClassDef(self, node: ast.ClassDef) -> None:
-            return
-
-        def visit_Lambda(self, node: ast.Lambda) -> None:
-            return
-
-    visitor = LocalAssignmentVisitor()
-    for statement in node.body:
-        visitor.visit(statement)
-
-    return local_names
+def _identifier_names(tree: ast.AST) -> set[str]:
+    """Variable-like identifiers appearing anywhere in `tree`."""
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg):
+            names.add(node.arg)
+        elif isinstance(
+            node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        ):
+            names.add(node.name)
+        elif isinstance(node, ast.alias):
+            names.add(node.asname or node.name.split(".")[0])
+        elif isinstance(node, ast.ExceptHandler) and node.name is not None:
+            names.add(node.name)
+        elif isinstance(node, ast.Global | ast.Nonlocal):
+            names.update(node.names)
+        elif isinstance(node, ast.MatchAs | ast.MatchStar) and node.name:
+            names.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            names.add(node.rest)
+        elif isinstance(node, ast.TypeVar | ast.ParamSpec | ast.TypeVarTuple):
+            names.add(node.name)
+    return names
 
 
 def extract_hash_comments(code_str: str) -> list[SourceTextSite]:
