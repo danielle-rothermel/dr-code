@@ -299,6 +299,49 @@ def test_operator_exception_becomes_an_operator_failure_record(
     assert record.identity.question.metric is MetricName.TEXT_STATS
 
 
+def test_operator_result_violating_a_record_invariant_is_a_failure_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An operator that returns a result no MeasuredRecord can hold -- here a
+    zero-fact result -- is a misbehaving operator like any other, so it becomes
+    an operator-failure record for that one question rather than aborting the
+    whole batch with a ValidationError."""
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.registry import REGISTRY
+
+    text = "def f(x):\n    return x + 1\n"
+    trace = external_trace(
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
+    )
+
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+
+    class _NoFacts:
+        def to_facts(self) -> tuple[()]:
+            return ()
+
+    def empty(self, value, aux, ctx):  # noqa: ANN001
+        return _NoFacts()
+
+    monkeypatch.setattr(operator_cls, "compute", empty)
+    # A second question shares the batch: the misbehaving operator must not
+    # take the well-behaved one down with it.
+    definition = _definition(
+        [_q("text_stats", on="input"), _q("ast_stats", on="input")]
+    )
+
+    records = _extract(definition, trace)
+
+    by_metric = {record.identity.question.metric: record for record in records}
+    failed = by_metric[MetricName.TEXT_STATS]
+    assert failed.status.value == "operator_failure"
+    assert failed.failure.failure_type == "ValidationError"
+    assert by_metric[MetricName.AST_STATS].status.value == "measured"
+
+
 def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> (
     None
 ):

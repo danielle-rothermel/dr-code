@@ -268,11 +268,16 @@ def _compute_record(
             context,
         )
         facts: tuple[MetricFact, ...] = result.to_facts()
+        # Record construction stays inside the guard: an operator whose
+        # result violates a record invariant — no facts, duplicate fact
+        # names — is a misbehaving operator, which is the operator-failure
+        # record's job to report. Constructing it outside would abort the
+        # whole batch over one bad operator.
+        return MeasuredRecord(identity=identity, facts=facts)
     except (SandboxError, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)
-    return MeasuredRecord(identity=identity, facts=facts)
 
 
 def _failure_record(
