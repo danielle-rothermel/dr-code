@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+import dr_code.synthetic.dataset_builder as dataset_builder
 from dr_code.synthetic import (
     RECIPES,
     RECIPES_BY_NAME,
@@ -47,6 +50,59 @@ def test_recipe_set_is_unique() -> None:
 def test_dataset_size_matches_cross_product() -> None:
     samples = build_dataset(tasks=TASKS, seed=123)
     assert len(samples) == len(TASKS) * len(RECIPES)
+
+
+@pytest.mark.parametrize(
+    ("snapshot_path", "prefer_snapshot"),
+    [(None, False), (Path("offline-snapshot.json"), True)],
+)
+def test_build_dataset_selects_requested_task_source(
+    monkeypatch: pytest.MonkeyPatch,
+    snapshot_path: Path | None,
+    prefer_snapshot: bool,
+) -> None:
+    calls: list[tuple[bool, Path | None]] = []
+
+    def fake_load_humaneval_plus(
+        *, prefer_snapshot: bool, snapshot_path: Path | None
+    ) -> list[HumanEvalPlusTask]:
+        calls.append((prefer_snapshot, snapshot_path))
+        return []
+
+    monkeypatch.setattr(
+        dataset_builder, "load_humaneval_plus", fake_load_humaneval_plus
+    )
+
+    assert build_dataset(snapshot_path=snapshot_path) == []
+    assert calls == [(prefer_snapshot, snapshot_path)]
+
+
+def test_build_dataset_rejects_explicit_tasks_with_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def unexpected_load(*args: object, **kwargs: object) -> None:
+        pytest.fail("explicit tasks must not load another task source")
+
+    monkeypatch.setattr(
+        dataset_builder, "load_humaneval_plus", unexpected_load
+    )
+
+    with pytest.raises(ValueError):
+        build_dataset(tasks=TASKS, snapshot_path=tmp_path / "snapshot.json")
+
+
+def test_build_dataset_snapshot_path_is_keyword_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_load(*args: object, **kwargs: object) -> None:
+        pytest.fail("explicit tasks must not load another task source")
+
+    monkeypatch.setattr(
+        dataset_builder, "load_humaneval_plus", unexpected_load
+    )
+
+    with pytest.raises(TypeError):
+        build_dataset((), (), 0, Path("snapshot.json"))
 
 
 def test_dataset_jsonl_is_deterministic_for_same_seed(tmp_path: Path) -> None:
