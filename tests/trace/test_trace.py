@@ -50,6 +50,13 @@ def test_trace_rejects_non_trace_values() -> None:
         Trace(values=values, producer=EXTERNAL_PRODUCER)  # type: ignore[arg-type]
 
 
+def test_trace_rejects_non_string_keys() -> None:
+    values = {**_minimal_values(), 1: TextArtifact(text="integer key")}
+
+    with pytest.raises(WiringError):
+        Trace(values=values, producer=EXTERNAL_PRODUCER)  # type: ignore[arg-type]
+
+
 def test_trace_rejects_unvalidated_producer_payload() -> None:
     with pytest.raises(WiringError, match="trace producer"):
         Trace(
