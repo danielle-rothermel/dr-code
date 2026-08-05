@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import ast
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, model_validator
 
 from dr_code.base import FrozenModel
 
@@ -57,7 +57,7 @@ class CandidateOrigin(FrozenModel):
     """
 
     operation: ExtractionOperation
-    input_location: int
+    input_location: int = Field(ge=0)
 
 
 class CodeCandidate(FrozenModel):
@@ -95,6 +95,12 @@ class CandidateInspection(FrozenModel):
     error text when it does not, and the names of its top-level functions.
     Whether those facts make a candidate acceptable is a policy verdict,
     owned by filter steps rather than by the trace layer.
+
+    The three structural invariants below hold for every inspection this
+    package produces and are enforced on load, so a trace supplied from
+    outside cannot carry an inspection that describes an impossible
+    source: source that does not parse cannot compile, and each error
+    text is present exactly when its own outcome failed.
     """
 
     parses: bool
@@ -102,6 +108,20 @@ class CandidateInspection(FrozenModel):
     compiles: bool
     compile_error: str | None = None
     top_level_function_names: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_structural_consistency(self) -> Self:
+        if self.compiles and not self.parses:
+            raise ValueError("source that does not parse cannot compile")
+        if self.parses != (self.parse_error is None):
+            raise ValueError(
+                "parse_error must be present exactly when parses is False"
+            )
+        if self.compiles != (self.compile_error is None):
+            raise ValueError(
+                "compile_error must be present exactly when compiles is False"
+            )
+        return self
 
 
 class InspectedCodeCandidate(FrozenModel):

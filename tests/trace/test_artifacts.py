@@ -7,6 +7,7 @@ import ast
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from dr_code.code_analysis import validate_python_source_with_ast
 from dr_code.trace import (
     Absent,
     Artifact,
@@ -184,6 +185,89 @@ def test_candidate_inspection_records_structure_without_verdicts() -> None:
         "compile_error": "SyntaxError: invalid syntax",
         "top_level_function_names": [],
     }
+
+
+def test_candidate_origin_rejects_negative_input_location() -> None:
+    # An ordinal position in an operation's input is never negative, and
+    # the bound is enforced on load so externally supplied traces cannot
+    # carry lineage that names an impossible position.
+    with pytest.raises(ValidationError):
+        CandidateOrigin(
+            operation=ExtractionOperation(operation_name="strip_fences"),
+            input_location=-1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("fields", "reason"),
+    (
+        (
+            {
+                "parses": False,
+                "parse_error": "SyntaxError: invalid syntax",
+                "compiles": True,
+            },
+            "compiles without parsing",
+        ),
+        (
+            {"parses": False, "compiles": False, "compile_error": "boom"},
+            "missing parse_error when parses is False",
+        ),
+        (
+            {
+                "parses": True,
+                "parse_error": "SyntaxError: invalid syntax",
+                "compiles": True,
+            },
+            "parse_error present when parses is True",
+        ),
+        (
+            {"parses": True, "compiles": False},
+            "missing compile_error when compiles is False",
+        ),
+        (
+            {"parses": True, "compiles": True, "compile_error": "boom"},
+            "compile_error present when compiles is True",
+        ),
+    ),
+)
+def test_candidate_inspection_rejects_impossible_structural_facts(
+    fields: dict[str, object],
+    reason: str,
+) -> None:
+    # Producers never emit these combinations; the validator makes the
+    # same guarantee hold for inspections revalidated from stored traces.
+    with pytest.raises(ValidationError):
+        CandidateInspection(**fields)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "def f():\n    return 1\n",
+        "",
+        "def f(:\n",
+        'def f():\n    return "\ud800"',
+        "x = 1\x00",
+    ),
+)
+def test_source_validation_only_yields_valid_inspections(source: str) -> None:
+    # The invariants the validator enforces are the ones the upstream
+    # source validation already satisfies, across parsing and
+    # non-parsing sources, so enforcement rejects no reachable producer
+    # output.
+    validation = validate_python_source_with_ast(source).validation
+
+    inspection = CandidateInspection(
+        parses=validation.parse_ok,
+        parse_error=validation.parse_error,
+        compiles=validation.compile_ok,
+        compile_error=validation.compile_error,
+    )
+
+    assert inspection.parses == (inspection.parse_error is None)
+    assert inspection.compiles == (inspection.compile_error is None)
+    assert not (inspection.compiles and not inspection.parses)
 
 
 def test_absent_preserves_causal_lineage() -> None:
