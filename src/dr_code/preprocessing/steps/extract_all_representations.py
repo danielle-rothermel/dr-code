@@ -171,16 +171,28 @@ def _declared_code_sources(value: str) -> list[str]:
     a wrapped value is unparseable, survives no filter, and a general
     scrape of some earlier field wins the ordinal instead.
 
+    The wrappers a value may carry are the same ones the general readings
+    handle — fences, and markdown markers such as a blockquote or a list
+    bullet — so both are unwrapped here rather than only fences.
+
     Order matters: the value as written comes first, so a field holding
     bare source is preferred to any segment split out of it.
     """
 
-    segments = [
-        segment
-        for segment in _segment_sources(_additive_blocks(value))
-        if segment != value
+    blocks = _additive_blocks(value)
+    candidates = [
+        *_segment_sources(blocks),
+        *_segment_sources(
+            [strip_markdown_wrappers(block) for block in blocks]
+        ),
     ]
-    return [value, *segments]
+    seen = {value}
+    ordered = [value]
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
 
 
 def _json_code_field(text: str) -> list[str]:

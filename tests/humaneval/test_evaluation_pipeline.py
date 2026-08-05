@@ -481,6 +481,33 @@ def test_marked_code_field_wins_even_when_it_wraps_the_answer() -> None:
     assert result.accepted_code == "def add_one(x):\n    return x + 1"
 
 
+@pytest.mark.parametrize(
+    "marked_value",
+    (
+        "> def add_one(x):\n>     return x + 1",
+        "- def add_one(x):\n-     return x + 1",
+    ),
+    ids=("blockquote", "bullet"),
+)
+def test_marked_code_field_wins_when_wrapped_in_markdown(
+    marked_value: str,
+) -> None:
+    # A declared value may carry any wrapper the general readings handle,
+    # not just fences: a blockquoted or bulleted answer must still beat an
+    # earlier field's starter.
+    result = extract_humaneval_code(
+        "[[ ## prompt ## ]]\n"
+        "```python\n"
+        "def add_one(x):\n"
+        "    raise NotImplementedError\n"
+        "```\n\n"
+        f"[[ ## code ## ]]\n{marked_value}\n"
+    )
+
+    assert result.succeeded
+    assert result.accepted_code == "def add_one(x):\n    return x + 1"
+
+
 def test_json_code_field_wins_over_code_quoted_in_other_json_fields() -> None:
     result = extract_humaneval_code(
         '{"reasoning": "first I tried:\\n```python\\n'
