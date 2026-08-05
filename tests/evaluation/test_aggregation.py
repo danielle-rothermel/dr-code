@@ -253,6 +253,23 @@ def test_overflow_is_reported_as_a_result_not_raised() -> None:
     assert "overflow" in result.reason
 
 
+def test_an_int_fact_too_large_for_a_float_is_a_non_finite_result() -> None:
+    """Coercion overflow is a result too, not an escape from ``aggregate``.
+
+    ``MetricFact`` accepts an arbitrarily large ``int``, so this is
+    reachable from persisted data; coercing it must not raise past a caller
+    that is pattern-matching the result.
+    """
+    result = aggregate(
+        request_for(
+            slot(measured(10**309), ordinal=0),
+            statistic=AggregationStatistic.SUM,
+        )
+    )
+    assert isinstance(result, AggregationNonFinite)
+    assert result.counted == 1
+
+
 def test_non_finite_is_distinct_from_empty_denominator() -> None:
     huge = 1.0e308
     overflow = aggregate(

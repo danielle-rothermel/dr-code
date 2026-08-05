@@ -103,10 +103,19 @@ class FactCoordinate(FrozenModel):
 
     A question coordinate names the measurement; the fact name names which
     of that measurement's numbers. Together they are the full coordinate.
+    An empty fact name addresses nothing, and is rejected here on the same
+    terms ``AggregationPolicy`` rejects it: same-shaped address, same
+    strictness.
     """
 
     question: MetricQuestionCoordinate
     fact: str
+
+    @model_validator(mode="after")
+    def validate_fact_name(self) -> Self:
+        if not self.fact:
+            raise ValueError("a fact coordinate must name a fact")
+        return self
 
 
 class AggregationOk(FrozenModel):
@@ -309,12 +318,23 @@ def _measured_contribution(
 
 
 def _numeric(name: str, value: object) -> float:
-    """Coerce a metric scalar to the float the statistics operate on."""
+    """Coerce a metric scalar to the float the statistics operate on.
+
+    ``MetricFact`` accepts an arbitrarily large ``int``, so a persisted
+    record can carry a value that no float represents. Coercing it raises
+    ``OverflowError``, which would escape ``aggregate`` from outside the
+    guarded reduction; it is converted to an infinity here instead, so the
+    reduction's finiteness check reports it as a non-finite result exactly
+    as it reports an overflowing ``fsum``.
+    """
 
     if isinstance(value, bool):
         return 1.0 if value else 0.0
     if isinstance(value, int | float):
-        return float(value)
+        try:
+            return float(value)
+        except OverflowError:
+            return math.inf if value > 0 else -math.inf
     raise ValueError(
         f"fact {name!r} has non-numeric value {value!r} and cannot be "
         "aggregated"

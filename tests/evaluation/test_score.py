@@ -133,6 +133,13 @@ def test_a_fact_coordinate_is_a_question_plus_a_name() -> None:
     assert set(FactCoordinate.model_fields) == {"question", "fact"}
 
 
+def test_a_fact_coordinate_rejects_an_empty_fact_name() -> None:
+    # Same-shaped address as an aggregation policy's, held to the same
+    # strictness: an empty name addresses nothing.
+    with pytest.raises(ValidationError, match="must name a fact"):
+        fact_coordinate(fact="")
+
+
 # ===========================================================================
 # A score is derived, never fed back into a metric fact.
 # ===========================================================================
