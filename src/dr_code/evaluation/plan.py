@@ -111,6 +111,11 @@ class AggregationPolicy(FrozenModel):
     def validate_fact_name(self) -> Self:
         if not self.fact:
             raise ValueError("an aggregation policy must name a fact")
+        if "." in self.fact:
+            raise ValueError(
+                f"fact name {self.fact!r} must not contain '.': no metric "
+                "fact can carry a dotted name"
+            )
         return self
 
 

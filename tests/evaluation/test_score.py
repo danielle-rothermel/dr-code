@@ -140,6 +140,16 @@ def test_a_fact_coordinate_rejects_an_empty_fact_name() -> None:
         fact_coordinate(fact="")
 
 
+@pytest.mark.parametrize("name", ("x.unit", "char_count.unit", "a.b"))
+def test_a_fact_coordinate_rejects_a_dotted_fact_name(name: str) -> None:
+    # ``MetricFact`` bans the dot so a fact's value and unit columns cannot
+    # collide, which means no real fact can ever carry a dotted name -- so a
+    # dotted coordinate could only address a fact that cannot exist, and
+    # would put an impossible address in a score's audit trail.
+    with pytest.raises(ValidationError, match="must not contain"):
+        fact_coordinate(fact=name)
+
+
 # ===========================================================================
 # A score is derived, never fed back into a metric fact.
 # ===========================================================================

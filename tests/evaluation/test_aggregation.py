@@ -376,6 +376,38 @@ def test_a_record_answering_another_question_raises() -> None:
         aggregate(request_for(slot(mismatched, ordinal=0)))
 
 
+@pytest.mark.parametrize(
+    "rule",
+    (
+        NotApplicablePolicy.EXCLUDE,
+        NotApplicablePolicy.ZERO,
+        NotApplicablePolicy.FAIL,
+    ),
+)
+@pytest.mark.parametrize("record_builder", (not_applicable, operator_failure))
+def test_a_non_measured_record_answering_another_question_raises(
+    rule: NotApplicablePolicy,
+    record_builder,
+) -> None:
+    """Answering the wrong question is a contract violation for every record
+    type, not only measured ones. Under EXCLUDE or ZERO a non-measured record
+    would otherwise silently drop or zero-fill a slot, producing an
+    apparently valid aggregate for a metric that was never measured."""
+    from _builders import record_identity
+
+    other = question_coordinate(on_key="somewhere_else")
+    mismatched = record_builder(identity=record_identity(question=other))
+
+    with pytest.raises(ValueError, match="but the policy aggregates"):
+        aggregate(
+            request_for(
+                slot(mismatched, ordinal=0),
+                not_applicable=rule,
+                operator_failure=rule,
+            )
+        )
+
+
 def test_a_record_without_the_policys_fact_raises() -> None:
     with pytest.raises(ValueError, match="no fact named"):
         aggregate(request_for(slot(measured(1, name="other_fact"), ordinal=0)))
@@ -385,6 +417,29 @@ def test_a_non_numeric_fact_value_raises() -> None:
     text = measured("hello", unit=MetricFactUnit.TEXT)
     with pytest.raises(ValueError, match="non-numeric"):
         aggregate(request_for(slot(text, ordinal=0)))
+
+
+@pytest.mark.parametrize(
+    "statistic", (AggregationStatistic.SUM, AggregationStatistic.MEAN)
+)
+def test_opposite_overflowing_values_report_non_finite(
+    statistic: AggregationStatistic,
+) -> None:
+    """Persisted ints too large for a float coerce to opposite infinities, and
+    ``math.fsum`` raises ValueError on that mix rather than returning a number.
+    Like any other arithmetic that completes without producing a number, it is
+    reported as a non-finite result instead of escaping the call."""
+    huge = 10**400
+    result = aggregate(
+        request_for(
+            slot(measured(huge), ordinal=0),
+            slot(measured(-huge), ordinal=1),
+            statistic=statistic,
+        )
+    )
+
+    assert isinstance(result, AggregationNonFinite)
+    assert result.counted == 2
 
 
 # ===========================================================================

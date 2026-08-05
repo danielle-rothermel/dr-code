@@ -112,6 +112,14 @@ def test_policy_rejects_an_empty_fact_name() -> None:
         policy(fact="")
 
 
+@pytest.mark.parametrize("name", ("x.unit", "char_count.unit"))
+def test_policy_rejects_a_dotted_fact_name(name: str) -> None:
+    # No metric fact can carry a dotted name, so such a policy could only
+    # ever address a fact that cannot exist.
+    with pytest.raises(ValidationError, match="must not contain"):
+        policy(fact=name)
+
+
 def test_policy_fields_are_exactly_the_minimal_surface() -> None:
     """No templating, no free-form knobs: the surface stays closed."""
     assert set(AggregationPolicy.model_fields) == {

@@ -105,7 +105,9 @@ class FactCoordinate(FrozenModel):
     of that measurement's numbers. Together they are the full coordinate.
     An empty fact name addresses nothing, and is rejected here on the same
     terms ``AggregationPolicy`` rejects it: same-shaped address, same
-    strictness.
+    strictness. A dotted name is rejected for the same reason
+    ``MetricFact`` rejects one — no real fact can carry it, so such a
+    coordinate could only ever address a fact that cannot exist.
     """
 
     question: MetricQuestionCoordinate
@@ -115,6 +117,11 @@ class FactCoordinate(FrozenModel):
     def validate_fact_name(self) -> Self:
         if not self.fact:
             raise ValueError("a fact coordinate must name a fact")
+        if "." in self.fact:
+            raise ValueError(
+                f"fact name {self.fact!r} must not contain '.': no metric "
+                "fact can carry a dotted name"
+            )
         return self
 
 
@@ -272,8 +279,22 @@ _SlotOutcome: TypeAlias = _Counted | _Excluded | _Refused
 def _slot_contribution(
     record: MetricRecord, policy: AggregationPolicy
 ) -> _SlotOutcome:
-    """Decide what one record contributes, by its type and the policy."""
+    """Decide what one record contributes, by its type and the policy.
 
+    The question check precedes the type dispatch because answering a
+    different question is a mismatch between the aggregation and its
+    input for every record type, not only for measured ones: a
+    not-applicable or operator-failure record about some other metric
+    would otherwise silently exclude or zero-fill a slot.
+    """
+
+    if record.identity.question != policy.question:
+        raise ValueError(
+            f"record answers metric {record.identity.question.metric} on "
+            f"{record.identity.question.on_key!r}, but the policy "
+            f"aggregates {policy.question.metric} on "
+            f"{policy.question.on_key!r}"
+        )
     if isinstance(record, NotApplicableRecord):
         return _by_policy(policy.not_applicable)
     if isinstance(record, OperatorFailureRecord):
@@ -298,19 +319,13 @@ def _measured_contribution(
 ) -> _SlotOutcome:
     """Read the policy's fact out of a measured record.
 
-    A record that answers a different question, or that carries no fact by
-    the policy's name, is a mismatch between the aggregation and its input
-    rather than a measurement outcome, so it raises rather than quietly
-    becoming an excluded slot.
+    The caller has already established that the record answers the
+    policy's question. A record that carries no fact by the policy's name
+    is a mismatch between the aggregation and its input rather than a
+    measurement outcome, so it raises rather than quietly becoming an
+    excluded slot.
     """
 
-    if record.identity.question != policy.question:
-        raise ValueError(
-            f"record answers metric {record.identity.question.metric} on "
-            f"{record.identity.question.on_key!r}, but the policy "
-            f"aggregates {policy.question.metric} on "
-            f"{policy.question.on_key!r}"
-        )
     for fact in record.facts:
         if fact.name == policy.fact:
             return _Counted(value=_numeric(fact.name, fact.value))
@@ -367,12 +382,15 @@ def _reduce(
     if not values:
         return AggregationEmptyDenominator(excluded=contributions.excluded)
 
-    # ``math.fsum`` raises rather than returning an infinity when the exact
-    # sum overflows a float. Overflow is arithmetic that completed without
-    # producing a number, which is exactly what the non-finite result is
-    # for, so it is caught here rather than escaping as an exception: a
-    # caller pattern-matching the result must not also have to guard the
-    # call.
+    # ``math.fsum`` raises rather than returning a number in two cases:
+    # ``OverflowError`` when the exact sum overflows a float, and
+    # ``ValueError`` ("-inf + inf in fsum") when the values include both
+    # infinities — reachable here because ``_numeric`` maps oversized
+    # persisted ints of either sign to an infinity. Both are arithmetic
+    # that completed without producing a number, which is exactly what
+    # the non-finite result is for, so both are caught here rather than
+    # escaping as an exception: a caller pattern-matching the result must
+    # not also have to guard the call.
     try:
         match policy.statistic:
             case AggregationStatistic.SUM:
@@ -386,6 +404,8 @@ def _reduce(
                 raise AssertionError("count is reduced before this point")
     except OverflowError:
         return _non_finite(policy, len(values), "overflows a float")
+    except ValueError:
+        return _non_finite(policy, len(values), "mixes opposite infinities")
 
     if not math.isfinite(value):
         return _non_finite(policy, len(values), "is not finite")
