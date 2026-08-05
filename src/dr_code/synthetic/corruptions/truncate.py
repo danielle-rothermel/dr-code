@@ -49,5 +49,4 @@ class Truncate(Corruption):
         mode = rng.choice(list(TruncationMode))
         return CorruptedSample(
             corrupted_source=_truncate(source, mode, rng),
-            notes=f"mode={mode.value}",
         )

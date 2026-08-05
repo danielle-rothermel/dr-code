@@ -18,11 +18,10 @@ from dr_code.preprocessing.definition import (
 from dr_code.preprocessing.definitions import (
     BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
     BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-    BEST_EFFORT_DEFINITION,
-    FIELD_MARKER_DEFINITION,
+    BEST_EFFORT_HUMANEVAL_DEFINITION,
+    STRICT_FIELD_MARKER_DEFINITION,
     STRICT_FIELD_MARKER_DEFINITION_ID,
     STRICT_FIELD_MARKER_DEFINITION_VERSION,
-    SUPPORTED_DEFINITION_IDS,
     resolve_preprocessing_definition,
 )
 from dr_code.preprocessing.names import StepName
@@ -50,12 +49,11 @@ from dr_code.preprocessing.steps.extract_candidates import (
 __all__ = [
     "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
     "BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION",
-    "BEST_EFFORT_DEFINITION",
+    "BEST_EFFORT_HUMANEVAL_DEFINITION",
     "DEFAULT_STRATEGIES",
-    "FIELD_MARKER_DEFINITION",
+    "STRICT_FIELD_MARKER_DEFINITION",
     "STRICT_FIELD_MARKER_DEFINITION_ID",
     "STRICT_FIELD_MARKER_DEFINITION_VERSION",
-    "SUPPORTED_DEFINITION_IDS",
     "AlternativesStep",
     "BoundStep",
     "CandidateMapStep",

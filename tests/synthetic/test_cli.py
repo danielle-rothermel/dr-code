@@ -7,6 +7,16 @@ from pathlib import Path
 from dr_code.synthetic.models import SyntheticSample
 
 
+#: The repository's tracked offline HumanEvalPlus snapshot, passed to the
+#: CLI so these subprocess runs never reach the network.
+SNAPSHOT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "tests"
+    / "corpus"
+    / "humanevalplus_snapshot.json"
+)
+
+
 def test_cli_build_writes_requested_dataset(
     tmp_path: Path, run_python_module
 ) -> None:
@@ -21,6 +31,8 @@ def test_cli_build_writes_requested_dataset(
         "1",
         "--seed",
         "7",
+        "--snapshot",
+        str(SNAPSHOT_PATH),
         "--output",
         str(output_path),
     )
@@ -52,6 +64,8 @@ def test_cli_build_rejects_unknown_recipe(
         "1",
         "--seed",
         "7",
+        "--snapshot",
+        str(SNAPSHOT_PATH),
         "--output",
         str(output_path),
     )

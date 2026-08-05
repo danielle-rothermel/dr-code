@@ -17,7 +17,7 @@ from pydantic import (
 )
 
 from dr_code.code_analysis import validate_python_source_with_ast
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 from dr_code.humaneval.code_extraction import (
     ExtractionTraceNode,
     TraceCheckVerdict,
@@ -448,20 +448,6 @@ def build_extraction_trace(
         rationale=rationale,
         extraction_error=extraction_error,
     )
-
-
-def trace_candidate_selection(
-    candidate: str,
-    *,
-    index: int,
-    include_code_repr_check: bool = True,
-) -> CandidateSelectionTrace:
-    trace, _ = candidate_selection(
-        candidate,
-        index=index,
-        include_code_repr_check=include_code_repr_check,
-    )
-    return trace
 
 
 def candidate_selection(

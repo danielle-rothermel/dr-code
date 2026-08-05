@@ -1,7 +1,7 @@
 """Corruption round-trips over the frozen recipe set.
 
 Applying each ``dr_code.synthetic`` recipe to clean HumanEval-shaped code and
-running the best-effort current definition partitions the recipes empirically
+running the best-effort definition partitions the recipes empirically
 (verified across seeds 0, 1, 7, 42, 1234):
 
 * ``RECOVERABLE`` — formatting / noise / import / wrapper pathologies the
@@ -18,13 +18,14 @@ running the best-effort current definition partitions the recipes empirically
   - ``dead_code`` / ``renamed_locals`` / ``string_form_swap`` rewrite the AST
     (extra statements, renamed bindings, swapped string forms) — an extracted
     candidate compiles but is not semantically equivalent to the original.
-    These four are the independently-verified, ratified non-recoverable set.
   - ``truncated_midfn`` / ``truncated_and_unfenced`` break the source at an
     RNG-chosen point, so the outcome is seed-dependent and never reliably
     equivalent.
 
-  Exempting these from the *equivalence* assertion is correct behaviour, not a
-  gap. For every exempted recipe we still assert something meaningful:
+  These six recipes are the independently-verified, ratified non-recoverable
+  set, listed in ``NON_RECOVERABLE_RECIPES``. Exempting them from the
+  *equivalence* assertion is correct behaviour, not a gap. For every
+  exempted recipe we still assert something meaningful:
   **output parity with ``extract_code_with_profile``**. Both APIs must give up
   or return the same non-equivalent source. No exempted recipe sits in an
   assertion-free bucket.
@@ -61,7 +62,7 @@ CLEAN = (
     "    return np.array([total, total])\n"
 )
 
-#: Recipes whose corruption the best-effort current definition undoes, recovering
+#: Recipes whose corruption the best-effort definition undoes, recovering
 #: code equivalent to the original at every tested seed.
 RECOVERABLE_RECIPES = [
     "clean",
@@ -102,16 +103,16 @@ def _corrupt(recipe_name: str) -> str:
     return apply_recipe(recipe, CLEAN, random.Random(SEED)).corrupted_source
 
 
-def _best_effort_current():
+def _best_effort():
     return resolve_preprocessing_definition(
         definition_id=BEST_EFFORT_ID, version="0"
     )
 
 
 def _run_best_effort(raw: str):
-    return run_preprocessing(
-        _best_effort_current(), TextArtifact(text=raw)
-    ).value("output")
+    return run_preprocessing(_best_effort(), TextArtifact(text=raw)).value(
+        "output"
+    )
 
 
 def _parser_best_effort(raw: str) -> str | None:

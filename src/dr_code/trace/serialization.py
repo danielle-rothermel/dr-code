@@ -12,11 +12,9 @@ from __future__ import annotations
 
 from typing import Final, Literal
 
-from dr_code.models import FrozenModel
-from dr_code.trace.absent import Absent
-from dr_code.trace.artifacts import Artifact
+from dr_code.base import FrozenModel
 from dr_code.trace.provenance import TraceProducer
-from dr_code.trace.trace import Trace
+from dr_code.trace.trace import Trace, TraceValue
 
 TRACE_SCHEMA_VERSION: Final = 2
 
@@ -29,7 +27,7 @@ class SerializedTrace(FrozenModel):
 
     schema_version: Literal[2]
     producer: TraceProducer
-    values: dict[str, Artifact | Absent]
+    values: dict[str, TraceValue]
     step_facts: dict[str, dict[str, str]] = {}
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, TypeIs
 
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 
 class Absent(FrozenModel):

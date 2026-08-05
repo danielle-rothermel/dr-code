@@ -40,5 +40,4 @@ class AddMarkdownWrappers(Corruption):
         mode = rng.choice(list(MarkdownWrapperMode))
         return CorruptedSample(
             corrupted_source=_apply_mode(source, mode),
-            notes=f"mode={mode.value}",
         )

@@ -11,24 +11,22 @@ from dr_code.preprocessing.definition import (
     StepSpec,
 )
 from dr_code.preprocessing.definitions import (
-    BEST_EFFORT_DEFINITION,
-    FIELD_MARKER_DEFINITION,
+    BEST_EFFORT_HUMANEVAL_DEFINITION,
+    STRICT_FIELD_MARKER_DEFINITION,
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.runner import (
     BoundStep,
     bind_definition,
-    run_external_preprocessing as run_preprocessing,
-    run_preprocessing as run_registered_preprocessing,
+    run_external_preprocessing,
+    run_preprocessing,
 )
-from dr_code.preprocessing.steps.base import StepSettings
 from dr_code.trace import (
     CodeArtifact,
     ComponentSetting,
     TextArtifact,
     Trace,
     WiringError,
-    coordinate_settings,
     is_absent,
 )
 
@@ -119,7 +117,7 @@ def test_run_single_text_step() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
-    trace = run_preprocessing(definition, TextArtifact(text="ｄｅｆ"))
+    trace = run_external_preprocessing(definition, TextArtifact(text="ｄｅｆ"))
     assert trace.value("output") == TextArtifact(text="def")
     assert trace.value("input") == TextArtifact(text="ｄｅｆ")
     assert trace.value("n") == TextArtifact(text="def")
@@ -129,7 +127,7 @@ def test_run_produces_trace_with_producer_stamp() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
-    trace = run_preprocessing(definition, TextArtifact(text="x"))
+    trace = run_external_preprocessing(definition, TextArtifact(text="x"))
     assert isinstance(trace, Trace)
     assert trace.producer.kind == "external_preprocessing"
     assert trace.producer.definition.definition_id == "d1"
@@ -150,7 +148,7 @@ def test_registered_run_rejects_definition_coordinate_impersonation() -> None:
         ValueError,
         match="does not match its registered coordinate",
     ):
-        run_registered_preprocessing(definition, TextArtifact(text="x"))
+        run_preprocessing(definition, TextArtifact(text="x"))
 
 
 def test_producer_coordinate_distinguishes_resolved_step_settings() -> None:
@@ -173,10 +171,10 @@ def test_producer_coordinate_distinguishes_resolved_step_settings() -> None:
         )
     )
 
-    first_producer = run_preprocessing(
+    first_producer = run_external_preprocessing(
         first, TextArtifact(text="\tvalue")
     ).producer
-    second_producer = run_preprocessing(
+    second_producer = run_external_preprocessing(
         second, TextArtifact(text="\tvalue")
     ).producer
 
@@ -190,7 +188,7 @@ def test_producer_coordinate_distinguishes_resolved_step_settings() -> None:
 
 
 def test_run_empty_definition_output_equals_input() -> None:
-    trace = run_preprocessing(_def(()), TextArtifact(text="x"))
+    trace = run_external_preprocessing(_def(()), TextArtifact(text="x"))
     assert trace.value("output") == TextArtifact(text="x")
 
 
@@ -200,7 +198,7 @@ def test_run_input_kind_mismatch_raises_wiring_error() -> None:
     )
     # extract_candidates expects Text; pass a CodeArtifact.
     with pytest.raises(WiringError):
-        run_preprocessing(definition, CodeArtifact(source="x = 1"))
+        run_external_preprocessing(definition, CodeArtifact(source="x = 1"))
 
 
 # --- run: Absent propagation -----------------------------------------
@@ -214,7 +212,7 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
-    trace = run_preprocessing(definition, TextArtifact(text=""))
+    trace = run_external_preprocessing(definition, TextArtifact(text=""))
 
     extract_val = trace.value("e")
     assert is_absent(extract_val)
@@ -243,7 +241,9 @@ def test_run_select_first_empty_set_yields_absent() -> None:
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
-    trace = run_preprocessing(definition, TextArtifact(text="def broken(:"))
+    trace = run_external_preprocessing(
+        definition, TextArtifact(text="def broken(:")
+    )
     out = trace.value("output")
     assert is_absent(out)
     assert out.failed_step == "sel"
@@ -259,7 +259,7 @@ def test_run_step_facts_merged() -> None:
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
-    trace = run_preprocessing(
+    trace = run_external_preprocessing(
         definition,
         TextArtifact(text="```python\ndef f():\n    return 1\n```"),
     )
@@ -275,7 +275,7 @@ def test_run_propagated_absent_records_each_step() -> None:
             StepSpec(instance_name="c", step=StepName.SPLIT_ON_NAME_GUARD),
         )
     )
-    trace = run_preprocessing(definition, TextArtifact(text=""))
+    trace = run_external_preprocessing(definition, TextArtifact(text=""))
     out = trace.value("output")
     assert is_absent(out)
     assert out.propagated_through == ("a", "b", "c")
@@ -303,7 +303,7 @@ def test_run_full_fenced_pipeline() -> None:
         "```python\n"
         "def f(x):\n    return np.array(x)\n```\n"
     )
-    trace = run_preprocessing(definition, TextArtifact(text=raw))
+    trace = run_external_preprocessing(definition, TextArtifact(text=raw))
     out = trace.value("output")
     assert isinstance(out, CodeArtifact)
     assert "import numpy as np" in out.source
@@ -318,7 +318,7 @@ def test_pipeline_prose_only_yields_absent() -> None:
             StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
-    trace = run_preprocessing(
+    trace = run_external_preprocessing(
         definition, TextArtifact(text="just prose, no code at all")
     )
     assert is_absent(trace.value("output"))
@@ -560,8 +560,8 @@ _FIELD_MARKER_PRODUCER_JSON: Final[dict[str, object]] = {
 @pytest.mark.parametrize(
     ("definition", "expected"),
     [
-        (BEST_EFFORT_DEFINITION, _BEST_EFFORT_PRODUCER_JSON),
-        (FIELD_MARKER_DEFINITION, _FIELD_MARKER_PRODUCER_JSON),
+        (BEST_EFFORT_HUMANEVAL_DEFINITION, _BEST_EFFORT_PRODUCER_JSON),
+        (STRICT_FIELD_MARKER_DEFINITION, _FIELD_MARKER_PRODUCER_JSON),
     ],
     ids=["best-effort", "field-marker"],
 )
@@ -569,32 +569,7 @@ def test_registered_definition_producer_matches_persisted_coordinate(
     definition: PreprocessingDefinition,
     expected: dict[str, object],
 ) -> None:
-    trace = run_registered_preprocessing(
+    trace = run_preprocessing(
         definition, TextArtifact(text="def f():\n    return 1\n")
     )
     assert trace.producer.model_dump(mode="json") == expected
-
-
-# --- settings projection: tuple support and rejected shapes ----------
-
-
-def test_coordinate_settings_rejects_non_string_tuple() -> None:
-    class _IntTupleSettings(StepSettings):
-        alternatives: tuple[int, ...] = (1, 2)
-
-    with pytest.raises(
-        TypeError,
-        match="unsupported persisted tuple setting for 'alternatives'",
-    ):
-        coordinate_settings(_IntTupleSettings())
-
-
-def test_coordinate_settings_rejects_unsupported_value_type() -> None:
-    class _MappingSettings(StepSettings):
-        mapping: dict[str, str] = {}
-
-    with pytest.raises(
-        TypeError,
-        match="unsupported persisted setting shape for 'mapping': dict",
-    ):
-        coordinate_settings(_MappingSettings())

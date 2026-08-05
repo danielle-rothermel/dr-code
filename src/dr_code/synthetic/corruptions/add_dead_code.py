@@ -1,4 +1,4 @@
-"""Inject dead code (unused variables / unreachable statements)."""
+"""Prepend an unused import that leaves program behavior unchanged."""
 
 from __future__ import annotations
 
@@ -11,12 +11,10 @@ from dr_code.synthetic.corruptions.base import Corruption
 
 
 class AddDeadCode(Corruption):
-    """Add an unused variable at module top.
+    """Prepend an unused import line to the source.
 
-    Recovery is expected via ruff's safe / unsafe fix passes (F841 / F401).
-    The injection is intentionally small so the canonical AST still differs
-    from ground truth — the contract requires a later normalizer level to
-    erase it.
+    The injection is a single statement, so an extracted candidate still
+    compiles but its AST no longer matches ground truth.
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_DEAD_CODE

@@ -6,7 +6,7 @@ from typing import Annotated, Final, Literal, TypeAlias
 
 from pydantic import Field
 
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 
 ComponentSettingValue: TypeAlias = (
@@ -37,7 +37,6 @@ def coordinate_settings(
                 raise TypeError(
                     f"unsupported persisted tuple setting for {name!r}"
                 )
-            value = tuple(value)
         if not isinstance(
             value, str | int | float | bool | type(None) | tuple
         ):

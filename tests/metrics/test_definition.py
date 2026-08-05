@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
-from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.operators.base import OperatorSettings
 
 
 def _question(**overrides: object):

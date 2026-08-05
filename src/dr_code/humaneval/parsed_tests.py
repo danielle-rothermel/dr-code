@@ -12,14 +12,12 @@ __all__ = [
     "InputExpressionTestCase",
     "InputOracleTestCase",
     "InputResultTestCase",
-    "ParsedTestCaseSummary",
     "ParsedTests",
-    "ParsedTestsSummary",
     "SingleCaseCheck",
     "TestCase",
     "UnsupportedTestFormatError",
     "find_check_function",
-    "parse_human_eval_tests",
+    "parse_humaneval_tests",
     "support_code_without_check",
 ]
 
@@ -181,66 +179,6 @@ class ParsedTests(BaseModel):
                 assertion_name=self.assertion_name,
             )
 
-    def to_summary(self) -> ParsedTestsSummary:
-        return ParsedTestsSummary(
-            test_type=self.test_type,
-            support_code=self.support_code,
-            check_name=self.check_name,
-            candidate_arg_name=self.candidate_arg_name,
-            assertion_name=self.assertion_name,
-            cases=[
-                ParsedTestCaseSummary.from_case(
-                    case,
-                    assertion_name=self.assertion_name,
-                )
-                for case in self.cases
-            ],
-            original_test=self.original_test,
-        )
-
-
-class ParsedTestCaseSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: HumanEvalTestCaseKind
-    case_id: str
-    input_repr: str = ""
-    expected_output_repr: str = ""
-    actual_output_expr: str = ""
-    expected_output_expr: str | None = None
-
-    @classmethod
-    def from_case(
-        cls,
-        case: TestCase,
-        *,
-        assertion_name: str,
-    ) -> ParsedTestCaseSummary:
-        check = case.as_check(
-            candidate_name="candidate",
-            assertion_name=assertion_name,
-        )
-        return cls(
-            kind=case.kind,
-            case_id=case.case_id,
-            input_repr=check.input_repr,
-            expected_output_repr=check.expected_output_repr,
-            actual_output_expr=check.actual_output_expr,
-            expected_output_expr=check.expected_output_expr,
-        )
-
-
-class ParsedTestsSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    test_type: HumanEvalTestCaseKind
-    support_code: str
-    check_name: str
-    candidate_arg_name: str
-    assertion_name: str
-    cases: list[ParsedTestCaseSummary]
-    original_test: str
-
 
 def _literal_assignment(function_node: ast.FunctionDef, name: str) -> Any:
     value = _find_assignment_value(function_node, name)
@@ -369,7 +307,7 @@ def support_code_without_check(tree: ast.Module) -> str:
     return ast.unparse(module)
 
 
-def parse_human_eval_tests(test_str: str) -> ParsedTests:
+def parse_humaneval_tests(test_str: str) -> ParsedTests:
     tree = ast.parse(test_str)
     check_node = find_check_function(tree)
     if len(check_node.args.args) != 1:

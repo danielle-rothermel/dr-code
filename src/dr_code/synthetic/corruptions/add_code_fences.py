@@ -28,5 +28,4 @@ class AddCodeFences(Corruption[AddCodeFencesSettings]):
         tag = self.settings.language_tag
         return CorruptedSample(
             corrupted_source=wrap_code_fence(source, tag.value),
-            notes=f"tag={tag.value!r}",
         )

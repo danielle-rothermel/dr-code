@@ -1,4 +1,4 @@
-"""Pure HumanEval scoring primitives.
+"""HumanEval submission scoring: parse, execute in the sandbox, classify.
 
 `SubmissionOutcome` is part of the score contract so consumers can persist
 why a submission scored zero without parsing error text.
@@ -13,12 +13,10 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StrictBool,
-    StrictInt,
     StrictStr,
 )
 
-from dr_code.humaneval.batch_runner import evaluate_human_eval_code
+from dr_code.humaneval.batch_runner import evaluate_humaneval_code
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
     extract_code_with_profile,
@@ -39,7 +37,7 @@ from dr_code.humaneval.task import (
     EvaluationTaskResult,
     HumanEvalTask,
 )
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 UNKNOWN_FAILURE_CLASS = "unknown"
 
@@ -87,21 +85,6 @@ HumanEvalSubmissionScore = Annotated[
 ]
 
 
-class EvaluationAggregateMetrics(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    function_names: tuple[StrictStr, ...]
-    total_cases: StrictInt
-    result_count: StrictInt
-    passed_count: StrictInt
-    failed_count: StrictInt
-    error_count: StrictInt
-    timeout_count: StrictInt
-    failure_count: StrictInt
-    passed: StrictBool
-    status_counts: dict[StrictStr, StrictInt]
-
-
 def score_humaneval_submission(
     *,
     raw_submission: str,
@@ -134,7 +117,7 @@ def score_humaneval_submission(
         )
 
     try:
-        evaluation = evaluate_human_eval_code(
+        evaluation = evaluate_humaneval_code(
             task=task,
             candidate_code=extraction.extracted_code,
             timeout_seconds=scoring_profile.timeout_seconds,
@@ -213,22 +196,4 @@ def harness_failure_cause(exc: EvaluationHarnessError) -> HarnessFailureCause:
     return HarnessFailureCause(
         exception_type=type(cause).__name__,
         message=str(cause),
-    )
-
-
-def evaluation_aggregate_metrics(
-    evaluation: EvaluationTaskResult,
-) -> EvaluationAggregateMetrics:
-    status_counts = evaluation.status_counts
-    return EvaluationAggregateMetrics(
-        function_names=tuple(evaluation.function_names),
-        total_cases=evaluation.total_cases,
-        result_count=len(evaluation.results),
-        passed_count=status_counts.get(EvaluationCaseStatus.PASSED.value, 0),
-        failed_count=status_counts.get(EvaluationCaseStatus.FAILED.value, 0),
-        error_count=status_counts.get(EvaluationCaseStatus.ERROR.value, 0),
-        timeout_count=status_counts.get(EvaluationCaseStatus.TIMEOUT.value, 0),
-        failure_count=len(evaluation.failures),
-        passed=evaluation.passed,
-        status_counts=status_counts,
     )

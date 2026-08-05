@@ -14,11 +14,10 @@ import re
 import unicodedata
 from typing import Final
 
-from dr_code.text_analysis import fence_marker
+from dr_code.text_analysis import LINE_SEP, fence_marker
 
 DEFAULT_TAB_WIDTH: Final[int] = 4
 FENCE: Final[str] = "```"
-LINE_SEP: Final[str] = "\n"
 
 MARKDOWN_WRAPPER_RE: Final[re.Pattern[str]] = re.compile(
     r"^[ \t]*(?:>+[ \t]?|\d+[.)][ \t]?|[*+\-][ \t])"
@@ -33,11 +32,6 @@ PYTHON_ANCHOR_RE: Final[re.Pattern[str]] = re.compile(
 SMART_QUOTES: Final[dict[str, tuple[str, str]]] = {
     "'": ("‘", "’"),
     '"': ("“", "”"),
-}
-_SMART_QUOTE_TRANSLATION: Final[dict[int, str]] = {
-    ord(smart): ascii_quote
-    for ascii_quote, pair in SMART_QUOTES.items()
-    for smart in pair
 }
 
 
@@ -96,11 +90,6 @@ def strip_markdown_wrappers(source: str) -> str:
         MARKDOWN_WRAPPER_RE.sub("", line, count=1)
         for line in source.splitlines()
     )
-
-
-def normalize_smart_quotes(source: str) -> str:
-    """Replace Unicode "smart" quotes with their ASCII counterparts."""
-    return source.translate(_SMART_QUOTE_TRANSLATION)
 
 
 def recover_escaped_python(source: str) -> str | None:
@@ -281,7 +270,6 @@ __all__ = [
     "drop_after_last_return",
     "drop_if_name",
     "normalize_line_endings",
-    "normalize_smart_quotes",
     "normalize_text",
     "strip_code_fences",
     "strip_markdown_wrappers",

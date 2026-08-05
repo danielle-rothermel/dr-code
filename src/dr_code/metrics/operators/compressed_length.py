@@ -7,11 +7,7 @@ from typing import Self
 
 from pydantic import model_validator
 
-from dr_code.metrics.compression import (
-    CompressionConfig,
-    CompressionMethod,
-    compressed_bytes,
-)
+from dr_code.metrics.compression import CompressionConfig, compressed_bytes
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import (
     EngineContext,
@@ -75,7 +71,7 @@ class CompressedLength(MetricOperator[CompressedLengthSettings]):
         size = len(
             compressed_bytes(
                 representation,
-                method=CompressionMethod(compression.method),
+                method=compression.method,
                 level=compression.level,
             )
         )

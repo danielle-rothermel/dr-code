@@ -101,7 +101,6 @@ def load_dataset(path: Path) -> list[SyntheticSample]:
 __all__ = [
     "build_dataset",
     "build_sample",
-    "iter_dataset",
     "load_dataset",
     "save_dataset",
 ]

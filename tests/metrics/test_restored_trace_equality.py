@@ -22,8 +22,6 @@ from dr_code.trace import (
     serialize_trace,
 )
 
-from metrics.helpers import code_test_trace
-
 CODE = "def add_one(x):\n    return x + 1\n"
 TEXT = "some prose with def and return keywords\n"
 
@@ -172,7 +170,9 @@ def _code_test_definition():
     )
 
 
-def test_code_test_record_equal_across_fresh_and_restored(task) -> None:
+def test_code_test_record_equal_across_fresh_and_restored(
+    task, code_test_trace
+) -> None:
     fresh = code_test_trace(CODE, task)
     restored = deserialize_trace(serialize_trace(fresh))
     definition = _code_test_definition()
@@ -183,7 +183,9 @@ def test_code_test_record_equal_across_fresh_and_restored(task) -> None:
     )
 
 
-def test_batch_over_identical_traces_yields_equal_record_sets(task) -> None:
+def test_batch_over_identical_traces_yields_equal_record_sets(
+    task, code_test_trace
+) -> None:
     """A sweep of identical traces yields identical record sets per trace."""
     from dr_code.metrics import extract_metrics_batch
 

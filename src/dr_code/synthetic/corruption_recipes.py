@@ -9,7 +9,7 @@ from typing import Final
 
 from pydantic import Field, SerializeAsAny, model_validator
 
-from dr_code.models import FrozenModel, settings_payload
+from dr_code.base import FrozenModel, settings_payload
 from dr_code.synthetic.models import (
     CorruptedSample,
     CorruptionCoordinate,
@@ -87,18 +87,12 @@ def apply_recipe(
     _require_registered(recipe)
 
     current = source
-    notes_chunks: list[str] = []
     for spec in recipe.corruptions:
         name = spec.corruption.value
         transform = REGISTRY[name](spec.settings)
         intermediate = transform.apply(current, rng)
         current = intermediate.corrupted_source
-        if intermediate.notes:
-            notes_chunks.append(f"{name}: {intermediate.notes}")
-    return CorruptedSample(
-        corrupted_source=current,
-        notes=" | ".join(notes_chunks),
-    )
+    return CorruptedSample(corrupted_source=current)
 
 
 # ---------------------------------------------------------------------------

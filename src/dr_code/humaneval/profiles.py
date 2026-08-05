@@ -10,7 +10,7 @@ from dr_code.humaneval.code_parsing import (
     CodeParserProfile,
     resolve_parser_profile,
 )
-from dr_code.models import FrozenModel
+from dr_code.base import FrozenModel
 
 HUMANEVAL_METRICS_PROFILE_ID = "humaneval-metrics"
 HUMANEVAL_METRICS_PROFILE_VERSION = "0"

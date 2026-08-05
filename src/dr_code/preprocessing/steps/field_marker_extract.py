@@ -20,13 +20,13 @@ from dr_code.trace import (
 )
 
 
-class FieldMarkerSettings(StepSettings):
+class FieldMarkerExtractSettings(StepSettings):
     """The field name whose ``[[ ## name ## ]]`` marker delimits the code."""
 
     field_name: str = "code"
 
 
-class FieldMarker(Step[FieldMarkerSettings]):
+class FieldMarkerExtract(Step[FieldMarkerExtractSettings]):
     """Text -> CandidateSet for the strict field-marker profile.
 
     Wraps ``code_parsing.field_marker_value``: extracts the text between
@@ -39,7 +39,7 @@ class FieldMarker(Step[FieldMarkerSettings]):
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
-    Settings = FieldMarkerSettings
+    Settings = FieldMarkerExtractSettings
 
     def apply(self, value: Artifact) -> StepOutput:
         assert isinstance(value, TextArtifact)
@@ -59,4 +59,4 @@ class FieldMarker(Step[FieldMarkerSettings]):
         )
 
 
-__all__ = ["FieldMarker", "FieldMarkerSettings"]
+__all__ = ["FieldMarkerExtract", "FieldMarkerExtractSettings"]

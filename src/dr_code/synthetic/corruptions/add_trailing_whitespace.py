@@ -32,5 +32,4 @@ class AddTrailingWhitespace(Corruption):
                 out_lines.append(line + suffix)
         return CorruptedSample(
             corrupted_source="".join(out_lines),
-            notes=f"n={n}",
         )
