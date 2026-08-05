@@ -364,13 +364,37 @@ def function_locals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
     for arg in function_params(node):
         add(arg.arg)
 
-    for sub in ast.walk(node):
-        if isinstance(sub, ast.Assign):
-            for name in _target_names(sub.targets):
+    class LocalAssignmentVisitor(ast.NodeVisitor):
+        def visit_Assign(self, node: ast.Assign) -> None:
+            for name in _target_names(node.targets):
                 add(name)
-        elif isinstance(sub, ast.AnnAssign | ast.AugAssign):
-            if isinstance(sub.target, ast.Name):
-                add(sub.target.id)
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+            if isinstance(node.target, ast.Name):
+                add(node.target.id)
+            self.generic_visit(node)
+
+        def visit_AugAssign(self, node: ast.AugAssign) -> None:
+            if isinstance(node.target, ast.Name):
+                add(node.target.id)
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            return
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return
+
+    visitor = LocalAssignmentVisitor()
+    for statement in node.body:
+        visitor.visit(statement)
 
     return local_names
 

@@ -144,15 +144,35 @@ def rename_locals_in_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     mapping: dict[str, str],
 ) -> ast.FunctionDef | ast.AsyncFunctionDef:
-    """Apply `mapping` to parameters and name references in one function."""
+    """Apply `mapping` within one function's lexical scope."""
     if not mapping:
         return node
     for arg in function_params(node):
         if arg.arg in mapping:
             arg.arg = mapping[arg.arg]
-    for sub in ast.walk(node):
-        if isinstance(sub, ast.Name) and sub.id in mapping:
-            sub.id = mapping[sub.id]
+
+    class LocalNameRenamer(ast.NodeTransformer):
+        def visit_Name(self, node: ast.Name) -> ast.Name:
+            node.id = mapping.get(node.id, node.id)
+            return node
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
+            return node
+
+        def visit_AsyncFunctionDef(
+            self, node: ast.AsyncFunctionDef
+        ) -> ast.AsyncFunctionDef:
+            return node
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef:
+            return node
+
+        def visit_Lambda(self, node: ast.Lambda) -> ast.Lambda:
+            return node
+
+    renamer = LocalNameRenamer()
+    for statement in node.body:
+        renamer.visit(statement)
     return node
 
 
@@ -171,10 +191,106 @@ def _local_mapping(
     ]
     if not rename_params:
         local_names = [name for name in local_names if name not in param_names]
-    return {
-        name: f"{RENAMED_LOCAL_PREFIX}{i}"
-        for i, name in enumerate(local_names)
-    }
+    mapping: dict[str, str] = {}
+    index = 0
+    for name in local_names:
+        candidate = f"{RENAMED_LOCAL_PREFIX}{index}"
+        while candidate in protected:
+            index += 1
+            candidate = f"{RENAMED_LOCAL_PREFIX}{index}"
+        mapping[name] = candidate
+        protected.add(candidate)
+        index += 1
+    return mapping
+
+
+class _LexicalLocalRenamer(ast.NodeTransformer):
+    """Rename function-owned names without crossing lexical ownership."""
+
+    def __init__(self, protected: set[str], *, rename_params: bool) -> None:
+        self._module_names = protected
+        self._rename_params = rename_params
+        self._scopes: list[tuple[set[str], dict[str, str]]] = []
+
+    def visit_Name(self, node: ast.Name) -> ast.Name:
+        for bound_names, mapping in reversed(self._scopes):
+            if node.id in bound_names:
+                node.id = mapping.get(node.id, node.id)
+                break
+        return node
+
+    def _visit_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> ast.FunctionDef | ast.AsyncFunctionDef:
+        node.decorator_list = [
+            self.visit(item) for item in node.decorator_list
+        ]
+        node.returns = self.visit(node.returns) if node.returns else None
+        node.type_params = [
+            self.visit(item) for item in getattr(node, "type_params", [])
+        ]
+        for argument in function_params(node):
+            if argument.annotation is not None:
+                argument.annotation = self.visit(argument.annotation)
+        node.args.defaults = [self.visit(item) for item in node.args.defaults]
+        node.args.kw_defaults = [
+            self.visit(item) if item is not None else None
+            for item in node.args.kw_defaults
+        ]
+
+        bound_names = set(function_locals(node))
+        protected = self._module_names | {
+            renamed
+            for _, active_mapping in self._scopes
+            for renamed in active_mapping.values()
+        }
+        mapping = _local_mapping(
+            node,
+            set(protected),
+            rename_params=self._rename_params,
+        )
+        for argument in function_params(node):
+            argument.arg = mapping.get(argument.arg, argument.arg)
+
+        self._scopes.append((bound_names, mapping))
+        node.body = [self.visit(statement) for statement in node.body]
+        self._scopes.pop()
+        return node
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
+        visited = self._visit_function(node)
+        assert isinstance(visited, ast.FunctionDef)
+        return visited
+
+    def visit_AsyncFunctionDef(
+        self, node: ast.AsyncFunctionDef
+    ) -> ast.AsyncFunctionDef:
+        visited = self._visit_function(node)
+        assert isinstance(visited, ast.AsyncFunctionDef)
+        return visited
+
+    def visit_Lambda(self, node: ast.Lambda) -> ast.Lambda:
+        node.args.defaults = [self.visit(item) for item in node.args.defaults]
+        node.args.kw_defaults = [
+            self.visit(item) if item is not None else None
+            for item in node.args.kw_defaults
+        ]
+        bound_names = {
+            argument.arg
+            for argument in (
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+            )
+        }
+        if node.args.vararg:
+            bound_names.add(node.args.vararg.arg)
+        if node.args.kwarg:
+            bound_names.add(node.args.kwarg.arg)
+        self._scopes.append((bound_names, {}))
+        node.body = self.visit(node.body)
+        self._scopes.pop()
+        return node
 
 
 def alpha_rename_locals_in_tree(
@@ -184,14 +300,10 @@ def alpha_rename_locals_in_tree(
 ) -> ast.Module:
     """Alpha-rename function locals to `_v0`, `_v1`, ... in `tree`."""
     protected = module_level_names(tree)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            mapping = _local_mapping(
-                node,
-                protected,
-                rename_params=rename_params,
-            )
-            rename_locals_in_function(node, mapping)
+    _LexicalLocalRenamer(
+        protected,
+        rename_params=rename_params,
+    ).visit(tree)
     return tree
 
 
