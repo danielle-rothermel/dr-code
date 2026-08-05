@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from dr_code.humaneval.sandbox import (
-    CANDIDATE_KILL_RETURNCODES,
     SandboxOutputLimitError,
     SandboxRunner,
     SandboxTimeoutError,
