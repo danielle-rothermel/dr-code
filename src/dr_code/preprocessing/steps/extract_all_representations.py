@@ -14,15 +14,24 @@ unfenced block contributes, each split at Python anchor lines. Unfenced
 code alongside a fenced snippet is a candidate in its own right, so prose
 that introduces one solution and fences another yields both.
 
-1. ``raw_response`` — the whole normalized text as one candidate.
-2. ``text_segments`` — every fenced and every non-blank unfenced block,
+The two readings that name a code field explicitly come first, so a
+response that declares which part is its answer is not shadowed by a
+general scrape of some other field:
+
+1. ``json_code_field`` — a top-level JSON object's ``code`` value, then
+   that value's segments.
+2. ``field_marker`` — the value of a ``[[ ## code ## ]]`` field marker,
+   then that value's segments.
+
+The remaining readings scrape code out of arbitrary text:
+
+3. ``raw_response`` — the whole normalized text as one candidate.
+4. ``text_segments`` — every fenced and every non-blank unfenced block,
    each split at Python anchor lines.
-3. ``markdown_segments`` — the same segments with one markdown wrapper
+5. ``markdown_segments`` — the same segments with one markdown wrapper
    marker (blockquote, list bullet) stripped per line.
-4. ``json_string_response`` — a whole-response JSON string, decoded, then
+6. ``json_string_response`` — a whole-response JSON string, decoded, then
    re-read as segments.
-5. ``json_code_field`` — a top-level JSON object's ``code`` value.
-6. ``field_marker`` — the value of a ``[[ ## code ## ]]`` field marker.
 7. ``escaped_python`` — structurally escaped Python, recovered and re-read
    as segments.
 8. ``escaped_markdown`` — the recovered text with markdown wrappers
@@ -152,8 +161,30 @@ def _json_string_response(text: str) -> list[str]:
     return _segment_sources(_additive_blocks(decoded))
 
 
+def _declared_code_sources(value: str) -> list[str]:
+    """A declared code field's value, then its segments.
+
+    A field that names itself ``code`` is a declaration, but its value is
+    not always bare source: a response may still wrap the answer in prose
+    or fences inside the field. Contributing the value as written *and*
+    its segments keeps the declaration usable in both shapes — otherwise
+    a wrapped value is unparseable, survives no filter, and a general
+    scrape of some earlier field wins the ordinal instead.
+
+    Order matters: the value as written comes first, so a field holding
+    bare source is preferred to any segment split out of it.
+    """
+
+    segments = [
+        segment
+        for segment in _segment_sources(_additive_blocks(value))
+        if segment != value
+    ]
+    return [value, *segments]
+
+
 def _json_code_field(text: str) -> list[str]:
-    """A top-level JSON object's ``code`` value, when it is a string."""
+    """A top-level JSON object's ``code`` value, and its segments."""
     stripped = text.strip()
     if not (stripped.startswith("{") and stripped.endswith("}")):
         return []
@@ -166,14 +197,14 @@ def _json_code_field(text: str) -> list[str]:
     value = decoded.get(CODE_FIELD_NAME)
     if not isinstance(value, str) or not value.strip():
         return []
-    return [value]
+    return _declared_code_sources(value)
 
 
 def _field_marker(text: str) -> list[str]:
     value = field_marker_value(text, field_name=CODE_FIELD_NAME)
     if value is None or not value.strip():
         return []
-    return [value.strip()]
+    return _declared_code_sources(value.strip())
 
 
 def _escaped_python(text: str) -> list[str]:

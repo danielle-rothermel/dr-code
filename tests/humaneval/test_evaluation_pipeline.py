@@ -455,6 +455,32 @@ def test_marked_code_field_wins_over_code_in_another_marked_field() -> None:
     assert result.candidate_count == 2
 
 
+def test_marked_code_field_wins_even_when_it_wraps_the_answer() -> None:
+    # A declared code field does not always hold bare source: the answer
+    # may still be wrapped in prose or fences inside the field. The value
+    # is contributed as written *and* segmented, so a wrapped declaration
+    # still yields a parseable candidate ahead of any general scrape --
+    # otherwise the wrapped value survives no filter and an earlier
+    # field's starter takes ordinal 0.
+    result = extract_humaneval_code(
+        "[[ ## prompt ## ]]\n"
+        "```python\n"
+        "def add_one(x):\n"
+        '    """Reference/starter."""\n'
+        "    raise NotImplementedError\n"
+        "```\n\n"
+        "[[ ## code ## ]]\n"
+        "Here is code:\n"
+        "```python\n"
+        "def add_one(x):\n"
+        "    return x + 1\n"
+        "```\n"
+    )
+
+    assert result.succeeded
+    assert result.accepted_code == "def add_one(x):\n    return x + 1"
+
+
 def test_json_code_field_wins_over_code_quoted_in_other_json_fields() -> None:
     result = extract_humaneval_code(
         '{"reasoning": "first I tried:\\n```python\\n'
