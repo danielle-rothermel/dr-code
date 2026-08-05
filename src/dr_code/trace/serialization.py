@@ -12,11 +12,14 @@ from __future__ import annotations
 
 from typing import Final, Literal
 
+from pydantic import field_validator
+
 from dr_code.base import FrozenModel
+from dr_code.trace.facts import JsonFactValue, validate_step_facts
 from dr_code.trace.provenance import TraceProducer
 from dr_code.trace.trace import Trace, TraceValue
 
-TRACE_SCHEMA_VERSION: Final = 2
+TRACE_SCHEMA_VERSION: Final = 3
 
 
 class SerializedTrace(FrozenModel):
@@ -25,10 +28,24 @@ class SerializedTrace(FrozenModel):
     schemas.
     """
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     producer: TraceProducer
     values: dict[str, TraceValue]
-    step_facts: dict[str, dict[str, str]] = {}
+    step_facts: dict[str, dict[str, JsonFactValue]] = {}
+
+    @field_validator("step_facts")
+    @classmethod
+    def _check_step_facts(
+        cls,
+        step_facts: dict[str, dict[str, JsonFactValue]],
+    ) -> dict[str, dict[str, JsonFactValue]]:
+        """Run the finite-JSON gate at the persistence boundary too.
+
+        Pydantic's ``JsonFactValue`` union admits non-finite floats, which
+        have no JSON form; ``validate_step_facts`` rejects them and copies
+        the containers so the model owns its facts.
+        """
+        return validate_step_facts(step_facts)
 
 
 def serialize_trace(trace: Trace) -> SerializedTrace:
@@ -39,7 +56,7 @@ def serialize_trace(trace: Trace) -> SerializedTrace:
         schema_version=TRACE_SCHEMA_VERSION,
         producer=trace.producer,
         values=dict(trace.values),
-        step_facts={k: dict(v) for k, v in trace.step_facts.items()},
+        step_facts=validate_step_facts(trace.step_facts),
     )
 
 
@@ -48,7 +65,7 @@ def deserialize_trace(serialized: SerializedTrace) -> Trace:
     measuring the fresh trace now — enforced by a metrics-side test.
     """
     return Trace(
-        values=dict(serialized.values),
+        values=serialized.values,
         producer=serialized.producer,
-        step_facts={k: dict(v) for k, v in serialized.step_facts.items()},
+        step_facts=serialized.step_facts,
     )

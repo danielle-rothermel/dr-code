@@ -15,6 +15,7 @@ class ArtifactKind(StrEnum):
     TEXT = "text"
     CODE = "code"
     CODE_CANDIDATE_SET = "code_candidate_set"
+    INSPECTED_CODE_CANDIDATE_SET = "inspected_code_candidate_set"
     JSON = "json"
 
 
@@ -35,13 +36,88 @@ class CodeArtifact(FrozenModel):
     source: str
 
 
+class ExtractionOperation(FrozenModel):
+    """One named operation that produced or transformed a candidate.
+
+    ``operation_name`` is a producer-owned vocabulary: the trace layer
+    records the name a producer stamped and never interprets it.
+    """
+
+    operation_name: str
+
+
+class CandidateOrigin(FrozenModel):
+    """One origin of a candidate: an operation plus where it read from.
+
+    ``input_location`` names the position in that operation's input the
+    candidate came from — for a block-extracting operation, the ordinal of
+    the block within the text; for an elementwise transform, the ordinal of
+    the candidate it was applied to. Lineage is extended by appending
+    origins, never by replacing them.
+    """
+
+    operation: ExtractionOperation
+    input_location: int
+
+
+class CodeCandidate(FrozenModel):
+    """One candidate source with its complete ordered lineage.
+
+    ``origins`` is non-empty and ordered oldest-first: the operation that
+    first produced the source, then every operation that transformed it.
+    Candidate identity within a trace is exact-source equality plus position
+    in the containing set — the record carries no hash or semantic id.
+    """
+
+    source: str
+    origins: tuple[CandidateOrigin, ...] = Field(min_length=1)
+
+    def extended(
+        self, origin: CandidateOrigin, *, source: str
+    ) -> CodeCandidate:
+        """A candidate with ``source`` and ``origin`` appended to lineage."""
+        return CodeCandidate(source=source, origins=(*self.origins, origin))
+
+
 class CodeCandidateSetArtifact(FrozenModel):
-    """Ordered candidate sources, with conservative candidates first."""
+    """Ordered candidate records, with conservative candidates first."""
 
     kind: Literal[ArtifactKind.CODE_CANDIDATE_SET] = (
         ArtifactKind.CODE_CANDIDATE_SET
     )
-    candidates: tuple[str, ...]
+    candidates: tuple[CodeCandidate, ...]
+
+
+class CandidateInspection(FrozenModel):
+    """Structural facts about one candidate source.
+
+    Structure only: whether the source parses, whether it compiles, the
+    error text when it does not, and the names of its top-level functions.
+    Whether those facts make a candidate acceptable is a policy verdict,
+    owned by filter steps rather than by the trace layer.
+    """
+
+    parses: bool
+    parse_error: str | None = None
+    compiles: bool
+    compile_error: str | None = None
+    top_level_function_names: tuple[str, ...] = ()
+
+
+class InspectedCodeCandidate(FrozenModel):
+    """One candidate paired with the structural inspection of its source."""
+
+    candidate: CodeCandidate
+    inspection: CandidateInspection
+
+
+class InspectedCodeCandidateSetArtifact(FrozenModel):
+    """Ordered inspected candidates, in the containing set's order."""
+
+    kind: Literal[ArtifactKind.INSPECTED_CODE_CANDIDATE_SET] = (
+        ArtifactKind.INSPECTED_CODE_CANDIDATE_SET
+    )
+    candidates: tuple[InspectedCodeCandidate, ...]
 
 
 class JsonArtifact(FrozenModel):
@@ -56,7 +132,11 @@ class JsonArtifact(FrozenModel):
 
 
 Artifact = Annotated[
-    TextArtifact | CodeArtifact | CodeCandidateSetArtifact | JsonArtifact,
+    TextArtifact
+    | CodeArtifact
+    | CodeCandidateSetArtifact
+    | InspectedCodeCandidateSetArtifact
+    | JsonArtifact,
     Field(discriminator="kind"),
 ]
 
@@ -67,3 +147,20 @@ def parsed_module(code: CodeArtifact) -> ast.Module:
     lossless-by-construction.
     """
     return ast.parse(code.source)
+
+
+__all__ = [
+    "Artifact",
+    "ArtifactKind",
+    "CandidateInspection",
+    "CandidateOrigin",
+    "CodeArtifact",
+    "CodeCandidate",
+    "CodeCandidateSetArtifact",
+    "ExtractionOperation",
+    "InspectedCodeCandidate",
+    "InspectedCodeCandidateSetArtifact",
+    "JsonArtifact",
+    "TextArtifact",
+    "parsed_module",
+]

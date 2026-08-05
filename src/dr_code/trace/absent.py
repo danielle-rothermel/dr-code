@@ -17,7 +17,11 @@ class Absent(FrozenModel):
     kind: Literal["absent"] = "absent"
     # instance name that originated the failure
     failed_step: str
-    # human-readable reason, stable for lineage joins
+    # machine-readable failure kind, stable for lineage joins and grouping.
+    # A plain string here: the vocabulary belongs to the producer that
+    # raised, so the trace layer records it without interpreting it.
+    failure_code: str
+    # human-readable reason, free-form detail for the recorded code
     cause: str
     # downstream instance names that inherited it
     propagated_through: tuple[str, ...] = ()

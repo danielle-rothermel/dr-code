@@ -30,7 +30,7 @@ class ReturnAll(Step):
         assert isinstance(value, CodeCandidateSetArtifact)
         return StepOutput(
             value=value,
-            facts={"candidate_count": str(len(value.candidates))},
+            facts={"candidate_count": len(value.candidates)},
         )
 
 

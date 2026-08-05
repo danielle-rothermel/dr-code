@@ -55,7 +55,11 @@ def test_trace_rejects_unvalidated_producer_payload() -> None:
 
 
 def test_value_distinguishes_causal_absence_from_missing_wiring() -> None:
-    absent = Absent(failed_step="parse", cause="syntax error")
+    absent = Absent(
+        failed_step="parse",
+        failure_code="parse_failed",
+        cause="syntax error",
+    )
     trace = Trace(
         values={
             INPUT_KEY: TextArtifact(text="input"),
@@ -81,3 +85,93 @@ def test_external_trace_stamps_producer_and_carries_boundary_data() -> None:
     assert trace.producer == EXTERNAL_PRODUCER
     assert trace.value(INPUT_KEY) is values[INPUT_KEY]
     assert trace.step_facts == step_facts
+
+
+# --- snapshotting ----------------------------------------------------
+
+
+def test_trace_snapshots_values_against_later_caller_mutation() -> None:
+    values = _minimal_values()
+    trace = Trace(values=values, producer=EXTERNAL_PRODUCER)
+
+    values["late"] = TextArtifact(text="added after construction")
+    del values[INPUT_KEY]
+
+    assert set(trace.values) == {INPUT_KEY, OUTPUT_KEY}
+    assert trace.value(INPUT_KEY) == TextArtifact(text="input")
+
+
+def test_trace_deep_copies_step_facts_against_later_mutation() -> None:
+    nested = {"rejected_locations": [0]}
+    step_facts = {"parse": {"detail": nested}}
+    trace = Trace(
+        values=_minimal_values(),
+        producer=EXTERNAL_PRODUCER,
+        step_facts=step_facts,
+    )
+
+    nested["rejected_locations"].append(1)
+    step_facts["parse"]["extra"] = "added after construction"
+    step_facts["late"] = {"reason": "added after construction"}
+
+    assert trace.step_facts == {
+        "parse": {"detail": {"rejected_locations": [0]}}
+    }
+
+
+# --- step fact validation --------------------------------------------
+
+
+def test_trace_accepts_finite_json_step_facts() -> None:
+    step_facts = {
+        "parse": {
+            "alternative": "fenced_blocks",
+            "candidate_count": 2,
+            "confidence": 0.25,
+            "recoverable": False,
+            "hint": None,
+            "rejected_locations": [0, 1],
+            "detail": {"line": 3},
+        }
+    }
+
+    trace = Trace(
+        values=_minimal_values(),
+        producer=EXTERNAL_PRODUCER,
+        step_facts=step_facts,
+    )
+
+    assert trace.step_facts == step_facts
+
+
+@pytest.mark.parametrize(
+    "facts",
+    (
+        {"parse": {"confidence": float("nan")}},
+        {"parse": {"confidence": float("inf")}},
+        {"parse": {"confidence": float("-inf")}},
+        {"parse": {"value": {1: "non-string key"}}},
+        {"parse": {"value": object()}},
+        {"parse": {"value": {"nested": object()}}},
+        {"parse": "not a mapping"},
+    ),
+)
+def test_trace_rejects_non_json_step_facts(facts: object) -> None:
+    with pytest.raises(WiringError, match="invalid step facts"):
+        Trace(
+            values=_minimal_values(),
+            producer=EXTERNAL_PRODUCER,
+            step_facts=facts,  # type: ignore[arg-type]
+        )
+
+
+def test_trace_rejects_step_facts_with_a_container_cycle() -> None:
+    cycle: list[object] = []
+    cycle.append(cycle)
+
+    with pytest.raises(WiringError, match="container cycle"):
+        Trace(
+            values=_minimal_values(),
+            producer=EXTERNAL_PRODUCER,
+            step_facts={"parse": {"value": cycle}},  # type: ignore[dict-item]
+        )

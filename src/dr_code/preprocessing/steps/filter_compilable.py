@@ -10,7 +10,9 @@ from dr_code.preprocessing.steps.base import Step, StepOutput
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
+    CodeCandidate,
     CodeCandidateSetArtifact,
+    JsonFactValue,
 )
 
 
@@ -29,10 +31,10 @@ class FilterCompilable(Step):
 
     def apply(self, value: Artifact) -> StepOutput:
         assert isinstance(value, CodeCandidateSetArtifact)
-        survivors: list[str] = []
-        facts: dict[str, str] = {}
+        survivors: list[CodeCandidate] = []
+        facts: dict[str, JsonFactValue] = {}
         for index, candidate in enumerate(value.candidates):
-            validated = validate_python_source_with_ast(candidate)
+            validated = validate_python_source_with_ast(candidate.source)
             if validated.validation.compile_ok:
                 survivors.append(candidate)
             else:

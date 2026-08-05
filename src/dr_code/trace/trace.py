@@ -8,6 +8,11 @@ from typing import Final, get_args
 
 from dr_code.trace.absent import Absent
 from dr_code.trace.artifacts import Artifact
+from dr_code.trace.facts import (
+    FactError,
+    JsonFactValue,
+    validate_step_facts,
+)
 from dr_code.trace.provenance import (
     EXTERNAL_PRODUCER,
     TraceProducer,
@@ -39,17 +44,29 @@ class WiringError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Trace:
+    """A snapshot: constructing a trace copies the containers it is given.
+
+    ``values`` is shallow-copied into a plain dict and ``step_facts`` is
+    deep-copied by ``validate_step_facts``, so mutating the caller's
+    mappings afterwards cannot change an existing trace. The individual
+    values are frozen models, with one documented exception:
+    ``JsonArtifact.payload`` is held by reference, so the snapshot claim
+    covers the containers and the step facts, not a payload a caller
+    mutates in place.
+    """
+
     # flat namespace; must contain input & output
     values: Mapping[str, TraceValue]
     producer: TraceProducer
-    step_facts: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    step_facts: Mapping[str, Mapping[str, JsonFactValue]] = field(
+        default_factory=dict
+    )
     # step_facts: provenance recorded by steps (chosen alternative,
     # rejection reasons, candidate counts) keyed by instance name —
     # descriptive facts, never policy judgments
 
     def __post_init__(self) -> None:
-        """Validate RESERVED_KEYS ⊆ values; reject non-TraceValue
-        entries."""
+        """Snapshot the containers, then validate keys, values, and facts."""
         if not isinstance(self.producer, _TRACE_PRODUCER_TYPES):
             raise WiringError(
                 "trace producer must be an external or preprocessing "
@@ -66,6 +83,12 @@ class Trace:
                     f"value for key {key!r} is not a TraceValue: "
                     f"{type(val).__name__}"
                 )
+        try:
+            snapshot_facts = validate_step_facts(self.step_facts)
+        except FactError as exc:
+            raise WiringError(f"invalid step facts: {exc}") from exc
+        object.__setattr__(self, "values", dict(self.values))
+        object.__setattr__(self, "step_facts", snapshot_facts)
 
     def value(self, key: str) -> TraceValue:
         """Missing key raises WiringError. Present-but-Absent returns the
@@ -80,13 +103,13 @@ class Trace:
 def external_trace(
     values: Mapping[str, TraceValue],
     *,
-    step_facts: Mapping[str, Mapping[str, str]] | None = None,
+    step_facts: Mapping[str, Mapping[str, JsonFactValue]] | None = None,
 ) -> Trace:
     """Boundary constructor for artifacts built outside dr-code:
     validates value types on the way in and stamps the external producer.
     """
     return Trace(
-        values=dict(values),
+        values=values,
         producer=EXTERNAL_PRODUCER,
-        step_facts=dict(step_facts) if step_facts is not None else {},
+        step_facts=step_facts if step_facts is not None else {},
     )
