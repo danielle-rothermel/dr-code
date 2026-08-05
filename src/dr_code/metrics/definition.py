@@ -8,7 +8,7 @@ from typing import Self
 from pydantic import Field, SerializeAsAny, model_validator
 
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.operators.base import OperatorSettings
+from dr_code.metrics.settings import OperatorSettings
 from dr_code.base import FrozenModel, settings_payload
 
 

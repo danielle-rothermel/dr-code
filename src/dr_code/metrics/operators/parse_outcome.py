@@ -9,13 +9,19 @@ from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
     OperatorResult,
-    OperatorSettings,
     artifact_text,
 )
+from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.units import MetricFactUnit
 from dr_code.trace import Artifact, ArtifactKind
 
 
 class ParseOutcomeResult(OperatorResult):
+    UNITS = {
+        "parse_ok": MetricFactUnit.BOOLEAN,
+        "parse_error": MetricFactUnit.TEXT,
+    }
+
     parse_ok: bool
     parse_error: str | None
 

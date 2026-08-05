@@ -67,8 +67,12 @@ entries. Registered preprocessing execution resolves the canonical definition
 and rejects caller-built objects that claim its coordinate. Unregistered
 pipelines use a distinct external-preprocessing producer variant; unrelated
 external traces use the external producer variant. Metric records nest the
-trace producer coordinate and the complete ordered metrics definition instead
-of flattening or abbreviating either composite coordinate.
+trace producer coordinate and the complete ordered metrics definition
+coordinate instead of flattening or abbreviating either composite coordinate.
+A metrics definition coordinate carries every declared question as a metric
+name, target key, and explicit immutable setting entries, so a record
+validates structurally without consulting the live operator registry and
+archived records stay loadable after it changes.
 
 HumanEval snapshots persist the registered override set as an explicit id,
 version, and ordered concrete entries, including typed source-replacement

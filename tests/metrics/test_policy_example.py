@@ -38,7 +38,7 @@ from dr_code.humaneval.sandbox import (
     SandboxTimeoutError,
 )
 from dr_code.metrics.names import MetricName
-from dr_code.metrics.records import MetricRecord, RecordStatus
+from dr_code.metrics.records import MeasuredRecord, MetricRecord, MetricScalar
 
 
 # ---------------------------------------------------------------------------
@@ -49,20 +49,21 @@ from dr_code.metrics.records import MetricRecord, RecordStatus
 def derive_outcome(record: MetricRecord) -> SubmissionOutcome:
     """Derive the existing HumanEval outcome taxonomy from execution facts."""
 
-    if record.metric is not MetricName.CODE_TEST:
+    if record.identity.question.metric is not MetricName.CODE_TEST:
         raise ValueError("derive_outcome requires a code_test record")
-    if record.status is not RecordStatus.MEASURED:
+    if not isinstance(record, MeasuredRecord):
         raise ValueError("derive_outcome requires a measured record")
 
-    function_count = _integer_fact(record, "function_count")
+    facts = {fact.name: fact.value for fact in record.facts}
+    function_count = _integer_fact(facts, "function_count")
     if function_count == 0:
         return SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
 
-    failed_count = _integer_fact(record, "failed_count")
-    error_count = _integer_fact(record, "error_count")
-    timeout_count = _integer_fact(record, "timeout_count")
+    failed_count = _integer_fact(facts, "failed_count")
+    error_count = _integer_fact(facts, "error_count")
+    timeout_count = _integer_fact(facts, "timeout_count")
     failure_count = failed_count + error_count + timeout_count
-    coverage_complete = _boolean_fact(record, "coverage_complete")
+    coverage_complete = _boolean_fact(facts, "coverage_complete")
 
     if coverage_complete and failure_count == 0:
         return SubmissionOutcome.PASSED
@@ -73,8 +74,8 @@ def derive_outcome(record: MetricRecord) -> SubmissionOutcome:
     return SubmissionOutcome.TESTS_FAILED
 
 
-def _integer_fact(record: MetricRecord, key: str) -> int:
-    value = record.values.get(key)
+def _integer_fact(facts: dict[str, MetricScalar], key: str) -> int:
+    value = facts.get(key)
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(
             f"code_test record requires non-negative integer fact {key!r}"
@@ -82,8 +83,8 @@ def _integer_fact(record: MetricRecord, key: str) -> int:
     return value
 
 
-def _boolean_fact(record: MetricRecord, key: str) -> bool:
-    value = record.values.get(key)
+def _boolean_fact(facts: dict[str, MetricScalar], key: str) -> bool:
+    value = facts.get(key)
     if not isinstance(value, bool):
         raise ValueError(f"code_test record requires boolean fact {key!r}")
     return value
@@ -109,7 +110,11 @@ def _code_test_record(trace, *, runner, timeout=5.0):
         ),
     )
     records = extract_metrics(definition, trace, run_in_sandbox=runner)
-    code_test = [r for r in records if r.metric is MetricName.CODE_TEST]
+    code_test = [
+        r
+        for r in records
+        if r.identity.question.metric is MetricName.CODE_TEST
+    ]
     assert len(code_test) == 1
     return code_test[0]
 
@@ -240,39 +245,57 @@ def test_code_test_record_carries_no_verdict_fields(
     record = _code_test_record(
         code_test_trace(good_submission, task), runner=local_runner
     )
-    assert "outcome" not in record.values
-    assert "score" not in record.values
-    assert "pass_at_k" not in record.values
-    assert "passed" not in record.values
+    names = {fact.name for fact in record.facts}
+    assert "outcome" not in names
+    assert "score" not in names
+    assert "pass_at_k" not in names
+    assert "passed" not in names
 
 
 def test_derive_outcome_rejects_negative_counts() -> None:
     """A corrupt or tampered record cannot cancel failures with negative
     counts (failed_count=-1 + error_count=1 would otherwise read as zero
     failures and derive PASSED)."""
-    from dr_code.metrics import MetricQuestion, MetricsDefinition
+    from dr_code.metrics import (
+        MetricFact,
+        MetricFactUnit,
+        MetricQuestion,
+        MetricQuestionCoordinate,
+        MetricRecordIdentity,
+        MetricsDefinition,
+        MetricsDefinitionCoordinate,
+    )
     from dr_code.trace import EXTERNAL_PRODUCER
 
-    record = MetricRecord(
-        metric=MetricName.CODE_TEST,
-        metric_version="1",
-        on_key="input",
-        producer=EXTERNAL_PRODUCER,
-        metrics_definition=MetricsDefinition(
-            definition_id="policy",
-            version="1",
-            questions=(
-                MetricQuestion(metric=MetricName.CODE_TEST, on="input"),
+    definition = MetricsDefinition(
+        definition_id="policy",
+        version="1",
+        questions=(MetricQuestion(metric=MetricName.CODE_TEST, on="input"),),
+    )
+    record = MeasuredRecord(
+        identity=MetricRecordIdentity(
+            question=MetricQuestionCoordinate.of(definition.questions[0]),
+            metric_version="1",
+            producer=EXTERNAL_PRODUCER,
+            metrics_definition=MetricsDefinitionCoordinate.of(definition),
+        ),
+        facts=(
+            MetricFact(
+                name="function_count", value=1, unit=MetricFactUnit.COUNT
+            ),
+            MetricFact(
+                name="failed_count", value=-1, unit=MetricFactUnit.COUNT
+            ),
+            MetricFact(name="error_count", value=1, unit=MetricFactUnit.COUNT),
+            MetricFact(
+                name="timeout_count", value=0, unit=MetricFactUnit.COUNT
+            ),
+            MetricFact(
+                name="coverage_complete",
+                value=True,
+                unit=MetricFactUnit.BOOLEAN,
             ),
         ),
-        status=RecordStatus.MEASURED,
-        values={
-            "function_count": 1,
-            "failed_count": -1,
-            "error_count": 1,
-            "timeout_count": 0,
-            "coverage_complete": True,
-        },
     )
     with pytest.raises(ValueError, match="non-negative"):
         derive_outcome(record)

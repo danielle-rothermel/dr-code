@@ -78,17 +78,20 @@ def _namespace():
 
 
 def _answer(record):
-    """Comparable projection: identity, status, and ordered values.
+    """Comparable projection: identity, status, and ordered facts.
 
     Producer lineage legitimately differs across origins, so equality of the
     measured answer is what the determinism promise guarantees.
     """
+    from dr_code.metrics import MeasuredRecord
+
+    facts = record.facts if isinstance(record, MeasuredRecord) else ()
     return (
-        record.metric,
-        record.metric_version,
-        record.on_key,
+        record.identity.question.metric,
+        record.identity.metric_version,
+        record.identity.question.on_key,
         record.status,
-        tuple(sorted(record.values.items())),
+        facts,
     )
 
 

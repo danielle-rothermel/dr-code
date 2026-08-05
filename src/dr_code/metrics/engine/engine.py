@@ -10,6 +10,10 @@ from dr_code.humaneval.sandbox import (
     SandboxRunner,
     run_python_in_sandbox,
 )
+from dr_code.metrics.coordinates import (
+    MetricQuestionCoordinate,
+    MetricsDefinitionCoordinate,
+)
 from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
 from dr_code.metrics.engine.execution import (
     ExecutionCache,
@@ -19,15 +23,18 @@ from dr_code.metrics.engine.execution import (
     run_requests,
 )
 from dr_code.metrics.engine.views import ViewCache
-from dr_code.metrics.names import MetricName
-from dr_code.metrics.operators.base import MetricOperator, OperatorSettings
+from dr_code.metrics.operators.base import MetricOperator
 from dr_code.metrics.records import (
+    MeasuredRecord,
+    MetricFact,
     MetricRecord,
-    MetricScalar,
-    RecordStatus,
+    MetricRecordIdentity,
+    NotApplicableRecord,
+    OperatorFailure,
+    OperatorFailureRecord,
 )
 from dr_code.metrics.registry import REGISTRY
-from dr_code.trace import Absent, Artifact, Trace, TraceProducer, WiringError
+from dr_code.trace import Absent, Artifact, Trace, WiringError
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,29 +53,19 @@ class _TraceBinding:
     planning_failure: Exception | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class _RecordIdentity:
-    metric: MetricName
-    metric_version: str
-    settings: OperatorSettings
-    on_key: str
-    producer: TraceProducer
-    metrics_definition: MetricsDefinition
+def _record_identity(
+    definition: MetricsDefinition,
+    binding: _TraceBinding,
+) -> MetricRecordIdentity:
+    """Project a bound question into the record's persisted identity."""
 
-    @classmethod
-    def from_binding(
-        cls, definition: MetricsDefinition, binding: _TraceBinding
-    ) -> _RecordIdentity:
-        question_binding = binding.question_binding
-        question = question_binding.question
-        return cls(
-            metric=question.metric,
-            metric_version=question_binding.operator.VERSION,
-            settings=question_binding.operator.settings,
-            on_key=question.on,
-            producer=binding.trace.producer,
-            metrics_definition=definition,
-        )
+    question_binding = binding.question_binding
+    return MetricRecordIdentity(
+        question=MetricQuestionCoordinate.of(question_binding.question),
+        metric_version=question_binding.operator.VERSION,
+        producer=binding.trace.producer,
+        metrics_definition=MetricsDefinitionCoordinate.of(definition),
+    )
 
 
 class EngineInvariantError(Exception):
@@ -257,14 +254,9 @@ def _compute_record(
     binding: _TraceBinding,
     context: _EngineContext,
 ) -> MetricRecord:
-    identity = _RecordIdentity.from_binding(definition, binding)
+    identity = _record_identity(definition, binding)
     if binding.absence is not None:
-        return _build_record(
-            identity,
-            status=RecordStatus.NOT_APPLICABLE,
-            absence_failed_step=binding.absence.failed_step,
-            absence_cause=binding.absence.cause,
-        )
+        return NotApplicableRecord(identity=identity, absence=binding.absence)
     if binding.planning_failure is not None:
         return _failure_record(identity, binding.planning_failure)
 
@@ -275,50 +267,22 @@ def _compute_record(
             binding.auxiliary,
             context,
         )
-        return _build_record(
-            identity,
-            status=RecordStatus.MEASURED,
-            values=result.to_values(),
-        )
+        facts: tuple[MetricFact, ...] = result.to_facts()
     except (SandboxError, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)
+    return MeasuredRecord(identity=identity, facts=facts)
 
 
 def _failure_record(
-    identity: _RecordIdentity,
+    identity: MetricRecordIdentity,
     failure: Exception,
-) -> MetricRecord:
-    return _build_record(
-        identity,
-        status=RecordStatus.OPERATOR_FAILURE,
-        failure_type=type(failure).__name__,
-        failure_message=str(failure),
-    )
-
-
-def _build_record(
-    identity: _RecordIdentity,
-    *,
-    status: RecordStatus,
-    values: dict[str, MetricScalar] | None = None,
-    absence_failed_step: str | None = None,
-    absence_cause: str | None = None,
-    failure_type: str | None = None,
-    failure_message: str | None = None,
-) -> MetricRecord:
-    return MetricRecord(
-        metric=identity.metric,
-        metric_version=identity.metric_version,
-        settings=identity.settings,
-        on_key=identity.on_key,
-        producer=identity.producer,
-        metrics_definition=identity.metrics_definition,
-        status=status,
-        values=values or {},
-        absence_failed_step=absence_failed_step,
-        absence_cause=absence_cause,
-        failure_type=failure_type,
-        failure_message=failure_message,
+) -> OperatorFailureRecord:
+    return OperatorFailureRecord(
+        identity=identity,
+        failure=OperatorFailure(
+            failure_type=type(failure).__name__,
+            failure_message=str(failure),
+        ),
     )
