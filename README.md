@@ -10,21 +10,303 @@ language models.**
 The repository contains a Python library and a separately packaged React
 viewer, organized into these functional areas:
 
-- **Candidate preparation** turns raw model responses into inspected Python
-  candidates through declared, ordered preprocessing operations.
-- **Trace capture** preserves intermediate artifacts, structured facts,
-  failure reasons, and semantic provenance so results remain explainable and
-  serializable.
-- **Metric extraction** applies declared questions to traces and emits typed
-  records for measurements, inapplicable questions, and operator failures.
-- **Evaluation planning and scoring** identifies datasets, task selections,
-  repeats, samples, and candidates, then reduces complete metric inputs into
-  explicit score outcomes.
-- **HumanEval+ evaluation** loads and samples benchmark tasks, extracts
-  candidate solutions, runs them in an isolated Python sandbox, and reports
-  structured outcomes.
-- **Synthetic dataset generation** applies deterministic corruption recipes
-  to known solutions for preprocessing and robustness experiments.
-- **Code visualization** provides reusable React components for highlighted
-  code, diffs, and status presentation, plus a private gallery for visual
-  development.
+- **Candidate preparation**
+  ([`dr_code.preprocessing`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing))
+  turns raw model responses into inspected Python candidates through declared,
+  ordered preprocessing operations.
+- **Trace capture**
+  ([`dr_code.trace`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace))
+  preserves intermediate artifacts, structured facts, failure reasons, and
+  semantic provenance so results remain explainable and serializable.
+- **Measurement and evaluation**
+  ([`dr_code.metrics`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/metrics),
+  [`dr_code.evaluation`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/evaluation))
+  extracts typed measurements from traces, declares evaluation plans, and
+  reduces complete inputs into explicit score outcomes.
+- **HumanEval+ evaluation**
+  ([`dr_code.humaneval`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval))
+  loads and samples benchmark tasks, extracts candidate solutions, runs them
+  in an isolated Python sandbox, and reports structured outcomes.
+- **Synthetic dataset generation**
+  ([`dr_code.synthetic`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic))
+  applies deterministic corruption recipes to known solutions for
+  preprocessing and robustness experiments.
+- **Code visualization**
+  ([`@dr-code/viewer`](https://github.com/danielle-rothermel/dr-code/tree/main/viewer/packages/viewer))
+  provides reusable React components for highlighted code, diffs, and status
+  presentation, plus a private gallery for visual development.
+- **Infrastructure**
+  ([`dr_code.core`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core))
+  contains shared foundations used by the functional packages:
+  - [frozen boundary models](https://github.com/danielle-rothermel/dr-code/blob/main/src/dr_code/core/models.py),
+  - [Python source inspection and transformation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/source), and
+  - [isolated execution](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/execution).
+
+## Functional areas
+
+The sketches below show the stable shape of the primary contracts. They are
+abridged deliberately: `...` omits validators, defaults, derived fields, and
+implementation details that belong in the linked package.
+
+### [Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing)
+
+Preprocessing is an ordered, versioned declaration of named steps. Binding
+validates that declaration once; the resulting runner can then turn typed
+input artifacts into complete traces.
+
+```python
+class StepSpec(FrozenModel):
+    instance_name: str
+    step: StepName
+    settings: StepSettings = ...
+
+
+class PreprocessingDefinition(FrozenModel):
+    definition_id: str
+    version: str
+    steps: tuple[StepSpec, ...]
+```
+
+```python
+@dataclass(frozen=True, slots=True)
+class BoundPreprocessingRunner:
+    definition: PreprocessingDefinition
+    producer: TraceProducer
+
+    def run(self, input_value: Artifact) -> Trace: ...
+
+
+def bind_preprocessing(
+    definition: PreprocessingDefinition,
+) -> BoundPreprocessingRunner: ...
+```
+
+### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
+
+A trace is an immutable snapshot of typed artifacts or explicit absences,
+together with structured facts and the coordinate of the producer that made
+it. Its serialized form preserves those canonical values without depending on
+the current component registries.
+
+```python
+class CodeArtifact(FrozenModel):
+    kind: Literal[ArtifactKind.CODE] = ArtifactKind.CODE
+    source: str
+
+
+TraceValue = Artifact | Absent
+
+
+@dataclass(frozen=True, slots=True)
+class Trace:
+    values: Mapping[str, TraceValue]
+    producer: TraceProducer
+    step_facts: Mapping[str, Mapping[str, JsonFactValue]]
+
+    def value(self, key: str) -> TraceValue: ...
+```
+
+```python
+class SerializedTrace(FrozenModel):
+    schema_version: Literal[3]
+    producer: TraceProducer
+    values: dict[str, TraceValue]
+    step_facts: dict[str, dict[str, JsonFactValue]]
+
+
+def serialize_trace(trace: Trace) -> SerializedTrace: ...
+def deserialize_trace(serialized: SerializedTrace) -> Trace: ...
+```
+
+### Measurement and evaluation
+
+[`dr_code.metrics`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/metrics)
+asks versioned questions of trace values and returns one typed record per
+question.
+[`dr_code.evaluation`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/evaluation)
+composes preprocessing and metrics into a complete plan, then reduces explicit
+measurement slots under a declared policy.
+
+```python
+class MetricQuestion(FrozenModel):
+    metric: MetricName
+    on: str
+    settings: OperatorSettings = ...
+
+
+class MetricsDefinition(FrozenModel):
+    definition_id: str
+    version: str
+    questions: tuple[MetricQuestion, ...]
+
+
+def extract_metrics(
+    definition: MetricsDefinition,
+    trace: Trace,
+    *,
+    run_in_sandbox: SandboxRunner = ...,
+    execution_cache: ExecutionCache | None = None,
+) -> tuple[MetricRecord, ...]: ...
+```
+
+```python
+class RecordStatus(StrEnum):
+    MEASURED = "measured"
+    NOT_APPLICABLE = "not_applicable"
+    OPERATOR_FAILURE = "operator_failure"
+
+
+MetricRecord = Annotated[
+    MeasuredRecord | NotApplicableRecord | OperatorFailureRecord,
+    Field(discriminator="status"),
+]
+```
+
+```python
+class EvaluationProcedure(FrozenModel):
+    preprocessing: PreprocessingDefinition
+    metrics: MetricsDefinition
+
+
+class EvaluationPlan(FrozenModel):
+    plan_id: str
+    version: str
+    task_set: TaskSet
+    repeat_plan: RepeatPlan
+    procedure: EvaluationProcedure
+    aggregation: AggregationPolicy
+
+
+def aggregate(request: AggregationInput) -> AggregationResult: ...
+```
+
+### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
+
+HumanEval owns the benchmark-specific task, extraction, sandbox protocol, and
+scoring policy. Scoring returns a discriminated result so a completed
+evaluation cannot be confused with harness failure.
+
+```python
+class HumanEvalTask(FrozenModel):
+    task_id: str
+    prompt: str
+    canonical_solution: str
+    entry_point: str
+    test: str
+    ...
+
+
+class SubmissionOutcome(StrEnum):
+    PASSED = "passed"
+    TESTS_FAILED = "tests_failed"
+    EVALUATION_INCOMPLETE = "evaluation_incomplete"
+    EMPTY_SUBMISSION = "empty_submission"
+    EXTRACTION_FAILED = "extraction_failed"
+    NO_TOP_LEVEL_FUNCTIONS = "no_top_level_functions"
+    TIMED_OUT = "timed_out"
+```
+
+```python
+HumanEvalSubmissionScore = Annotated[
+    CompletedScore | HarnessFailure,
+    Field(discriminator="kind"),
+]
+
+
+def score_humaneval_submission(
+    *,
+    raw_submission: str,
+    task: HumanEvalTask,
+    scoring_profile_id: str = ...,
+    scoring_profile_version: str = ...,
+    run_in_sandbox: SandboxRunner = ...,
+) -> HumanEvalSubmissionScore: ...
+```
+
+### [Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)
+
+Synthetic datasets are built from versioned recipes whose corruption
+components are deterministic for a source, settings model, and random state.
+Each output carries the task, recipe, and seed that define its identity.
+
+```python
+class Recipe(FrozenModel):
+    name: str
+    version: str
+    corruptions: tuple[CorruptionSpec, ...]
+    description: str = ""
+
+
+class Corruption(ABC, Generic[SettingsT]):
+    NAME: ClassVar[CorruptionName]
+    VERSION: ClassVar[str]
+    Settings: ClassVar[type[CorruptionSettings]]
+
+    @abstractmethod
+    def apply(self, source: str, rng: random.Random) -> CorruptedSample: ...
+```
+
+```python
+class SyntheticSample(FrozenModel):
+    sample_id: str
+    coordinate: SyntheticSampleCoordinate
+    ground_truth_source: str
+    corrupted_source: str
+
+
+def build_dataset(
+    tasks: Iterable[HumanEvalPlusTask] | None = None,
+    recipes: Iterable[Recipe] = RECIPES,
+    seed: int = 0,
+    prefer_snapshot: bool = True,
+) -> list[SyntheticSample]: ...
+```
+
+### [Code visualization](https://github.com/danielle-rothermel/dr-code/tree/main/viewer/packages/viewer)
+
+The viewer package exposes domain-independent React primitives. Each accepts
+plain content and semantic display options, leaving data loading and product
+layout to its consumer.
+
+```typescript
+interface CodeBlockProps {
+  code: string;
+  lang?: string;
+  theme?: "light" | "dark";
+}
+
+interface CodeDiffProps {
+  oldContent: string;
+  newContent: string;
+  mode?: "split" | "unified";
+  theme?: "light" | "dark";
+}
+
+interface StatusBadgeProps {
+  status: "success" | "failure" | "warning" | "neutral";
+  children: ReactNode;
+  theme?: "light" | "dark";
+}
+```
+
+## Infrastructure
+
+[`dr_code.core`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core)
+contains the shared model, source, and execution foundations used across the
+functional packages. It owns reusable mechanisms, while benchmark decisions
+and measurement policy remain in their functional packages.
+
+```python
+class FrozenModel(BaseModel):
+    """Immutable base for definitions and persisted artifacts."""
+
+
+class SandboxRunner(Protocol):
+    def __call__(
+        self,
+        *,
+        source: str,
+        input_json: str,
+        timeout_seconds: float,
+    ) -> SandboxCompletedProcess: ...
+```
