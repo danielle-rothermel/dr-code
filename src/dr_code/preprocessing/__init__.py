@@ -1,12 +1,19 @@
 """Preprocessing: atomic, declared steps over typed artifacts.
 
-Each ``PreprocessingDefinition`` chooses an ordered sequence of operations.
-The runner applies those operations and records their artifacts, absences,
-facts, and producer identity in a ``dr_code.trace.Trace``.
+A ``PreprocessingDefinition`` names an ordered sequence of operations. The
+runner applies them and records their artifacts, absences, facts, and
+producer identity in a ``dr_code.trace.Trace``.
+
+This facade is the whole supported surface: the definition models, the
+resolver, the bound runner and the functions that produce one, and the
+one-shot runners. Steps, the step registry, and individual step mechanics
+are internal — a definition names steps by ``StepName``, and how a step is
+implemented is not part of the contract. Code inside the package imports
+those internals by their own module paths.
 
 Core functions (``text_transforms``, ``text_analysis``, ``code_analysis``)
-provide step bodies. ``preprocessing.import_inference`` owns the import repair,
-inference, and deduplication logic used by preprocessing and HumanEval parsing.
+provide step bodies. ``preprocessing.import_inference`` owns the import
+repair, inference, and deduplication logic the cleaning steps use.
 """
 
 from __future__ import annotations
@@ -16,58 +23,32 @@ from dr_code.preprocessing.definition import (
     StepSpec,
 )
 from dr_code.preprocessing.definitions import (
-    BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-    BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-    BEST_EFFORT_HUMANEVAL_DEFINITION,
-    STRICT_FIELD_MARKER_DEFINITION,
-    STRICT_FIELD_MARKER_DEFINITION_ID,
-    STRICT_FIELD_MARKER_DEFINITION_VERSION,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
     resolve_preprocessing_definition,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.runner import (
-    BoundStep,
-    bind_definition,
+    BoundPreprocessingRunner,
+    bind_external_preprocessing,
+    bind_preprocessing,
     run_external_preprocessing,
     run_preprocessing,
 )
-from dr_code.preprocessing.steps.base import (
-    AlternativesStep,
-    CandidateMapStep,
-    Step,
-    StepFailedError,
-    StepOutput,
-    StepSettings,
-)
-from dr_code.preprocessing.steps.extract_candidates import (
-    DEFAULT_STRATEGIES,
-    STRATEGY_REGISTRY,
-    ExtractionStrategy,
-)
 
 __all__ = [
-    "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
-    "BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION",
-    "BEST_EFFORT_HUMANEVAL_DEFINITION",
-    "DEFAULT_STRATEGIES",
-    "STRICT_FIELD_MARKER_DEFINITION",
-    "STRICT_FIELD_MARKER_DEFINITION_ID",
-    "STRICT_FIELD_MARKER_DEFINITION_VERSION",
-    "AlternativesStep",
-    "BoundStep",
-    "CandidateMapStep",
-    "ExtractionStrategy",
+    "EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION",
+    "EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID",
+    "EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION",
+    "BoundPreprocessingRunner",
     "PreprocessingDefinition",
-    "REGISTRY",
-    "STRATEGY_REGISTRY",
-    "Step",
-    "StepFailedError",
+    "PreprocessingFailureCode",
     "StepName",
-    "StepOutput",
-    "StepSettings",
     "StepSpec",
-    "bind_definition",
+    "bind_external_preprocessing",
+    "bind_preprocessing",
     "resolve_preprocessing_definition",
     "run_external_preprocessing",
     "run_preprocessing",

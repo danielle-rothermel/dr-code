@@ -1,23 +1,25 @@
-"""Serialized-trace contract for traces from named definitions.
+"""Serialized-trace contract for traces from the registered definition.
 
 ``serialize_trace`` / ``deserialize_trace`` must round-trip a preprocessing
 ``Trace`` losslessly: every artifact value, every ``Absent`` with its causal
 lineage, every step fact, the producer id/version, and the artifact kinds all
 survive — including through a JSON model round-trip (the persistence path).
-Traces are produced by the real named definitions, so the producer identity
-under test is the one the resolver stamps.
+Traces are produced by the real registered definition, so the producer
+identity under test is the one the resolver stamps.
 """
 
 from __future__ import annotations
 
 from dr_code.preprocessing import (
-    resolve_preprocessing_definition,
-    run_preprocessing,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+    PreprocessingFailureCode,
+    bind_preprocessing,
 )
 from dr_code.trace import (
     Absent,
-    CodeArtifact,
     CodeCandidateSetArtifact,
+    InspectedCodeCandidateSetArtifact,
     SerializedTrace,
     TextArtifact,
     Trace,
@@ -26,20 +28,13 @@ from dr_code.trace import (
     serialize_trace,
 )
 
-BEST_EFFORT_ID = "humaneval-best-effort"
-FIELD_MARKER_ID = "humaneval-field-marker"
-
 _FENCED = "Here is the code:\n```python\ndef f(x):\n    return x + 1\n```\n"
 
-
-def _best_effort():
-    return resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="0"
-    )
+_RUNNER = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
 
 
 def _trace(raw: str) -> Trace:
-    return run_preprocessing(_best_effort(), TextArtifact(text=raw))
+    return _RUNNER.run(TextArtifact(text=raw))
 
 
 def _assert_round_trip(trace: Trace) -> Trace:
@@ -68,25 +63,31 @@ def _assert_json_round_trip(trace: Trace) -> Trace:
 # --- success trace: values, kinds, facts, producer survive -----------
 
 
-def test_round_trip_preserves_code_output_and_facts() -> None:
+def test_round_trip_preserves_inspected_output_and_facts() -> None:
     trace = _trace(_FENCED)
-    assert isinstance(trace.value("output"), CodeArtifact)
+    original = trace.value("output")
+    assert isinstance(original, InspectedCodeCandidateSetArtifact)
 
     restored = _assert_round_trip(trace)
     out = restored.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert out.source == trace.value("output").source
-    # The extraction alternative fact is preserved.
-    assert restored.step_facts["extract_candidates"] == {
-        "alternative": "fenced_blocks"
-    }
+    assert isinstance(out, InspectedCodeCandidateSetArtifact)
+    assert out == original
+    # Inspections survive alongside the sources they describe.
+    assert all(item.inspection.compiles for item in out.candidates)
+    # Per-representation extraction counts are preserved as facts.
+    assert (
+        restored.step_facts["extract_all_representations"]
+        == (trace.step_facts["extract_all_representations"])
+    )
 
 
 def test_round_trip_preserves_structured_producer_coordinate() -> None:
     trace = _trace(_FENCED)
     restored = _assert_round_trip(trace)
     assert restored.producer.kind == "preprocessing"
-    assert restored.producer.definition.definition_id == BEST_EFFORT_ID
+    assert restored.producer.definition.definition_id == (
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID
+    )
     assert restored.producer.definition.version == "0"
     assert restored.producer.definition.steps
     assert {
@@ -106,9 +107,9 @@ def test_round_trip_preserves_candidate_set_kind() -> None:
     # An intermediate candidate-set value keeps its concrete artifact kind.
     trace = _trace(_FENCED)
     restored = _assert_round_trip(trace)
-    extracted = restored.value("extract_candidates")
+    extracted = restored.value("extract_all_representations")
     assert isinstance(extracted, CodeCandidateSetArtifact)
-    assert extracted == trace.value("extract_candidates")
+    assert extracted == trace.value("extract_all_representations")
 
 
 def test_round_trip_preserves_candidate_lineage() -> None:
@@ -119,20 +120,31 @@ def test_round_trip_preserves_candidate_lineage() -> None:
     restored = _assert_json_round_trip(trace)
     cleaned = restored.value("dedupe_imports")
     assert isinstance(cleaned, CodeCandidateSetArtifact)
-    (candidate,) = cleaned.candidates
-    assert [
-        origin.operation.operation_name for origin in candidate.origins
-    ] == [
-        "fenced_blocks",
-        "strip_fences",
-        "dedent_candidates",
-        "normalize_smart_quotes",
-        "split_on_name_guard",
-        "drop_after_last_return",
-        "repair_import_lines",
-        "infer_missing_imports",
-        "dedupe_imports",
-    ]
+    # Each candidate's lineage opens with the representation that produced
+    # it and continues with every cleaning step, in application order.
+    for candidate in cleaned.candidates:
+        operations = [
+            origin.operation.operation_name for origin in candidate.origins
+        ]
+        assert operations[1:] == [
+            "strip_fences",
+            "dedent_candidates",
+            "normalize_smart_quotes",
+            "split_on_name_guard",
+            "repair_import_lines",
+            "infer_missing_imports",
+            "dedupe_imports",
+        ]
+
+
+def test_round_trip_preserves_merged_dedupe_lineage() -> None:
+    # A source reached by several representations carries every route it
+    # was reached by; the merged lineage survives persistence intact.
+    trace = _trace(_FENCED)
+    restored = _assert_json_round_trip(trace)
+    merged = restored.value("dedupe_candidates")
+    assert isinstance(merged, CodeCandidateSetArtifact)
+    assert merged == trace.value("dedupe_candidates")
 
 
 def test_json_round_trip_is_lossless() -> None:
@@ -163,12 +175,16 @@ def test_round_trip_preserves_the_producer_failure_code() -> None:
     trace = _trace("Just an explanation, no code at all.\n")
     output = trace.value("output")
     assert is_absent(output)
-    assert output.failure_code == "no_alternative_produced_candidates"
+    assert output.failure_code == (
+        PreprocessingFailureCode.NO_CANDIDATE_SURVIVED_FILTERING
+    )
 
     restored = _assert_json_round_trip(trace)
     restored_output = restored.value("output")
     assert isinstance(restored_output, Absent)
-    assert restored_output.failure_code == "no_alternative_produced_candidates"
+    assert restored_output.failure_code == (
+        PreprocessingFailureCode.NO_CANDIDATE_SURVIVED_FILTERING
+    )
 
 
 def test_round_trip_preserves_absent_propagation_through_steps() -> None:

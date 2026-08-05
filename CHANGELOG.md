@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026-08-05 (preprocessing hard cut)
+
+- Preprocessing binds and runs separately: `bind_preprocessing` validates a
+  definition once and returns a `BoundPreprocessingRunner` whose `run`
+  folds over any number of inputs. `run_preprocessing` is the one-shot
+  wrapper; `bind_external_preprocessing` is the explicit path for
+  unregistered definitions.
+- The preprocessing facade is curated to the definition models, the
+  resolver, the bound runner, the binding functions, and the one-shot
+  runners. The step registry, step base classes, and individual step
+  mechanics are internal.
+- One registered definition, `exhaustive-function-candidates@0`, replaces
+  the two previous registered definitions. It reads every supported
+  representation additively rather than taking the first that succeeds
+  (readings that name a code field explicitly — a JSON `code` key, a
+  `[[ ## code ## ]]` marker — contribute before the readings that scrape
+  code out of arbitrary text, so a fenced block in another marked field
+  cannot shadow the marked answer; the ordering makes no reading
+  exclusive), shapes each candidate, adds last-return truncation as an additional
+  candidate, repairs and infers imports (after the truncation, so a
+  candidate that only becomes parseable once truncated still gets the
+  imports its body needs), drops blanks, merges exact duplicates while
+  concatenating their lineages, inspects each source exactly once, filters
+  on the stored inspection, and materializes every survivor.
+- Removed the first-success strategy ladder and its public strategy
+  registry, the alternatives step base, destructive last-return
+  truncation, single-candidate selection, and the redundant pass-through
+  cardinality step.
+- Failure codes are the closed `PreprocessingFailureCode` enum, and
+  `StepFailedError` carries optional structured JSON evidence that the
+  runner records as the failing step's facts.
+- `candidate_ordinal` is defined as the index into the materialized
+  candidate set, after deduplication and after filtering.
+- HumanEval extraction runs the registered definition and applies its own
+  acceptance policy, `accept_first_surviving`, over the materialized set.
+  The `CodeExtractionResult` model now carries the accepted source, its
+  candidate ordinal, the preprocessing trace, and preprocessing's failure
+  code. Parser profiles are gone; scoring profiles name a preprocessing
+  definition coordinate instead.
+- Import repair, inference, and deduplication treat text that cannot be
+  encoded — a lone surrogate, a null byte — as unparseable and pass it
+  through untouched, so such input is rejected by the compilability filter
+  instead of raising out of the pipeline.
+- Acceptance semantics diverge from the previous pipeline. Extraction
+  requires a top-level function, so lambda-bound and class-wrapped
+  solutions are rejected at extraction with
+  `no_candidate_survived_filtering` instead of reaching evaluation, and
+  scoring's `NO_TOP_LEVEL_FUNCTIONS` outcome is preempted for
+  pipeline-extracted candidates.
+- Last-return truncation is no longer destructive: the original candidate
+  is accepted as written and the truncation is an additional candidate, so
+  a solution whose content continues past its last `return` survives.
+- Additive extraction recovers responses the first-success ladder missed —
+  including unfenced code alongside a fenced snippet, which the
+  fenced-or-else-unfenced reading dropped.
+
 ## 2026-08-05
 
 - Trace persistence requires schema version 3.

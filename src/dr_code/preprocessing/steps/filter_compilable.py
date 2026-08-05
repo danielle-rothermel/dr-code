@@ -1,52 +1,32 @@
-"""Keep only candidates that compile."""
+"""Keep only candidates their stored inspection reports as compilable."""
 
 from __future__ import annotations
 
 from typing import ClassVar
 
-from dr_code.code_analysis import validate_python_source_with_ast
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.steps.base import Step, StepOutput
-from dr_code.trace import (
-    Artifact,
-    ArtifactKind,
-    CodeCandidate,
-    CodeCandidateSetArtifact,
-    JsonFactValue,
-)
+from dr_code.preprocessing.steps.inspected_filter import InspectedFilterStep
+from dr_code.trace import InspectedCodeCandidate
 
 
-class FilterCompilable(Step):
-    """Keep candidates where ``validate_python_source_with_ast`` compiles.
+class FilterCompilable(InspectedFilterStep):
+    """Drop candidates whose inspection reports they do not compile.
 
-    Rejections become facts (``{"rejected_0": "SyntaxError: ..."}``) —
-    recorded facts, not quality judgments. An empty survivor set is data;
-    the absence surfaces at ``select_first``.
+    Reads ``inspection.compiles`` — the compile already performed when the
+    candidate was inspected — and reports the recorded error as the
+    rejection reason.
     """
 
     NAME: ClassVar[StepName] = StepName.FILTER_COMPILABLE
     VERSION: ClassVar[str] = "0"
-    INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
-    OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
-    def apply(self, value: Artifact) -> StepOutput:
-        assert isinstance(value, CodeCandidateSetArtifact)
-        survivors: list[CodeCandidate] = []
-        facts: dict[str, JsonFactValue] = {}
-        for index, candidate in enumerate(value.candidates):
-            validated = validate_python_source_with_ast(candidate.source)
-            if validated.validation.compile_ok:
-                survivors.append(candidate)
-            else:
-                reason = (
-                    validated.validation.compile_error
-                    or "candidate does not compile"
-                )
-                facts[f"rejected_{index}"] = reason
-        return StepOutput(
-            value=CodeCandidateSetArtifact(candidates=tuple(survivors)),
-            facts=facts,
-        )
+    def rejection_reason(
+        self, inspected: InspectedCodeCandidate
+    ) -> str | None:
+        inspection = inspected.inspection
+        if inspection.compiles:
+            return None
+        return inspection.compile_error or "candidate does not compile"
 
 
 __all__ = ["FilterCompilable"]

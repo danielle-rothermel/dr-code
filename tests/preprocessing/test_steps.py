@@ -7,27 +7,29 @@ import unicodedata
 
 import pytest
 
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.import_inference import infer_necessary_imports
 from dr_code.preprocessing.registry import REGISTRY
-from dr_code.preprocessing.steps.base import Step
+from dr_code.preprocessing.steps.add_last_return_salvage import (
+    AddLastReturnSalvage,
+)
+from dr_code.preprocessing.steps.base import (
+    Step,
+    StepFailedError,
+)
 from dr_code.preprocessing.steps.collapse_blank_runs import (
     CollapseBlankRuns,
 )
-from dr_code.preprocessing.steps.dedupe_imports import DedupeImports
 from dr_code.preprocessing.steps.dedent_candidates import DedentCandidates
-from dr_code.preprocessing.steps.drop_after_last_return import (
-    DropAfterLastReturn,
+from dr_code.preprocessing.steps.dedupe_candidates import DedupeCandidates
+from dr_code.preprocessing.steps.dedupe_imports import DedupeImports
+from dr_code.preprocessing.steps.drop_blank_candidates import (
+    DropBlankCandidates,
 )
 from dr_code.preprocessing.steps.expand_tabs import ExpandTabs
-from dr_code.preprocessing.steps.extract_candidates import (
-    DEFAULT_STRATEGIES,
-    ExtractCandidates,
-    ExtractCandidatesSettings,
-    ExtractionStrategy,
-)
-from dr_code.preprocessing.steps.field_marker_extract import (
-    FieldMarkerExtract,
-    FieldMarkerExtractSettings,
+from dr_code.preprocessing.steps.extract_all_representations import (
+    ExtractAllRepresentations,
+    Representation,
 )
 from dr_code.preprocessing.steps.filter_code_repr import FilterCodeRepr
 from dr_code.preprocessing.steps.filter_compilable import (
@@ -36,8 +38,18 @@ from dr_code.preprocessing.steps.filter_compilable import (
 from dr_code.preprocessing.steps.filter_plain_literal import (
     FilterPlainLiteral,
 )
+from dr_code.preprocessing.steps.filter_top_level_functions import (
+    FilterTopLevelFunctions,
+)
 from dr_code.preprocessing.steps.infer_missing_imports import (
     InferMissingImports,
+)
+from dr_code.preprocessing.steps.inspect_candidates import (
+    InspectCandidates,
+    top_level_function_names,
+)
+from dr_code.preprocessing.steps.materialize_candidate_set import (
+    MaterializeCandidateSet,
 )
 from dr_code.preprocessing.steps.normalize_line_endings import (
     NormalizeLineEndings,
@@ -48,11 +60,10 @@ from dr_code.preprocessing.steps.normalize_smart_quotes import (
 from dr_code.preprocessing.steps.normalize_unicode import (
     NormalizeUnicode,
 )
+from dr_code.preprocessing.steps.reject_blank_input import RejectBlankInput
 from dr_code.preprocessing.steps.repair_import_lines import (
     RepairImportLines,
 )
-from dr_code.preprocessing.steps.return_all import ReturnAll
-from dr_code.preprocessing.steps.select_first import SelectFirst
 from dr_code.preprocessing.steps.split_on_name_guard import (
     SplitOnNameGuard,
 )
@@ -71,11 +82,12 @@ from dr_code.text_transforms import (
     strip_trailing_whitespace,
 )
 from dr_code.trace import (
+    ArtifactKind,
     CandidateOrigin,
-    CodeArtifact,
     CodeCandidate,
     CodeCandidateSetArtifact,
     ExtractionOperation,
+    InspectedCodeCandidateSetArtifact,
     TextArtifact,
 )
 
@@ -89,7 +101,7 @@ def _candidate_set(*sources: str) -> CodeCandidateSetArtifact:
                 origins=(
                     CandidateOrigin(
                         operation=ExtractionOperation(
-                            operation_name="fenced_blocks"
+                            operation_name="text_segments"
                         ),
                         input_location=index,
                     ),
@@ -100,8 +112,21 @@ def _candidate_set(*sources: str) -> CodeCandidateSetArtifact:
     )
 
 
+def _inspected(*sources: str) -> InspectedCodeCandidateSetArtifact:
+    """Run the inspection step to build a genuine inspected set."""
+    value = InspectCandidates().apply(_candidate_set(*sources)).value
+    assert isinstance(value, InspectedCodeCandidateSetArtifact)
+    return value
+
+
 def _sources(value: CodeCandidateSetArtifact) -> tuple[str, ...]:
     return tuple(candidate.source for candidate in value.candidates)
+
+
+def _inspected_sources(
+    value: InspectedCodeCandidateSetArtifact,
+) -> tuple[str, ...]:
+    return tuple(item.candidate.source for item in value.candidates)
 
 
 def _operations(candidate: CodeCandidate) -> tuple[str, ...]:
@@ -119,15 +144,6 @@ GARBAGE_TEXT = (
     "smart ‘quotes’ and “doubles”\r\nCRLF\ttabs  \n\n\n\n",
 )
 
-TEXT_STEPS = (
-    NormalizeLineEndings,
-    NormalizeUnicode,
-    ExpandTabs,
-    StripTrailingWhitespace,
-    CollapseBlankRuns,
-    TrimOuterBlanks,
-)
-
 
 # --- determinism battery (no rng) ------------------------------------
 
@@ -136,8 +152,6 @@ def _apply_twice(step_cls: type[Step], value) -> object:
     """Apply twice; return a comparable outcome (StepOutput or the
     StepFailedError marker) so determinism covers both success and the
     Absent path."""
-    from dr_code.preprocessing.steps.base import StepFailedError
-
     step = step_cls(step_cls.Settings())
     try:
         first = step.apply(value)
@@ -150,24 +164,25 @@ def _apply_twice(step_cls: type[Step], value) -> object:
     return (first, second)
 
 
+def _sample_for(step_cls: type[Step]):
+    """An input artifact of the step's INPUT kind, processable by the step."""
+    if step_cls.INPUT is ArtifactKind.TEXT:
+        return TextArtifact(text="```python\ndef f():\n    return 1\n```\n")
+    if step_cls.INPUT is ArtifactKind.INSPECTED_CODE_CANDIDATE_SET:
+        return _inspected(
+            "def f():\n    return 1\n", "def g():\n    return 2\n"
+        )
+    return _candidate_set(
+        "def f():\n    return 1\n", "def g():\n    return 2\n"
+    )
+
+
 @pytest.mark.parametrize("step_cls", REGISTRY.values())
 def test_step_is_deterministic(step_cls: type[Step]) -> None:
     """apply twice with identical settings+input => equal (corruption-test
     pattern, minus rng). Covers both success and the Absent path."""
-    value = _sample_for(step_cls)
-    first, second = _apply_twice(step_cls, value)
+    first, second = _apply_twice(step_cls, _sample_for(step_cls))
     assert first == second
-
-
-def _sample_for(step_cls: type[Step]):
-    """An input artifact of the step's INPUT kind, processable by the step."""
-    if step_cls.INPUT.value == "text":
-        return TextArtifact(text="```python\ndef f():\n    return 1\n```\n")
-    if step_cls.INPUT.value == "code":
-        return CodeArtifact(source="def f():\n    return 1\n")
-    return _candidate_set(
-        "def f():\n    return 1\n", "def g():\n    return 2\n"
-    )
 
 
 # --- atomic text steps wrap their functions --------------------------
@@ -183,32 +198,6 @@ def test_normalize_unicode_applies_nfkc() -> None:
     raw = "ｄｅｆ"
     out = NormalizeUnicode().apply(TextArtifact(text=raw))
     assert out.value == TextArtifact(text=unicodedata.normalize("NFKC", raw))
-
-
-def test_normalize_smart_quotes_converts_delimiters() -> None:
-    out = NormalizeSmartQuotes().apply(_candidate_set("x = “a”\n"))
-    assert _sources(out.value) == ('x = "a"\n',)
-
-
-def test_normalize_smart_quotes_preserves_string_contents() -> None:
-    src = 'x = "don’t “quote” me"\n'
-    out = NormalizeSmartQuotes().apply(_candidate_set(src))
-    assert _sources(out.value) == (src,)
-
-
-def test_normalize_smart_quotes_comment_apostrophe_not_a_delimiter() -> None:
-    # The apostrophe in the comment must not open string state; the real
-    # literal's smart-quote contents stay preserved.
-    src = "# don't\nx = 'a“b'\n"
-    out = NormalizeSmartQuotes().apply(_candidate_set(src))
-    assert _sources(out.value) == (src,)
-
-
-def test_normalize_smart_quotes_converts_delimiters_after_comment() -> None:
-    src = "# don't\ndef f():\n    return “x”"
-    expected = '# don\'t\ndef f():\n    return "x"'
-    out = NormalizeSmartQuotes().apply(_candidate_set(src))
-    assert _sources(out.value) == (expected,)
 
 
 def test_expand_tabs_uses_tab_width_setting() -> None:
@@ -236,9 +225,6 @@ def test_trim_outer_blanks_strips_newlines() -> None:
     assert out.value == TextArtifact(text="x")
 
 
-# --- atomic text sequence ≡ normalize_text ---------------------------
-
-
 @pytest.mark.parametrize("raw", GARBAGE_TEXT)
 def test_atomic_text_sequence_equals_normalize_text(raw: str) -> None:
     """The six atomic steps, in order, reproduce normalize_text."""
@@ -254,6 +240,22 @@ def test_atomic_text_sequence_equals_normalize_text(raw: str) -> None:
         value = step_cls().apply(value).value
         assert isinstance(value, TextArtifact)
     assert value.text == normalize_text(raw)
+
+
+# --- blank-input guard -----------------------------------------------
+
+
+def test_reject_blank_input_passes_through_non_blank() -> None:
+    value = TextArtifact(text="def f(): pass")
+    assert RejectBlankInput().apply(value).value == value
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\n\n", " \t\n "])
+def test_reject_blank_input_fails_on_blank(blank: str) -> None:
+    with pytest.raises(StepFailedError) as excinfo:
+        RejectBlankInput().apply(TextArtifact(text=blank))
+    assert excinfo.value.code is PreprocessingFailureCode.BLANK_INPUT
+    assert excinfo.value.evidence == {"input_length": len(blank)}
 
 
 # --- elementwise candidate steps -------------------------------------
@@ -272,8 +274,27 @@ def test_dedent_wraps_textwrap() -> None:
 def test_candidate_map_step_extends_lineage_with_its_operation() -> None:
     out = DedentCandidates().apply(_candidate_set("    x = 1\n"))
     (candidate,) = out.value.candidates
-    assert _operations(candidate) == ("fenced_blocks", "dedent_candidates")
+    assert _operations(candidate) == ("text_segments", "dedent_candidates")
     assert candidate.origins[-1].input_location == 0
+
+
+def test_normalize_smart_quotes_converts_delimiters() -> None:
+    out = NormalizeSmartQuotes().apply(_candidate_set("x = “a”\n"))
+    assert _sources(out.value) == ('x = "a"\n',)
+
+
+def test_normalize_smart_quotes_preserves_string_contents() -> None:
+    src = 'x = "don’t “quote” me"\n'
+    out = NormalizeSmartQuotes().apply(_candidate_set(src))
+    assert _sources(out.value) == (src,)
+
+
+def test_normalize_smart_quotes_comment_apostrophe_not_a_delimiter() -> None:
+    # The apostrophe in the comment must not open string state; the real
+    # literal's smart-quote contents stay preserved.
+    src = "# don't\nx = 'a“b'\n"
+    out = NormalizeSmartQuotes().apply(_candidate_set(src))
+    assert _sources(out.value) == (src,)
 
 
 def test_split_on_name_guard_flattens_in_place() -> None:
@@ -293,12 +314,6 @@ def test_split_on_name_guard_preserves_order_with_multiple() -> None:
         for candidate in out.value.candidates
     ]
     assert locations == [0] * len(drop_if_name(a)) + [1] * len(drop_if_name(b))
-
-
-def test_drop_after_last_return_wraps_function() -> None:
-    src = "def f():\n    return 1\nprint('x')"
-    out = DropAfterLastReturn().apply(_candidate_set(src))
-    assert _sources(out.value) == (drop_after_last_return(src),)
 
 
 # --- import-step sequence ≡ infer_necessary_imports -----------------
@@ -326,181 +341,351 @@ def test_import_step_sequence_equals_infer_necessary_imports(
     assert _sources(value) == (infer_necessary_imports(source),)
 
 
-# --- filters record rejection facts ----------------------------------
+# --- last-return salvage is additive, never destructive --------------
 
 
-def test_filter_compilable_keeps_compilable() -> None:
-    out = FilterCompilable().apply(_candidate_set("x = 1\n", "def broken(:\n"))
-    assert _sources(out.value) == ("x = 1\n",)
-    assert "rejected_1" in out.facts
+def test_salvage_adds_a_candidate_and_keeps_the_original() -> None:
+    src = "def f():\n    return 1\nprint('trailing')"
+    out = AddLastReturnSalvage().apply(_candidate_set(src))
+    assert _sources(out.value) == (src, drop_after_last_return(src))
+    assert out.facts["salvaged_count"] == 1
+
+
+def test_salvage_appends_immediately_after_its_source() -> None:
+    a = "def a():\n    return 1\nprose"
+    b = "def b():\n    return 2\nprose"
+    out = AddLastReturnSalvage().apply(_candidate_set(a, b))
+    assert _sources(out.value) == (
+        a,
+        drop_after_last_return(a),
+        b,
+        drop_after_last_return(b),
+    )
+
+
+def test_salvage_contributes_nothing_when_truncation_is_a_no_op() -> None:
+    src = "def f():\n    return 1"
+    out = AddLastReturnSalvage().apply(_candidate_set(src))
+    assert _sources(out.value) == (src,)
+    assert out.facts["salvaged_count"] == 0
+
+
+def test_salvage_extends_the_lineage_of_the_candidate_it_came_from() -> None:
+    src = "def f():\n    return 1\nprose"
+    out = AddLastReturnSalvage().apply(_candidate_set(src))
+    original, salvage = out.value.candidates
+    assert _operations(original) == ("text_segments",)
+    assert _operations(salvage) == (
+        "text_segments",
+        "add_last_return_salvage",
+    )
+    assert salvage.origins[-1].input_location == 0
+
+
+# --- blank-candidate removal -----------------------------------------
+
+
+def test_drop_blank_candidates_removes_whitespace_only() -> None:
+    out = DropBlankCandidates().apply(_candidate_set("x = 1", "", "  \n\t"))
+    assert _sources(out.value) == ("x = 1",)
+    assert out.facts["dropped_count"] == 2
+
+
+# --- deduplication merges origins in encounter order -----------------
+
+
+def test_dedupe_keeps_the_first_occurrence_and_its_position() -> None:
+    out = DedupeCandidates().apply(_candidate_set("a", "b", "a", "c"))
+    assert _sources(out.value) == ("a", "b", "c")
+    assert out.facts["duplicates_merged"] == 1
+
+
+def test_dedupe_merges_origins_survivor_first_then_encounter_order() -> None:
+    def _candidate(source: str, operation: str) -> CodeCandidate:
+        return CodeCandidate(
+            source=source,
+            origins=(
+                CandidateOrigin(
+                    operation=ExtractionOperation(operation_name=operation),
+                    input_location=0,
+                ),
+            ),
+        )
+
+    value = CodeCandidateSetArtifact(
+        candidates=(
+            _candidate("same", "raw_response"),
+            _candidate("other", "text_segments"),
+            _candidate("same", "markdown_segments"),
+            _candidate("same", "escaped_python"),
+        )
+    )
+    out = DedupeCandidates().apply(value)
+    survivor, other = out.value.candidates
+    # The survivor's own origins come first, then each absorbed
+    # duplicate's origins in the order the duplicates were encountered.
+    assert _operations(survivor) == (
+        "raw_response",
+        "markdown_segments",
+        "escaped_python",
+    )
+    assert _operations(other) == ("text_segments",)
+
+
+def test_dedupe_does_not_deduplicate_origins_themselves() -> None:
+    # Two duplicates reaching the same source by the same route record
+    # that route twice: the lineage is every route taken, not a set.
+    out = DedupeCandidates().apply(_candidate_set("a", "a"))
+    (survivor,) = out.value.candidates
+    assert _operations(survivor) == ("text_segments", "text_segments")
+
+
+# --- inspection: one parse, structural facts only --------------------
+
+
+def test_inspection_records_compilable_source_facts() -> None:
+    out = _inspected("def f():\n    return 1\n")
+    (item,) = out.candidates
+    assert item.inspection.parses is True
+    assert item.inspection.compiles is True
+    assert item.inspection.parse_error is None
+    assert item.inspection.compile_error is None
+    assert item.inspection.top_level_function_names == ("f",)
+
+
+def test_inspection_records_parse_failure() -> None:
+    out = _inspected("def broken(:\n")
+    (item,) = out.candidates
+    assert item.inspection.parses is False
+    assert item.inspection.compiles is False
+    assert "SyntaxError" in (item.inspection.parse_error or "")
+    assert item.inspection.top_level_function_names == ()
+
+
+def test_inspection_carries_candidate_and_order_through() -> None:
+    candidate_set = _candidate_set("def a():\n    return 1", "x = 1")
+    out = InspectCandidates().apply(candidate_set)
+    assert [item.candidate for item in out.value.candidates] == list(
+        candidate_set.candidates
+    )
+
+
+def test_top_level_function_names_excludes_nested_definitions() -> None:
+    import ast
+
+    tree = ast.parse(
+        "def outer():\n"
+        "    def inner():\n"
+        "        return 1\n"
+        "    return inner\n"
+        "class C:\n"
+        "    def method(self):\n"
+        "        return 2\n"
+        "async def top_async():\n"
+        "    return 3\n"
+    )
+    assert top_level_function_names(tree) == ("outer", "top_async")
+
+
+def test_inspection_facts_report_counts() -> None:
+    out = InspectCandidates().apply(
+        _candidate_set("def f():\n    return 1", "def broken(:")
+    )
+    assert out.facts["inspected_count"] == 2
+    assert out.facts["compiles_count"] == 1
+
+
+# --- filters read the stored inspection ------------------------------
+
+
+def test_filter_compilable_uses_the_stored_inspection() -> None:
+    out = FilterCompilable().apply(
+        _inspected("def f():\n    return 1", "def broken(:")
+    )
+    assert _inspected_sources(out.value) == ("def f():\n    return 1",)
     assert "SyntaxError" in out.facts["rejected_1"]
 
 
-def test_filters_keep_survivor_lineage_unchanged() -> None:
-    # Filters remove candidates; they never transform a survivor's source,
-    # so a survivor's lineage is carried through untouched.
-    cs = _candidate_set("x = 1\n", "def broken(:\n")
-    out = FilterCompilable().apply(cs)
-    assert out.value.candidates[0] == cs.candidates[0]
+def test_filter_compilable_reports_the_recorded_compile_error() -> None:
+    inspected = _inspected("def broken(:")
+    (item,) = inspected.candidates
+    out = FilterCompilable().apply(inspected)
+    assert out.facts["rejected_0"] == item.inspection.compile_error
 
 
-def test_filter_plain_literal_drops_literals() -> None:
-    out = FilterPlainLiteral().apply(_candidate_set("[1, 2, 3]", "x = 1\n"))
-    assert _sources(out.value) == ("x = 1\n",)
+def test_filter_top_level_functions_uses_the_stored_names() -> None:
+    out = FilterTopLevelFunctions().apply(
+        _inspected("def f():\n    return 1", "x = 1", "import os")
+    )
+    assert _inspected_sources(out.value) == ("def f():\n    return 1",)
+    assert out.facts["rejected_1"] == "no top-level function definitions"
+    assert out.facts["rejected_2"] == "no top-level function definitions"
+
+
+def test_filter_plain_literal_drops_literal_modules() -> None:
+    out = FilterPlainLiteral().apply(_inspected("[1, 2, 3]", "x = 1\n"))
+    assert _inspected_sources(out.value) == ("x = 1\n",)
     assert out.facts["rejected_0"] == "plain literal module"
 
 
 def test_filter_code_repr_drops_repr_assignments() -> None:
-    out = FilterCodeRepr().apply(_candidate_set('code = "x = 1"', "x = 1\n"))
-    assert _sources(out.value) == ("x = 1\n",)
-    assert out.facts["rejected_0"] == "code repr assignment"
+    out = FilterCodeRepr().apply(_inspected('code = "x = 1"', "x = 1\n"))
+    assert _inspected_sources(out.value) == ("x = 1\n",)
+    assert out.facts["rejected_0"] == "code representation assignment"
 
 
-# --- cardinality knobs -----------------------------------------------
+def test_filters_keep_survivors_and_their_inspections_identical() -> None:
+    # Filters remove candidates; they never rewrite a survivor's source,
+    # so a survivor's record and its inspection are carried through whole.
+    inspected = _inspected("def f():\n    return 1", "def broken(:")
+    out = FilterCompilable().apply(inspected)
+    assert out.value.candidates[0] == inspected.candidates[0]
 
 
-def test_select_first_picks_first_candidate() -> None:
-    out = SelectFirst().apply(_candidate_set("a", "b"))
-    assert out.value == CodeArtifact(source="a")
+# --- materialization returns everything that survived ----------------
 
 
-def test_select_first_empty_set_raises() -> None:
-    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
-
-    with pytest.raises(StepFailedError) as excinfo:
-        SelectFirst().apply(_candidate_set())
-    assert excinfo.value.code == FailureCode.NO_CANDIDATE_SURVIVED_FILTERING
-
-
-def test_return_all_passes_through_with_count() -> None:
-    cs = _candidate_set("a", "b")
-    out = ReturnAll().apply(cs)
-    assert out.value == cs
+def test_materialize_returns_the_complete_set_in_order() -> None:
+    inspected = _inspected("def a():\n    return 1", "def b():\n    return 2")
+    out = MaterializeCandidateSet().apply(inspected)
+    assert out.value == inspected
     assert out.facts["candidate_count"] == 2
 
 
-# --- extract_candidates: strategy ladder -----------------------------
-
-
-def test_extract_candidates_records_chosen_alternative() -> None:
-    fenced = "```python\ndef f():\n    return 1\n```"
-    out = ExtractCandidates().apply(TextArtifact(text=fenced))
-    assert out.facts["alternative"] == "fenced_blocks"
-    assert _sources(out.value) == ("def f():\n    return 1",)
-
-
-def test_extract_candidates_origin_names_the_winning_strategy() -> None:
-    fenced = "```python\ndef f():\n    return 1\n```\n```python\nx = 1\n```"
-    out = ExtractCandidates().apply(TextArtifact(text=fenced))
-    assert [
-        (
-            candidate.origins[0].operation.operation_name,
-            candidate.origins[0].input_location,
-        )
-        for candidate in out.value.candidates
-    ] == [("fenced_blocks", 0), ("fenced_blocks", 1)]
-
-
-def test_extract_candidates_markdown_strategy_when_no_fence() -> None:
-    # Prose with a blockquote-wrapped def: fenced strategy fails to find
-    # a *code* candidate, markdown strategy strips the marker.
-    text = "> def f():\n>     return 1"
-    out = ExtractCandidates().apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "markdown_wrapper"
-    assert _sources(out.value) == ("def f():\n    return 1",)
-    assert _operations(out.value.candidates[0]) == ("markdown_wrapper",)
-
-
-def test_extract_candidates_escaped_python_strategy() -> None:
-    text = r"prose\ndef f():\n    return 1"
-    out = ExtractCandidates().apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "escaped_python"
-    assert "def f():" in out.value.candidates[0].source
-
-
-def test_extract_candidates_tuple_subset_setting() -> None:
-    # A definition using only fenced_blocks + markdown_wrapper.
-    settings = ExtractCandidatesSettings(
-        alternatives=(
-            ExtractionStrategy.FENCED_BLOCKS,
-            ExtractionStrategy.MARKDOWN_WRAPPER,
-        )
-    )
-    assert settings.alternatives == (
-        ExtractionStrategy.FENCED_BLOCKS,
-        ExtractionStrategy.MARKDOWN_WRAPPER,
-    )
-    # Prose-only text: fenced fails, markdown keeps the block.
-    text = "> def f():\n>     return 1"
-    out = ExtractCandidates(settings).apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "markdown_wrapper"
-
-
-def test_extract_candidates_default_settings_use_the_default_ladder() -> None:
-    # ``DEFAULT_STRATEGIES`` is the one source of truth for the ladder; the
-    # exact order is pinned by the persisted producer coordinate in
-    # ``test_runner``. Here it only has to be what unconfigured settings use.
-    assert ExtractCandidatesSettings().alternatives == DEFAULT_STRATEGIES
-
-
-def test_extract_candidates_escaped_markdown_wrapper_strategy() -> None:
-    # JSON-wrapped, markdown-list-wrapped code: only the unescape + wrapper
-    # rung recovers it.
-    text = json.dumps("- def add(a, b):\n-     return a + b")
-    out = ExtractCandidates().apply(TextArtifact(text=text))
-    assert out.facts["alternative"] == "escaped_markdown_wrapper"
-    assert _sources(out.value) == ("def add(a, b):\n    return a + b",)
-
-
-def test_extract_candidates_all_fail_raises() -> None:
-    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
-
+def test_materialize_empty_set_raises() -> None:
     with pytest.raises(StepFailedError) as excinfo:
-        ExtractCandidates().apply(TextArtifact(text="just prose, no code"))
-    assert excinfo.value.code == FailureCode.NO_ALTERNATIVE_PRODUCED_CANDIDATES
+        MaterializeCandidateSet().apply(_inspected())
+    assert (
+        excinfo.value.code
+        is PreprocessingFailureCode.NO_CANDIDATE_SURVIVED_FILTERING
+    )
 
 
-def test_extract_candidates_empty_input_raises() -> None:
-    from dr_code.preprocessing.steps.base import StepFailedError
-
-    with pytest.raises(StepFailedError):
-        ExtractCandidates().apply(TextArtifact(text=""))
+# --- additive extraction across every representation -----------------
 
 
-# --- field_marker step -----------------------------------------------
+def _extract(text: str):
+    return ExtractAllRepresentations().apply(TextArtifact(text=text))
 
 
-def test_field_marker_extracts_code_field() -> None:
-    text = (
+def _origin_operations(value: CodeCandidateSetArtifact) -> list[str]:
+    return [
+        candidate.origins[0].operation.operation_name
+        for candidate in value.candidates
+    ]
+
+
+def test_extraction_reads_fenced_and_raw_representations_together() -> None:
+    # A fenced response is read both as its whole raw text and as its
+    # fenced segment: neither reading shadows the other.
+    out = _extract("Intro\n```python\ndef f():\n    return 1\n```")
+    operations = _origin_operations(out.value)
+    assert Representation.RAW_RESPONSE.value in operations
+    assert Representation.TEXT_SEGMENTS.value in operations
+    assert "def f():\n    return 1" in _sources(out.value)
+
+
+def test_extraction_reads_fenced_and_unfenced_code_additively() -> None:
+    # Different code in each family: a fenced-or-else-unfenced reading can
+    # only surface one of the two, so this pins the additive contract.
+    out = _extract(
+        "def outside():\n    return 1\n\n"
+        "```python\ndef inside():\n    return 2\n```"
+    )
+
+    # Restricted to the segment reading, so the whole-text raw_response
+    # candidate cannot stand in for the unfenced block.
+    segment_sources = [
+        candidate.source
+        for candidate in out.value.candidates
+        if candidate.origins[0].operation.operation_name
+        == Representation.TEXT_SEGMENTS.value
+    ]
+    assert "def inside():\n    return 2" in segment_sources
+    assert "def outside():\n    return 1\n" in segment_sources
+
+
+def test_extraction_reads_unfenced_segments() -> None:
+    out = _extract("Explanation first.\ndef f():\n    return 1")
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.TEXT_SEGMENTS.value in _origin_operations(out.value)
+
+
+def test_extraction_reads_markdown_wrapped_segments() -> None:
+    out = _extract("> def f():\n>     return 1")
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.MARKDOWN_SEGMENTS.value in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_reads_a_whole_response_json_string() -> None:
+    out = _extract(json.dumps("def f():\n    return 1"))
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.JSON_STRING_RESPONSE.value in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_reads_a_top_level_json_code_field() -> None:
+    out = _extract(json.dumps({"code": "def f():\n    return 1"}))
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_reads_a_field_marker_value() -> None:
+    out = _extract(
         "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"
     )
-    out = FieldMarkerExtract().apply(TextArtifact(text=text))
-    assert _sources(out.value) == ("def f():\n    return 1",)
-    assert out.facts["field_name"] == "code"
-    assert _operations(out.value.candidates[0]) == ("field_marker_extract",)
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.FIELD_MARKER.value in _origin_operations(out.value)
 
 
-def test_field_marker_missing_raises() -> None:
-    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
+def test_extraction_reads_escaped_python() -> None:
+    out = _extract(r"Explanation:\ndef f():\n\treturn 1")
+    assert Representation.ESCAPED_PYTHON.value in _origin_operations(out.value)
 
+
+def test_extraction_reads_escaped_markdown() -> None:
+    out = _extract(json.dumps("- def add(a, b):\n-     return a + b"))
+    assert "def add(a, b):\n    return a + b" in _sources(out.value)
+    assert Representation.ESCAPED_MARKDOWN.value in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_contributes_in_declared_representation_order() -> None:
+    out = _extract("Intro\n```python\ndef f():\n    return 1\n```")
+    order = [Representation(name) for name in _origin_operations(out.value)]
+    declared = list(Representation)
+    positions = [declared.index(item) for item in order]
+    assert positions == sorted(positions)
+
+
+def test_extraction_records_per_representation_counts_as_facts() -> None:
+    out = _extract("```python\ndef f():\n    return 1\n```")
+    for representation in Representation:
+        assert representation.value in out.facts
+    assert out.facts["candidate_count"] == len(out.value.candidates)
+
+
+def test_extraction_with_no_readable_representation_fails() -> None:
     with pytest.raises(StepFailedError) as excinfo:
-        FieldMarkerExtract().apply(TextArtifact(text="no markers here"))
-    assert excinfo.value.code == FailureCode.MISSING_FIELD_MARKER
+        _extract("   ")
+    assert (
+        excinfo.value.code is PreprocessingFailureCode.NO_CANDIDATES_EXTRACTED
+    )
+    # The evidence names how much each representation contributed.
+    assert set(excinfo.value.evidence) == {
+        representation.value for representation in Representation
+    }
+    assert set(excinfo.value.evidence.values()) == {0}
 
 
-def test_field_marker_empty_value_raises() -> None:
-    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
-
-    with pytest.raises(StepFailedError) as excinfo:
-        FieldMarkerExtract().apply(
-            TextArtifact(text="[[ ## code ## ]]\n   \n")
-        )
-    assert excinfo.value.code == FailureCode.EMPTY_FIELD_MARKER_VALUE
-
-
-def test_field_marker_custom_field_name() -> None:
-    text = "[[ ## solution ## ]]\nx = 1\n"
-    out = FieldMarkerExtract(
-        FieldMarkerExtractSettings(field_name="solution")
-    ).apply(TextArtifact(text=text))
-    assert _sources(out.value) == ("x = 1",)
+def test_extraction_of_prose_yields_the_raw_response_only() -> None:
+    # Prose is still a reading of the response; it is the filters, not
+    # extraction, that decide prose is not code.
+    out = _extract("This is an explanation with no code whatsoever.")
+    assert _origin_operations(out.value) == [Representation.RAW_RESPONSE.value]

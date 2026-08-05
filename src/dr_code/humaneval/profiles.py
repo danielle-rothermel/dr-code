@@ -4,11 +4,9 @@ from types import MappingProxyType
 
 from pydantic import StrictFloat, StrictStr
 
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
-    CodeParserProfile,
-    resolve_parser_profile,
+from dr_code.preprocessing import (
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
 )
 from dr_code.base import FrozenModel
 
@@ -19,10 +17,17 @@ HUMANEVAL_SCORING_PROFILE_VERSION = "0"
 DEFAULT_HUMANEVAL_TIMEOUT_SECONDS = 2.0
 
 
+class PreprocessingDefinitionReference(FrozenModel):
+    """The exact preprocessing definition a scoring profile extracts with."""
+
+    definition_id: StrictStr
+    version: StrictStr
+
+
 class HumanEvalScoringProfile(FrozenModel):
     profile_id: StrictStr
     version: StrictStr
-    parser_profile: CodeParserProfile
+    preprocessing_definition: PreprocessingDefinitionReference
     timeout_seconds: StrictFloat
     metrics_profile: HumanEvalMetricsProfile
 
@@ -47,9 +52,9 @@ HUMANEVAL_METRICS_PROFILE = HumanEvalMetricsProfile(
 DEFAULT_HUMANEVAL_SCORING_PROFILE = HumanEvalScoringProfile(
     profile_id=HUMANEVAL_SCORING_PROFILE_ID,
     version=HUMANEVAL_SCORING_PROFILE_VERSION,
-    parser_profile=resolve_parser_profile(
-        parser_profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-        parser_version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
+    preprocessing_definition=PreprocessingDefinitionReference(
+        definition_id=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+        version=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
     ),
     timeout_seconds=DEFAULT_HUMANEVAL_TIMEOUT_SECONDS,
     metrics_profile=HUMANEVAL_METRICS_PROFILE,

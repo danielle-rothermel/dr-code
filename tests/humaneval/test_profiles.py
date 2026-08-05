@@ -3,20 +3,17 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
-    CodeParserProfile,
-    extract_code_with_profile,
-    resolve_parser_profile,
-)
 from dr_code.humaneval.profiles import (
     DEFAULT_HUMANEVAL_SCORING_PROFILE,
     HUMANEVAL_METRICS_PROFILE_VERSION,
     HUMANEVAL_SCORING_PROFILE_ID,
     HUMANEVAL_SCORING_PROFILE_VERSION,
     resolve_humaneval_scoring_profile,
+)
+from dr_code.preprocessing import (
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
+    resolve_preprocessing_definition,
 )
 
 
@@ -28,11 +25,24 @@ def test_default_scoring_profile_uses_declared_component_versions() -> None:
 
     assert profile is DEFAULT_HUMANEVAL_SCORING_PROFILE
     assert profile.version == HUMANEVAL_SCORING_PROFILE_VERSION
-    assert (
-        profile.parser_profile.version
-        == BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION
+    assert profile.preprocessing_definition.version == (
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION
     )
     assert profile.metrics_profile.version == HUMANEVAL_METRICS_PROFILE_VERSION
+
+
+def test_scoring_profile_names_a_resolvable_preprocessing_definition() -> None:
+    # The profile carries a coordinate, not a definition object, so the
+    # coordinate has to resolve against the preprocessing registry.
+    reference = DEFAULT_HUMANEVAL_SCORING_PROFILE.preprocessing_definition
+    assert reference.definition_id == (
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID
+    )
+    definition = resolve_preprocessing_definition(
+        definition_id=reference.definition_id,
+        version=reference.version,
+    )
+    assert definition.definition_id == reference.definition_id
 
 
 def test_scoring_profile_resolver_rejects_unregistered_coordinates() -> None:
@@ -48,45 +58,20 @@ def test_scoring_profile_resolver_rejects_unregistered_coordinates() -> None:
 
 def test_profiles_are_immutable() -> None:
     with pytest.raises(ValidationError, match="frozen"):
-        BEST_EFFORT_HUMANEVAL_PARSER_PROFILE.version = "1"  # type: ignore[misc]
-    with pytest.raises(ValidationError, match="frozen"):
         DEFAULT_HUMANEVAL_SCORING_PROFILE.version = "1"  # type: ignore[misc]
+    with pytest.raises(ValidationError, match="frozen"):
+        DEFAULT_HUMANEVAL_SCORING_PROFILE.preprocessing_definition.version = (  # type: ignore[misc]
+            "1"
+        )
 
 
-def test_profile_resolvers_are_stable() -> None:
-    first_parser = resolve_parser_profile(
-        parser_profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-        parser_version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
-    )
-    second_parser = resolve_parser_profile(
-        parser_profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-        parser_version=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
-    )
-    first_scoring = resolve_humaneval_scoring_profile(
+def test_scoring_profile_resolution_is_stable() -> None:
+    first = resolve_humaneval_scoring_profile(
         scoring_profile_id=HUMANEVAL_SCORING_PROFILE_ID,
         scoring_profile_version=HUMANEVAL_SCORING_PROFILE_VERSION,
     )
-    second_scoring = resolve_humaneval_scoring_profile(
+    second = resolve_humaneval_scoring_profile(
         scoring_profile_id=HUMANEVAL_SCORING_PROFILE_ID,
         scoring_profile_version=HUMANEVAL_SCORING_PROFILE_VERSION,
     )
-
-    assert first_parser is second_parser
-    assert first_scoring is second_scoring
-
-
-@pytest.mark.parametrize(
-    "profile",
-    [
-        CodeParserProfile(
-            profile_id=BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-            version="stale",
-        ),
-        CodeParserProfile(profile_id="unregistered", version="0"),
-    ],
-)
-def test_execution_rejects_unregistered_or_stale_profiles(
-    profile: CodeParserProfile,
-) -> None:
-    with pytest.raises(ValueError, match="unsupported parser profile"):
-        extract_code_with_profile("def f():\n    return 1\n", profile=profile)
+    assert first is second

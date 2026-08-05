@@ -3,6 +3,11 @@
 An ``\\n`` inside a Python string literal and an escaped line break in a
 JSON-encoded payload look identical; recovery has to decode the structure
 without rewriting literal escapes in the code itself.
+
+These assertions run against the registered definition, and read the
+materialized candidate set rather than a single chosen value: recovery is
+correct when the recovered source is *present* among the survivors, not
+when it happens to be the one a consumer would accept.
 """
 
 from __future__ import annotations
@@ -12,61 +17,35 @@ import json
 import pytest
 
 from dr_code.code_analysis import validate_python_source
-from dr_code.preprocessing.definition import (
-    PreprocessingDefinition,
-    StepSpec,
+from dr_code.preprocessing import (
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+    PreprocessingFailureCode,
+    bind_preprocessing,
 )
-from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.runner import (
-    run_external_preprocessing,
+from dr_code.trace import (
+    OUTPUT_KEY,
+    InspectedCodeCandidateSetArtifact,
+    TextArtifact,
+    is_absent,
 )
-from dr_code.trace import OUTPUT_KEY, CodeArtifact, TextArtifact, is_absent
+
+_RUNNER = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
 
 
-def _escaped_pipeline_definition() -> PreprocessingDefinition:
-    """Full normalization, extraction, and selection definition."""
-
-    def _spec(name: str, step: StepName) -> StepSpec:
-        return StepSpec(instance_name=name, step=step)
-
-    return PreprocessingDefinition(
-        definition_id="escaped",
-        version="1",
-        steps=(
-            _spec("le", StepName.NORMALIZE_LINE_ENDINGS),
-            _spec("unicode", StepName.NORMALIZE_UNICODE),
-            _spec("tabs", StepName.EXPAND_TABS),
-            _spec("strip", StepName.STRIP_TRAILING_WHITESPACE),
-            _spec("blank", StepName.COLLAPSE_BLANK_RUNS),
-            _spec("trim", StepName.TRIM_OUTER_BLANKS),
-            _spec("extract", StepName.EXTRACT_CANDIDATES),
-            _spec("fences", StepName.STRIP_FENCES),
-            _spec("split", StepName.SPLIT_ON_NAME_GUARD),
-            _spec("drop", StepName.DROP_AFTER_LAST_RETURN),
-            _spec("repair", StepName.REPAIR_IMPORT_LINES),
-            _spec("infer", StepName.INFER_MISSING_IMPORTS),
-            _spec("dedupe", StepName.DEDUPE_IMPORTS),
-            _spec("filter", StepName.FILTER_COMPILABLE),
-            _spec("select", StepName.SELECT_FIRST),
-        ),
-    )
-
-
-def _output_source(source: str) -> CodeArtifact:
-    trace = run_external_preprocessing(
-        _escaped_pipeline_definition(), TextArtifact(text=source)
-    )
-    output = trace.value(OUTPUT_KEY)
-    assert isinstance(output, CodeArtifact)
-    return output
+def _survivors(source: str) -> tuple[str, ...]:
+    """Every candidate source the registered definition materialized."""
+    output = _RUNNER.run(TextArtifact(text=source)).value(OUTPUT_KEY)
+    assert isinstance(output, InspectedCodeCandidateSetArtifact), output
+    return tuple(item.candidate.source for item in output.candidates)
 
 
 def test_escaped_pipeline_preserves_string_literal_escape() -> None:
     # A normal code candidate must retain the string-literal escape.
     source = 'def join_lines(lines):\n    return "\\n".join(lines)'
-    output = _output_source(source)
-    assert output.source == source
-    assert validate_python_source(output.source).compile_ok
+    survivors = _survivors(source)
+    assert source in survivors
+    for candidate in survivors:
+        assert validate_python_source(candidate).compile_ok
 
 
 @pytest.mark.parametrize(
@@ -84,10 +63,11 @@ def test_escaped_pipeline_preserves_string_literal_escape() -> None:
     ids=["escaped-fenced", "escaped-unfenced", "mixed", "json-string"],
 )
 def test_escaped_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
-    output = _output_source(source)
-    assert "def f():" in output.source
+    survivors = _survivors(source)
+    assert any("def f():" in candidate for candidate in survivors)
     # Round-trip: recovery is only correct if the recovered code compiles.
-    assert validate_python_source(output.source).compile_ok
+    for candidate in survivors:
+        assert validate_python_source(candidate).compile_ok
 
 
 @pytest.mark.parametrize(
@@ -131,9 +111,9 @@ def test_escaped_pipeline_recovers_escaped_newline_shapes(source: str) -> None:
 def test_escaped_pipeline_preserves_python_string_literals(
     source: str, expected: str
 ) -> None:
-    output = _output_source(source)
-    assert output.source == expected
-    assert validate_python_source(output.source).compile_ok
+    survivors = _survivors(source)
+    assert expected in survivors
+    assert validate_python_source(expected).compile_ok
 
 
 def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
@@ -141,15 +121,26 @@ def test_escaped_pipeline_json_wrapped_code_preserves_string_escapes() -> None:
         'def separators(values):\n    return "\\n".join(values), "\\t", "\\r"'
     )
     source = json.dumps(f"Intro\n```python\n{expected}\n```")
-    output = _output_source(source)
-    assert output.source == expected
-    assert validate_python_source(output.source).compile_ok
+    assert expected in _survivors(source)
 
 
 def test_escaped_pipeline_prose_has_no_candidates() -> None:
-    # Applying the fallback does not turn prose into code.
+    # Recovering escapes does not turn prose into code.
     source = r"Here is a discussion.\nThere is no implementation."
-    trace = run_external_preprocessing(
-        _escaped_pipeline_definition(), TextArtifact(text=source)
+    output = _RUNNER.run(TextArtifact(text=source)).value(OUTPUT_KEY)
+    assert is_absent(output)
+    assert output.failure_code == (
+        PreprocessingFailureCode.NO_CANDIDATE_SURVIVED_FILTERING
     )
-    assert is_absent(trace.value(OUTPUT_KEY))
+
+
+def test_lone_surrogates_remain_a_rejected_input() -> None:
+    # No step silently rewrites candidate content, so a lone surrogate is
+    # carried through to compilation and rejected there rather than being
+    # normalized away into something that compiles.
+    source = 'def f():\n    return "\ud800"'
+    output = _RUNNER.run(TextArtifact(text=source)).value(OUTPUT_KEY)
+    assert is_absent(output)
+    assert output.failure_code == (
+        PreprocessingFailureCode.NO_CANDIDATE_SURVIVED_FILTERING
+    )

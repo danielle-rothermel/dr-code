@@ -5,9 +5,9 @@ from __future__ import annotations
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.registry import REGISTRY
 from dr_code.preprocessing.steps.base import Step
-from dr_code.preprocessing.steps.extract_candidates import (
-    ExtractionStrategy,
-    STRATEGY_REGISTRY,
+from dr_code.preprocessing.steps.extract_all_representations import (
+    _READINGS,
+    Representation,
 )
 from dr_code.trace import ArtifactKind
 
@@ -36,7 +36,8 @@ def test_every_registered_step_has_settings_model() -> None:
         assert issubclass(step_cls.Settings, StepSettings)
 
 
-def test_strategy_registry_covers_all_strategies() -> None:
-    assert set(STRATEGY_REGISTRY) == {
-        strategy.value for strategy in ExtractionStrategy
-    }
+def test_every_representation_has_exactly_one_reading() -> None:
+    # Every declared representation is read, each exactly once: a member
+    # with no reading would be a name for something never extracted.
+    read = [representation for representation, _reading in _READINGS]
+    assert read == list(Representation)

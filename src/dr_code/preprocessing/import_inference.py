@@ -1,8 +1,8 @@
 """Infer, repair, and dedupe import lines for extracted code candidates.
 
 Public step bodies behind the ``repair_import_lines`` /
-``infer_missing_imports`` / ``dedupe_imports`` steps and the combined
-``humaneval.import_inference.infer_necessary_imports`` API. Names in
+``infer_missing_imports`` / ``dedupe_imports`` steps, plus
+``infer_necessary_imports``, which runs all three in one call. Names in
 ``IMPORT_ALIAS_MAP`` are injected only when referenced and not bound anywhere
 in the candidate's syntax tree — a conservative rule, since injecting a wrong
 import is worse than skipping one.
@@ -112,9 +112,18 @@ def infer_necessary_imports(source: str) -> str:
 
 
 def _parse_or_none(text: str) -> ast.AST | None:
+    """Parse ``text``, or ``None`` when it is not parseable Python.
+
+    ``ValueError`` is caught alongside ``SyntaxError`` because text that
+    cannot be encoded at all — a lone surrogate, a null byte — raises from
+    ``ast.parse`` rather than failing to parse. Such text is unusable
+    input, not a repair opportunity, so it passes through untouched and is
+    rejected by the compilability filter, matching
+    ``code_analysis.validate_python_source_with_ast``.
+    """
     try:
         return ast.parse(text)
-    except SyntaxError:
+    except (SyntaxError, ValueError):
         return None
 
 

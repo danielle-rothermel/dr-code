@@ -1,34 +1,34 @@
 """Corruption round-trips over the frozen recipe set.
 
-Applying each ``dr_code.synthetic`` recipe to clean HumanEval-shaped code and
-running the best-effort definition partitions the recipes empirically
-(verified across seeds 0, 1, 7, 42, 1234):
+Applying each ``dr_code.synthetic`` recipe to clean HumanEval-shaped code
+and running the registered definition partitions the recipes empirically:
 
 * ``RECOVERABLE`` — formatting / noise / import / wrapper pathologies the
-  pipeline undoes; the recovered code is *equivalent* to the original
-  (``dr_code.code_analysis.equivalent``) at every seed.
+  pipeline undoes. The recovered code is *equivalent* to the original
+  (``dr_code.code_analysis.equivalent``). Because the definition
+  materializes every survivor rather than choosing one, the assertion is
+  that an equivalent candidate is *among* the survivors — recovery is a
+  question of whether the pipeline found the code, not of which survivor a
+  particular consumer would accept.
 
-* ``NON_RECOVERABLE`` — the corruption makes a semantic or structural change
-  no extraction pipeline can undo, so the recovered source is never
+* ``NON_RECOVERABLE`` — the corruption makes a semantic or structural
+  change no extraction pipeline can undo, so no survivor is ever
   equivalent to ground truth:
 
   - ``inline_backticks`` destroys all code-like structure — no candidate
-    survives, so the run yields ``Absent`` (the pipeline gives up rather than
-    fabricate code).
-  - ``dead_code`` / ``renamed_locals`` / ``string_form_swap`` rewrite the AST
-    (extra statements, renamed bindings, swapped string forms) — an extracted
-    candidate compiles but is not semantically equivalent to the original.
+    survives, so the run yields ``Absent`` (the pipeline gives up rather
+    than fabricate code).
+  - ``dead_code`` / ``renamed_locals`` / ``string_form_swap`` rewrite the
+    AST (extra statements, renamed bindings, swapped string forms), so a
+    survivor compiles but is not semantically equivalent to the original.
   - ``truncated_midfn`` / ``truncated_and_unfenced`` break the source at an
     RNG-chosen point, so the outcome is seed-dependent and never reliably
     equivalent.
 
-  These six recipes are the independently-verified, ratified non-recoverable
-  set, listed in ``NON_RECOVERABLE_RECIPES``. Exempting them from the
-  *equivalence* assertion is correct behaviour, not a gap. For every
-  exempted recipe we still assert something meaningful:
-  **output parity with ``extract_code_with_profile``**. Both APIs must give up
-  or return the same non-equivalent source. No exempted recipe sits in an
-  assertion-free bucket.
+  For every recipe in this set we still assert something meaningful: that
+  no survivor is equivalent to ground truth, which is what makes the
+  exemption from the equivalence assertion warranted rather than a gap.
+  No exempted recipe sits in an assertion-free bucket.
 """
 
 from __future__ import annotations
@@ -38,18 +38,18 @@ import random
 import pytest
 
 from dr_code.code_analysis import equivalent
-from dr_code.humaneval.code_parsing import (
-    extract_code_with_profile,
-    resolve_parser_profile,
-)
 from dr_code.preprocessing import (
-    resolve_preprocessing_definition,
-    run_preprocessing,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+    bind_preprocessing,
 )
 from dr_code.synthetic.corruption_recipes import RECIPES_BY_NAME, apply_recipe
-from dr_code.trace import CodeArtifact, TextArtifact, is_absent
+from dr_code.trace import (
+    OUTPUT_KEY,
+    InspectedCodeCandidateSetArtifact,
+    TextArtifact,
+    is_absent,
+)
 
-BEST_EFFORT_ID = "humaneval-best-effort"
 SEED = 0
 
 CLEAN = (
@@ -62,8 +62,8 @@ CLEAN = (
     "    return np.array([total, total])\n"
 )
 
-#: Recipes whose corruption the best-effort definition undoes, recovering
-#: code equivalent to the original at every tested seed.
+#: Recipes whose corruption the registered definition undoes, recovering a
+#: candidate equivalent to the original.
 RECOVERABLE_RECIPES = [
     "clean",
     "fenced_tagged",
@@ -86,8 +86,8 @@ RECOVERABLE_RECIPES = [
     "extra_type_annotations",
 ]
 
-#: Recipes that make an unrecoverable semantic/structural change (see module
-#: docstring). Exempted from equivalence; asserted for parser parity.
+#: Recipes that make an unrecoverable semantic/structural change (see the
+#: module docstring). Exempted from equivalence; asserted non-equivalent.
 NON_RECOVERABLE_RECIPES = [
     "inline_backticks",
     "dead_code",
@@ -97,77 +97,83 @@ NON_RECOVERABLE_RECIPES = [
     "truncated_and_unfenced",
 ]
 
+_RUNNER = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
+
 
 def _corrupt(recipe_name: str) -> str:
     recipe = RECIPES_BY_NAME[recipe_name]
     return apply_recipe(recipe, CLEAN, random.Random(SEED)).corrupted_source
 
 
-def _best_effort():
-    return resolve_preprocessing_definition(
-        definition_id=BEST_EFFORT_ID, version="0"
-    )
-
-
-def _run_best_effort(raw: str):
-    return run_preprocessing(_best_effort(), TextArtifact(text=raw)).value(
-        "output"
-    )
-
-
-def _parser_best_effort(raw: str) -> str | None:
-    profile = resolve_parser_profile(
-        parser_profile_id=BEST_EFFORT_ID, parser_version="0"
-    )
-    return extract_code_with_profile(raw, profile=profile).extracted_code
+def _survivors(raw: str) -> tuple[str, ...] | None:
+    """Materialized candidate sources, or ``None`` when the run is Absent."""
+    output = _RUNNER.run(TextArtifact(text=raw)).value(OUTPUT_KEY)
+    if is_absent(output):
+        return None
+    assert isinstance(output, InspectedCodeCandidateSetArtifact)
+    return tuple(item.candidate.source for item in output.candidates)
 
 
 # --- recoverable recipes round-trip to equivalent code ---------------
 
 
 @pytest.mark.parametrize("recipe_name", RECOVERABLE_RECIPES)
-def test_best_effort_recovers_corruption_to_equivalent(
+def test_recoverable_corruption_yields_an_equivalent_candidate(
     recipe_name: str,
 ) -> None:
-    recovered = _run_best_effort(_corrupt(recipe_name))
-    assert isinstance(recovered, CodeArtifact), (
-        f"{recipe_name}: expected recovered CodeArtifact, got {recovered!r}"
+    survivors = _survivors(_corrupt(recipe_name))
+    assert survivors is not None, (
+        f"{recipe_name}: expected surviving candidates, got Absent"
     )
-    assert equivalent(CLEAN, recovered.source), (
-        f"{recipe_name}: recovered code is not equivalent to the original"
+    assert any(equivalent(CLEAN, source) for source in survivors), (
+        f"{recipe_name}: no surviving candidate is equivalent to the "
+        f"original; survivors={survivors!r}"
     )
 
 
-# --- non-recoverable recipes: exempt from equivalence, assert parity -
+# --- non-recoverable recipes recover nothing equivalent --------------
 
 
 @pytest.mark.parametrize("recipe_name", NON_RECOVERABLE_RECIPES)
-def test_non_recoverable_matches_parser_output(recipe_name: str) -> None:
-    # No extraction pipeline can recover equivalence here, so we assert the
-    # fallback contract: preprocessing and parsing both give up, or both
-    # extract the same non-equivalent source.
-    raw = _corrupt(recipe_name)
-    parser = _parser_best_effort(raw)
-    preprocessing = _run_best_effort(raw)
-    source = None if is_absent(preprocessing) else preprocessing.source
-    assert source == parser, (
-        f"{recipe_name}: preprocessing diverged from parser — "
-        f"parser={parser!r} preprocessing={source!r}"
+def test_non_recoverable_corruption_recovers_nothing_equivalent(
+    recipe_name: str,
+) -> None:
+    # No extraction pipeline can recover equivalence here. Asserting that
+    # *no* survivor is equivalent is what confirms the exemption is
+    # warranted rather than masking a recoverable case.
+    survivors = _survivors(_corrupt(recipe_name))
+    if survivors is None:
+        return
+    assert not any(equivalent(CLEAN, source) for source in survivors), (
+        f"{recipe_name}: unexpectedly recovered an equivalent candidate; "
+        f"it should be reclassified as recoverable"
     )
-    # And when it does recover code, that code is genuinely not equivalent —
-    # confirming the exemption is warranted, not a masked recoverable case.
-    if source is not None:
-        assert not equivalent(CLEAN, source), (
-            f"{recipe_name}: unexpectedly recovered equivalent code; "
-            f"it should be reclassified as recoverable"
-        )
 
 
 def test_inline_backticks_yields_absent() -> None:
     # The strongest give-up case: inline backticks destroy all code-like
     # structure, so no candidate survives and the run is Absent.
-    out = _run_best_effort(_corrupt("inline_backticks"))
-    assert is_absent(out)
+    assert _survivors(_corrupt("inline_backticks")) is None
+
+
+# --- every candidate the pipeline returns actually compiles ----------
+
+
+@pytest.mark.parametrize(
+    "recipe_name", RECOVERABLE_RECIPES + NON_RECOVERABLE_RECIPES
+)
+def test_every_survivor_compiles(recipe_name: str) -> None:
+    # The compilability filter reads stored inspections; this asserts the
+    # stored inspection actually described the source it accompanied.
+    from dr_code.code_analysis import validate_python_source
+
+    survivors = _survivors(_corrupt(recipe_name))
+    if survivors is None:
+        return
+    for source in survivors:
+        assert validate_python_source(source).compile_ok, (
+            f"{recipe_name}: survivor does not compile: {source!r}"
+        )
 
 
 # --- the partition covers every recipe, with no overlap --------------

@@ -50,16 +50,22 @@ superseded by dr-exec adoption.
      raw response; fenced and unfenced segments; whole-response JSON
      strings; top-level JSON `code`; field markers; escaped-Python
      recovery.
-  4. Apply candidate-local cleaning while extending lineage.
+  4. Apply candidate-local cleaning — including import repair, inference,
+     and deduplication — while extending lineage.
   5. Add last-return salvage as an additional candidate (no destructive
      truncation of the original).
   6. Remove blank candidates.
   7. Deduplicate exact sources, merging their origins.
-  8. Parse and compile each distinct source once.
-  9. Infer imports from the already parsed tree (no reparse).
-  10. Apply plain-literal, code-representation, compilability, and
-      top-level-function filters using the stored inspection.
-  11. Materialize the complete ordered candidate set as the final output.
+  8. Parse and compile each distinct source once to produce its stored
+     inspection. Every source-mutating step precedes inspection, so an
+     inspection always describes the exact source it accompanies.
+  9. Apply plain-literal, code-representation, compilability, and
+     top-level-function filters. Compilability and top-level-function
+     checks read the stored inspection; the plain-literal and
+     code-representation module-shape classifications derive from a
+     memoized parse — `CandidateInspection` carries no filter-specific
+     fields.
+  10. Materialize the complete ordered candidate set as the final output.
 - Removed: `AlternativesStep`, the public strategy registry, the
   best-effort and field-marker registered definitions, destructive
   `DropAfterLastReturn`, repeated-parse filtering and import-inference

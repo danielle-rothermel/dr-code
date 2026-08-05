@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.code_analysis import validate_python_source
-from dr_code.humaneval.code_extraction import apply_cleaning_with_trace
-from dr_code.humaneval.import_inference import infer_necessary_imports
+from dr_code.preprocessing.import_inference import infer_necessary_imports
 
 
 @pytest.mark.parametrize(
@@ -156,13 +154,3 @@ def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     result = infer_necessary_imports(source)
     assert "random.randint" in result
     assert "import random" not in result
-
-
-def test_cleaning_infers_imports_for_compilable_candidate() -> None:
-    source = "```python\ndef f(x):\n    return np.array([x])\n```"
-    candidates = apply_cleaning_with_trace(
-        source, apply_dedent=True
-    ).candidates
-    assert candidates
-    assert candidates[0].startswith("import numpy as np")
-    assert validate_python_source(candidates[0]).compile_ok

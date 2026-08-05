@@ -10,10 +10,19 @@ extracts cleanly to code, the consumer's outcome over the ``code_test`` record
 equals scoring's outcome over the evaluation.
 
 Only the evaluation-derived outcomes a ``code_test`` record can carry are
-tested (PASSED, TESTS_FAILED, NO_TOP_LEVEL_FUNCTIONS, TIMED_OUT,
+tested against scoring (PASSED, TESTS_FAILED, TIMED_OUT,
 EVALUATION_INCOMPLETE). Pre-extraction outcomes (EMPTY_SUBMISSION,
-EXTRACTION_FAILED) are upstream of ``code_test`` and out of its record scope.
+EXTRACTION_FAILED) are upstream of ``code_test`` and out of its record
+scope.
 
+``NO_TOP_LEVEL_FUNCTIONS`` is derivable from a ``code_test`` record but is
+*not* asserted against scoring: preprocessing filters candidates defining no
+top-level function out of the candidate set, so a submission with none never
+reaches evaluation and scoring reports the earlier, more specific
+extraction failure. The consumer policy still derives the outcome from a
+record whose ``function_count`` is zero — a record built over a trace whose
+code was not produced by that filtering — which is what the direct
+derivation test below covers.
 """
 
 from __future__ import annotations
@@ -157,17 +166,30 @@ def test_tests_failed_outcome_parity(
     )
 
 
-def test_no_top_level_functions_outcome_parity(
+def test_no_top_level_functions_derived_from_record(
     task, local_runner, code_test_trace
 ) -> None:
+    # Derived from the record's own facts, not asserted against scoring:
+    # extraction rejects a candidate defining no top-level function, so
+    # scoring never evaluates this submission.
     submission = "x = 1\n"  # compiles, no top-level functions
-    _assert_parity(submission, task, code_test_trace, runner=local_runner)
     record = _code_test_record(
         code_test_trace(submission, task), runner=local_runner
     )
     assert derive_outcome(record).value == (
         SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS.value
     )
+
+
+def test_scoring_reports_extraction_failure_without_top_level_functions(
+    task, local_runner
+) -> None:
+    # The counterpart claim: the outcome scoring reports for the same
+    # submission is the extraction failure that preempted evaluation.
+    result = score_humaneval_submission(
+        raw_submission="x = 1\n", task=task, run_in_sandbox=local_runner
+    )
+    assert result.outcome is SubmissionOutcome.EXTRACTION_FAILED
 
 
 def test_timed_out_outcome_parity(

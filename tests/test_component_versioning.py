@@ -5,7 +5,6 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from dr_code.humaneval.code_parsing import _PARSER_PROFILES
 from dr_code.humaneval.profiles import (
     HUMANEVAL_METRICS_PROFILE_ID,
     HUMANEVAL_METRICS_PROFILE_VERSION,
@@ -39,10 +38,6 @@ def _component_versions() -> dict[str, str]:
             for (definition_id, _version), definition in _DEFINITIONS.items()
         },
         **{
-            f"parser-profile:{profile_id}": profile.version
-            for (profile_id, _version), profile in _PARSER_PROFILES.items()
-        },
-        **{
             f"scoring-profile:{profile_id}": profile.version
             for (profile_id, _version), profile in _SCORING_PROFILES.items()
         },
@@ -65,7 +60,6 @@ def _component_versions() -> dict[str, str]:
         len(STEP_REGISTRY)
         + len(METRIC_REGISTRY)
         + len(_DEFINITIONS)
-        + len(_PARSER_PROFILES)
         + len(_SCORING_PROFILES)
         + len(CORRUPTION_REGISTRY)
         + len(RECIPES)

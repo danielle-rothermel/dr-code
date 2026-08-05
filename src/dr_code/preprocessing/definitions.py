@@ -1,31 +1,16 @@
-"""Named, frozen preprocessing definitions for the code-extraction pipeline.
+"""The registered preprocessing definitions and their exact resolver.
 
-Each ``PreprocessingDefinition`` expresses one extraction path as atomic
-cleaning, candidate-generation, and selection steps over typed artifacts. The
-definitions are pure
-data — ordered ``StepSpec`` instances with explicit settings (no hidden
-defaults). Component identity is the explicit definition id and manual
-version; ordered steps and settings remain directly inspectable.
+A ``PreprocessingDefinition`` is pure data: ordered ``StepSpec`` instances
+with explicit settings and no hidden defaults. Component identity is the
+explicit definition id plus manual version; the ordered steps and their
+settings stay directly inspectable.
 
-The preprocessing definitions use string-aware smart-quote recovery, reject
-field-marker code representations, and drop whitespace-only candidates.
+``resolve_preprocessing_definition`` is an exact ``(definition_id,
+version)`` lookup that raises ``ValueError`` for any pair not in the table.
 
-``resolve_preprocessing_definition`` is an exact ``(definition_id, version)``
-lookup that raises ``ValueError`` for any pair not in the table.
-
-Step order and composition:
-
-1. ``normalize_text`` — its six atomic constituents, one step each, so each
-   is independently visible in the trace.
-2. ``candidate_blocks`` — the ``extract_candidates`` strategy ladder.
-3. Per-candidate cleaning — ``strip_code_fences``, ``textwrap.dedent``,
-   string-aware smart-quote recovery, ``drop_if_name``,
-   ``drop_after_last_return``, then ``infer_necessary_imports`` unbundled
-   into ``repair_import_lines`` + ``infer_missing_imports`` +
-   ``dedupe_imports``.
-4. The ``candidate_selection`` checks — plain-literal, code-repr,
-   compilable. Both best-effort and field-marker run all three.
-5. ``select_first`` fixes the candidate set down to one code value.
+Definition ids are preprocessing's own. A definition describes how text is
+turned into candidates, which is independent of the dataset a consumer
+scores against, so a definition never borrows a consumer's coordinate.
 """
 
 from __future__ import annotations
@@ -33,27 +18,16 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Final
 
-from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    FIELD_MARKER_NAME,
-    STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
-)
 from dr_code.preprocessing.definition import (
     PreprocessingDefinition,
     StepSpec,
 )
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.steps.extract_candidates import DEFAULT_STRATEGIES
 
-#: Definition ids match ``code_parsing`` parser-profile coordinates.
-BEST_EFFORT_HUMANEVAL_DEFINITION_ID: Final[str] = (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID
+EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID: Final[str] = (
+    "exhaustive-function-candidates"
 )
-STRICT_FIELD_MARKER_DEFINITION_ID: Final[str] = (
-    STRICT_FIELD_MARKER_PARSER_PROFILE_ID
-)
-BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION: Final[str] = "0"
-STRICT_FIELD_MARKER_DEFINITION_VERSION: Final[str] = "0"
+EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION: Final[str] = "0"
 
 
 def _spec(
@@ -71,9 +45,10 @@ def _spec(
     )
 
 
-#: ``normalize_text``'s constituents, one step per operation. Order matters:
-#: line endings, NFKC unicode, tab expansion, trailing-whitespace strip,
-#: blank-run collapse, then outer-blank trim.
+#: ``normalize_text``'s constituents, one step per operation, so each is
+#: independently visible in the trace. Order matters: line endings, NFKC
+#: unicode, tab expansion, trailing-whitespace strip, blank-run collapse,
+#: then outer-blank trim.
 _TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
     _spec("normalize_line_endings", StepName.NORMALIZE_LINE_ENDINGS),
     _spec("normalize_unicode", StepName.NORMALIZE_UNICODE),
@@ -83,64 +58,94 @@ _TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
     _spec("trim_outer_blanks", StepName.TRIM_OUTER_BLANKS),
 )
 
-#: Per-candidate cleaning: strip fences, dedent, string-aware smart-quote
-#: recovery (so smart-delimited code compiles while quote *contents* survive),
-#: split on the ``if __name__`` guard, drop trailing prose after the last
-#: return, then repair / infer / dedupe imports.
-_CANDIDATE_CLEANING: Final[tuple[StepSpec, ...]] = (
+#: Candidate-local shaping, every step extending the lineage of the
+#: candidate it rewrites: strip fences, dedent, string-aware smart-quote
+#: recovery (so smart-delimited code compiles while quote *contents*
+#: survive), then split on the ``if __name__`` guard.
+#:
+#: These steps and the import steps below both belong before inspection,
+#: never after it: they rewrite a candidate's source, and an inspection
+#: must always describe the exact source it accompanies. Running either
+#: after inspection would leave every stored inspection describing text the
+#: candidate no longer holds, and the filters reading those inspections
+#: would be answering questions about a source that no longer exists.
+#: Placing every source-mutating step before ``inspect_candidates`` is what
+#: makes one parse per candidate both correct and sufficient.
+_CANDIDATE_SHAPING: Final[tuple[StepSpec, ...]] = (
     _spec("strip_fences", StepName.STRIP_FENCES),
     _spec("dedent", StepName.DEDENT_CANDIDATES),
     _spec("normalize_smart_quotes", StepName.NORMALIZE_SMART_QUOTES),
     _spec("split_on_name_guard", StepName.SPLIT_ON_NAME_GUARD),
-    _spec("drop_after_last_return", StepName.DROP_AFTER_LAST_RETURN),
+)
+
+#: Import repair and inference, running after the last-return salvage.
+#:
+#: Inference is parse-driven: it no-ops on a source it cannot parse. A
+#: candidate whose only defect is trailing prose is unparseable until the
+#: salvage truncates it, so inference must see the salvage's output or the
+#: truncated candidate is accepted still missing the import its body needs.
+#: These steps stay before ``inspect_candidates`` like every other
+#: source-mutating step, so inspections still describe exact sources.
+_CANDIDATE_IMPORTS: Final[tuple[StepSpec, ...]] = (
     _spec("repair_import_lines", StepName.REPAIR_IMPORT_LINES),
     _spec("infer_missing_imports", StepName.INFER_MISSING_IMPORTS),
     _spec("dedupe_imports", StepName.DEDUPE_IMPORTS),
 )
 
-
-#: best-effort: full normalization, the default extraction ladder,
-#: per-candidate cleaning, then all three selection filters (plain-literal,
-#: code-repr, compilable).
-BEST_EFFORT_HUMANEVAL_DEFINITION: Final[PreprocessingDefinition] = (
-    PreprocessingDefinition(
-        definition_id=BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-        version=BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-        steps=(
-            *_TEXT_NORMALIZATION,
-            _spec(
-                "extract_candidates",
-                StepName.EXTRACT_CANDIDATES,
-                alternatives=list(DEFAULT_STRATEGIES),
-            ),
-            *_CANDIDATE_CLEANING,
-            _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),
-            _spec("filter_code_repr", StepName.FILTER_CODE_REPR),
-            _spec("filter_compilable", StepName.FILTER_COMPILABLE),
-            _spec("select_first", StepName.SELECT_FIRST),
-        ),
-    )
+#: The structural filters, all reading candidates' stored inspections or
+#: sources — never reparsing what inspection already established.
+_CANDIDATE_FILTERS: Final[tuple[StepSpec, ...]] = (
+    _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),
+    _spec("filter_code_repr", StepName.FILTER_CODE_REPR),
+    _spec("filter_compilable", StepName.FILTER_COMPILABLE),
+    _spec("filter_top_level_functions", StepName.FILTER_TOP_LEVEL_FUNCTIONS),
 )
 
 
-#: strict field-marker: extract the ``[[ ## code ## ]]`` value, then the same
-#: three selection filters as best-effort. The code-repr filter is included
-#: so a ``code = "..."`` marker payload is rejected (symmetrical with
-#: best-effort).
-STRICT_FIELD_MARKER_DEFINITION: Final[PreprocessingDefinition] = (
+#: The one registered definition: read every representation, clean every
+#: candidate, then narrow structurally and return everything that survived.
+#:
+#: Step order, and why:
+#:
+#: 1. Normalize the text (six atomic steps).
+#: 2. Reject blank input, so "there was nothing here" is its own failure.
+#: 3. Extract candidates additively from every supported representation —
+#:    no representation shadows another, and nothing is chosen yet.
+#: 4. Shape each candidate, extending its lineage.
+#: 5. Add last-return truncations as *additional* candidates, so the
+#:    salvage never destroys the candidate it was salvaged from.
+#: 6. Repair and infer imports, after the salvage so a candidate that only
+#:    becomes parseable once truncated still gets the imports its body
+#:    needs — parse-driven inference no-ops on unparseable source.
+#: 7. Drop blank candidates that shaping emptied.
+#: 8. Merge exact-duplicate sources, concatenating their lineages.
+#: 9. Inspect each remaining source exactly once — the last word on
+#:    structure, and the last time any source is parsed.
+#: 10. Filter on the stored inspections and sources.
+#: 11. Materialize everything that survived, in order. ``candidate_ordinal``
+#:     indexes this final set.
+EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION: Final[PreprocessingDefinition] = (
     PreprocessingDefinition(
-        definition_id=STRICT_FIELD_MARKER_DEFINITION_ID,
-        version=STRICT_FIELD_MARKER_DEFINITION_VERSION,
+        definition_id=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+        version=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
         steps=(
+            *_TEXT_NORMALIZATION,
+            _spec("reject_blank_input", StepName.REJECT_BLANK_INPUT),
             _spec(
-                "field_marker_extract",
-                StepName.FIELD_MARKER_EXTRACT,
-                field_name=FIELD_MARKER_NAME,
+                "extract_all_representations",
+                StepName.EXTRACT_ALL_REPRESENTATIONS,
             ),
-            _spec("filter_plain_literal", StepName.FILTER_PLAIN_LITERAL),
-            _spec("filter_code_repr", StepName.FILTER_CODE_REPR),
-            _spec("filter_compilable", StepName.FILTER_COMPILABLE),
-            _spec("select_first", StepName.SELECT_FIRST),
+            *_CANDIDATE_SHAPING,
+            _spec("add_last_return_salvage", StepName.ADD_LAST_RETURN_SALVAGE),
+            *_CANDIDATE_IMPORTS,
+            _spec("drop_blank_candidates", StepName.DROP_BLANK_CANDIDATES),
+            _spec("dedupe_candidates", StepName.DEDUPE_CANDIDATES),
+            _spec("inspect_candidates", StepName.INSPECT_CANDIDATES),
+            *_CANDIDATE_FILTERS,
+            _spec(
+                "materialize_candidate_set",
+                StepName.MATERIALIZE_CANDIDATE_SET,
+            ),
         ),
     )
 )
@@ -151,13 +156,9 @@ STRICT_FIELD_MARKER_DEFINITION: Final[PreprocessingDefinition] = (
 _DEFINITIONS: Final = MappingProxyType(
     {
         (
-            BEST_EFFORT_HUMANEVAL_DEFINITION_ID,
-            BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION,
-        ): BEST_EFFORT_HUMANEVAL_DEFINITION,
-        (
-            STRICT_FIELD_MARKER_DEFINITION_ID,
-            STRICT_FIELD_MARKER_DEFINITION_VERSION,
-        ): STRICT_FIELD_MARKER_DEFINITION,
+            EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+            EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
+        ): EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     }
 )
 
@@ -183,11 +184,8 @@ def resolve_preprocessing_definition(
 
 
 __all__ = [
-    "BEST_EFFORT_HUMANEVAL_DEFINITION_ID",
-    "BEST_EFFORT_HUMANEVAL_DEFINITION_VERSION",
-    "BEST_EFFORT_HUMANEVAL_DEFINITION",
-    "STRICT_FIELD_MARKER_DEFINITION",
-    "STRICT_FIELD_MARKER_DEFINITION_ID",
-    "STRICT_FIELD_MARKER_DEFINITION_VERSION",
+    "EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION",
+    "EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID",
+    "EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION",
     "resolve_preprocessing_definition",
 ]

@@ -6,8 +6,9 @@ synthetic corruption datasets.
 
 The package provides four current boundaries:
 
-- `dr_code.humaneval` parses submissions, resolves the current HumanEval
-  profiles, and evaluates candidate code in the configured OCI sandbox.
+- `dr_code.humaneval` applies its acceptance policy to the preprocessing
+  candidate set, resolves the current HumanEval profiles, and evaluates
+  accepted code in the configured OCI sandbox.
 - `dr_code.preprocessing` binds registered, named steps into ordered
   definitions and emits typed traces with step artifacts, causal absences,
   facts, and producer coordinates.
@@ -24,7 +25,7 @@ ordered composition and settings. Hashes of source code or serialized
 definitions are not semantic identities.
 
 Every production preprocessing step, metric operator, preprocessing
-definition, parser profile, scoring profile, metrics profile, HumanEval
+definition, scoring profile, metrics profile, HumanEval
 override set, synthetic corruption, and synthetic recipe currently has version
 `"0"`. This is the unreleased component contract. The repository configuration
 records that state for tooling:
