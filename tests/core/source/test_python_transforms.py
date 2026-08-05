@@ -101,6 +101,45 @@ def test_alpha_rename_locals_can_preserve_params() -> None:
     assert "_v0 = count + 1" in out
 
 
+def test_alpha_rename_locals_preserves_nested_scope_semantics() -> None:
+    source = (
+        "def build(seed):\n"
+        "    captured = seed + 10\n"
+        "    shadowed = seed * 2\n"
+        "    def calculate(shadowed):\n"
+        "        inner_local = captured + shadowed\n"
+        "        return inner_local\n"
+        "    return calculate\n"
+    )
+    transformed = alpha_rename_locals(source, rename_params=False)
+    transformed_tree = ast.parse(transformed)
+    nested_function = next(
+        node
+        for node in ast.walk(transformed_tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "calculate"
+    )
+    renamed_assignment_targets = {
+        node.id
+        for node in ast.walk(transformed_tree)
+        if isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Store)
+        and node.id.startswith("_v")
+    }
+    original_namespace: dict[str, object] = {}
+    transformed_namespace: dict[str, object] = {}
+
+    exec(source, original_namespace)
+    exec(transformed, transformed_namespace)
+
+    assert [argument.arg for argument in nested_function.args.args] == [
+        "shadowed"
+    ]
+    assert renamed_assignment_targets
+    assert original_namespace["build"](3)(5) == transformed_namespace[
+        "build"
+    ](3)(5)
+
+
 def test_rename_locals_in_function_applies_mapping_to_one_function() -> None:
     tree = ast.parse(
         "def f(count):\n    total = count + 1\n    return total\n"
