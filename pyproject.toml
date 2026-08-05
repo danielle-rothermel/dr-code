@@ -44,6 +44,10 @@ testpaths = ["tests"]
 # (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
 # need importlib import mode rather than sys.path insertion.
 addopts = "--import-mode=importlib"
+markers = [
+    "oci: requires the opt-in live Docker sandbox runtime and pinned image",
+]
+
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]
 line-length = 79

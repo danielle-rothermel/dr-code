@@ -87,7 +87,10 @@ def run_python_in_sandbox(
     The runtime and image are trusted deployment dependencies. The image must
     already exist locally: scored code can never trigger a registry pull.
     """
-    payload = input_json.encode("utf-8")
+    try:
+        payload = input_json.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise SandboxError("sandbox input is not valid UTF-8") from exc
     if len(payload) > MAX_SANDBOX_INPUT_BYTES:
         raise SandboxError(
             f"sandbox input exceeded {MAX_SANDBOX_INPUT_BYTES} bytes"
@@ -142,71 +145,110 @@ def run_python_in_sandbox(
         "-c",
         source,
     ]
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        env=_runtime_environment(),
-    )
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            env=_runtime_environment(),
+        )
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        raise SandboxError("sandbox process failed to start") from exc
     stdout = bytearray()
     stderr = bytearray()
     overflow = threading.Event()
+    io_failed = threading.Event()
     io_errors: list[BaseException] = []
     threads = [
         threading.Thread(
             target=_write_input,
-            args=(process.stdin, payload, io_errors),
+            args=(process.stdin, payload, io_failed, io_errors),
             daemon=True,
         ),
         threading.Thread(
             target=_read_bounded,
-            args=(process.stdout, stdout, overflow, io_errors),
+            args=(
+                process.stdout,
+                stdout,
+                overflow,
+                io_failed,
+                io_errors,
+            ),
             daemon=True,
         ),
         threading.Thread(
             target=_read_bounded,
-            args=(process.stderr, stderr, overflow, io_errors),
+            args=(
+                process.stderr,
+                stderr,
+                overflow,
+                io_failed,
+                io_errors,
+            ),
             daemon=True,
         ),
     ]
-    for thread in threads:
-        thread.start()
-
     deadline = time.monotonic() + timeout_seconds
-    timed_out = False
+    execution_error: SandboxError | None = None
     termination_error: SandboxError | None = None
+    started_threads: list[threading.Thread] = []
     try:
-        while process.poll() is None:
-            if overflow.is_set():
+        for thread in threads:
+            try:
+                thread.start()
+            except RuntimeError as exc:
+                execution_error = SandboxError(
+                    "sandbox IPC threads failed to start"
+                )
+                execution_error.__cause__ = exc
                 break
-            if time.monotonic() >= deadline:
-                timed_out = True
-                break
-            time.sleep(0.01)
+            started_threads.append(thread)
+
+        if execution_error is None:
+            while process.poll() is None:
+                if overflow.is_set():
+                    execution_error = SandboxOutputLimitError(
+                        "sandbox output exceeded "
+                        f"{MAX_SANDBOX_OUTPUT_BYTES} bytes"
+                    )
+                    break
+                if io_failed.is_set():
+                    execution_error = SandboxError("sandbox IPC failed")
+                    execution_error.__cause__ = io_errors[0]
+                    break
+                if time.monotonic() >= deadline:
+                    execution_error = SandboxTimeoutError(
+                        f"sandbox exceeded {timeout_seconds} seconds"
+                    )
+                    break
+                time.sleep(0.01)
     finally:
         if process.poll() is None:
             try:
                 _terminate_container(runtime, name, process)
             except SandboxError as exc:
                 termination_error = exc
-        for thread in threads:
+        for thread in started_threads:
             thread.join(timeout=1.0)
 
     if termination_error is not None:
+        if execution_error is not None:
+            cleanup_cause = termination_error.__cause__
+            if execution_error.__cause__ is None and cleanup_cause is not None:
+                execution_error.__cause__ = cleanup_cause
+            raise termination_error from execution_error
         raise termination_error
-    if any(thread.is_alive() for thread in threads):
+    if any(thread.is_alive() for thread in started_threads):
         raise SandboxError("sandbox IPC threads could not be terminated")
-    if timed_out:
-        raise SandboxTimeoutError(
-            f"sandbox exceeded {timeout_seconds} seconds"
-        )
+    if execution_error is not None:
+        raise execution_error
     if overflow.is_set():
         raise SandboxOutputLimitError(
             f"sandbox output exceeded {MAX_SANDBOX_OUTPUT_BYTES} bytes"
         )
-    if io_errors:
+    if io_failed.is_set():
         raise SandboxError("sandbox IPC failed") from io_errors[0]
     return SandboxCompletedProcess(
         returncode=process.returncode,
@@ -216,14 +258,9 @@ def run_python_in_sandbox(
 
 
 def _resolve_runtime() -> str:
-    configured = os.environ.get("DR_CODE_SANDBOX_RUNTIME", "docker")
-    if configured not in {"docker", "podman"}:
-        raise SandboxError(
-            "DR_CODE_SANDBOX_RUNTIME must be 'docker' or 'podman'"
-        )
-    runtime = shutil.which(configured)
+    runtime = shutil.which("docker")
     if runtime is None:
-        raise SandboxError(f"sandbox runtime is unavailable: {configured}")
+        raise SandboxError("sandbox runtime is unavailable: docker")
     return runtime
 
 
@@ -275,6 +312,7 @@ def _require_local_image(runtime: str, image: str) -> None:
 def _write_input(
     stream: BinaryIO | None,
     payload: bytes,
+    failed: threading.Event,
     errors: list[BaseException],
 ) -> None:
     if stream is None:
@@ -287,12 +325,14 @@ def _write_input(
         return
     except BaseException as exc:
         errors.append(exc)
+        failed.set()
 
 
 def _read_bounded(
     stream: BinaryIO | None,
     output: bytearray,
     overflow: threading.Event,
+    failed: threading.Event,
     errors: list[BaseException],
 ) -> None:
     if stream is None:
@@ -306,6 +346,7 @@ def _read_bounded(
                 return
     except BaseException as exc:
         errors.append(exc)
+        failed.set()
 
 
 def _terminate_container(
@@ -314,6 +355,7 @@ def _terminate_container(
     process: subprocess.Popen[bytes],
 ) -> None:
     environment = _runtime_environment()
+    process_group_error: OSError | None = None
     for command in (
         [runtime, "kill", "--signal=KILL", name],
         [runtime, "rm", "--force", name],
@@ -335,9 +377,11 @@ def _terminate_container(
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except OSError as exc:
+            process_group_error = exc
     try:
         process.wait(timeout=5)
-    except subprocess.TimeoutExpired as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         raise SandboxError(
             "sandbox process group could not be terminated"
         ) from exc
@@ -356,6 +400,10 @@ def _terminate_container(
         raise SandboxError(
             "sandbox runtime could not confirm container termination"
         )
+    if process_group_error is not None:
+        raise SandboxError(
+            "sandbox process group could not be terminated"
+        ) from process_group_error
 
 
 def _cleanup_command(

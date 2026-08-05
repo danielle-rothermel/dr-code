@@ -1,288 +1,445 @@
+"""Deterministic checks for the public OCI sandbox failure contract.
+
+The runtime helpers remain private because the production boundary is the
+three-keyword ``run_python_in_sandbox`` callable. Tests use state-controlled
+process, stream, and thread doubles to force failures that a live runtime
+cannot reproduce reliably.
+"""
+
 from __future__ import annotations
 
-import os
-import shutil
+import io
 import subprocess
-from pathlib import Path
+from collections.abc import Callable
+from typing import BinaryIO
 
 import pytest
 
-from dr_code.core.execution.sandbox import (
-    MAX_SANDBOX_OUTPUT_BYTES,
-    SANDBOX_IMAGE,
-    SandboxOutputLimitError,
-    run_python_in_sandbox,
-)
-from dr_code.humaneval.runner import evaluate_humaneval_code
-from dr_code.humaneval.scoring import (
-    CompletedScore,
-    score_humaneval_submission,
-)
-from dr_code.humaneval.task import HumanEvalTask
+from dr_code.core.execution import sandbox
 
 
-# The probes are opt-in locally but always run in CI: they must fail loudly
-# there (missing runtime/image) rather than skip if workflow env wiring drifts.
-pytestmark = pytest.mark.skipif(
-    os.environ.get("DR_CODE_RUN_SANDBOX_TESTS") != "1"
-    and os.environ.get("CI") is None,
-    reason="real OCI sandbox probes require DR_CODE_RUN_SANDBOX_TESTS=1",
-)
+class _RuntimeLookupReached(Exception):
+    pass
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _warm_sandbox_container() -> None:
-    # The first probe to run on a fresh CI runner pays container cold-start,
-    # which can push it past a tight per-probe deadline (e.g. the 2.0s
-    # `test_known_good_submission_scores_inside_real_sandbox`) and flake as a
-    # spurious timeout. Warm the runtime once here with a generous timeout so
-    # the timed probes measure steady-state execution, not image/container
-    # startup. Probe timeouts remain watchdogs around the asserted sandbox
-    # outcomes.
-    run_python_in_sandbox(
-        source="input()\nprint('[]')\n",
-        input_json="{}",
-        timeout_seconds=30.0,
-    )
+class _FailingStream:
+    def __init__(self, error: OSError) -> None:
+        self._error = error
+
+    def read(self, _: int = -1) -> bytes:
+        raise self._error
+
+    def write(self, _: bytes) -> int:
+        raise self._error
+
+    def close(self) -> None:
+        pass
 
 
-def _task() -> HumanEvalTask:
-    return HumanEvalTask(
-        task_id="HumanEval/sandbox-fixture",
-        prompt="def add_one(x):\n",
-        canonical_solution="    return x + 1\n",
-        entry_point="add_one",
-        test=(
-            "def check(candidate):\n"
-            "    inputs = [(1,), (2,)]\n"
-            "    results = [2, 3]\n"
-            "    for inp, expected in zip(inputs, results):\n"
-            "        assertion(candidate(*inp), expected)\n"
-        ),
-    )
+class _FakeProcess:
+    def __init__(
+        self,
+        *,
+        stdin: BinaryIO | None = None,
+        stdout: BinaryIO | None = None,
+        stderr: BinaryIO | None = None,
+        running: bool = True,
+    ) -> None:
+        self.stdin = stdin if stdin is not None else io.BytesIO()
+        self.stdout = stdout if stdout is not None else io.BytesIO()
+        self.stderr = stderr if stderr is not None else io.BytesIO()
+        self.pid = 1234
+        self.returncode: int | None = None if running else 0
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float) -> int:
+        del timeout
+        self.returncode = -9
+        return self.returncode
 
 
-def _evaluate(candidate_code: str, *, timeout: float = 2.0) -> bool:
-    return evaluate_humaneval_code(
-        task=_task(),
-        candidate_code=candidate_code,
-        timeout_seconds=timeout,
-    ).passed
+class _SynchronousThread:
+    def __init__(
+        self,
+        *,
+        target: Callable[..., None],
+        args: tuple[object, ...],
+        daemon: bool,
+    ) -> None:
+        del daemon
+        self._target = target
+        self._args = args
+
+    def start(self) -> None:
+        self._target(*self._args)
+
+    def join(self, timeout: float) -> None:
+        del timeout
+
+    def is_alive(self) -> bool:
+        return False
 
 
-def test_known_good_submission_scores_inside_real_sandbox() -> None:
-    result = score_humaneval_submission(
-        raw_submission="def add_one(x):\n    return x + 1\n",
-        task=_task(),
-    )
+class _LiveThread(_SynchronousThread):
+    def start(self) -> None:
+        pass
 
-    assert isinstance(result, CompletedScore)
-    assert result.score == 1.0
+    def is_alive(self) -> bool:
+        return True
 
 
-def test_provider_and_database_credentials_are_not_inherited(
+class _UnstartableThread(_SynchronousThread):
+    error = RuntimeError("thread capacity exhausted")
+
+    def start(self) -> None:
+        raise self.error
+
+
+def _prepare_public_run(
     monkeypatch: pytest.MonkeyPatch,
+    process: _FakeProcess,
 ) -> None:
-    names = (
-        "ANTHROPIC_API_KEY",
-        "DATABASE_URL",
-        "DBOS_SYSTEM_DATABASE_URL",
-        "OPENAI_API_KEY",
-    )
-    for name in names:
-        monkeypatch.setenv(name, f"operator-secret-{name}")
-    candidate = (
-        "import os\n"
-        "def add_one(x):\n"
-        f"    names = {names!r}\n"
-        "    return x + 1 if all(os.getenv(name) is None for name in names) "
-        "else -1\n"
-    )
-
-    assert _evaluate(candidate) is True
+    monkeypatch.setattr(sandbox, "_resolve_runtime", lambda: "/docker")
+    monkeypatch.setattr(sandbox, "_require_local_image", lambda *_: None)
+    monkeypatch.setattr(sandbox.subprocess, "Popen", lambda *_, **__: process)
 
 
-def test_operator_file_cannot_be_read(
-    tmp_path: Path,
-) -> None:
-    secret_path = tmp_path / "operator-secret"
-    secret_path.write_text("do-not-read")
-    candidate = (
-        "def add_one(x):\n"
-        "    try:\n"
-        f"        open({str(secret_path)!r}).read()\n"
-        "    except (FileNotFoundError, PermissionError):\n"
-        "        return x + 1\n"
-        "    return -1\n"
-    )
-
-    assert _evaluate(candidate) is True
+def _completed(returncode: int) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.CompletedProcess([], returncode)
 
 
-def test_operator_file_cannot_be_written(tmp_path: Path) -> None:
-    output_path = tmp_path / "escape"
-    candidate = (
-        "def add_one(x):\n"
-        "    try:\n"
-        f"        open({str(output_path)!r}, 'w').write('escaped')\n"
-        "    except (FileNotFoundError, PermissionError):\n"
-        "        return x + 1\n"
-        "    return -1\n"
-    )
-
-    assert _evaluate(candidate) is True
-    assert output_path.exists() is False
-
-
-def test_private_ephemeral_working_area_is_writable() -> None:
-    candidate = (
-        "def add_one(x):\n"
-        "    with open('/tmp/candidate-file', 'w') as output:\n"
-        "        output.write('private')\n"
-        "    with open('/tmp/candidate-file') as source:\n"
-        "        return x + 1 if source.read() == 'private' else -1\n"
-    )
-
-    assert _evaluate(candidate) is True
-
-
-def test_network_connection_is_denied() -> None:
-    candidate = (
-        "import socket\n"
-        "def add_one(x):\n"
-        "    try:\n"
-        "        connection = socket.create_connection(('1.1.1.1', 53), 0.2)\n"
-        "    except OSError:\n"
-        "        return x + 1\n"
-        "    connection.close()\n"
-        "    return -1\n"
-    )
-
-    assert _evaluate(candidate) is True
-
-
-@pytest.mark.parametrize(
-    "candidate",
-    [
-        (
-            "import subprocess\n"
-            "def add_one(x):\n"
-            "    try:\n"
-            "        subprocess.run(['/bin/true'], check=True)\n"
-            "    except (OSError, subprocess.SubprocessError):\n"
-            "        return x + 1\n"
-            "    return -1\n"
-        ),
-        (
-            "import os\n"
-            "def add_one(x):\n"
-            "    try:\n"
-            "        os.fork()\n"
-            "    except OSError:\n"
-            "        return x + 1\n"
-            "    return -1\n"
-        ),
-    ],
-    ids=("subprocess", "fork"),
-)
-def test_additional_processes_are_denied(candidate: str) -> None:
-    assert _evaluate(candidate) is True
-
-
-def test_timeout_kills_the_complete_container() -> None:
-    result = evaluate_humaneval_code(
-        task=_task(),
-        candidate_code=(
-            "import os\n"
-            "def add_one(x):\n"
-            "    try:\n"
-            "        os.fork()\n"
-            "    except OSError:\n"
-            "        pass\n"
-            "    while True:\n"
-            "        pass\n"
-        ),
+def _run_with_timeout() -> sandbox.SandboxCompletedProcess:
+    return sandbox.run_python_in_sandbox(
+        source="input()",
+        input_json="{}",
         timeout_seconds=0.5,
     )
 
-    assert result.status_counts == {"timeout": 2}
-    runtime = shutil.which(os.environ.get("DR_CODE_SANDBOX_RUNTIME", "docker"))
-    assert runtime is not None
-    completed = subprocess.run(
-        [
-            runtime,
-            "ps",
-            "--quiet",
-            "--filter",
-            "label=org.dr-code.humaneval-sandbox=true",
-        ],
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-    assert completed.stdout.strip() == ""
+
+def test_runtime_environment_excludes_operator_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    monkeypatch.setenv("DATABASE_URL", "secret")
+    monkeypatch.setenv("PATH", "/bin")
+
+    environment = sandbox._runtime_environment()
+    assert environment["PATH"] == "/bin"
+    assert "ANTHROPIC_API_KEY" not in environment
+    assert "DATABASE_URL" not in environment
 
 
-def test_candidate_sys_exit_is_scored_not_harness_failure() -> None:
-    result = evaluate_humaneval_code(
-        task=_task(),
-        candidate_code=(
-            "import sys\nsys.exit(0)\ndef add_one(x):\n    return x + 1\n"
-        ),
-        timeout_seconds=2.0,
-    )
-
-    assert result.passed is False
-    assert result.status_counts == {"error": 2}
-
-
-def test_memory_exhaustion_is_scored_not_harness_failure() -> None:
-    result = evaluate_humaneval_code(
-        task=_task(),
-        candidate_code=(
-            "def add_one(x):\n"
-            "    data = bytearray(512 * 1024 * 1024)\n"
-            "    return x + 1 + data[0]\n"
-        ),
-        timeout_seconds=5.0,
-    )
-
-    assert result.passed is False
-    assert set(result.status_counts) <= {"error", "timeout"}
+@pytest.mark.parametrize(
+    "image",
+    [
+        "python:3.13-slim",
+        "python:3.13-slim@sha256:short",
+        "python:3.13-slim@sha256:" + "z" * 64,
+        "python:3.13 slim@sha256:" + "a" * 64,
+        "@sha256:" + "a" * 64,
+    ],
+)
+def test_mutable_or_malformed_image_reference_is_rejected(image: str) -> None:
+    with pytest.raises(sandbox.SandboxError, match="immutable sha256"):
+        sandbox._validate_image_reference(image)
 
 
-def test_output_flood_is_scored_not_harness_failure() -> None:
-    result = evaluate_humaneval_code(
-        task=_task(),
-        candidate_code=(
-            "import sys\n"
-            "def add_one(x):\n"
-            f"    sys.stdout.write('x' * {MAX_SANDBOX_OUTPUT_BYTES + 1})\n"
-            "    return x + 1\n"
-        ),
-        timeout_seconds=5.0,
-    )
+def test_hung_image_inspection_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def hang(*args: object, **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd="docker", timeout=10)
 
-    assert result.passed is False
-    assert result.status_counts == {"error": 2}
+    monkeypatch.setattr(sandbox.subprocess, "run", hang)
+
+    with pytest.raises(sandbox.SandboxError, match="image inspection failed"):
+        sandbox._require_local_image("docker", sandbox.SANDBOX_IMAGE)
 
 
-def test_stdout_json_ipc_is_bounded() -> None:
-    source = (
-        "import os\n"
-        "input()\n"
-        f"os.write(1, b'x' * {MAX_SANDBOX_OUTPUT_BYTES + 1})\n"
-    )
+def test_missing_docker_runtime_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sandbox.shutil, "which", lambda _: None)
 
-    with pytest.raises(SandboxOutputLimitError):
-        run_python_in_sandbox(
-            source=source,
-            input_json="{}",
-            timeout_seconds=2.0,
+    with pytest.raises(sandbox.SandboxError, match="unavailable: docker"):
+        sandbox._resolve_runtime()
+
+
+def test_runtime_resolution_uses_docker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[str] = []
+
+    def which(name: str) -> str:
+        requested.append(name)
+        return "/usr/bin/docker"
+
+    monkeypatch.setattr(sandbox.shutil, "which", which)
+
+    assert sandbox._resolve_runtime() == "/usr/bin/docker"
+    assert requested == ["docker"]
+
+
+def test_input_at_exact_utf8_byte_limit_reaches_runtime_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reached() -> str:
+        raise _RuntimeLookupReached
+
+    monkeypatch.setattr(sandbox, "_resolve_runtime", reached)
+
+    exact_limit = "é" * (sandbox.MAX_SANDBOX_INPUT_BYTES // 2)
+    with pytest.raises(_RuntimeLookupReached):
+        sandbox.run_python_in_sandbox(
+            source="pass", input_json=exact_limit, timeout_seconds=1.0
         )
 
 
-def test_ci_uses_the_documented_immutable_image() -> None:
-    assert (
-        os.environ.get("DR_CODE_SANDBOX_IMAGE", SANDBOX_IMAGE) == SANDBOX_IMAGE
+def test_input_over_utf8_byte_limit_fails_before_runtime_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected() -> str:
+        raise AssertionError("runtime lookup must not be reached")
+
+    monkeypatch.setattr(sandbox, "_resolve_runtime", unexpected)
+
+    over_limit = "é" * (sandbox.MAX_SANDBOX_INPUT_BYTES // 2 + 1)
+    with pytest.raises(sandbox.SandboxError, match="input exceeded"):
+        sandbox.run_python_in_sandbox(
+            source="pass", input_json=over_limit, timeout_seconds=1.0
+        )
+
+
+def test_non_utf8_input_fails_at_the_sandbox_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sandbox,
+        "_resolve_runtime",
+        lambda: pytest.fail("runtime lookup must not be reached"),
     )
+
+    with pytest.raises(sandbox.SandboxError, match="valid UTF-8") as raised:
+        sandbox.run_python_in_sandbox(
+            source="pass", input_json="\ud800", timeout_seconds=1.0
+        )
+
+    assert isinstance(raised.value.__cause__, UnicodeEncodeError)
+
+
+@pytest.mark.parametrize("timeout", [0.0, -1.0, float("nan"), float("inf")])
+def test_invalid_timeout_fails_before_runtime_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    timeout: float,
+) -> None:
+    monkeypatch.setattr(
+        sandbox,
+        "_resolve_runtime",
+        lambda: pytest.fail("runtime lookup must not be reached"),
+    )
+
+    with pytest.raises(sandbox.SandboxError, match="finite and positive"):
+        sandbox.run_python_in_sandbox(
+            source="pass", input_json="{}", timeout_seconds=timeout
+        )
+
+
+def test_process_startup_failure_is_translated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    startup_error = OSError("exec failed")
+    monkeypatch.setattr(sandbox, "_resolve_runtime", lambda: "/docker")
+    monkeypatch.setattr(sandbox, "_require_local_image", lambda *_: None)
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise startup_error
+
+    monkeypatch.setattr(sandbox.subprocess, "Popen", fail)
+
+    with pytest.raises(
+        sandbox.SandboxError, match="failed to start"
+    ) as raised:
+        _run_with_timeout()
+
+    assert raised.value.__cause__ is startup_error
+
+
+def test_ipc_thread_startup_failure_cleans_up_the_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess()
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _UnstartableThread)
+    cleanup_called = False
+
+    def terminate(*_: object) -> None:
+        nonlocal cleanup_called
+        cleanup_called = True
+        process.returncode = -9
+
+    monkeypatch.setattr(sandbox, "_terminate_container", terminate)
+
+    with pytest.raises(
+        sandbox.SandboxError, match="threads failed to start"
+    ) as raised:
+        _run_with_timeout()
+
+    assert cleanup_called is True
+    assert raised.value.__cause__ is _UnstartableThread.error
+
+
+@pytest.mark.parametrize("failing_stream", ["stdin", "stdout", "stderr"])
+def test_ipc_failure_terminates_the_sandbox_and_preserves_its_cause(
+    monkeypatch: pytest.MonkeyPatch,
+    failing_stream: str,
+) -> None:
+    ipc_error = OSError(f"{failing_stream} failed")
+    streams: dict[str, BinaryIO] = {
+        "stdin": io.BytesIO(),
+        "stdout": io.BytesIO(),
+        "stderr": io.BytesIO(),
+    }
+    streams[failing_stream] = _FailingStream(ipc_error)  # type: ignore[assignment]
+    process = _FakeProcess(**streams)
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _SynchronousThread)
+    cleanup_called = False
+
+    def terminate(*_: object) -> None:
+        nonlocal cleanup_called
+        cleanup_called = True
+        process.returncode = -9
+
+    monkeypatch.setattr(sandbox, "_terminate_container", terminate)
+
+    with pytest.raises(sandbox.SandboxError, match="IPC failed") as raised:
+        _run_with_timeout()
+
+    assert cleanup_called is True
+    assert raised.value.__cause__ is ipc_error
+
+
+def test_stdout_overflow_uses_the_bounded_public_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess(
+        stdout=io.BytesIO(b"x" * (sandbox.MAX_SANDBOX_OUTPUT_BYTES + 1))
+    )
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _SynchronousThread)
+
+    def terminate(*_: object) -> None:
+        process.returncode = -9
+
+    monkeypatch.setattr(sandbox, "_terminate_container", terminate)
+
+    with pytest.raises(sandbox.SandboxOutputLimitError):
+        _run_with_timeout()
+
+
+def test_live_ipc_thread_after_join_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess(running=False)
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _LiveThread)
+
+    with pytest.raises(sandbox.SandboxError, match="threads.*terminated"):
+        _run_with_timeout()
+
+
+def test_timeout_failure_survives_successful_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess()
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _SynchronousThread)
+    monotonic = iter((0.0, 1.0))
+    monkeypatch.setattr(sandbox.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(
+        sandbox.subprocess,
+        "run",
+        lambda command, **_: _completed(
+            1 if command[1:3] == ["container", "inspect"] else 0
+        ),
+    )
+    monkeypatch.setattr(sandbox.os, "killpg", lambda *_: None)
+
+    with pytest.raises(sandbox.SandboxTimeoutError):
+        _run_with_timeout()
+
+
+def test_process_group_signal_failure_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess()
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _SynchronousThread)
+    monotonic = iter((0.0, 1.0))
+    monkeypatch.setattr(sandbox.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(
+        sandbox.subprocess,
+        "run",
+        lambda command, **_: _completed(
+            1 if command[1:3] == ["container", "inspect"] else 0
+        ),
+    )
+    signal_error = PermissionError("signal denied")
+
+    def fail_signal(*_: object) -> None:
+        raise signal_error
+
+    monkeypatch.setattr(sandbox.os, "killpg", fail_signal)
+
+    with pytest.raises(
+        sandbox.SandboxError, match="process group could not be terminated"
+    ) as raised:
+        _run_with_timeout()
+
+    assert isinstance(raised.value.__cause__, sandbox.SandboxTimeoutError)
+    assert raised.value.__cause__.__cause__ is signal_error
+
+
+def test_surviving_container_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess()
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _SynchronousThread)
+    monotonic = iter((0.0, 1.0))
+    monkeypatch.setattr(sandbox.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(
+        sandbox.subprocess, "run", lambda *_, **__: _completed(0)
+    )
+    monkeypatch.setattr(sandbox.os, "killpg", lambda *_: None)
+
+    with pytest.raises(sandbox.SandboxError, match="container survived"):
+        _run_with_timeout()
+
+
+def test_runtime_unavailable_during_cleanup_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess()
+    _prepare_public_run(monkeypatch, process)
+    monkeypatch.setattr(sandbox.threading, "Thread", _SynchronousThread)
+    monotonic = iter((0.0, 1.0))
+    monkeypatch.setattr(sandbox.time, "monotonic", lambda: next(monotonic))
+
+    def runtime_result(command: list[str], **_: object) -> object:
+        if command[1:3] == ["container", "inspect"]:
+            return _completed(1)
+        if command[1:] == ["info"]:
+            return _completed(1)
+        return _completed(0)
+
+    monkeypatch.setattr(sandbox.subprocess, "run", runtime_result)
+    monkeypatch.setattr(sandbox.os, "killpg", lambda *_: None)
+
+    with pytest.raises(
+        sandbox.SandboxError,
+        match="runtime could not confirm container termination",
+    ):
+        _run_with_timeout()
