@@ -10,9 +10,10 @@ from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
     OperatorResult,
-    OperatorSettings,
     artifact_text,
 )
+from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.units import MetricFactUnit
 from dr_code.trace import Artifact, ArtifactKind
 
 _BRANCH_NODES = (
@@ -37,6 +38,37 @@ _FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
 class AstStatsResult(OperatorResult):
+    UNITS = {
+        "top_level_function_count": MetricFactUnit.COUNT,
+        "nested_function_count": MetricFactUnit.COUNT,
+        "async_function_count": MetricFactUnit.COUNT,
+        "lambda_count": MetricFactUnit.COUNT,
+        "class_count": MetricFactUnit.COUNT,
+        "import_count": MetricFactUnit.COUNT,
+        "ast_node_count": MetricFactUnit.COUNT,
+        "statement_count": MetricFactUnit.COUNT,
+        "branch_count": MetricFactUnit.COUNT,
+        "return_count": MetricFactUnit.COUNT,
+        "yield_count": MetricFactUnit.COUNT,
+        "call_count": MetricFactUnit.COUNT,
+        "assignment_count": MetricFactUnit.COUNT,
+        "comprehension_count": MetricFactUnit.COUNT,
+        "literal_count": MetricFactUnit.COUNT,
+        "max_branch_depth": MetricFactUnit.DEPTH,
+        "function_count": MetricFactUnit.COUNT,
+        "total_argument_count": MetricFactUnit.COUNT,
+        "positional_only_argument_count": MetricFactUnit.COUNT,
+        "keyword_only_argument_count": MetricFactUnit.COUNT,
+        "vararg_count": MetricFactUnit.COUNT,
+        "kwarg_count": MetricFactUnit.COUNT,
+        "decorated_function_count": MetricFactUnit.COUNT,
+        "annotated_return_count": MetricFactUnit.COUNT,
+        "docstring_function_count": MetricFactUnit.COUNT,
+        "total_function_body_statement_count": MetricFactUnit.COUNT,
+        "max_function_body_statement_count": MetricFactUnit.COUNT,
+        "max_function_line_span": MetricFactUnit.LINES,
+    }
+
     top_level_function_count: int
     nested_function_count: int
     async_function_count: int

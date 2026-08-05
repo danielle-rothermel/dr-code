@@ -11,9 +11,10 @@ from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
     OperatorResult,
-    OperatorSettings,
     artifact_text,
 )
+from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.units import MetricFactUnit
 from dr_code.text_analysis import (
     CODE_LIKE_LINE_RE,
     FENCE_LINE_RE,
@@ -30,6 +31,16 @@ class CodeLeakageSettings(OperatorSettings):
 
 
 class CodeLeakageResult(OperatorResult):
+    UNITS = {
+        "keyword_count": MetricFactUnit.COUNT,
+        "code_marker_count": MetricFactUnit.COUNT,
+        "fenced_code_block_count": MetricFactUnit.COUNT,
+        "code_like_line_count": MetricFactUnit.LINES,
+        "operator_count": MetricFactUnit.COUNT,
+        "punctuation_density": MetricFactUnit.RATIO,
+        "task_name_hit_count": MetricFactUnit.COUNT,
+    }
+
     keyword_count: int
     code_marker_count: int
     fenced_code_block_count: int

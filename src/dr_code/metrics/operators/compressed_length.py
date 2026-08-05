@@ -13,9 +13,10 @@ from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
     OperatorResult,
-    OperatorSettings,
     artifact_text,
 )
+from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.units import MetricFactUnit
 from dr_code.trace import Artifact, ArtifactKind, CodeArtifact
 
 
@@ -31,11 +32,22 @@ class CompressedLengthSettings(OperatorSettings):
 
 
 class CompressedLengthResult(OperatorResult):
+    UNITS = {
+        "compressed_bytes": MetricFactUnit.BYTES,
+        "representation_bytes": MetricFactUnit.BYTES,
+    }
+
     compressed_bytes: int
     representation_bytes: int
 
 
 class CompressedLengthWithReferenceResult(CompressedLengthResult):
+    UNITS = {
+        **CompressedLengthResult.UNITS,
+        "ratio_to_reference": MetricFactUnit.RATIO,
+        "percent_reduction": MetricFactUnit.PERCENT,
+    }
+
     ratio_to_reference: float | None
     percent_reduction: float | None
 

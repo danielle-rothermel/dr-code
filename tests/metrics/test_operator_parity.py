@@ -76,9 +76,14 @@ def _extract(definition, trace, **kwargs):
     return extract_metrics(definition, trace, **kwargs)
 
 
-def _value(record, key):
+def _facts(record):
+    """The measured record's facts as a name-to-value mapping."""
     assert record.status.value == "measured", record
-    return record.values[key]
+    return {fact.name: fact.value for fact in record.facts}
+
+
+def _value(record, key):
+    return _facts(record)[key]
 
 
 # ===========================================================================
@@ -154,8 +159,8 @@ def test_code_leakage_task_names_are_part_of_identity() -> None:
         _definition([_question("code_leakage", task_names=["foo"])]),
         _text_trace(text),
     )[0]
-    assert none_rec.values["task_name_hit_count"] == 0
-    assert named_rec.values["task_name_hit_count"] >= 1
+    assert _value(none_rec, "task_name_hit_count") == 0
+    assert _value(named_rec, "task_name_hit_count") >= 1
 
 
 # The shared ``dr_code.text_analysis`` regexes count indented lines, comments,
@@ -332,7 +337,7 @@ def test_compressed_length_zstd_level_3_matches_golden(task) -> None:
         ),
         _reference_trace(SAMPLE_TEXT, reference),
     )[0]
-    assert record.values["compressed_bytes"] == len(
+    assert _value(record, "compressed_bytes") == len(
         zstandard.ZstdCompressor(level=_ZSTD_GOLDEN_LEVEL).compress(
             SAMPLE_TEXT.encode("utf-8")
         )
@@ -353,11 +358,11 @@ def test_compressed_length_without_reference_has_no_ratio() -> None:
         ),
         _text_trace(SAMPLE_TEXT),
     )[0]
-    assert record.values["compressed_bytes"] == len(
+    assert _value(record, "compressed_bytes") == len(
         gzip.compress(SAMPLE_TEXT.encode("utf-8"), compresslevel=9)
     )
-    assert "representation_bytes" in record.values
-    assert "ratio_to_reference" not in record.values
+    assert "representation_bytes" in _facts(record)
+    assert "ratio_to_reference" not in _facts(record)
 
 
 def test_compressed_level_is_part_of_identity() -> None:
@@ -385,7 +390,7 @@ def test_compressed_level_is_part_of_identity() -> None:
         ),
         trace,
     )[0]
-    assert r9.values["compressed_bytes"] <= r6.values["compressed_bytes"]
+    assert _value(r9, "compressed_bytes") <= _value(r6, "compressed_bytes")
 
 
 # ===========================================================================
@@ -408,20 +413,22 @@ def test_code_test_passing_counts_match_oracle(
         code_test_trace(good_submission, task),
         run_in_sandbox=local_runner,
     )[0]
-    assert record.values["total_cases"] == oracle.total_cases
-    assert record.values["passed_count"] == oracle.status_counts.get(
+    assert _value(record, "total_cases") == oracle.total_cases
+    assert _value(record, "passed_count") == oracle.status_counts.get(
         "passed", 0
     )
-    assert record.values["failed_count"] == oracle.status_counts.get(
+    assert _value(record, "failed_count") == oracle.status_counts.get(
         "failed", 0
     )
-    assert record.values["error_count"] == oracle.status_counts.get("error", 0)
-    assert record.values["timeout_count"] == oracle.status_counts.get(
+    assert _value(record, "error_count") == oracle.status_counts.get(
+        "error", 0
+    )
+    assert _value(record, "timeout_count") == oracle.status_counts.get(
         "timeout", 0
     )
-    assert record.values["coverage_complete"] == oracle.coverage_complete
-    assert record.values["function_count"] == len(oracle.function_names)
-    assert record.values["best_function_name"] == oracle.best_function_name
+    assert _value(record, "coverage_complete") == oracle.coverage_complete
+    assert _value(record, "function_count") == len(oracle.function_names)
+    assert _value(record, "best_function_name") == oracle.best_function_name
 
 
 def test_code_test_failing_counts_match_oracle(
@@ -438,10 +445,10 @@ def test_code_test_failing_counts_match_oracle(
         code_test_trace(failing_submission, task),
         run_in_sandbox=local_runner,
     )[0]
-    assert record.values["passed_count"] == oracle.status_counts.get(
+    assert _value(record, "passed_count") == oracle.status_counts.get(
         "passed", 0
     )
-    assert record.values["failed_count"] == oracle.status_counts.get(
+    assert _value(record, "failed_count") == oracle.status_counts.get(
         "failed", 0
     )
 
@@ -462,8 +469,8 @@ def test_code_test_kill_returncode_attributed_to_candidate(
         code_test_trace(good_submission, task),
         run_in_sandbox=kill_runner,
     )[0]
-    assert record.values["error_count"] == record.values["total_cases"]
-    assert record.values["passed_count"] == 0
+    assert _value(record, "error_count") == _value(record, "total_cases")
+    assert _value(record, "passed_count") == 0
 
 
 def test_code_test_nonzero_exit_attributed_to_candidate(
@@ -478,8 +485,8 @@ def test_code_test_nonzero_exit_attributed_to_candidate(
         run_in_sandbox=scripted_runner(returncode=5, stdout="", stderr="boom"),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["error_count"] == record.values["total_cases"]
-    assert record.values["passed_count"] == 0
+    assert _value(record, "error_count") == _value(record, "total_cases")
+    assert _value(record, "passed_count") == 0
 
 
 def test_code_test_malformed_stdout_attributed_to_candidate(
@@ -501,10 +508,10 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
             run_in_sandbox=scripted_runner(returncode=0, stdout=bad_stdout),
         )[0]
         assert record.status.value == "measured", bad_stdout
-        assert record.values["error_count"] == record.values["total_cases"], (
-            bad_stdout
-        )
-        assert record.values["passed_count"] == 0, bad_stdout
+        assert _value(record, "error_count") == _value(
+            record, "total_cases"
+        ), bad_stdout
+        assert _value(record, "passed_count") == 0, bad_stdout
 
 
 def test_code_test_sandbox_error_still_propagates(
@@ -608,10 +615,10 @@ def test_code_test_best_function_is_mechanical_max_passes(
         code_test_trace(candidate, task),
         run_in_sandbox=local_runner,
     )[0]
-    assert record.values["best_function_name"] == task.entry_point
-    assert record.values["function_count"] == 2
-    assert "score" not in record.values
-    assert "outcome" not in record.values
+    assert _value(record, "best_function_name") == task.entry_point
+    assert _value(record, "function_count") == 2
+    assert "score" not in _facts(record)
+    assert "outcome" not in _facts(record)
 
 
 def test_code_test_partial_coverage_is_measured(
@@ -640,9 +647,9 @@ def test_code_test_partial_coverage_is_measured(
         run_in_sandbox=scripted_runner(stdout=incomplete_output),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["passed_count"] == 1
-    assert record.values["failed_count"] == 0
-    assert record.values["coverage_complete"] is False
+    assert _value(record, "passed_count") == 1
+    assert _value(record, "failed_count") == 0
+    assert _value(record, "coverage_complete") is False
 
 
 def test_code_test_complete_coverage_with_failure_is_covered(
@@ -668,6 +675,6 @@ def test_code_test_complete_coverage_with_failure_is_covered(
         run_in_sandbox=scripted_runner(stdout=complete_with_failure),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["passed_count"] == 1
-    assert record.values["failed_count"] == 1
-    assert record.values["coverage_complete"] is True
+    assert _value(record, "passed_count") == 1
+    assert _value(record, "failed_count") == 1
+    assert _value(record, "coverage_complete") is True

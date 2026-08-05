@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, ClassVar, Generic, Protocol, TypeVar
+from typing import ClassVar, Generic, Protocol, TypeVar
 
 from dr_code.metrics.engine.execution import (
     ExecutionOutcome,
@@ -11,6 +11,9 @@ from dr_code.metrics.engine.execution import (
 )
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.names import MetricName
+from dr_code.metrics.records import MetricFact
+from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.units import MetricFactUnit
 from dr_code.base import FrozenModel
 from dr_code.trace import (
     Artifact,
@@ -19,24 +22,33 @@ from dr_code.trace import (
     TextArtifact,
 )
 
-if TYPE_CHECKING:
-    # ``records`` imports ``definition``, which imports ``OperatorSettings``
-    # from here; the annotation-only use stays out of the runtime cycle.
-    from dr_code.metrics.records import MetricScalar
-
-
-class OperatorSettings(FrozenModel):
-    """Validated parameters that determine an operator's semantics."""
-
-
 SettingsT = TypeVar("SettingsT", bound=OperatorSettings)
 
 
 class OperatorResult(FrozenModel):
-    """Typed operator output; flattened to record values at the record boundary."""
+    """Typed operator output, projected to united facts at the boundary.
 
-    def to_values(self) -> dict[str, MetricScalar]:
-        return self.model_dump(mode="python")
+    Each result class declares the unit of every field it carries in
+    ``UNITS``. Declaring the units next to the fields they describe is what
+    lets the record boundary stay mechanical: it never guesses a unit from a
+    field name, and a new field without a declared unit fails loudly here
+    rather than persisting an unlabelled number.
+    """
+
+    UNITS: ClassVar[Mapping[str, MetricFactUnit]] = {}
+
+    def to_facts(self) -> tuple[MetricFact, ...]:
+        """Project fields into ordered facts carrying their declared units."""
+
+        facts: list[MetricFact] = []
+        for name, value in self.model_dump(mode="python").items():
+            unit = type(self).UNITS.get(name)
+            if unit is None:
+                raise ValueError(
+                    f"{type(self).__name__} declares no unit for fact {name!r}"
+                )
+            facts.append(MetricFact(name=name, value=value, unit=unit))
+        return tuple(facts)
 
 
 class EngineContext(Protocol):

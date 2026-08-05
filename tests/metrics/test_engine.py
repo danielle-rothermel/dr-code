@@ -93,11 +93,14 @@ def test_record_reads_operator_declared_version(
 
     record = _extract(_definition([_q("text_stats")]), trace)[0]
 
-    assert record.metric_version == "test-version"
+    assert record.identity.metric_version == "test-version"
 
 
 def test_records_preserve_complete_metrics_definition_coordinates() -> None:
-    from dr_code.metrics import MetricRecord
+    from dr_code.metrics import (
+        METRIC_RECORD_ADAPTER,
+        MetricsDefinitionCoordinate,
+    )
 
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
@@ -116,16 +119,22 @@ def test_records_preserve_complete_metrics_definition_coordinates() -> None:
     assert baseline.definition_id == reordered.definition_id
     assert baseline.version == reordered.version
     assert {
-        baseline_record.metrics_definition,
-        reordered_record.metrics_definition,
-        changed_record.metrics_definition,
-    } == {baseline, reordered, changed_settings}
+        baseline_record.identity.metrics_definition,
+        reordered_record.identity.metrics_definition,
+        changed_record.identity.metrics_definition,
+    } == {
+        MetricsDefinitionCoordinate.of(baseline),
+        MetricsDefinitionCoordinate.of(reordered),
+        MetricsDefinitionCoordinate.of(changed_settings),
+    }
 
-    restored = MetricRecord.model_validate_json(
+    restored = METRIC_RECORD_ADAPTER.validate_json(
         changed_record.model_dump_json()
     )
     assert restored == changed_record
-    assert restored.metrics_definition == changed_settings
+    assert restored.identity.metrics_definition == (
+        MetricsDefinitionCoordinate.of(changed_settings)
+    )
 
 
 def test_invalid_operator_settings_fail_at_definition_boundary() -> None:
@@ -187,7 +196,7 @@ def test_one_record_per_question_in_declaration_order() -> None:
     )
     records = _extract(definition, trace)
     assert len(records) == 3
-    assert [r.metric.value for r in records] == [
+    assert [r.identity.question.metric.value for r in records] == [
         "text_stats",
         "code_leakage",
         "ast_stats",
@@ -225,9 +234,11 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
     assert len(records) == 2
     for record in records:
         assert record.status.value == "not_applicable"
-        assert record.absence_failed_step == "extract"
-        assert record.absence_cause == "no code"
-        assert record.values == {}
+        assert record.absence.failed_step == "extract"
+        assert record.absence.failure_code == (
+            "no_alternative_produced_candidates"
+        )
+        assert record.absence.cause == "no code"
 
 
 def test_absent_auxiliary_yields_not_applicable() -> None:
@@ -249,7 +260,8 @@ def test_absent_auxiliary_yields_not_applicable() -> None:
     definition = _definition([_q("code_test", on="input")])
     record = _extract(definition, trace)[0]
     assert record.status.value == "not_applicable"
-    assert record.absence_failed_step == "load"
+    assert record.absence.failed_step == "load"
+    assert record.absence.failure_code == "missing_task"
 
 
 # ===========================================================================
@@ -282,9 +294,52 @@ def test_operator_exception_becomes_an_operator_failure_record(
     definition = _definition([_q("text_stats", on="input")])
     record = _extract(definition, trace)[0]
     assert record.status.value == "operator_failure"
-    assert record.failure_type == "ValueError"
-    assert record.failure_message == "operator bug"
-    assert record.metric is MetricName.TEXT_STATS
+    assert record.failure.failure_type == "ValueError"
+    assert record.failure.failure_message == "operator bug"
+    assert record.identity.question.metric is MetricName.TEXT_STATS
+
+
+def test_operator_result_violating_a_record_invariant_is_a_failure_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An operator that returns a result no MeasuredRecord can hold -- here a
+    zero-fact result -- is a misbehaving operator like any other, so it becomes
+    an operator-failure record for that one question rather than aborting the
+    whole batch with a ValidationError."""
+    from dr_code.metrics import MetricName
+    from dr_code.metrics.registry import REGISTRY
+
+    text = "def f(x):\n    return x + 1\n"
+    trace = external_trace(
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
+    )
+
+    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
+
+    class _NoFacts:
+        def to_facts(self) -> tuple[()]:
+            return ()
+
+    def empty(self, value, aux, ctx):  # noqa: ANN001
+        return _NoFacts()
+
+    monkeypatch.setattr(operator_cls, "compute", empty)
+    # A second question shares the batch: the misbehaving operator must not
+    # take the well-behaved one down with it.
+    definition = _definition(
+        [_q("text_stats", on="input"), _q("ast_stats", on="input")]
+    )
+
+    records = _extract(definition, trace)
+
+    by_metric = {record.identity.question.metric: record for record in records}
+    failed = by_metric[MetricName.TEXT_STATS]
+    assert failed.status.value == "operator_failure"
+    assert failed.failure.failure_type == "ValidationError"
+    assert by_metric[MetricName.AST_STATS].status.value == "measured"
 
 
 def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> (
@@ -307,8 +362,8 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
     definition = _definition([_q("ast_stats", on="input")])
     record = _extract(definition, trace)[0]
     assert record.status.value == "operator_failure"
-    assert record.metric is MetricName.AST_STATS
-    assert record.values == {}
+    assert record.identity.question.metric is MetricName.AST_STATS
+    assert not hasattr(record, "facts")
 
 
 # ===========================================================================
@@ -373,7 +428,8 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(
         run_in_sandbox=raising_runner(SandboxTimeoutError("timed out")),
     )[0]
     assert record.status.value == "measured"
-    assert record.values["timeout_count"] == record.values["total_cases"]
+    facts = _facts(record)
+    assert facts["timeout_count"] == facts["total_cases"]
 
 
 # ===========================================================================
@@ -478,12 +534,18 @@ def test_code_test_record_values_exclude_timing(
         [_q("code_test", on="input", timeout_seconds=2.0)]
     )
     record = _extract(definition, trace, run_in_sandbox=local_runner)[0]
-    assert "elapsed_seconds" not in record.values
+    assert "elapsed_seconds" not in _facts(record)
 
 
 # ---------------------------------------------------------------------------
 # Engine call wrappers.
 # ---------------------------------------------------------------------------
+
+
+def _facts(record):
+    """The measured record's facts as a name-to-value mapping."""
+    assert record.status.value == "measured", record
+    return {fact.name: fact.value for fact in record.facts}
 
 
 def _extract(definition, trace, **kwargs):

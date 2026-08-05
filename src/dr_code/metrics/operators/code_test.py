@@ -40,8 +40,9 @@ from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
     OperatorResult,
-    OperatorSettings,
 )
+from dr_code.metrics.settings import OperatorSettings
+from dr_code.metrics.units import MetricFactUnit
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
@@ -69,6 +70,17 @@ class CodeTestSettings(OperatorSettings):
 
 
 class CodeTestResult(OperatorResult):
+    UNITS = {
+        "total_cases": MetricFactUnit.COUNT,
+        "passed_count": MetricFactUnit.COUNT,
+        "failed_count": MetricFactUnit.COUNT,
+        "error_count": MetricFactUnit.COUNT,
+        "timeout_count": MetricFactUnit.COUNT,
+        "coverage_complete": MetricFactUnit.BOOLEAN,
+        "function_count": MetricFactUnit.COUNT,
+        "best_function_name": MetricFactUnit.IDENTIFIER,
+    }
+
     total_cases: int
     passed_count: int
     failed_count: int

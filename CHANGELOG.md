@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-08-05 (metric record evolution)
+
+- Metric records carry an explicit `schema_version` of 1, pinned by a
+  golden test on the exact serialized literals of a representative record.
+- `MetricRecord` is a closed discriminated union keyed on `status`:
+  `MeasuredRecord` carries ordered facts, `NotApplicableRecord` nests the
+  complete `Absent`, and `OperatorFailureRecord` nests a structured
+  `OperatorFailure`. `METRIC_RECORD_ADAPTER` is the loader for persisted
+  records.
+- Measured answers are ordered `MetricFact` models — name, strict finite
+  scalar, and a unit from the closed `MetricFactUnit` enum. Every operator
+  result class declares the unit of each field it emits in `UNITS`, and a
+  field without a declared unit fails loudly at projection.
+- Records nest a shared `MetricRecordIdentity`: the question coordinate,
+  the operator version, the trace producer coordinate, and the metrics
+  definition coordinate. An identity must name a question its own nested
+  definition coordinate declares.
+- `MetricQuestionCoordinate` and `MetricsDefinitionCoordinate` are the
+  registry-free persisted projections of a declaration. Question settings
+  persist as ordered `ComponentSetting` entries — nested settings groups
+  named by dotted path — so records validate structurally and archived
+  records stay loadable across settings churn and across operator
+  implementation and version churn. Metric names stay a closed enum, so the
+  guarantee does not extend to records naming a deleted metric.
+- `MetricFact` rejects a dot in a fact name, which is what makes the
+  two-column `record_rows` fact scheme collision-free.
+- `OperatorSettings` lives in `dr_code.metrics.settings`.
+- `record_rows` lifts identity fields to top-level columns and emits two
+  columns per fact: `"{metric}.{name}"` for the value and
+  `"{metric}.{name}.unit"` for its unit.
+
 ## 2026-08-05 (preprocessing hard cut)
 
 - Preprocessing binds and runs separately: `bind_preprocessing` validates a
