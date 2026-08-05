@@ -80,12 +80,14 @@ class Representation(StrEnum):
     that found it.
     """
 
+    #: Readings that name a code field explicitly, ahead of the readings
+    #: that scrape code out of arbitrary text — see ``_READINGS``.
+    JSON_CODE_FIELD = "json_code_field"
+    FIELD_MARKER = "field_marker"
     RAW_RESPONSE = "raw_response"
     TEXT_SEGMENTS = "text_segments"
     MARKDOWN_SEGMENTS = "markdown_segments"
     JSON_STRING_RESPONSE = "json_string_response"
-    JSON_CODE_FIELD = "json_code_field"
-    FIELD_MARKER = "field_marker"
     ESCAPED_PYTHON = "escaped_python"
     ESCAPED_MARKDOWN = "escaped_markdown"
 
@@ -195,13 +197,26 @@ def _escaped_markdown(text: str) -> list[str]:
 
 #: Representation -> the reading that produces its candidate sources. The
 #: mapping's order is the order candidates are contributed in.
+#:
+#: The two readings that name a code field explicitly — a JSON ``code`` key
+#: and a ``[[ ## code ## ]]`` marker — come first, ahead of the readings
+#: that scrape code out of arbitrary text. A response that says which part
+#: is its answer is answering the question directly, while a segment scrape
+#: is inference; when both fire, the response's own declaration is the
+#: better candidate. Without this, a fenced block in some *other* marked
+#: field (a ``[[ ## prompt ## ]]`` carrying a starter or reference
+#: function) is scraped first and shadows the marked answer under an
+#: acceptance policy that takes the lowest surviving ordinal.
+#:
+#: This orders the readings; it does not make any of them exclusive.
+#: Every representation still contributes every candidate it finds.
 _READINGS: Final = (
+    (Representation.JSON_CODE_FIELD, _json_code_field),
+    (Representation.FIELD_MARKER, _field_marker),
     (Representation.RAW_RESPONSE, _raw_response),
     (Representation.TEXT_SEGMENTS, _text_segments),
     (Representation.MARKDOWN_SEGMENTS, _markdown_segments),
     (Representation.JSON_STRING_RESPONSE, _json_string_response),
-    (Representation.JSON_CODE_FIELD, _json_code_field),
-    (Representation.FIELD_MARKER, _field_marker),
     (Representation.ESCAPED_PYTHON, _escaped_python),
     (Representation.ESCAPED_MARKDOWN, _escaped_markdown),
 )

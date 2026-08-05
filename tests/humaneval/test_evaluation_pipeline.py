@@ -431,6 +431,41 @@ def test_salvaged_candidate_still_gets_its_inferred_imports() -> None:
     assert validate_python_source(result.accepted_code).compile_ok
 
 
+def test_marked_code_field_wins_over_code_in_another_marked_field() -> None:
+    # A response that declares which part is its answer is answering
+    # directly; scraping code out of arbitrary text is inference. When a
+    # preceding field carries a fenced starter or reference function, the
+    # scrape must not shadow the marked answer under an acceptance policy
+    # that takes the lowest surviving ordinal.
+    result = extract_humaneval_code(
+        "[[ ## prompt ## ]]\n"
+        "```python\n"
+        "def add_one(x):\n"
+        '    """Reference/starter."""\n'
+        "    raise NotImplementedError\n"
+        "```\n\n"
+        "[[ ## code ## ]]\n"
+        "def add_one(x):\n"
+        "    return x + 1\n"
+    )
+
+    assert result.succeeded
+    assert result.accepted_code == "def add_one(x):\n    return x + 1"
+    # The starter is still extracted -- readings are ordered, not exclusive.
+    assert result.candidate_count == 2
+
+
+def test_json_code_field_wins_over_code_quoted_in_other_json_fields() -> None:
+    result = extract_humaneval_code(
+        '{"reasoning": "first I tried:\\n```python\\n'
+        'def f(x):\\n    raise NotImplementedError\\n```", '
+        '"code": "def f(x):\\n    return x + 1\\n"}'
+    )
+
+    assert result.succeeded
+    assert result.accepted_code == "def f(x):\n    return x + 1"
+
+
 def test_evaluation_passes_when_best_function_passes(
     local_runner: SandboxRunner,
 ) -> None:

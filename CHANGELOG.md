@@ -13,8 +13,12 @@
   mechanics are internal.
 - One registered definition, `exhaustive-function-candidates@0`, replaces
   the two previous registered definitions. It reads every supported
-  representation additively rather than taking the first that succeeds,
-  shapes each candidate, adds last-return truncation as an additional
+  representation additively rather than taking the first that succeeds
+  (readings that name a code field explicitly — a JSON `code` key, a
+  `[[ ## code ## ]]` marker — contribute before the readings that scrape
+  code out of arbitrary text, so a fenced block in another marked field
+  cannot shadow the marked answer; the ordering makes no reading
+  exclusive), shapes each candidate, adds last-return truncation as an additional
   candidate, repairs and infers imports (after the truncation, so a
   candidate that only becomes parseable once truncated still gets the
   imports its body needs), drops blanks, merges exact duplicates while
