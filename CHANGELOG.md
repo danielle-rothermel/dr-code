@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-08-05 (evaluation package)
+
+- `dr_code.evaluation` declares and reduces evaluations. It is
+  producer-blind and executor-blind: it names no dataset or benchmark, and
+  it never resolves anything in a registry.
+- Coordinates address one point in an evaluation and nest their parents
+  whole, so a persisted artifact is interpretable on its own:
+  `DatasetCoordinate`, `TaskSetCoordinate`, `RepeatPlanCoordinate`,
+  `SampleCoordinate` (task-set and repeat-plan coordinates plus a task
+  identity and repeat index), and `CandidateCoordinate` (a sample, a
+  preprocessing-definition coordinate, and a candidate ordinal).
+- `CandidateCoordinate.candidate_ordinal` indexes the materialized
+  candidate set — after deduplication and after filtering — the same
+  definition `MaterializeCandidateSet` establishes.
+- A `TaskSet` records the ordered population it selected from alongside the
+  selection. Selected identities are unique, drawn from the population, and
+  a subsequence of it, so two task sets with identical content compare
+  equal.
+- A `RepeatPlan` is uniform, contiguous, and task-major: every task gets
+  the same number of slots, indices run `0 .. repeats - 1`, and flattening
+  runs all repeats of the first selected task before any of the second.
+  `seeds` is optional and, when present, carries exactly one seed per slot.
+- An `EvaluationProcedure` nests the resolved `PreprocessingDefinition` and
+  `MetricsDefinition` rather than their coordinates, because a procedure
+  declares work about to run — the deliberate asymmetry with archived
+  records, which carry registry-free projections instead.
+- `EvaluationPlan` ties a task set, repeat plan, procedure, and
+  `AggregationPolicy` together, requiring the repeat plan to cover exactly
+  the selected tasks and the aggregated question to be one its own nested
+  metrics definition declares.
+- `AggregationPolicy` is closed and minimal: the question and fact name
+  addressing which number to read, the `AggregationStatistic`, and separate
+  `NotApplicablePolicy` rules for not-applicable and operator-failure
+  records. No templating and no free-form knobs.
+- `aggregate` is pure — no I/O, no registry, no clock, no randomness — and
+  takes complete explicit slots, where a slot with no record carries
+  `None`. Its five typed results are `AggregationOk`, `AggregationMissing`,
+  `AggregationNotApplicable`, `AggregationEmptyDenominator`, and
+  `AggregationNonFinite`, discriminated on `status`; none is a sentinel
+  float, and overflow is reported as a result rather than raised.
+  Discrimination over the record union is a type check.
+- `Score` is a derived value that never travels back into a metric fact. It
+  carries a finite scalar, a unit from the shared `MetricFactUnit` (never
+  `TEXT`, since a score is a measurement), the evaluation it summarizes,
+  and the fact coordinates it was computed from.
+- Golden tests pin the exact serialized literals of `EvaluationPlan` and
+  `Score` as the persisted wire format.
+
 ## 2026-08-05 (metric record evolution)
 
 - Metric records carry an explicit `schema_version` of 1, pinned by a
