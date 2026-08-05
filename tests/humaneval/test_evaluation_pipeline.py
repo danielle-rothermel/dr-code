@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 import dr_code.humaneval as humaneval
 from dr_code.core.source.python_analysis import validate_python_source
@@ -51,6 +51,7 @@ from dr_code.humaneval.sampling import (
 from dr_code.humaneval.scoring import (
     CompletedScore,
     HarnessFailure,
+    HumanEvalSubmissionScore,
     SubmissionOutcome,
     evaluation_outcome,
     score_humaneval_submission,
@@ -289,23 +290,79 @@ def test_raw_row_snapshot_rehydrates_byte_equal_checks(
         )
 
 
-def test_raw_row_snapshot_rejects_structural_override_set_mismatch(
+@pytest.mark.parametrize(
+    "mismatch",
+    (
+        "dataset",
+        "revision",
+        "override-id",
+        "override-version",
+        "override-structure",
+    ),
+)
+def test_raw_row_snapshot_rejects_provenance_mismatch(
     raw_snapshot: HumanEvalRawRowsSnapshot,
+    mismatch: str,
 ) -> None:
-    mismatched_header = raw_snapshot.header.model_copy(
-        update={
-            "override_set": raw_snapshot.header.override_set.model_copy(
-                update={"entries": ()}
-            )
-        }
-    )
+    header = raw_snapshot.header
+    if mismatch == "dataset":
+        header = header.model_copy(update={"dataset_id": "other/dataset"})
+        expected = (
+            "HumanEval raw-row snapshot dataset mismatch: "
+            f"{header.dataset_id!r} != {raw_snapshot.header.dataset_id!r}"
+        )
+    elif mismatch == "revision":
+        header = header.model_copy(update={"hf_revision": "other-revision"})
+        expected = (
+            "HumanEval raw-row snapshot HF revision mismatch: "
+            f"{header.hf_revision!r} != {raw_snapshot.header.hf_revision!r}"
+        )
+    elif mismatch == "override-id":
+        header = header.model_copy(
+            update={
+                "override_set": header.override_set.model_copy(
+                    update={"override_set_id": "other-overrides"}
+                )
+            }
+        )
+        expected = (
+            "unsupported HumanEval override set: "
+            f"other-overrides@{header.override_set.version}"
+        )
+    elif mismatch == "override-version":
+        header = header.model_copy(
+            update={
+                "override_set": header.override_set.model_copy(
+                    update={"version": "other-version"}
+                )
+            }
+        )
+        expected = (
+            "unsupported HumanEval override set: "
+            f"{header.override_set.override_set_id}@other-version"
+        )
+    else:
+        assert mismatch == "override-structure"
+        header = header.model_copy(
+            update={
+                "override_set": header.override_set.model_copy(
+                    update={"entries": ()}
+                )
+            }
+        )
+        expected = (
+            "HumanEval raw-row snapshot override-set mismatch: "
+            f"{header.override_set!r} != {HUMANEVAL_OVERRIDE_SET!r}"
+        )
 
-    with pytest.raises(ValueError, match="override-set mismatch"):
+    with pytest.raises(ValueError) as exc_info:
         validate_snapshot_header(
-            mismatched_header,
+            header,
             dataset_name=raw_snapshot.header.dataset_id,
             hf_revision=raw_snapshot.header.hf_revision,
         )
+
+    assert str(exc_info.value) == expected
 
 
 def test_parse_input_result_tests_have_stable_case_ids() -> None:
@@ -863,6 +920,79 @@ def test_score_humaneval_submission_returns_harness_failure() -> None:
     assert result.cause.exception_type == "JSONDecodeError"
     assert result.evaluation is not None
     assert result.evaluation.results[0].elapsed_seconds is not None
+
+
+@pytest.mark.parametrize(
+    ("runner_stdout", "expected_type"),
+    (
+        (_PARTIAL_RUNNER_PASSED_CASE_0, CompletedScore),
+        ("not-json", HarnessFailure),
+    ),
+    ids=("completed", "harness-failure"),
+)
+def test_submission_score_variants_round_trip_with_accepted_code(
+    runner_stdout: str,
+    expected_type: type[CompletedScore] | type[HarnessFailure],
+) -> None:
+    adapter = TypeAdapter(HumanEvalSubmissionScore)
+    result = score_humaneval_submission(
+        raw_submission="def add_one(x):\n    return x + 1\n",
+        task=_task(),
+        run_in_sandbox=_stub_runner(stdout=runner_stdout),
+    )
+
+    assert isinstance(result, expected_type)
+    assert result.extraction is not None
+    assert result.extraction.accepted_code is not None
+    assert result.extraction.accepted_tree is not None
+
+    payload = adapter.dump_json(result)
+    restored = adapter.validate_json(payload)
+
+    assert b"accepted_tree" not in payload
+    assert restored == result
+    assert restored.extraction is not None
+    assert restored.extraction.accepted_tree is not None
+    assert ast.dump(restored.extraction.accepted_tree) == ast.dump(
+        result.extraction.accepted_tree
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "error_type", "error_context"),
+    (
+        (
+            {"raw_submission": "def add_one(x):\n    return x + 1\n"},
+            "union_tag_not_found",
+            {"discriminator": "'kind'"},
+        ),
+        (
+            {"kind": "pending"},
+            "union_tag_invalid",
+            {
+                "discriminator": "'kind'",
+                "tag": "pending",
+                "expected_tags": "'completed', 'harness_failure'",
+            },
+        ),
+    ),
+    ids=("missing", "unknown"),
+)
+def test_submission_score_rejects_invalid_discriminator(
+    payload: dict[str, object],
+    error_type: str,
+    error_context: dict[str, str],
+) -> None:
+    adapter = TypeAdapter(HumanEvalSubmissionScore)
+
+    with pytest.raises(ValidationError) as exc_info:
+        adapter.validate_python(payload)
+
+    errors = exc_info.value.errors(include_url=False)
+    assert len(errors) == 1
+    assert errors[0]["type"] == error_type
+    assert errors[0]["loc"] == ()
+    assert errors[0]["ctx"] == error_context
 
 
 def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:

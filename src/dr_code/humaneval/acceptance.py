@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import ast
 
-from pydantic import PrivateAttr, StrictInt, StrictStr
+from pydantic import StrictInt, StrictStr
 
 from dr_code.core.models import FrozenModel
 from dr_code.preprocessing import (
@@ -57,8 +57,6 @@ class CodeExtractionResult(FrozenModel):
     cause: StrictStr | None = None
     trace: Trace
 
-    _accepted_tree: ast.Module | None = PrivateAttr(default=None)
-
     @property
     def succeeded(self) -> bool:
         """True when a candidate was accepted."""
@@ -72,7 +70,9 @@ class CodeExtractionResult(FrozenModel):
         trace: the trace records structural *facts* about a source, not the
         tree itself, so a derived view is recomputed where it is needed.
         """
-        return self._accepted_tree
+        if self.accepted_code is None:
+            return None
+        return ast.parse(self.accepted_code)
 
 
 def accept_first_surviving(
@@ -139,15 +139,13 @@ def extract_humaneval_code(
         )
 
     accepted = candidates[ordinal]
-    result = CodeExtractionResult(
+    return CodeExtractionResult(
         raw_submission=raw_submission,
         accepted_code=accepted.candidate.source,
         candidate_ordinal=ordinal,
         candidate_count=len(candidates),
         trace=trace,
     )
-    result._accepted_tree = ast.parse(accepted.candidate.source)
-    return result
 
 
 __all__ = [
