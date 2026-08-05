@@ -10,37 +10,32 @@ language models.**
 The repository contains a Python library and a separately packaged React
 viewer, organized into these functional areas:
 
-- **Candidate preparation**
-  ([`dr_code.preprocessing`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing))
+- **[Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing)**
   turns raw model responses into inspected Python candidates through declared,
   ordered preprocessing operations.
-- **Trace capture**
-  ([`dr_code.trace`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace))
+- **[Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)**
   preserves intermediate artifacts, structured facts, failure reasons, and
   semantic provenance so results remain explainable and serializable.
-- **Measurement and evaluation**
-  ([`dr_code.metrics`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/metrics),
-  [`dr_code.evaluation`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/evaluation))
+- **[Measurement](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/metrics)
+  and [evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/evaluation)**
   extracts typed measurements from traces, declares evaluation plans, and
   reduces complete inputs into explicit score outcomes.
-- **HumanEval+ evaluation**
-  ([`dr_code.humaneval`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval))
+- **[HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)**
   loads and samples benchmark tasks, extracts candidate solutions, runs them
   in an isolated Python sandbox, and reports structured outcomes.
-- **Synthetic dataset generation**
-  ([`dr_code.synthetic`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic))
+- **[Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)**
   applies deterministic corruption recipes to known solutions for
   preprocessing and robustness experiments.
-- **Code visualization**
-  ([`@dr-code/viewer`](https://github.com/danielle-rothermel/dr-code/tree/main/viewer/packages/viewer))
+- **[Code visualization](https://github.com/danielle-rothermel/dr-code/tree/main/viewer/packages/viewer)**
   provides reusable React components for highlighted code, diffs, and status
   presentation, plus a private gallery for visual development.
-- **Infrastructure**
-  ([`dr_code.core`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core))
-  contains shared foundations used by the functional packages:
-  - [frozen boundary models](https://github.com/danielle-rothermel/dr-code/blob/main/src/dr_code/core/models.py),
-  - [Python source inspection and transformation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/source), and
-  - [isolated execution](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/execution).
+- **Infra**
+  - **[Core models](https://github.com/danielle-rothermel/dr-code/blob/main/src/dr_code/core/models.py)**
+    provide frozen boundary models shared by the functional packages.
+  - **[Source](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/source)**
+    provides shared Python source inspection and transformation.
+  - **[Execution](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/execution)**
+    provides the shared isolated-execution boundary.
 
 ## Functional areas
 
