@@ -20,6 +20,7 @@ from dr_code.trace import (
     CodeCandidate,
     CodeCandidateSetArtifact,
     ComponentCoordinate,
+    ExternalPreprocessingTraceProducer,
     ExtractionOperation,
     InspectedCodeCandidate,
     InspectedCodeCandidateSetArtifact,
@@ -139,6 +140,31 @@ def test_json_round_trip_preserves_full_trace_union() -> None:
         JsonArtifact,
         Absent,
     }
+
+
+def test_external_preprocessing_producer_survives_full_trace_round_trip() -> (
+    None
+):
+    registered_trace = _full_trace()
+    registered_producer = registered_trace.producer
+    assert isinstance(registered_producer, PreprocessingTraceProducer)
+    producer = ExternalPreprocessingTraceProducer(
+        definition=registered_producer.definition
+    )
+    trace = Trace(
+        values=registered_trace.values,
+        producer=producer,
+        step_facts=registered_trace.step_facts,
+    )
+
+    restored = deserialize_trace(
+        SerializedTrace.model_validate_json(
+            serialize_trace(trace).model_dump_json()
+        )
+    )
+
+    assert restored == trace
+    assert restored.producer == producer
 
 
 def test_schema_version_is_pinned_to_three() -> None:

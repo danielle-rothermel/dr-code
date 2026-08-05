@@ -10,6 +10,7 @@ from dr_code.trace import (
     ComponentCoordinate,
     ComponentSetting,
     EXTERNAL_PRODUCER,
+    ExternalPreprocessingTraceProducer,
     ExternalTraceProducer,
     PreprocessingDefinitionCoordinate,
     PreprocessingTraceProducer,
@@ -61,6 +62,24 @@ def test_trace_producer_carries_declared_manual_version() -> None:
             ],
         },
     }
+
+
+def test_external_preprocessing_producer_round_trips_through_type_adapter() -> (
+    None
+):
+    producer = ExternalPreprocessingTraceProducer(
+        definition=PreprocessingDefinitionCoordinate(
+            definition_id="external-preprocessing-definition",
+            version="external-version",
+            steps=(),
+        )
+    )
+    adapter = TypeAdapter(TraceProducer)
+
+    restored = adapter.validate_json(adapter.dump_json(producer))
+
+    assert restored == producer
+    assert isinstance(restored, ExternalPreprocessingTraceProducer)
 
 
 @pytest.mark.parametrize(

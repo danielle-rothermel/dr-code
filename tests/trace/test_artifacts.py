@@ -1,4 +1,4 @@
-"""Boundary tests for trace artifacts and causal absence."""
+"""Boundary tests for trace artifacts."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from dr_code.core.source.python_analysis import validate_python_source_with_ast
 from dr_code.trace import (
-    Absent,
     Artifact,
     CandidateInspection,
     CandidateOrigin,
@@ -21,7 +20,6 @@ from dr_code.trace import (
     InspectedCodeCandidateSetArtifact,
     JsonArtifact,
     TextArtifact,
-    is_absent,
     parsed_module,
 )
 
@@ -287,53 +285,6 @@ def test_source_validation_only_yields_valid_inspections(source: str) -> None:
     assert inspection.parses == (inspection.parse_error is None)
     assert inspection.compiles == (inspection.compile_error is None)
     assert not (inspection.compiles and not inspection.parses)
-
-
-def test_absent_preserves_causal_lineage() -> None:
-    absent = Absent(
-        failed_step="parse",
-        failure_code="no_candidate_survived_filtering",
-        cause="syntax error",
-        propagated_through=("score", "aggregate"),
-    )
-
-    assert absent.model_dump(mode="json") == {
-        "kind": "absent",
-        "failed_step": "parse",
-        "failure_code": "no_candidate_survived_filtering",
-        "cause": "syntax error",
-        "propagated_through": ["score", "aggregate"],
-    }
-    with pytest.raises(ValidationError):
-        absent.cause = "other"  # type: ignore[misc]
-
-
-def test_absent_requires_a_failure_code() -> None:
-    with pytest.raises(ValidationError):
-        Absent(failed_step="parse", cause="syntax error")  # type: ignore[call-arg]
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    (
-        (
-            Absent(
-                failed_step="parse",
-                failure_code="parse_failed",
-                cause="syntax error",
-            ),
-            True,
-        ),
-        (TextArtifact(text="present"), False),
-        ("not a trace value", False),
-        (None, False),
-    ),
-)
-def test_is_absent_distinguishes_causal_absence(
-    value: object,
-    expected: bool,
-) -> None:
-    assert is_absent(value) is expected
 
 
 def test_parsed_module_returns_source_ast() -> None:
