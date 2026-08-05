@@ -31,8 +31,8 @@ class AddLastReturnSalvage(Step[StepSettings]):
     would destroy a candidate whose real content continues past its last
     ``return``. So the truncation is added as an *additional* candidate,
     immediately after the one it was salvaged from, and the original is
-    kept intact. A candidate truncation does not change contributes
-    nothing.
+    kept intact. A candidate that the truncation would leave unchanged
+    contributes nothing.
 
     Salvages carry the lineage of the candidate they came from, extended
     with this step's operation and that candidate's ordinal.

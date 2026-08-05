@@ -585,6 +585,26 @@ def test_extraction_reads_fenced_and_raw_representations_together() -> None:
     assert "def f():\n    return 1" in _sources(out.value)
 
 
+def test_extraction_reads_fenced_and_unfenced_code_additively() -> None:
+    # Different code in each family: a fenced-or-else-unfenced reading can
+    # only surface one of the two, so this pins the additive contract.
+    out = _extract(
+        "def outside():\n    return 1\n\n"
+        "```python\ndef inside():\n    return 2\n```"
+    )
+
+    # Restricted to the segment reading, so the whole-text raw_response
+    # candidate cannot stand in for the unfenced block.
+    segment_sources = [
+        candidate.source
+        for candidate in out.value.candidates
+        if candidate.origins[0].operation.operation_name
+        == Representation.TEXT_SEGMENTS.value
+    ]
+    assert "def inside():\n    return 2" in segment_sources
+    assert "def outside():\n    return 1\n" in segment_sources
+
+
 def test_extraction_reads_unfenced_segments() -> None:
     out = _extract("Explanation first.\ndef f():\n    return 1")
     assert "def f():\n    return 1" in _sources(out.value)

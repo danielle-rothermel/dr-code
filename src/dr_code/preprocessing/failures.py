@@ -22,7 +22,11 @@ class PreprocessingFailureCode(StrEnum):
     #: The input text is empty or whitespace-only, so there is nothing to
     #: extract from. Raised before any extraction is attempted.
     BLANK_INPUT = "blank_input"
-    #: No supported representation yielded a code-like candidate.
+    #: No supported representation yielded a code-like candidate. The
+    #: registered exhaustive definition preempts this code: it guards with
+    #: ``reject_blank_input`` first, and the raw-response reading turns any
+    #: non-blank input into at least one candidate. It stays reachable for
+    #: externally bound definitions that omit the blank guard.
     NO_CANDIDATES_EXTRACTED = "no_candidates_extracted"
     #: Every extracted candidate was dropped by the structural filters.
     NO_CANDIDATE_SURVIVED_FILTERING = "no_candidate_survived_filtering"

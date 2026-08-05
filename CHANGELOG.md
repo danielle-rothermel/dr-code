@@ -37,6 +37,18 @@
   encoded — a lone surrogate, a null byte — as unparseable and pass it
   through untouched, so such input is rejected by the compilability filter
   instead of raising out of the pipeline.
+- Acceptance semantics diverge from the previous pipeline. Extraction
+  requires a top-level function, so lambda-bound and class-wrapped
+  solutions are rejected at extraction with
+  `no_candidate_survived_filtering` instead of reaching evaluation, and
+  scoring's `NO_TOP_LEVEL_FUNCTIONS` outcome is preempted for
+  pipeline-extracted candidates.
+- Last-return truncation is no longer destructive: the original candidate
+  is accepted as written and the truncation is an additional candidate, so
+  a solution whose content continues past its last `return` survives.
+- Additive extraction recovers responses the first-success ladder missed —
+  including unfenced code alongside a fenced snippet, which the
+  fenced-or-else-unfenced reading dropped.
 
 ## 2026-08-05
 

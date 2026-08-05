@@ -9,9 +9,14 @@ survives.
 
 Representations, in the order they contribute candidates:
 
+Segments are read additively too: every fenced block *and* every non-blank
+unfenced block contributes, each split at Python anchor lines. Unfenced
+code alongside a fenced snippet is a candidate in its own right, so prose
+that introduces one solution and fences another yields both.
+
 1. ``raw_response`` — the whole normalized text as one candidate.
-2. ``text_segments`` — fenced blocks when present, plus the first unfenced
-   block, each split at Python anchor lines.
+2. ``text_segments`` — every fenced and every non-blank unfenced block,
+   each split at Python anchor lines.
 3. ``markdown_segments`` — the same segments with one markdown wrapper
    marker (blockquote, list bullet) stripped per line.
 4. ``json_string_response`` — a whole-response JSON string, decoded, then
@@ -34,7 +39,7 @@ import re
 from enum import StrEnum, verify, UNIQUE
 from typing import ClassVar, Final
 
-from dr_code.text_analysis import candidate_blocks, code_like_blocks
+from dr_code.text_analysis import code_like_blocks, split_by_fences
 from dr_code.text_transforms import (
     recover_escaped_python,
     strip_markdown_wrappers,
@@ -102,17 +107,32 @@ def _segment_sources(blocks: list[str]) -> list[str]:
     return [block for block in code_like_blocks(blocks) if block.strip()]
 
 
+def _additive_blocks(text: str) -> list[str]:
+    """Every fenced block followed by every non-blank unfenced block.
+
+    ``text_analysis.candidate_blocks`` reads fenced blocks *or else* the
+    first unfenced one, so unfenced code sitting alongside any fenced
+    snippet never becomes a candidate. This step reads both families
+    additively instead, which is what an exhaustive definition owes: a
+    response carrying code in two places contributes both, and downstream
+    filtering decides what survives. ``candidate_blocks`` itself is shared
+    with version-pinned metric operators and keeps its own semantics.
+    """
+    unfenced, fenced = split_by_fences(text)
+    return [*fenced, *(block for block in unfenced if block.strip())]
+
+
 def _raw_response(text: str) -> list[str]:
     return [text] if text.strip() else []
 
 
 def _text_segments(text: str) -> list[str]:
-    return _segment_sources(candidate_blocks(text))
+    return _segment_sources(_additive_blocks(text))
 
 
 def _markdown_segments(text: str) -> list[str]:
     return _segment_sources(
-        [strip_markdown_wrappers(block) for block in candidate_blocks(text)]
+        [strip_markdown_wrappers(block) for block in _additive_blocks(text)]
     )
 
 
@@ -127,7 +147,7 @@ def _json_string_response(text: str) -> list[str]:
         return []
     if not isinstance(decoded, str) or decoded == text:
         return []
-    return _segment_sources(candidate_blocks(decoded))
+    return _segment_sources(_additive_blocks(decoded))
 
 
 def _json_code_field(text: str) -> list[str]:
@@ -158,7 +178,7 @@ def _escaped_python(text: str) -> list[str]:
     unescaped = recover_escaped_python(text)
     if unescaped is None:
         return []
-    return _segment_sources(candidate_blocks(unescaped))
+    return _segment_sources(_additive_blocks(unescaped))
 
 
 def _escaped_markdown(text: str) -> list[str]:
@@ -168,7 +188,7 @@ def _escaped_markdown(text: str) -> list[str]:
     return _segment_sources(
         [
             strip_markdown_wrappers(block)
-            for block in candidate_blocks(unescaped)
+            for block in _additive_blocks(unescaped)
         ]
     )
 

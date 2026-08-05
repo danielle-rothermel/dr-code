@@ -1,8 +1,11 @@
 """Parse and compile each candidate once, pairing it with its inspection.
 
-This is the only step that parses candidate sources. Every filter after it
-reads the stored inspection instead of reparsing, so a candidate is parsed
-exactly once no matter how many structural questions are asked about it.
+This step owns the stored inspection: the compilability and
+top-level-function filters read it instead of reparsing. The plain-literal
+and code-representation filters classify module shape from their own
+memoized parse, keeping filter-specific questions out of
+``CandidateInspection`` — so a candidate is parsed at most once per
+question kind, never once per filter.
 
 The inspection describes the exact source it accompanies, which is why no
 step after this one may rewrite a candidate's source: doing so would leave
