@@ -460,6 +460,18 @@ def test_metric_fact_rejects_a_dotted_name(name: str) -> None:
         _fact(name=name, value=1)
 
 
+def test_metric_fact_rejects_an_empty_name() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        _fact(name="", value=1)
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "value_error"
+    assert error["loc"] == ()
+    assert str(error["ctx"]["error"]) == ("metric fact name must not be empty")
+
+
 def test_facts_preserve_operator_declaration_order() -> None:
     facts = (
         _fact(name="second", value=2),

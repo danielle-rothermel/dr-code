@@ -49,11 +49,11 @@ MetricScalar: TypeAlias = float | int | str | bool | None
 class MetricFact(FrozenModel):
     """One named, explicitly united observation carried by a record.
 
-    A fact name carries no dot: ``record_rows`` addresses a fact's value and
-    unit as ``"{metric}.{name}"`` and ``"{metric}.{name}.unit"``, so a fact
-    named ``x.unit`` would occupy fact ``x``'s unit column. Banning the
-    separator from names is what makes that two-column scheme
-    collision-free.
+    A fact name is non-empty and carries no dot: ``record_rows`` addresses a
+    fact's value and unit as ``"{metric}.{name}"`` and
+    ``"{metric}.{name}.unit"``, so a fact named ``x.unit`` would occupy fact
+    ``x``'s unit column. Banning the separator from names is what makes that
+    two-column scheme collision-free.
     """
 
     name: str
@@ -69,7 +69,9 @@ class MetricFact(FrozenModel):
         return self
 
     @model_validator(mode="after")
-    def reject_dotted_name(self) -> Self:
+    def validate_name(self) -> Self:
+        if not self.name:
+            raise ValueError("metric fact name must not be empty")
         if "." in self.name:
             raise ValueError(
                 f"metric fact name {self.name!r} must not contain '.': "

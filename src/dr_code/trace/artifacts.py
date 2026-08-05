@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import ast
+import math
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import Field, JsonValue, field_validator, model_validator
 
 from dr_code.core.models import FrozenModel
 
@@ -144,11 +145,31 @@ class JsonArtifact(FrozenModel):
     """JSON payload for externally built traces, such as a HumanEval task.
 
     Consumers revalidate ``payload`` into their own model at bind time; a
-    payload that fails validation is a ``WiringError``.
+    payload that fails validation is a ``WiringError``. The persisted payload
+    contains only finite JSON numbers; NaN and infinities have no JSON value.
     """
 
     kind: Literal[ArtifactKind.JSON] = ArtifactKind.JSON
     payload: JsonValue
+
+    @field_validator("payload")
+    @classmethod
+    def reject_non_finite_floats(cls, payload: JsonValue) -> JsonValue:
+        if _contains_non_finite_float(payload):
+            raise ValueError(
+                "JSON artifact payload must contain only finite floats"
+            )
+        return payload
+
+
+def _contains_non_finite_float(value: JsonValue) -> bool:
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    if isinstance(value, list):
+        return any(_contains_non_finite_float(item) for item in value)
+    if isinstance(value, dict):
+        return any(_contains_non_finite_float(item) for item in value.values())
+    return False
 
 
 Artifact = Annotated[

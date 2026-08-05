@@ -131,9 +131,9 @@ class AggregationOk(FrozenModel):
     status: Literal[AggregationStatus.OK] = AggregationStatus.OK
     value: float
     #: How many slots contributed to the numerator and denominator.
-    counted: int
+    counted: int = Field(ge=0)
     #: Every slot excluded by policy rather than counted.
-    excluded: int
+    excluded: int = Field(ge=0)
 
     @model_validator(mode="after")
     def validate_value(self) -> Self:
@@ -197,9 +197,9 @@ class AggregationNonFinite(FrozenModel):
     status: Literal[AggregationStatus.NON_FINITE] = (
         AggregationStatus.NON_FINITE
     )
-    counted: int
+    counted: int = Field(ge=0)
     #: Why the value is not finite, as a plain description.
-    reason: str
+    reason: str = Field(min_length=1)
 
 
 AggregationResult: TypeAlias = Annotated[

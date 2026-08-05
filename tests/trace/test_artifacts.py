@@ -142,6 +142,25 @@ def test_artifact_union_rejects_unknown_contract_fields(
         TypeAdapter(Artifact).validate_python(payload)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_json_artifact_rejects_nested_non_finite_floats(
+    value: float,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        JsonArtifact(payload={"outer": [{"value": value}]})
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "value_error"
+    assert error["loc"] == ("payload",)
+    assert str(error["ctx"]["error"]) == (
+        "JSON artifact payload must contain only finite floats"
+    )
+
+
 @pytest.mark.parametrize("artifact", ARTIFACTS)
 def test_artifacts_are_immutable(artifact: Artifact) -> None:
     with pytest.raises(ValidationError):

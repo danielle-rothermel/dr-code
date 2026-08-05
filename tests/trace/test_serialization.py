@@ -212,3 +212,24 @@ def test_serialized_trace_rejects_non_finite_step_fact_floats() -> None:
 
     with pytest.raises(ValidationError):
         SerializedTrace.model_validate(payload)
+
+
+def test_serialized_trace_rejects_nested_non_finite_json_artifact_float() -> (
+    None
+):
+    payload = serialize_trace(_full_trace()).model_dump(mode="python")
+    payload["values"]["payload"]["payload"] = {"nested": [float("nan")]}
+
+    with pytest.raises(ValidationError) as exc_info:
+        SerializedTrace.model_validate(payload)
+
+    error = next(
+        error
+        for error in exc_info.value.errors(include_url=False)
+        if error["type"] == "value_error"
+    )
+    assert error["loc"][:2] == ("values", "payload")
+    assert error["loc"][-2:] == ("json", "payload")
+    assert str(error["ctx"]["error"]) == (
+        "JSON artifact payload must contain only finite floats"
+    )

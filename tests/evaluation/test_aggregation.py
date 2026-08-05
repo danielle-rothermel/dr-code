@@ -293,6 +293,37 @@ def test_an_ok_result_cannot_carry_a_non_finite_value() -> None:
         AggregationOk(value=float("inf"), counted=1, excluded=0)
 
 
+@pytest.mark.parametrize("field", ["counted", "excluded"])
+def test_an_ok_result_rejects_a_negative_tally(field: str) -> None:
+    payload = {"value": 1.0, "counted": 0, "excluded": 0}
+    payload[field] = -1
+
+    with pytest.raises(ValidationError) as exc_info:
+        AggregationOk.model_validate(payload)
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "greater_than_equal"
+    assert error["loc"] == (field,)
+
+
+def test_a_non_finite_result_rejects_a_negative_count() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AggregationNonFinite(counted=-1, reason="sum overflowed")
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "greater_than_equal"
+    assert error["loc"] == ("counted",)
+
+
+def test_a_non_finite_result_requires_a_reason() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AggregationNonFinite(counted=1, reason="")
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "string_too_short"
+    assert error["loc"] == ("reason",)
+
+
 # ===========================================================================
 # Ok paths: every statistic.
 # ===========================================================================
