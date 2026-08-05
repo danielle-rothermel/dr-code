@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/danielle-rothermel/dr-code/actions/workflows/ci.yml/badge.svg)](https://github.com/danielle-rothermel/dr-code/actions/workflows/ci.yml)
 
-| [Project website](https://danielle-rothermel.github.io/dr-code/) |
-| --- |
+| [Project website](https://danielle-rothermel.github.io/dr-code/) | Personally owned dependencies: none |
+| --- | --- |
 
 **dr-code prepares, evaluates, analyzes, and visualizes Python code produced by
 language models.**
@@ -319,4 +319,19 @@ class SandboxRunner(Protocol):
         input_json: str,
         timeout_seconds: float,
     ) -> SandboxCompletedProcess: ...
+```
+
+## Development
+
+The canonical test run is serial:
+
+```console
+uv run pytest
+```
+
+For faster local feedback, run the same suite with an ephemeral xdist install;
+CI remains serial so its ordering and resource use stay reproducible:
+
+```console
+uv run --with pytest-xdist pytest -n 4
 ```
