@@ -1,5 +1,3 @@
-"""Smoke test for the library JSON Schema dump CLI."""
-
 from __future__ import annotations
 
 import json

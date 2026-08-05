@@ -1,10 +1,3 @@
-"""Derived scores: finiteness, unit rules, and source facts.
-
-Covers the rejection of ``MetricFactUnit.TEXT`` (a score is a measurement,
-not an observation), the shared unit vocabulary, source-fact requirements,
-and serialization round-trips.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -58,13 +51,7 @@ def score(**overrides: object) -> Score:
     )
 
 
-# ===========================================================================
-# Units: the shared vocabulary, minus TEXT.
-# ===========================================================================
-
-
 def test_score_reuses_the_metric_fact_unit_vocabulary() -> None:
-    """No parallel unit enum: a score's unit is a ``MetricFactUnit``."""
     assert Score.model_fields["unit"].annotation is MetricFactUnit
 
 
@@ -86,11 +73,6 @@ def test_score_accepts_every_measurement_unit(unit: MetricFactUnit) -> None:
     assert score(unit=unit).unit is unit
 
 
-# ===========================================================================
-# Value: strictly finite.
-# ===========================================================================
-
-
 @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])
 def test_score_rejects_a_non_finite_value(value: float) -> None:
     with pytest.raises(ValidationError, match="must be a finite value"):
@@ -99,11 +81,6 @@ def test_score_rejects_a_non_finite_value(value: float) -> None:
 
 def test_score_accepts_zero() -> None:
     assert score(value=0.0).value == 0.0
-
-
-# ===========================================================================
-# Sources: the derivation is recorded and auditable.
-# ===========================================================================
 
 
 def test_score_requires_at_least_one_source_fact() -> None:
@@ -134,29 +111,17 @@ def test_a_fact_coordinate_is_a_question_plus_a_name() -> None:
 
 
 def test_a_fact_coordinate_rejects_an_empty_fact_name() -> None:
-    # Same-shaped address as an aggregation policy's, held to the same
-    # strictness: an empty name addresses nothing.
     with pytest.raises(ValidationError, match="must name a fact"):
         fact_coordinate(fact="")
 
 
 @pytest.mark.parametrize("name", ("x.unit", "char_count.unit", "a.b"))
 def test_a_fact_coordinate_rejects_a_dotted_fact_name(name: str) -> None:
-    # ``MetricFact`` bans the dot so a fact's value and unit columns cannot
-    # collide, which means no real fact can ever carry a dotted name -- so a
-    # dotted coordinate could only address a fact that cannot exist, and
-    # would put an impossible address in a score's audit trail.
     with pytest.raises(ValidationError, match="must not contain"):
         fact_coordinate(fact=name)
 
 
-# ===========================================================================
-# A score is derived, never fed back into a metric fact.
-# ===========================================================================
-
-
 def test_score_is_not_accepted_as_a_metric_fact() -> None:
-    """Metric facts are observations of one response; scores are not."""
     from dr_code.metrics import MetricFact
 
     with pytest.raises(ValidationError):
@@ -165,11 +130,6 @@ def test_score_is_not_accepted_as_a_metric_fact() -> None:
             value=score(),
             unit=MetricFactUnit.COUNT,
         )
-
-
-# ===========================================================================
-# Serialization round-trips.
-# ===========================================================================
 
 
 @pytest.mark.parametrize(

@@ -13,7 +13,6 @@ export interface StatusBadgeProps {
   className?: string;
 }
 
-/** A compact label with a semantic status color. */
 export function StatusBadge({
   status,
   children,

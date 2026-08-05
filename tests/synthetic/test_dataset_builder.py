@@ -1,5 +1,3 @@
-"""Tests for the synthetic dataset builder."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -209,9 +207,7 @@ def test_dataset_jsonl_roundtrip_preserves_boundary_schema(
 
 
 def test_sample_id_layout_is_pinned() -> None:
-    # Contract pin: ``sample_id`` is a persisted display label. Its exact
-    # separator and field order are the stored format; changing either
-    # changes every artifact already on disk.
+    # The literal pins the persisted sample ID layout.
     coordinate = SyntheticSampleCoordinate(
         humaneval_task_id="HumanEval/0",
         generation_seed=1,
@@ -222,9 +218,7 @@ def test_sample_id_layout_is_pinned() -> None:
 
 
 def test_sample_coordinate_json_layout_is_pinned() -> None:
-    # Contract pin: the coordinate JSON is the semantic identity and the
-    # RNG seed material for ``build_sample``. Key names, key order, and
-    # setting projection are the stored format.
+    # The literal JSON pins persisted identity and RNG seed material.
     coordinate = SyntheticSampleCoordinate(
         humaneval_task_id="HumanEval/0",
         generation_seed=1,

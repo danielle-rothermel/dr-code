@@ -1,5 +1,3 @@
-"""Validation and snapshot tests for trace step facts."""
-
 from __future__ import annotations
 
 from array import array
@@ -28,7 +26,6 @@ def _minimal_values() -> dict[str, TraceValue]:
 
 
 def _attempt_public_mutation(action: Callable[[], object]) -> None:
-    """Exercise either a mutable defensive copy or an immutable view."""
     try:
         action()
     except (AttributeError, TypeError):
@@ -105,8 +102,7 @@ def test_trace_accepts_finite_json_step_facts() -> None:
         {"parse": {"value": object()}},
         {"parse": {"value": {"nested": object()}}},
         {"parse": "not a mapping"},
-        # The bytes family is Sequence-shaped but has no JSON form; it must
-        # be rejected rather than coerced into a list of ints.
+        # Bytes are Sequence-shaped but not JSON; reject rather than list-coerce.
         {"parse": {"value": b"raw"}},
         {"parse": {"value": bytearray(b"raw")}},
         {"parse": {"value": memoryview(b"raw")}},
@@ -148,8 +144,8 @@ def test_trace_narrows_enum_step_fact_leaves_to_plain_builtins() -> None:
         "attempts": 2,
         "nested": {"alternative": "fenced_blocks"},
     }
-    # Equality alone would pass for the live enum members; the stored facts
-    # must hold plain containers, so pin the exact leaf types.
+
+    # Equality accepts enum leaves, so pin that storage uses plain builtins.
     assert type(stored["alternative"]) is str
     assert type(stored["attempts"]) is int
     nested = stored["nested"]

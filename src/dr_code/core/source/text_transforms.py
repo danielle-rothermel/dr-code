@@ -1,12 +1,3 @@
-"""Total, best-effort transforms over text that probably contains code.
-
-Functions here accept arbitrary text — raw LLM output, markdown, prose with
-embedded code — and never raise; unrepairable input passes through
-unchanged. For transforms that assume their input already *is* parseable
-Python (and raise `SyntaxError` when it is not), see
-`dr_code.core.source.python_transforms`.
-"""
-
 from __future__ import annotations
 
 import io
@@ -30,7 +21,6 @@ PYTHON_ANCHOR_RE: Final[re.Pattern[str]] = re.compile(
     r"(?:def |async def |class |import |from |@|if __name__)"
 )
 
-#: ASCII quote -> (left, right) Unicode "smart" counterparts.
 SMART_QUOTES: Final[dict[str, tuple[str, str]]] = {
     "'": ("‘", "’"),
     '"': ("“", "”"),
@@ -38,27 +28,18 @@ SMART_QUOTES: Final[dict[str, tuple[str, str]]] = {
 
 
 def normalize_line_endings(source: str) -> str:
-    """Convert CRLF and bare CR line endings to LF."""
     return source.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def strip_trailing_whitespace(source: str) -> str:
-    """Strip trailing whitespace from every LF-separated line.
-
-    CR characters count as trailing whitespace, so CRLF input comes back
-    with LF endings.
-    """
     return "\n".join(line.rstrip() for line in source.split("\n"))
 
 
 def collapse_blank_runs(source: str) -> str:
-    """Collapse runs of three or more newlines down to one blank line."""
     return BLANK_RUN_RE.sub("\n\n", source)
 
 
 def normalize_text(source: str, tab_width: int = DEFAULT_TAB_WIDTH) -> str:
-    """Canonical text cleanup: LF endings, NFKC, tabs expanded, trailing
-    whitespace stripped, blank runs collapsed, outer newlines trimmed."""
     text = normalize_line_endings(source)
     text = unicodedata.normalize("NFKC", text)
     text = text.expandtabs(tab_width)
@@ -68,7 +49,6 @@ def normalize_text(source: str, tab_width: int = DEFAULT_TAB_WIDTH) -> str:
 
 
 def strip_code_fences(source: str) -> str:
-    """Drop a leading and/or trailing fence line wrapping the source."""
     lines = source.split("\n")
     trailing_newline = bool(lines) and lines[-1] == ""
     if trailing_newline:
@@ -81,13 +61,11 @@ def strip_code_fences(source: str) -> str:
 
 
 def wrap_code_fence(source: str, lang: str = "python") -> str:
-    """Wrap the source in a markdown code fence, tagged unless `lang` is empty."""
     opening = f"{FENCE}{lang}" if lang else FENCE
     return f"{opening}\n{source.rstrip()}\n{FENCE}\n"
 
 
 def strip_markdown_wrappers(source: str) -> str:
-    """Remove one leading blockquote/list/bullet marker from every line."""
     return "\n".join(
         MARKDOWN_WRAPPER_RE.sub("", line, count=1)
         for line in source.splitlines()
@@ -95,16 +73,8 @@ def strip_markdown_wrappers(source: str) -> str:
 
 
 def recover_escaped_python(source: str) -> str | None:
-    """Recover structurally escaped Python without changing its strings.
+    """Decode structural escapes only outside Python string literals."""
 
-    Whole-response JSON strings use JSON's own escaping rules. Other input is
-    recovered only after a top-level Python anchor is found at a real or
-    escaped line boundary. From that anchor onward, structural ``\\n``,
-    ``\\r``, CRLF, and indentation ``\\t`` escapes are decoded only while the
-    scanner is outside Python string literals. Ambiguous escapes inside a
-    string are preserved, so unsupported shapes fail extraction instead of
-    silently changing candidate semantics.
-    """
     stripped = source.strip()
     if stripped.startswith('"') and stripped.endswith('"'):
         try:
@@ -234,13 +204,8 @@ def _is_unpaired_escape(source: str, index: int, escaped: str) -> bool:
 
 
 def drop_if_name(text: str) -> list[str]:
-    """Split `text` on `if __name__` guard lines, dropping the guards.
+    """Lossily split on any line containing ``if __name__``."""
 
-    Constraint: a "guard line" is any line whose text contains the substring
-    `if __name__` — including comment and string lines — and the split is on
-    every occurrence of that line's exact text. A deliberate lossy heuristic
-    for LLM-output cleanup, not a syntactic guard detector.
-    """
     lines = text.split(LINE_SEP)
     split_lines = [line for line in lines if "if __name__" in line]
     if not split_lines:
@@ -257,31 +222,8 @@ def drop_if_name(text: str) -> list[str]:
 
 
 def drop_after_last_return(text: str) -> str | None:
-    """Truncate `text` after its last complete `return` statement.
+    """Cut only after the last token-complete indented return statement."""
 
-    Returns `None` when there is no such boundary to truncate at — no
-    `return` inside a function body, or text whose tokenization never
-    reaches one. A salvage that cannot be located is not performed, so
-    `None` means "nothing to salvage", never "salvaged to nothing".
-
-    The boundary is found by tokenizing rather than by matching lines,
-    which is what makes it a *complete* statement: a `NEWLINE` token fires
-    only once bracket continuations have closed, so a return spanning
-    several lines is kept whole instead of being cut mid-bracket. Tokens
-    also distinguish the keyword from the same word inside a string or a
-    comment, and `INDENT`/`DEDENT` tracking keeps a `return` at
-    indentation level zero — which cannot be a function body's exit — from
-    being treated as one. The tracking is indentation depth, not function
-    scope: a `return` inside any indented block counts as a boundary, and
-    a salvage cut at one that is not inside a function does not compile
-    and is dropped by the compilability filter downstream.
-
-    Truncation is lossy and this is a best-effort repair over arbitrary
-    text, so it fails closed: a malformed token, an unterminated bracket,
-    or inconsistent indentation stops the walk, and only a boundary whose
-    own statement had already completed is trusted. A `return` still
-    pending when the walk stops yields `None`.
-    """
     pending_return = False
     at_statement_start = True
     indent_level = 0
@@ -315,8 +257,6 @@ def drop_after_last_return(text: str) -> str | None:
                 pending_return = True
             at_statement_start = False
     except (SyntaxError, ValueError, tokenize.TokenError):
-        # ``SyntaxError`` covers ``IndentationError``; ``ValueError`` covers
-        # text the tokenizer cannot even encode, such as a lone surrogate.
         pass
     if boundary is None or pending_return:
         return None
@@ -324,7 +264,6 @@ def drop_after_last_return(text: str) -> str | None:
 
 
 def _source_offset(text: str, position: tuple[int, int]) -> int:
-    """The character offset of a 1-based (row, column) token position."""
     row, column = position
     lines = text.splitlines(keepends=True)
     if row > len(lines):

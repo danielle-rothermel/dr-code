@@ -1,5 +1,3 @@
-"""Prepend an unused import that leaves program behavior unchanged."""
-
 from __future__ import annotations
 
 import random
@@ -11,11 +9,7 @@ from dr_code.synthetic.corruptions.base import Corruption
 
 
 class AddDeadCode(Corruption):
-    """Prepend an unused import line to the source.
-
-    The injection is a single statement, so an extracted candidate still
-    compiles but its AST no longer matches ground truth.
-    """
+    """Prepend ``import os as _unused_module``."""
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_DEAD_CODE
     VERSION: ClassVar[str] = "0"

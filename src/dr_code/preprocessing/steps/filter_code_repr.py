@@ -1,5 +1,3 @@
-"""Drop candidates that are code-representation assignments."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -13,8 +11,6 @@ from dr_code.trace import InspectedCodeCandidate
 
 
 class FilterCodeRepr(InspectedFilterStep):
-    """Drop candidates that are exactly a ``code = "..."`` assignment."""
-
     NAME: ClassVar[StepName] = StepName.FILTER_CODE_REPR
     VERSION: ClassVar[str] = "0"
 

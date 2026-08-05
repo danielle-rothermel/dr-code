@@ -1,5 +1,3 @@
-"""Keep only candidates that define at least one top-level function."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -10,14 +8,6 @@ from dr_code.trace import InspectedCodeCandidate
 
 
 class FilterTopLevelFunctions(InspectedFilterStep):
-    """Drop candidates whose inspection records no top-level function.
-
-    Reads ``inspection.top_level_function_names``, collected from the tree
-    the candidate was inspected with. A candidate that defines no
-    module-level function defines nothing a function-completion task can
-    call, whatever else it may contain.
-    """
-
     NAME: ClassVar[StepName] = StepName.FILTER_TOP_LEVEL_FUNCTIONS
     VERSION: ClassVar[str] = "0"
 

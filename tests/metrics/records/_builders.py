@@ -1,5 +1,3 @@
-"""Shared record constructors for metrics record contract tests."""
-
 from __future__ import annotations
 
 

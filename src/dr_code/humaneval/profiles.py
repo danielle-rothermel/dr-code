@@ -18,8 +18,6 @@ DEFAULT_HUMANEVAL_TIMEOUT_SECONDS = 2.0
 
 
 class PreprocessingDefinitionReference(FrozenModel):
-    """The exact preprocessing definition a scoring profile extracts with."""
-
     definition_id: StrictStr
     version: StrictStr
 
@@ -33,8 +31,6 @@ class HumanEvalScoringProfile(FrozenModel):
 
 
 class HumanEvalMetricsProfile(FrozenModel):
-    """Registered score aggregation behavior."""
-
     profile_id: StrictStr
     version: StrictStr
     passed_score: StrictFloat

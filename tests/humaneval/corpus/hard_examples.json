@@ -1698,8 +1698,7 @@
       "categories": [
         "corpus_spot_check",
         "fence",
-        "json",
-        "pr58"
+        "json"
       ],
       "decoder_output": "```json\n{\n  \"code\": \"def add(a: int, b: int) -> int:\\n    return a + b\"\n}\n```",
       "exact_candidates": [

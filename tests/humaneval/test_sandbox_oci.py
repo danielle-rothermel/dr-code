@@ -16,8 +16,7 @@ from dr_code.humaneval.scoring import (
 from dr_code.humaneval.task import HumanEvalTask
 
 
-# Local runs require an explicit opt-in. CI must run the probes even if its
-# workflow-specific opt-in variable drifts or is removed.
+# OCI probes run in CI; local runs require explicit opt-in.
 pytestmark = [
     pytest.mark.oci,
     pytest.mark.skipif(
@@ -30,6 +29,7 @@ pytestmark = [
 
 @pytest.fixture(scope="module", autouse=True)
 def _warm_sandbox_container() -> None:
+    # Timeouts are watchdogs; warm once so cold start is not the outcome.
     run_python_in_sandbox(
         source="input()\nprint('[]')\n",
         input_json="{}",

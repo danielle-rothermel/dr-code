@@ -1,5 +1,3 @@
-"""Tests for HumanEvalPlus source selection."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -12,7 +10,6 @@ from dr_code.humaneval import load_humaneval_plus, plus_dataset
 from dr_code.humaneval.task import HUMANEVAL_OVERRIDE_SET
 
 
-#: The repository's tracked offline HumanEvalPlus snapshot.
 SNAPSHOT_PATH = (
     Path(__file__).resolve().parents[2]
     / "tests"
@@ -37,8 +34,7 @@ ROW = {
     "test": TEST_SOURCE,
 }
 
-#: The one registered override entry that carries a test replacement; its
-#: anchor is what a corrupt snapshot row can silently lose.
+
 OVERRIDDEN_ENTRY = next(
     entry
     for entry in HUMANEVAL_OVERRIDE_SET.entries
@@ -100,9 +96,6 @@ def test_explicit_snapshot_loader_uses_repository_snapshot(
 def test_loader_rejects_row_missing_its_override_anchor(
     monkeypatch: pytest.MonkeyPatch, prefer_snapshot: bool
 ) -> None:
-    # The snapshot loader guarantees provenance only, so the synthetic
-    # builder is the use site that must reject a row whose overridden task
-    # lost the text its registered replacement anchors on.
     corrupt_row = {
         **ROW,
         "task_id": OVERRIDDEN_ENTRY.task_id,

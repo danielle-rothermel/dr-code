@@ -1,5 +1,3 @@
-"""Add simple `: int = 0`-style annotations to module-level variables."""
-
 from __future__ import annotations
 
 import ast
@@ -12,7 +10,6 @@ from dr_code.synthetic.corruptions.base import Corruption
 
 
 def _annotate(source: str) -> str:
-    """Best-effort: tag a no-op `_x: int = 0` line near the top."""
     try:
         ast.parse(source)
     except SyntaxError:
@@ -21,11 +18,6 @@ def _annotate(source: str) -> str:
 
 
 class AddTypeAnnotations(Corruption):
-    """Inject an annotated module-level variable.
-
-    Inverse of `dr_code.core.source.python_transforms.strip_type_annotations`.
-    """
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_TYPE_ANNOTATIONS
     VERSION: ClassVar[str] = "0"
 

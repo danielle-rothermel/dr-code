@@ -1,5 +1,3 @@
-"""Representation-extraction preprocessing-step tests."""
-
 from __future__ import annotations
 
 import json
@@ -19,9 +17,6 @@ def _sources(value: CodeCandidateSetArtifact) -> tuple[str, ...]:
     return tuple(candidate.source for candidate in value.candidates)
 
 
-# --- additive extraction across every representation -----------------
-
-
 def _extract(text: str):
     return ExtractAllRepresentations().apply(TextArtifact(text=text))
 
@@ -34,8 +29,6 @@ def _origin_operations(value: CodeCandidateSetArtifact) -> list[str]:
 
 
 def test_extraction_reads_fenced_and_raw_representations_together() -> None:
-    # A fenced response is read both as its whole raw text and as its
-    # fenced segment: neither reading shadows the other.
     out = _extract("Intro\n```python\ndef f():\n    return 1\n```")
     operations = _origin_operations(out.value)
     assert Representation.RAW_RESPONSE.value in operations
@@ -44,15 +37,11 @@ def test_extraction_reads_fenced_and_raw_representations_together() -> None:
 
 
 def test_extraction_reads_fenced_and_unfenced_code_additively() -> None:
-    # Different code in each family: a fenced-or-else-unfenced reading can
-    # only surface one of the two, so this pins the additive contract.
     out = _extract(
         "def outside():\n    return 1\n\n"
         "```python\ndef inside():\n    return 2\n```"
     )
 
-    # Restricted to the segment reading, so the whole-text raw_response
-    # candidate cannot stand in for the unfenced block.
     segment_sources = [
         candidate.source
         for candidate in out.value.candidates
@@ -104,7 +93,6 @@ def test_extraction_reads_a_json_code_field_inside_a_fence(tag: str) -> None:
 
 
 def test_extraction_reads_a_fenced_json_code_field_once() -> None:
-    """A bare envelope inside its own fence is not read twice."""
     envelope = json.dumps({"code": "def f():\n    return 1"})
     out = _extract(f"```json\n{envelope}\n```")
     sources = [
@@ -117,7 +105,6 @@ def test_extraction_reads_a_fenced_json_code_field_once() -> None:
 
 
 def test_extraction_ignores_a_malformed_fenced_json_envelope() -> None:
-    """Decoding stays strict: a truncated envelope is never repaired."""
     out = _extract('```json\n{"code": "def f():\\n    return 1"\n```')
     assert Representation.JSON_CODE_FIELD.value not in _origin_operations(
         out.value
@@ -125,13 +112,6 @@ def test_extraction_ignores_a_malformed_fenced_json_envelope() -> None:
 
 
 def test_extraction_ignores_a_fenced_envelope_outside_the_code_field() -> None:
-    """A marked response's other fields are not read as its declaration.
-
-    A ``[[ ## prompt ## ]]`` carrying a worked example is context the
-    response was given, not an answer it wrote. Reading its envelope would
-    put the example ahead of the marked answer under an acceptance policy
-    that takes the lowest surviving ordinal.
-    """
     envelope = json.dumps({"code": "def reference():\n    return 999"})
     out = _extract(
         f"[[ ## prompt ## ]]\nFor example:\n\n```json\n{envelope}\n```\n\n"
@@ -145,7 +125,6 @@ def test_extraction_ignores_a_fenced_envelope_outside_the_code_field() -> None:
 
 
 def test_extraction_reads_a_fenced_envelope_inside_the_code_field() -> None:
-    """The marked answer's own fenced envelope is still the declaration."""
     envelope = json.dumps({"code": "def f():\n    return 1"})
     out = _extract(
         f"[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\n```json\n{envelope}\n```"
@@ -198,7 +177,7 @@ def test_extraction_with_no_readable_representation_fails() -> None:
     assert (
         excinfo.value.code is PreprocessingFailureCode.NO_CANDIDATES_EXTRACTED
     )
-    # The evidence names how much each representation contributed.
+
     assert set(excinfo.value.evidence) == {
         representation.value for representation in Representation
     }
@@ -206,7 +185,5 @@ def test_extraction_with_no_readable_representation_fails() -> None:
 
 
 def test_extraction_of_prose_yields_the_raw_response_only() -> None:
-    # Prose is still a reading of the response; it is the filters, not
-    # extraction, that decide prose is not code.
     out = _extract("This is an explanation with no code whatsoever.")
     assert _origin_operations(out.value) == [Representation.RAW_RESPONSE.value]

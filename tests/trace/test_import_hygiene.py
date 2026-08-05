@@ -1,5 +1,3 @@
-"""Architecture boundary tests for the trace package."""
-
 from __future__ import annotations
 
 import ast
@@ -10,7 +8,8 @@ from pathlib import Path
 IMPORT_PROBE = Path(__file__).parent / "_import_probe.py"
 DR_CODE_PACKAGE = Path(__file__).parents[2] / "src" / "dr_code"
 TRACE_PACKAGE = DR_CODE_PACKAGE / "trace"
-#: The only dr_code roots the trace package may load at runtime.
+
+# Runtime imports are limited to these approved dr_code roots.
 APPROVED_DR_CODE_ROOTS = frozenset({"dr_code.core.models", "dr_code.trace"})
 
 
@@ -63,7 +62,6 @@ def test_trace_source_imports_only_approved_boundaries() -> None:
 
 
 def _loaded_siblings(report: dict[str, list[str]]) -> list[str]:
-    """Loaded dr_code modules outside the approved roots."""
     return [
         name
         for name in report["loaded_dr_code_modules"]

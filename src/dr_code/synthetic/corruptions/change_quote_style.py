@@ -1,5 +1,3 @@
-"""Switch all ASCII string quotes from one style to the other."""
-
 from __future__ import annotations
 
 import random
@@ -13,7 +11,6 @@ from dr_code.synthetic.corruptions.base import Corruption
 
 
 def _flip_string_quotes(source: str) -> str:
-    """Re-emit every string literal with single quotes (so format flips them back)."""
     try:
         tokens = list(tokenize.generate_tokens(StringIO(source).readline))
     except tokenize.TokenError:
@@ -26,8 +23,6 @@ def _flip_string_quotes(source: str) -> str:
             and not tok.string.startswith('"""')
         ):
             body = tok.string[1:-1]
-            # Naively re-quote with single quotes. If body contains a single
-            # quote we leave it alone to avoid producing invalid tokens.
             if "'" not in body:
                 new = "'" + body + "'"
                 out.append(tok._replace(string=new))
@@ -40,8 +35,6 @@ def _flip_string_quotes(source: str) -> str:
 
 
 class ChangeQuoteStyle(Corruption):
-    """Flip double-quoted strings to equivalent single-quoted strings."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.CHANGE_QUOTE_STYLE
     VERSION: ClassVar[str] = "0"
 

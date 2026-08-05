@@ -1,19 +1,3 @@
-"""Parse and compile each candidate once, pairing it with its inspection.
-
-This step owns the stored inspection: the compilability and
-top-level-function filters read it instead of reparsing. The plain-literal
-and code-representation filters classify module shape from their own
-memoized parse, keeping filter-specific questions out of
-``CandidateInspection`` — so a candidate is parsed at most once per
-question kind, never once per filter.
-
-The inspection describes the exact source it accompanies, which is why no
-step after this one may rewrite a candidate's source: doing so would leave
-the stored inspection describing text that is no longer there. Every
-source-mutating step — cleaning, import inference, salvage — runs before
-inspection for that reason.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -37,11 +21,6 @@ from dr_code.trace import (
 
 
 def top_level_function_names(tree: ast.Module) -> tuple[str, ...]:
-    """The names of ``tree``'s module-level function definitions, in order.
-
-    Module level only: a method or a closure is not a top-level function,
-    so nested definitions are deliberately not walked.
-    """
     return tuple(
         node.name
         for node in tree.body
@@ -50,7 +29,6 @@ def top_level_function_names(tree: ast.Module) -> tuple[str, ...]:
 
 
 def inspect_source(source: str) -> CandidateInspection:
-    """Parse and compile ``source`` once, reusing the tree it produced."""
     validated = validate_python_source_with_ast(source)
     validation = validated.validation
     return CandidateInspection(
@@ -67,14 +45,6 @@ def inspect_source(source: str) -> CandidateInspection:
 
 
 class InspectCandidates(Step[StepSettings]):
-    """CandidateSet -> InspectedCandidateSet, one parse per distinct source.
-
-    The set reaching this step is already deduplicated, so every source is
-    distinct; inspections are nonetheless memoized on the source text so
-    the one-parse-per-source guarantee holds regardless of what precedes
-    the step. Candidate order and lineage are carried through untouched.
-    """
-
     NAME: ClassVar[StepName] = StepName.INSPECT_CANDIDATES
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET

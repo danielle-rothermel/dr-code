@@ -1,5 +1,3 @@
-"""Execution requests and private cache orchestration."""
-
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +17,7 @@ _OUTPUT_LIMIT_RETURNCODE = -100_000_002
 
 
 class ExecutionRequest(FrozenModel):
-    """One deterministic invocation of a trusted sandbox runner program."""
+    """One cache-keyed sandbox request."""
 
     source: str
     input_json: str
@@ -28,21 +26,13 @@ class ExecutionRequest(FrozenModel):
 
 
 class ExecutionOutcome(FrozenModel):
-    """The cacheable fields returned by the sandbox execution boundary."""
-
     returncode: int
     stdout: str
     stderr: str
 
 
 class ExecutionCache(Protocol):
-    """Outcome cache keyed by an opaque request implementation detail.
-
-    The key hashes only the request fields; the injected ``SandboxRunner``
-    is not part of it. A cache instance must therefore be scoped to a single
-    runner/runtime -- sharing one across runners can silently return an
-    outcome produced by a different execution environment.
-    """
+    """Cache keys omit the injected runner; scope caches to one runtime."""
 
     def get(self, key: str) -> ExecutionOutcome | None: ...
 
@@ -50,8 +40,6 @@ class ExecutionCache(Protocol):
 
 
 class InMemoryExecutionCache:
-    """A process-local execution outcome cache."""
-
     def __init__(self) -> None:
         self._outcomes: dict[str, ExecutionOutcome] = {}
 
@@ -68,11 +56,7 @@ def run_requests(
     run_in_sandbox: SandboxRunner,
     cache: ExecutionCache,
 ) -> dict[ExecutionRequest, ExecutionOutcome]:
-    """Execute each distinct cache miss at most once.
-
-    Timeouts and output-limit failures are candidate-attributable outcomes.
-    Other sandbox failures remain infrastructure exceptions and propagate.
-    """
+    """Deduplicate requests within this call and reuse cache hits."""
 
     outcomes: dict[ExecutionRequest, ExecutionOutcome] = {}
     unique_requests: dict[str, ExecutionRequest] = {}
@@ -113,8 +97,6 @@ def run_requests(
 
 
 def _request_cache_key(request: ExecutionRequest) -> str:
-    """Hash a canonical request only for this module's cache lookup."""
-
     payload = json.dumps(
         request.model_dump(mode="json"),
         sort_keys=True,
@@ -124,12 +106,8 @@ def _request_cache_key(request: ExecutionRequest) -> str:
 
 
 def is_timeout_outcome(outcome: ExecutionOutcome) -> bool:
-    """Whether an outcome represents a candidate wall-clock timeout."""
-
     return outcome.returncode == _TIMEOUT_RETURNCODE
 
 
 def is_output_limit_outcome(outcome: ExecutionOutcome) -> bool:
-    """Whether an outcome represents candidate output flooding."""
-
     return outcome.returncode == _OUTPUT_LIMIT_RETURNCODE

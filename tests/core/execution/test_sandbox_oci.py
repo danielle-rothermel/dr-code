@@ -18,8 +18,7 @@ from dr_code.core.execution.sandbox import (
 )
 
 
-# Local runs require an explicit opt-in. CI must run the probes even if its
-# workflow-specific opt-in variable drifts or is removed.
+# OCI probes run in CI; local runs require explicit opt-in.
 pytestmark = [
     pytest.mark.oci,
     pytest.mark.skipif(
@@ -32,8 +31,7 @@ pytestmark = [
 
 @pytest.fixture(scope="module", autouse=True)
 def _warm_sandbox_container() -> None:
-    # Probe timeouts are watchdogs around asserted terminal outcomes. Pay the
-    # runtime cold-start cost once before those deliberately tight bounds.
+    # Timeouts are watchdogs; warm once so cold start is not the outcome.
     run_python_in_sandbox(
         source="input()",
         input_json="{}",
@@ -151,7 +149,7 @@ def test_timeout_kills_the_launched_container(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     container_id = uuid.UUID("bdd4c5e6-df1d-45aa-a084-85753c27fbad")
-    container_name = f"dr-code-humaneval-{container_id.hex}"
+    container_name = f"dr-code-python-sandbox-{container_id.hex}"
     monkeypatch.setattr(sandbox.uuid, "uuid4", lambda: container_id)
 
     with pytest.raises(SandboxTimeoutError):

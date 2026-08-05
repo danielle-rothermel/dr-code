@@ -1,5 +1,3 @@
-"""AST-statistics operator contracts."""
-
 from __future__ import annotations
 
 from dr_code.trace import CodeArtifact, external_trace
@@ -102,11 +100,6 @@ def test_ast_stats_positive_category_and_nested_depth_witnesses() -> None:
 def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> (
     None
 ):
-    """CodeArtifact documents "passed a compile check upstream", so unparseable
-    CODE is a producer contract violation -- ast_stats must not mask it as an
-    all-zero (indistinguishable from empty) measurement. It becomes an
-    OPERATOR_FAILURE record, consistent with code_test's SyntaxError-on-parse
-    behavior; parse facts stay the job of parse_outcome."""
     from dr_code.metrics import MetricName
 
     invalid = "def f(:\n    pass\n"

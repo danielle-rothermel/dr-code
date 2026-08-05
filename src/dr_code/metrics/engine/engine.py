@@ -1,5 +1,3 @@
-"""Bind, plan, execute, and compute declared metric questions."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -46,7 +44,7 @@ class _QuestionBinding:
 @dataclass(slots=True)
 class _TraceBinding:
     trace: Trace
-    question_binding: _QuestionBinding  # pairing validated in _bind_questions
+    question_binding: _QuestionBinding
     value: Artifact | None
     auxiliary: dict[str, Artifact]
     absence: Absent | None
@@ -57,8 +55,6 @@ def _record_identity(
     definition: MetricsDefinition,
     binding: _TraceBinding,
 ) -> MetricRecordIdentity:
-    """Project a bound question into the record's persisted identity."""
-
     question_binding = binding.question_binding
     return MetricRecordIdentity(
         question=MetricQuestionCoordinate.of(question_binding.question),
@@ -69,13 +65,7 @@ def _record_identity(
 
 
 class EngineInvariantError(Exception):
-    """Raised when the engine's own bind/plan/execute invariants break.
-
-    For example: an operator's ``compute`` rebuilds an ``ExecutionRequest``
-    that diverges from what ``execution_requests`` planned, so no outcome
-    was ever computed for it. This is an engine bug, not a metric bug, and
-    must never be attributed to the operator as an ``operator_failure``.
-    """
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +90,6 @@ def extract_metrics(
     run_in_sandbox: SandboxRunner = run_python_in_sandbox,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]:
-    """Extract one record per question from one trace."""
-
     return extract_metrics_batch(
         definition,
         (trace,),
@@ -117,8 +105,6 @@ def extract_metrics_batch(
     run_in_sandbox: SandboxRunner = run_python_in_sandbox,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[tuple[MetricRecord, ...], ...]:
-    """Extract records after collecting work across every supplied trace."""
-
     question_bindings = _bind_questions(definition)
     trace_bindings = tuple(
         tuple(
@@ -261,6 +247,7 @@ def _compute_record(
         return _failure_record(identity, binding.planning_failure)
 
     assert binding.value is not None
+    # Invalid operator result models or facts become operator failures.
     try:
         result = binding.question_binding.operator.compute(
             binding.value,
@@ -268,11 +255,6 @@ def _compute_record(
             context,
         )
         facts: tuple[MetricFact, ...] = result.to_facts()
-        # Record construction stays inside the guard: an operator whose
-        # result violates a record invariant — no facts, duplicate fact
-        # names — is a misbehaving operator, which is the operator-failure
-        # record's job to report. Constructing it outside would abort the
-        # whole batch over one bad operator.
         return MeasuredRecord(identity=identity, facts=facts)
     except (SandboxError, EngineInvariantError):
         raise

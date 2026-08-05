@@ -1,5 +1,3 @@
-"""Execution planning, caching, and request-deduplication contracts."""
-
 from __future__ import annotations
 
 import pytest
@@ -129,7 +127,7 @@ def test_run_requests_dedupes_identical_requests() -> None:
     requests = [_request(), _request(), _request()]
     outcomes = _run(requests, runner=runner)
     assert runner.calls == 1
-    # every duplicate resolves to the single executed outcome
+
     assert len(outcomes) == 1
     assert set(outcomes) == {requests[0]}
 
@@ -179,7 +177,6 @@ def test_run_requests_empty_input_returns_empty_dict() -> None:
 
 
 def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
-    """A runner exception propagates; the failing outcome is never stored."""
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
     def raising(*, source, input_json, timeout_seconds):  # noqa: ANN001
@@ -197,8 +194,6 @@ def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
 
 
 def test_run_requests_sandbox_error_propagates() -> None:
-    """SandboxError infrastructure failures propagate through run_requests."""
-
     def infra(*, source, input_json, timeout_seconds):  # noqa: ANN001
         raise SandboxError("infra failed")
 
@@ -207,7 +202,6 @@ def test_run_requests_sandbox_error_propagates() -> None:
 
 
 def test_run_requests_caches_output_limit_outcome() -> None:
-    """Candidate output flooding becomes a reusable sentinel outcome."""
     from dr_code.metrics.engine.execution import (
         InMemoryExecutionCache,
         is_output_limit_outcome,
@@ -236,7 +230,6 @@ def test_planning_sandbox_error_propagates_before_execution(
     monkeypatch: pytest.MonkeyPatch,
     counting_runner,
 ) -> None:
-    """Infrastructure failure during planning aborts before sandbox work."""
     from dr_code.metrics import MetricName
     from dr_code.metrics.registry import REGISTRY
 
@@ -262,7 +255,6 @@ def test_planning_sandbox_error_propagates_before_execution(
 def test_infrastructure_sandbox_error_raises(
     task, code_test_trace, raising_runner
 ) -> None:
-    """A SandboxError is infra breakage — it raises, never becomes a record."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
@@ -280,11 +272,6 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
     code_test_trace,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If CodeTest.compute rebuilds an ExecutionRequest that diverges from
-    what execution_requests planned, ctx.outcome_for's lookup misses. That
-    is an engine bug, not a metric bug: it must surface as
-    EngineInvariantError out of the batch, never get swallowed into an
-    operator_failure record."""
     from dr_code.metrics import EngineInvariantError
     from dr_code.humaneval.metric_operator import CodeTest
 
@@ -303,8 +290,6 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
 def test_sandbox_timeout_is_candidate_data_not_infrastructure(
     task, code_test_trace, raising_runner
 ) -> None:
-    """A candidate timeout is attributed to the candidate as data (timeout
-    cases), not a raised SandboxError (runner attribution parity)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(
@@ -323,7 +308,6 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(
 def test_batch_dedupes_identical_code_test_executions(
     task, counting_runner, code_test_trace
 ) -> None:
-    """Identical submissions across a sweep execute once (at-most-once)."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
@@ -364,7 +348,6 @@ def test_batch_returns_one_record_tuple_per_trace(
 def test_prepopulated_execution_cache_skips_the_runner(
     task, counting_runner, code_test_trace
 ) -> None:
-    """A cache hit means the injected runner is never called."""
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
     candidate = "def add_one(x):\n    return x + 1\n"
@@ -391,7 +374,6 @@ def test_prepopulated_execution_cache_skips_the_runner(
 
 
 def test_pure_operators_never_call_the_runner(counting_runner) -> None:
-    """Pure operators declare no execution requests."""
     text = "def f(x):\n    return x\n"
     trace = external_trace(
         {
@@ -409,8 +391,6 @@ def test_pure_operators_never_call_the_runner(counting_runner) -> None:
 def test_code_test_record_values_exclude_timing(
     task, local_runner, code_test_trace
 ) -> None:
-    """Determinism soft spot: timing stays out of record values so identical
-    inputs reproduce."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(

@@ -1,22 +1,13 @@
-"""Total analysis helpers for text that probably contains code.
-
-Functions here accept arbitrary text and never raise; unclassifiable input
-returns empty blocks or `False`. For transforms over the same best-effort
-text boundary, see `dr_code.core.source.text_transforms`; for parseable Python source,
-see `dr_code.core.source.python_analysis` and `dr_code.core.source.python_transforms`.
-"""
-
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable
 from typing import Final
 
-# NOTE: The constants below are consumed by metric operators (currently
-# `code_leakage` and `text_stats`), whose recorded values are part of a
-# question's metric identity. Changing any of these patterns/sets changes
-# those operators' output and therefore requires bumping the affected
-# operators' `VERSION`.
+# In development mode, keep the versions of ExtractAllRepresentations,
+# SplitOnNameGuard, StripFences, CodeLeakage, and TextStats at "0".
+# Afterward, changes here require VERSION bumps for every affected step and
+# operator in that list.
 FENCE_LINE_RE: Final[re.Pattern[str]] = re.compile(
     r"^[ \t]*(?P<fence>```|~~~)(?P<tag>[A-Za-z0-9_+\-]*)[ \t]*$"
 )
@@ -36,7 +27,6 @@ LINE_SEP: Final[str] = "\n"
 
 
 def fence_marker(line: str) -> str | None:
-    """The fence token (``` or ~~~) if `line` is a fence line, else None."""
     match = FENCE_LINE_RE.match(line)
     if match is None:
         return None
@@ -44,15 +34,10 @@ def fence_marker(line: str) -> str | None:
 
 
 def is_code_anchor_line(line: str) -> bool:
-    """True if `line` starts a Python top-level construct (def/class/import/...)."""
     return bool(CODE_ANCHOR_LINE_RE.match(line))
 
 
 def is_code_like_line(line: str) -> bool:
-    """True if `line` plausibly belongs to a Python code block.
-
-    Blank lines count as code-like so they don't break up a block.
-    """
     if not line.strip():
         return True
     return bool(CODE_LIKE_LINE_RE.match(line))
@@ -64,7 +49,6 @@ def _append_nonempty(blocks: list[str], lines: list[str]) -> None:
 
 
 def split_by_fences(text: str) -> tuple[list[str], list[str]]:
-    """Split text into unfenced and fenced blocks, dropping fence markers."""
     unfenced: list[str] = []
     fenced: list[str] = []
     current: list[str] = []
@@ -88,7 +72,6 @@ def split_by_fences(text: str) -> tuple[list[str], list[str]]:
 
 
 def candidate_blocks(text: str) -> list[str]:
-    """Return fenced blocks when present, otherwise the first unfenced block."""
     unfenced, fenced = split_by_fences(text)
     if fenced:
         return fenced
@@ -96,7 +79,6 @@ def candidate_blocks(text: str) -> list[str]:
 
 
 def is_code_like_block(text: str) -> bool:
-    """True if `text`'s first line looks like Python (empty text counts)."""
     first_line = text.split(LINE_SEP, 1)[0] if text else None
     if first_line is None:
         return True
@@ -104,7 +86,6 @@ def is_code_like_block(text: str) -> bool:
 
 
 def anchored_code_blocks(text: str) -> list[str]:
-    """Split `text` into code-like blocks anchored at def/class/import lines."""
     lines = text.split(LINE_SEP)
     if is_code_like_block(text):
         return [text]
@@ -128,7 +109,6 @@ def anchored_code_blocks(text: str) -> list[str]:
 
 
 def code_like_blocks(blocks: Iterable[str]) -> list[str]:
-    """Flatten `anchored_code_blocks` over every block."""
     code_blocks: list[str] = []
     for block in blocks:
         code_blocks.extend(anchored_code_blocks(block))

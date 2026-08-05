@@ -1,5 +1,3 @@
-"""Tests for HumanEval submission scoring."""
-
 from __future__ import annotations
 
 import ast
@@ -51,12 +49,6 @@ def _partial_evaluation_result(task: HumanEvalTask) -> EvaluationTaskResult:
 
 
 def test_evaluation_task_result_round_trips_through_its_own_dump() -> None:
-    """The model's own dump revalidates, and the readings come back.
-
-    Under ``extra="forbid"`` a serialized derived reading would be rejected on
-    the way back in, so the five readings never serialize; they are recomputed
-    from ``results``.
-    """
     evaluation = _partial_evaluation_result(_task())
     payload = evaluation.model_dump()
 
@@ -79,7 +71,6 @@ def test_evaluation_task_result_round_trips_through_its_own_dump() -> None:
 
 
 def test_evaluation_task_result_round_trips_through_json() -> None:
-    """The JSON dump revalidates too, readings intact."""
     evaluation = _partial_evaluation_result(_task())
 
     restored = EvaluationTaskResult.model_validate_json(
@@ -90,11 +81,6 @@ def test_evaluation_task_result_round_trips_through_json() -> None:
 
 
 def test_evaluation_task_summary_still_carries_the_readings() -> None:
-    """Readings cross a boundary as a summary, not as a task result.
-
-    Excluding them from ``EvaluationTaskResult`` does not make them
-    unpublishable: ``to_summary`` is the shape that carries them.
-    """
     evaluation = _partial_evaluation_result(_task())
     summary = evaluation.to_summary()
     payload = summary.model_dump()
@@ -248,13 +234,6 @@ def test_submission_score_rejects_invalid_discriminator(
 
 
 def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
-    """A broken sandbox is a harness failure, never a scored result.
-
-    A candidate must not benefit from generic sandbox breakage: the base
-    ``SandboxError`` surfaces as a ``HarnessFailure`` rather than a
-    ``CompletedScore`` with a zero score.
-    """
-
     def broken_sandbox(
         *,
         source: str,

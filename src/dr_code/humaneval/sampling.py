@@ -83,13 +83,6 @@ def load_humaneval_snapshot_rows(
     dataset_name: str = DEFAULT_HUMANEVAL_DATASET_NAME,
     hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
 ) -> list[HumanEvalRow]:
-    """Return the snapshot's raw rows after checking its provenance header.
-
-    Row-level validation belongs to whichever task model a caller builds:
-    ``parse_humaneval_dataset`` for evaluation tasks, a caller's own model
-    otherwise. This loader only guarantees that the rows come from the
-    expected dataset, revision, and registered override set.
-    """
     snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
         snapshot_path.read_text(encoding="utf-8")
     )

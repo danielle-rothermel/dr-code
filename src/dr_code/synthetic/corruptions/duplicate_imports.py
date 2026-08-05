@@ -1,5 +1,3 @@
-"""Duplicate existing import lines."""
-
 from __future__ import annotations
 
 import ast
@@ -21,7 +19,6 @@ def _duplicate(source: str) -> str:
         if isinstance(node, ast.Import | ast.ImportFrom):
             import_linenos.append(node.lineno)
     if not import_linenos:
-        # Inject a duplicate of a benign import at the top.
         return "import math\nimport math\n" + source
     lines = source.splitlines(keepends=True)
     out: list[str] = []
@@ -33,8 +30,6 @@ def _duplicate(source: str) -> str:
 
 
 class DuplicateImports(Corruption):
-    """Duplicate every top-level import statement once."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.DUPLICATE_IMPORTS
     VERSION: ClassVar[str] = "0"
 

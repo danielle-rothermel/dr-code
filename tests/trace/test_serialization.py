@@ -1,5 +1,3 @@
-"""Persistence-boundary tests for complete traces."""
-
 from __future__ import annotations
 
 import operator
@@ -49,7 +47,6 @@ def _candidate(source: str, *, location: int) -> CodeCandidate:
 
 
 def _attempt_public_mutation(action: Callable[[], object]) -> None:
-    """Exercise either a mutable defensive copy or an immutable view."""
     try:
         action()
     except (AttributeError, TypeError):
@@ -168,8 +165,7 @@ def test_external_preprocessing_producer_survives_full_trace_round_trip() -> (
 
 
 def test_schema_version_is_pinned_to_three() -> None:
-    # The persisted schema version is stored identity: pin the literal so a
-    # shape change without a version bump fails here.
+    # Version 3 pins this persisted shape; shape changes require a bump.
     assert TRACE_SCHEMA_VERSION == 3
     assert (
         serialize_trace(_full_trace()).model_dump(mode="json")[

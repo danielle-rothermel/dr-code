@@ -1,5 +1,3 @@
-"""Shared builders for HumanEval tests."""
-
 from __future__ import annotations
 
 from dr_code.core.execution.sandbox import (
@@ -51,8 +49,6 @@ def _stub_runner(
     stderr: str = "",
     returncode: int = 0,
 ) -> SandboxRunner:
-    """Build a runner that returns a fixed completed process."""
-
     def run(
         *,
         source: str,

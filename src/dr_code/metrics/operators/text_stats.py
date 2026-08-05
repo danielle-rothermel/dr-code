@@ -1,5 +1,3 @@
-"""Character, byte, line, and word statistics."""
-
 from __future__ import annotations
 
 import string

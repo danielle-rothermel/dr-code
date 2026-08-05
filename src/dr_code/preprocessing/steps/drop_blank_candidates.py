@@ -1,5 +1,3 @@
-"""Remove whitespace-only candidates from the set."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -20,15 +18,6 @@ from dr_code.trace import (
 
 
 class DropBlankCandidates(Step[StepSettings]):
-    """Drop candidates whose source is empty or whitespace-only.
-
-    Candidate-local cleaning can empty a candidate — stripping a fence off
-    an empty fenced block, splitting on a leading name guard. A blank
-    candidate is not code, and keeping it would let the empty string reach
-    the output as an accepted extraction. An empty survivor set is data;
-    the absence surfaces where the set is materialized.
-    """
-
     NAME: ClassVar[StepName] = StepName.DROP_BLANK_CANDIDATES
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET

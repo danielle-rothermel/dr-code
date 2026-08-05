@@ -1,5 +1,3 @@
-"""Persisted metric-record wire-format contracts."""
-
 from __future__ import annotations
 
 import json
@@ -16,6 +14,7 @@ from ._builders import (
 )
 
 
+# Literal keys pin persisted record shapes; deriving them would hide drift.
 _GOLDEN_MEASURED_RECORD = {
     "schema_version": 1,
     "status": "measured",
@@ -172,12 +171,6 @@ def test_golden_operator_failure_literals_load_back_equal() -> None:
 
 
 class _PoisonedRegistry:
-    """A registry that fails any read, however it is reached.
-
-    An empty registry only proves a lookup found nothing; this proves no
-    lookup happens at all, which is the actual guarantee.
-    """
-
     def __getitem__(self, key: object) -> object:
         raise AssertionError(
             f"record deserialization consulted the registry: [{key!r}]"
@@ -200,7 +193,6 @@ class _PoisonedRegistry:
 def test_record_loads_when_its_metric_is_absent_from_the_live_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Archived records stay loadable after the registry moves on."""
     from dr_code.metrics import METRIC_RECORD_ADAPTER
     import dr_code.metrics.registry as registry_module
 
@@ -216,7 +208,6 @@ def test_record_loads_when_its_metric_is_absent_from_the_live_registry(
 
 
 def test_record_loads_settings_the_live_operator_no_longer_accepts() -> None:
-    """Settings persist as bounded entries, not as a live settings model."""
     from dr_code.metrics import METRIC_RECORD_ADAPTER
 
     payload = json.loads(json.dumps(_GOLDEN_MEASURED_RECORD))
@@ -232,8 +223,6 @@ def test_record_loads_settings_the_live_operator_no_longer_accepts() -> None:
 
 
 def test_engine_produced_records_round_trip(text_trace) -> None:
-    """Whatever the engine emits is loadable; the rule mirrors its
-    derivation."""
     from dr_code.metrics import METRIC_RECORD_ADAPTER
 
     for record in _engine_records(text_trace):

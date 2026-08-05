@@ -1,5 +1,3 @@
-"""Curated façade for the trace boundary contract package."""
-
 from dr_code.trace.absent import Absent, is_absent
 from dr_code.trace.artifacts import (
     Artifact,

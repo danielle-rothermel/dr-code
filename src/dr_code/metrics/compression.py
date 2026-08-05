@@ -1,5 +1,3 @@
-"""Compression primitives used by the compressed-length operator."""
-
 from __future__ import annotations
 
 import gzip
@@ -50,8 +48,6 @@ def compressed_bytes(
     method: CompressionMethod,
     level: int,
 ) -> bytes:
-    """Compress ``value`` with an explicitly pinned codec level."""
-
     if method is CompressionMethod.GZIP:
         return gzip.compress(value, compresslevel=level)
     if method is CompressionMethod.ZSTD:

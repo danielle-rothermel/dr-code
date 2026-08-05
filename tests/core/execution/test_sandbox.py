@@ -1,11 +1,3 @@
-"""Deterministic checks for the public OCI sandbox failure contract.
-
-The runtime helpers remain private because the production boundary is the
-three-keyword ``run_python_in_sandbox`` callable. Tests use state-controlled
-process, stream, and thread doubles to force failures that a live runtime
-cannot reproduce reliably.
-"""
-
 from __future__ import annotations
 
 import io

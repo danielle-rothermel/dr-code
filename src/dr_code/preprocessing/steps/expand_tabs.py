@@ -1,5 +1,3 @@
-"""Expand tabs to spaces."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -10,14 +8,10 @@ from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class ExpandTabsSettings(StepSettings):
-    """Number of spaces per tab."""
-
     tab_width: int = 4
 
 
 class ExpandTabs(Step[ExpandTabsSettings]):
-    """Expand tabs to spaces using ``str.expandtabs(tab_width)``."""
-
     NAME: ClassVar[StepName] = StepName.EXPAND_TABS
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT

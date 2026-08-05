@@ -123,7 +123,7 @@ export function Gallery() {
         <p className="gallery-eyebrow">@dr-code/viewer</p>
         <h1>Primitive gallery</h1>
         <p>
-          A visual contract for code blocks, diffs, and status badges. Fixtures
+          A visual reference for code blocks, diffs, and status badges. Fixtures
           are deliberately static so component changes are easy to compare.
         </p>
       </header>

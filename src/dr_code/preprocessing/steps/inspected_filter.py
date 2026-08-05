@@ -1,13 +1,3 @@
-"""Base for filters that keep or drop candidates from stored inspection.
-
-A filter never transforms a candidate and never reparses one: it asks a
-policy question of the inspection already stored alongside the source, and
-records the reason for each rejection as a fact. Because filters do not
-touch sources, a survivor's candidate record and its inspection are carried
-through identically — the inspection still describes the exact source it
-accompanies.
-"""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -29,20 +19,11 @@ from dr_code.trace import (
 def inspected_candidate_set(
     value: Artifact,
 ) -> InspectedCodeCandidateSetArtifact:
-    """Narrow an Artifact to its inspected-candidate-set member."""
     assert isinstance(value, InspectedCodeCandidateSetArtifact)
     return value
 
 
 class InspectedFilterStep(Step[StepSettings]):
-    """Elementwise keep/drop over inspected candidates.
-
-    Subclasses implement ``rejection_reason``, returning the reason a
-    candidate is dropped or ``None`` to keep it. Reasons are recorded as
-    ``rejected_<ordinal>`` facts, where the ordinal indexes this step's
-    *input* set.
-    """
-
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.INSPECTED_CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.INSPECTED_CODE_CANDIDATE_SET
 

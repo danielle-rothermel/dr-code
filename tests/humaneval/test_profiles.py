@@ -32,8 +32,6 @@ def test_default_scoring_profile_uses_declared_component_versions() -> None:
 
 
 def test_scoring_profile_names_a_resolvable_preprocessing_definition() -> None:
-    # The profile carries a coordinate, not a definition object, so the
-    # coordinate has to resolve against the preprocessing registry.
     reference = DEFAULT_HUMANEVAL_SCORING_PROFILE.preprocessing_definition
     assert reference.definition_id == (
         EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID

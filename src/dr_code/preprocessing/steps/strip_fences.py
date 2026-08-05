@@ -1,5 +1,3 @@
-"""Strip code fences from each candidate."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -10,8 +8,6 @@ from dr_code.preprocessing.steps.base import CandidateMapStep
 
 
 class StripFences(CandidateMapStep):
-    """Drop a leading and/or trailing fence line from each candidate."""
-
     NAME: ClassVar[StepName] = StepName.STRIP_FENCES
     VERSION: ClassVar[str] = "0"
 

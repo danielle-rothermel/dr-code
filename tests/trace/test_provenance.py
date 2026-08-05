@@ -1,5 +1,3 @@
-"""Producer provenance contracts."""
-
 from __future__ import annotations
 
 import pytest
@@ -113,9 +111,6 @@ def test_component_setting_finite_float_round_trips_through_json() -> None:
     assert ComponentSetting.model_validate_json(setting.model_dump_json()) == (
         setting
     )
-
-
-# --- settings projection: tuple support and rejected shapes ----------
 
 
 def test_coordinate_settings_rejects_non_string_tuple() -> None:

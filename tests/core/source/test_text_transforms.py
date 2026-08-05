@@ -1,5 +1,3 @@
-"""Contract and behavior tests for shared text transforms."""
-
 from __future__ import annotations
 
 import pytest
@@ -129,7 +127,6 @@ def test_drop_after_last_return_truncates_trailing_lines() -> None:
 
 
 def test_drop_after_last_return_keeps_a_bracketed_return_whole() -> None:
-    """A return spanning lines ends where its brackets close, not before."""
     source = (
         "def f(x):\n"
         "    return (\n"
@@ -183,7 +180,6 @@ def test_drop_after_last_return_ends_at_a_semicolon_terminated_return() -> (
     ],
 )
 def test_drop_after_last_return_fails_closed(reason: str, source: str) -> None:
-    """No locatable boundary means no salvage, never a salvage to nothing."""
     assert drop_after_last_return(source) is None, reason
 
 

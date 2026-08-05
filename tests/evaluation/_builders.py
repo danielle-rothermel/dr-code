@@ -1,11 +1,3 @@
-"""Shared builders for evaluation coordinates, plans, and records.
-
-Every helper takes keyword overrides so a test can vary exactly the one
-field it is about and inherit a valid value for everything else. The
-sibling ``conftest`` puts this directory on ``sys.path`` so these names are
-importable under pytest's importlib import mode.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -264,8 +256,6 @@ def operator_failure(**overrides: object) -> OperatorFailureRecord:
 
 
 def slot(record: object = None, *, ordinal: int = 0) -> AggregationSlot:
-    """One slot at a distinct candidate ordinal, filled or empty."""
-
     return AggregationSlot(
         candidate=candidate(candidate_ordinal=ordinal), record=record
     )

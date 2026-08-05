@@ -1,5 +1,3 @@
-"""Frozen, named corruption recipes."""
-
 from __future__ import annotations
 
 import random
@@ -22,12 +20,6 @@ from dr_code.trace import coordinate_settings
 
 
 class CorruptionSpec(FrozenModel):
-    """One registered corruption with its settings.
-
-    ``settings`` is the registered corruption's concrete frozen model,
-    resolved while the spec crosses this validation boundary.
-    """
-
     corruption: CorruptionName
     settings: SerializeAsAny[CorruptionSettings] = Field(
         default_factory=CorruptionSettings
@@ -40,8 +32,6 @@ class CorruptionSpec(FrozenModel):
             return value
         data = dict(value)
         if "corruption" not in data:
-            # Let pydantic report the missing discriminator as a
-            # ValidationError instead of raising KeyError out of band.
             return data
         corruption = CorruptionName(data["corruption"])
         settings_model = REGISTRY[corruption.value].Settings
@@ -52,13 +42,6 @@ class CorruptionSpec(FrozenModel):
 
 
 class Recipe(FrozenModel):
-    """A named sequence of corruption specs.
-
-    Recipes are pure data: they describe *what* to apply with *which*
-    settings. The dataset builder is responsible for seeding RNG and
-    calling each component.
-    """
-
     name: str
     version: str
     corruptions: tuple[CorruptionSpec, ...]
@@ -66,7 +49,6 @@ class Recipe(FrozenModel):
 
 
 def _require_registered(recipe: Recipe) -> Recipe:
-    """Return the registered recipe `recipe` claims to be, or reject it."""
     registered = resolve_recipe(name=recipe.name, version=recipe.version)
     if recipe != registered:
         raise ValueError(
@@ -79,11 +61,6 @@ def _require_registered(recipe: Recipe) -> Recipe:
 def apply_recipe(
     recipe: Recipe, source: str, rng: random.Random
 ) -> CorruptedSample:
-    """Apply each component transform in order.
-
-    The same `rng` is threaded through every transform, so a recipe is
-    deterministic given its seed and settings.
-    """
     _require_registered(recipe)
 
     current = source
@@ -95,16 +72,7 @@ def apply_recipe(
     return CorruptedSample(corrupted_source=current)
 
 
-# ---------------------------------------------------------------------------
-# Frozen recipe set.
-#
-# Order keeps the original recipe set first, with extended recipes added
-# below to exercise every remaining corruption at least once.
-# ---------------------------------------------------------------------------
-
-
 def _spec(corruption: CorruptionName, **settings: object) -> CorruptionSpec:
-    """Build one recipe entry, validating settings against the registry."""
     return CorruptionSpec.model_validate(
         {"corruption": corruption, "settings": settings}
     )
@@ -235,7 +203,6 @@ RECIPES: Final[tuple[Recipe, ...]] = (
         ),
         description="Truncate then wrap with an untagged fence.",
     ),
-    # --- Extended set: each remaining transform exercised in isolation ---
     Recipe(
         name="trailing_whitespace",
         version="0",
@@ -299,7 +266,6 @@ RECIPES: Final[tuple[Recipe, ...]] = (
 )
 
 
-# Convenient lookup by name.
 RECIPES_BY_NAME: Final = MappingProxyType({r.name: r for r in RECIPES})
 
 

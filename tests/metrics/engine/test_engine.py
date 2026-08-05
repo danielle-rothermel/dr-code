@@ -1,5 +1,3 @@
-"""Metrics-engine orchestration contracts."""
-
 from __future__ import annotations
 
 import pytest
@@ -68,7 +66,6 @@ def test_records_preserve_complete_metrics_definition_coordinates() -> None:
 
 
 def test_invalid_operator_settings_fail_at_definition_boundary() -> None:
-    """Invalid settings cannot enter a metrics definition."""
     with pytest.raises(ValidationError) as exc_info:
         _q(
             "compressed_length",
@@ -114,8 +111,6 @@ def test_no_questions_yields_no_records() -> None:
 def test_operator_exception_becomes_an_operator_failure_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An operator bug on present input is a visible failure record, never a
-    boundary-crossing exception."""
     from dr_code.metrics import MetricName
     from dr_code.metrics.registry import REGISTRY
 
@@ -144,10 +139,6 @@ def test_operator_exception_becomes_an_operator_failure_record(
 def test_operator_result_violating_a_record_invariant_is_a_failure_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An operator that returns a result no MeasuredRecord can hold -- here a
-    zero-fact result -- is a misbehaving operator like any other, so it becomes
-    an operator-failure record for that one question rather than aborting the
-    whole batch with a ValidationError."""
     from dr_code.metrics import MetricName
     from dr_code.metrics.registry import REGISTRY
 
@@ -169,8 +160,7 @@ def test_operator_result_violating_a_record_invariant_is_a_failure_record(
         return _NoFacts()
 
     monkeypatch.setattr(operator_cls, "compute", empty)
-    # A second question shares the batch: the misbehaving operator must not
-    # take the well-behaved one down with it.
+
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
     )
@@ -187,7 +177,6 @@ def test_operator_result_violating_a_record_invariant_is_a_failure_record(
 def test_planning_failure_is_isolated_from_unaffected_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One ordinary planning failure does not suppress another measurement."""
     from dr_code.metrics import MetricName
     from dr_code.metrics.registry import REGISTRY
 

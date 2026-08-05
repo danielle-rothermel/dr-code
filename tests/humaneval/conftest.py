@@ -1,5 +1,3 @@
-"""Make HumanEval test builders importable and provide shared fixtures."""
-
 from __future__ import annotations
 
 import subprocess
@@ -21,14 +19,6 @@ if _HERE not in sys.path:
 
 @pytest.fixture
 def local_runner() -> SandboxRunner:
-    """A real, injectable runner that keeps primitive tests fast.
-
-    It runs the candidate under the host interpreter instead of the OCI
-    sandbox; the container contract has its own probes in ``test_sandbox``.
-    Injected via ``run_in_sandbox=`` rather than patched, so the seam is a
-    real function argument.
-    """
-
     def run_local_python(
         *,
         source: str,

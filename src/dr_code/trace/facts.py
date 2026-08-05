@@ -1,16 +1,3 @@
-"""Validated finite-JSON step facts.
-
-Step facts are descriptive provenance recorded by producers: what a step
-chose, why it rejected something, how many candidates survived. They are
-persisted verbatim, so the trace boundary restricts them to a closed,
-finite JSON shape — string keys, only ``None``/``bool``/``int``/``float``/
-``str``/``list``/``dict`` values, finite floats, and no container cycles.
-
-``validate_step_facts`` is the single gate: ``Trace`` construction and the
-serialization boundary both run it, so no fact can enter a trace or a
-persisted document without having been checked.
-"""
-
 from __future__ import annotations
 
 import math
@@ -19,29 +6,20 @@ from typing import TypeAlias
 
 from pydantic import JsonValue
 
-#: The recursive JSON value shape a fact may take. Pydantic's ``JsonValue``
-#: already names exactly that shape; ``validate_step_facts`` adds the two
-#: constraints it does not express — finite floats and no container cycles.
 JsonFactValue: TypeAlias = JsonValue
 
 StepFacts: TypeAlias = Mapping[str, Mapping[str, JsonFactValue]]
 
 
 class FactError(ValueError):
-    """A step fact is outside the finite-JSON shape the trace accepts."""
+    pass
 
 
 def validate_step_facts(
     step_facts: Mapping[str, Mapping[str, object]],
 ) -> dict[str, dict[str, JsonFactValue]]:
-    """Deep-copy step facts into plain containers, rejecting non-JSON.
+    """Copy into finite, acyclic JSON with string keys and plain built-ins."""
 
-    The returned mapping shares no mutable container with the caller, so a
-    later caller mutation cannot change the trace it was recorded in.
-    Leaves are narrowed to their plain builtin, so an ``str``/``int``
-    subclass such as a ``StrEnum`` member is stored as the ``str``/``int``
-    it serializes to rather than as the live enum object.
-    """
     if not isinstance(step_facts, Mapping):
         raise FactError(
             f"step facts must be a mapping: {type(step_facts).__name__}"
@@ -78,16 +56,8 @@ def _validate_value(
     path: str,
     seen: tuple[int, ...],
 ) -> JsonFactValue:
-    """Recursively copy one fact value, rejecting non-JSON and cycles.
-
-    ``seen`` carries the identities of the containers currently being
-    validated; a repeat identity is a cycle, which has no JSON form.
-    """
     if value is None or isinstance(value, bool):
         return value
-    # Subclass leaves (``StrEnum``/``IntEnum`` members and the like) are
-    # narrowed to their plain builtin, so the stored facts hold only plain
-    # containers and never a live domain object.
     if isinstance(value, str):
         return value if type(value) is str else str(value)
     if isinstance(value, int):
@@ -110,11 +80,8 @@ def _validate_value(
                 item, path=f"{path}.{key}", seen=nested
             )
         return mapping
-    # Only the two builtin JSON array shapes are accepted. A wider
-    # ``Sequence`` test would silently coerce the bytes family — ``bytes``,
-    # ``bytearray``, ``memoryview``, ``array.array`` — into lists of ints
-    # here while the serialization boundary rejects them.
     if isinstance(value, list | tuple):
+        # Wider sequences would silently coerce bytes-like values.
         _reject_cycle(value, path=path, seen=seen)
         nested = (*seen, id(value))
         return [

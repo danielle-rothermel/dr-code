@@ -1,5 +1,3 @@
-"""Signals that prose contains Python or benchmark-specific content."""
-
 from __future__ import annotations
 
 import keyword

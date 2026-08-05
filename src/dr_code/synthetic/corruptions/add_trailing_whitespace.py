@@ -1,5 +1,3 @@
-"""Append trailing whitespace to each line."""
-
 from __future__ import annotations
 
 import random
@@ -13,8 +11,6 @@ _TRAILING_LEN_CHOICES: Final[tuple[int, ...]] = (1, 2, 3)
 
 
 class AddTrailingWhitespace(Corruption):
-    """Append a few spaces to each non-empty line."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_TRAILING_WHITESPACE
     VERSION: ClassVar[str] = "0"
 

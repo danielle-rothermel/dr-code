@@ -44,7 +44,6 @@ interface RenderedDiff {
   theme: CodeDiffTheme;
 }
 
-/** A syntax-highlighted diff computed from two plain strings. */
 export function CodeDiff({
   oldContent,
   newContent,

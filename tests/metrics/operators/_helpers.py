@@ -1,5 +1,3 @@
-"""Shared harness for domain-neutral metric-operator tests."""
-
 from __future__ import annotations
 
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
@@ -60,7 +58,6 @@ def _extract(definition, trace, **kwargs):
 
 
 def _facts(record):
-    """The measured record's facts as a name-to-value mapping."""
     assert record.status.value == "measured", record
     return {fact.name: fact.value for fact in record.facts}
 

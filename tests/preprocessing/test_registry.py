@@ -1,5 +1,3 @@
-"""Tests for the preprocessing step registry."""
-
 from __future__ import annotations
 
 from dr_code.preprocessing.names import StepName
@@ -37,7 +35,5 @@ def test_every_registered_step_has_settings_model() -> None:
 
 
 def test_every_representation_has_exactly_one_reading() -> None:
-    # Every declared representation is read, each exactly once: a member
-    # with no reading would be a name for something never extracted.
     read = [representation for representation, _reading in _READINGS]
     assert read == list(Representation)

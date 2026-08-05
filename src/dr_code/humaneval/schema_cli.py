@@ -1,9 +1,3 @@
-"""CLI for printing HumanEval JSON Schema bundles.
-
-The ``humaneval`` command emits validation schemas for ``HumanEvalTask`` and
-``EvaluationCaseSummary`` as one JSON object.
-"""
-
 import json
 from typing import Any
 
@@ -19,27 +13,28 @@ VALIDATION_MODE = "validation"
 
 
 class LenientGenerateJsonSchema(GenerateJsonSchema):
-    # `schema` is Any because the parent takes pydantic's private
-    # CoreSchemaOrField union, which is not importable publicly.
     def handle_invalid_for_json_schema(
         self,
+        # Pydantic's CoreSchemaOrField parameter type is private.
         schema: Any,
         error_info: str,
     ) -> JsonSchemaValue:
-        # Runtime-only fields (e.g. ParsedCode's ast.AST) have no JSON form;
-        # emit an unconstrained schema so codegen types them as `unknown`
-        # instead of failing the whole dump.
+        # Runtime-only fields have no JSON form and remain unconstrained.
         return {}
 
 
 @app.callback()
 def main() -> None:
-    """Dump JSON Schemas for library models."""
+    pass
 
 
-@app.command()
+@app.command(
+    help=(
+        "Print a JSON Schema bundle for HumanEvalTask and "
+        "EvaluationCaseSummary."
+    )
+)
 def humaneval() -> None:
-    """Print a JSON Schema bundle for HumanEvalTask and EvaluationCaseSummary."""
     from pydantic.json_schema import models_json_schema
 
     from dr_code.humaneval.task import EvaluationCaseSummary, HumanEvalTask

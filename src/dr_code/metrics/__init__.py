@@ -1,5 +1,3 @@
-"""Declared, producer-blind metric extraction."""
-
 from typing import TYPE_CHECKING
 
 from dr_code.metrics.coordinates import (

@@ -1,5 +1,3 @@
-"""Collapse exact-duplicate candidate sources, merging their lineages."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -21,22 +19,6 @@ from dr_code.trace import (
 
 
 class DedupeCandidates(Step[StepSettings]):
-    """Keep the first candidate of each distinct source, merging origins.
-
-    Additive extraction reaches the same source by several routes — a
-    fenced block is also a text segment, a recovered escape is also a
-    markdown segment — so the set carries exact duplicates that are one
-    candidate arrived at more than one way, not two candidates.
-
-    Merge rule, in full: the *surviving* candidate is the earliest
-    occurrence of a source in set order, and it keeps its position. Its
-    merged lineage is its own origins first, in their existing order, then
-    each absorbed duplicate's complete origins appended in the order the
-    duplicates were encountered. Origins carry no uniqueness constraint, so
-    a route recorded by two duplicates appears twice; the lineage is a
-    record of every route taken, not a set of distinct routes.
-    """
-
     NAME: ClassVar[StepName] = StepName.DEDUPE_CANDIDATES
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET

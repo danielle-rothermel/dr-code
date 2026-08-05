@@ -1,31 +1,3 @@
-"""Subprocess batch orchestration for HumanEval evaluation.
-
-Owns the single canonical HumanEval batch protocol: ``build_humaneval_batch_
-request`` builds every request, and ``interpret_subprocess_batch_result``
-interprets every completed process back into ``EvaluationCaseResult`` rows.
-Both the direct batch path here and the ``code_test`` metrics operator route
-through them, so the request bytes and the result reading have one
-implementation.
-
-The runner validates each returned case result, but it currently preserves
-partial runner output rather than requiring one returned row per parsed test
-case. Tightening that cardinality check would be a benchmark behavior change
-and is deferred until per-test score persistence semantics are defined.
-Returned case ids must still be known and unique so partial output can never
-inflate coverage.
-
-Failure attribution: candidate-attributable terminations (memory/CPU-limit
-SIGKILL, interpreter crash, SystemExit, output floods) are scored as case
-errors or timeouts; ``EvaluationHarnessError``/``HarnessFailure`` is reserved
-for sandbox or runtime breakage so operators can alert on it. The runner
-captures the protocol stdout handle before candidate code runs and redirects
-Python-level candidate output to stderr, so accidental candidate prints do
-not reach the results channel. A deliberately adversarial candidate can
-still forge its own task's case results through the runner's module globals
-or a direct write to file descriptor 1; cross-task and cross-candidate
-score integrity does not depend on this channel.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -63,8 +35,6 @@ from dr_code.humaneval.task import (
 
 @dataclass(frozen=True, slots=True)
 class HumanEvalBatchRequest:
-    """Trusted runner source and opaque input for one HumanEval batch."""
-
     source: str
     input_json: str
     timeout_seconds: float
@@ -127,12 +97,6 @@ def top_level_function_names(
     *,
     parsed_module: ast.Module | None = None,
 ) -> list[str]:
-    """Every top-level function defined by candidate source, in order.
-
-    Legal duplicate names are all returned, so their case results stack under
-    one name downstream and can prevent ``coverage_complete``.
-    """
-
     tree = parsed_module if parsed_module is not None else ast.parse(code_str)
     return [
         node.name
@@ -210,13 +174,6 @@ def build_humaneval_batch_request(
     checks: list[SingleCaseCheck] | None = None,
     runner_source: str | None = None,
 ) -> HumanEvalBatchRequest:
-    """Build the complete sandbox request for one HumanEval batch.
-
-    The one place a HumanEval runner payload is assembled. Every caller --
-    the direct batch path and the ``code_test`` operator -- gets byte-identical
-    request input for the same task, candidate, and function name.
-    """
-
     parsed_tests = require_parsed_tests(task)
     check_payloads = (
         checks
@@ -245,13 +202,7 @@ def interpret_subprocess_batch_result(
     completed: SandboxCompletedProcess,
     elapsed_seconds: float,
 ) -> list[EvaluationCaseResult]:
-    """Read one completed process through the HumanEval runner protocol.
-
-    The one place runner output is turned into case results. Returncode
-    attribution, JSON decoding, per-case validation, and the known/unique
-    case-id rule all live here, so the direct batch path and the ``code_test``
-    operator read a given process identically.
-    """
+    """Allow partial output, but require known and unique returned case IDs."""
 
     parsed_tests = require_parsed_tests(task)
     if completed.returncode in CANDIDATE_KILL_RETURNCODES:
@@ -471,9 +422,7 @@ def require_parsed_tests(task: HumanEvalTask) -> ParsedTests:
 
 @cache
 def runner_script() -> str:
-    # The standalone runner program lives in ``sandbox_runner_script.py`` and
-    # is read as text (never imported) so it stays dependency-free and can run
-    # interpreter-isolated inside the sandbox container. See that file's header.
+    # Redirected stdout prevents accidental collisions, not result forgery.
     return (
         files("dr_code.humaneval")
         .joinpath("sandbox_runner_script.py")

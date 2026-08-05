@@ -1,5 +1,3 @@
-"""Metric-record model contracts."""
-
 from __future__ import annotations
 
 import pytest
@@ -105,7 +103,6 @@ def test_records_are_frozen() -> None:
 
 
 def test_equal_records_compare_equal() -> None:
-    """Records participate in structured comparison across runs."""
     assert _measured() == _measured()
     assert _not_applicable() == _not_applicable()
     assert _operator_failure() == _operator_failure()
@@ -157,9 +154,6 @@ def test_metric_fact_requires_a_unit_from_the_closed_vocabulary() -> None:
 
 @pytest.mark.parametrize("name", ["character_count.unit", "a.b", ".", "x."])
 def test_metric_fact_rejects_a_dotted_name(name: str) -> None:
-    # A fact named ``x.unit`` would occupy fact ``x``'s unit column in
-    # ``record_rows``; banning the separator is what makes that scheme
-    # collision-free.
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError, match="must not contain"):
@@ -190,7 +184,6 @@ def test_facts_preserve_operator_declaration_order() -> None:
 
 
 def test_measured_records_require_at_least_one_fact() -> None:
-    """An empty fact tuple is indistinguishable from the no-answer shape."""
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):

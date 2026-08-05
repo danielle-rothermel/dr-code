@@ -1,11 +1,3 @@
-"""Golden serialized literals: the persisted evaluation wire format.
-
-These keys and values are the storage contract for ``EvaluationPlan`` and
-``Score``. Changing any of them changes what a persisted plan or score
-means, so the literals are pinned here rather than derived from the models'
-field names — only a pinned test catches silent drift of stored identity.
-"""
-
 from __future__ import annotations
 
 import json
@@ -27,6 +19,7 @@ from dr_code.evaluation import (
 )
 from dr_code.metrics import MetricFactUnit
 
+# Literal keys pin persisted evaluation shapes; deriving them would hide drift.
 _GOLDEN_EVALUATION_PLAN = {
     "plan_id": "plan",
     "version": "1",

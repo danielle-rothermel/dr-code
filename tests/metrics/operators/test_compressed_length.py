@@ -1,5 +1,3 @@
-"""Compressed-length operator contracts."""
-
 from __future__ import annotations
 
 import gzip
@@ -35,9 +33,8 @@ def _reference_trace(text: str, reference: str):
 
 
 def test_compressed_length_gzip_level_9_matches_golden(task) -> None:
-    """Pinned gzip level 9 determines the compressed-length result."""
     reference = task.ground_truth_code
-    # The ratio divides gzip-compressed bytes by ground-truth source bytes.
+
     expected_compressed = len(
         gzip.compress(SAMPLE_TEXT.encode("utf-8"), compresslevel=9)
     )
@@ -66,7 +63,6 @@ def test_compressed_length_gzip_level_9_matches_golden(task) -> None:
 
 
 def test_compressed_length_zstd_level_3_matches_golden(task) -> None:
-    """Pinned zstd level 3 determines the compressed-length result."""
     reference = task.ground_truth_code
 
     record = _extract(
@@ -89,8 +85,6 @@ def test_compressed_length_zstd_level_3_matches_golden(task) -> None:
 
 
 def test_compressed_length_without_reference_has_no_ratio() -> None:
-    """Without a reference_key the reference columns are absent from the
-    record entirely — no ``ratio_to_reference`` key is emitted."""
     record = _extract(
         _definition(
             [
@@ -192,7 +186,6 @@ def test_compressed_length_rejects_invalid_settings(
 
 
 def test_compressed_level_is_part_of_identity() -> None:
-    """Compression level is persisted as part of metric identity."""
     from dr_code.metrics import METRIC_RECORD_ADAPTER
 
     trace = _text_trace(SAMPLE_TEXT)

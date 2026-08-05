@@ -1,5 +1,3 @@
-"""OCI isolation boundary for executing model-generated Python."""
-
 from __future__ import annotations
 
 import math
@@ -24,11 +22,7 @@ MAX_SANDBOX_OUTPUT_BYTES: Final[int] = 1_048_576
 SANDBOX_MEMORY_BYTES: Final[int] = 256 * 1024 * 1024
 SANDBOX_TMPFS_BYTES: Final[int] = 16 * 1024 * 1024
 SANDBOX_OPEN_FILES: Final[int] = 64
-# Container exit codes attributable to the candidate hitting a sandbox
-# resource boundary rather than to a broken sandbox: 137 is SIGKILL from the
-# memory limit or the CPU hard limit (python runs as container PID 1, which
-# ignores SIGXCPU, so the kernel escalates to SIGKILL), and 139 is SIGSEGV
-# from an interpreter crash.
+# 137 maps resource-limit SIGKILL; 139 maps interpreter-crash SIGSEGV.
 CANDIDATE_KILL_RETURNCODES: Final[frozenset[int]] = frozenset({137, 139})
 _RUNTIME_ENV: Final[tuple[str, ...]] = (
     "DOCKER_CONFIG",
@@ -41,15 +35,15 @@ _RUNTIME_ENV: Final[tuple[str, ...]] = (
 
 
 class SandboxError(RuntimeError):
-    """The trusted sandbox boundary could not safely complete execution."""
+    pass
 
 
 class SandboxTimeoutError(SandboxError):
-    """The sandbox exceeded its wall-clock deadline."""
+    pass
 
 
 class SandboxOutputLimitError(SandboxError):
-    """The sandbox emitted more data than the bounded IPC contract permits."""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,13 +54,6 @@ class SandboxCompletedProcess:
 
 
 class SandboxRunner(Protocol):
-    """The callable contract for executing candidate code in isolation.
-
-    `run_python_in_sandbox` is the production implementation; the evaluation
-    entry points accept any conforming callable so tests can substitute a
-    local runner without patching module globals.
-    """
-
     def __call__(
         self,
         *,
@@ -82,11 +69,6 @@ def run_python_in_sandbox(
     input_json: str,
     timeout_seconds: float,
 ) -> SandboxCompletedProcess:
-    """Run Python in a locked-down OCI container using bounded JSON IPC.
-
-    The runtime and image are trusted deployment dependencies. The image must
-    already exist locally: scored code can never trigger a registry pull.
-    """
     try:
         payload = input_json.encode("utf-8")
     except UnicodeEncodeError as exc:
@@ -103,7 +85,7 @@ def run_python_in_sandbox(
     _validate_image_reference(image)
     _require_local_image(runtime, image)
 
-    name = f"dr-code-humaneval-{uuid.uuid4().hex}"
+    name = f"dr-code-python-sandbox-{uuid.uuid4().hex}"
     cpu_seconds = max(1, math.ceil(timeout_seconds))
     command = [
         runtime,
@@ -114,7 +96,7 @@ def run_python_in_sandbox(
         "--name",
         name,
         "--label",
-        "org.dr-code.humaneval-sandbox=true",
+        "org.dr-code.python-sandbox=true",
         "--network=none",
         "--read-only",
         "--user=65534:65534",

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-05 (source and test ownership)
+
+- Source ownership is a hard cut: `dr_code.core.models`,
+  `dr_code.core.source`, and `dr_code.core.execution` own the shared model,
+  source, and sandbox-execution foundations, with no compatibility aliases.
+- `dr_code.humaneval` owns its benchmark runner, schema command, and metric
+  behavior through `runner`, `schema_cli`, and `metric_operator`.
+- Tests mirror their contract owners: core and HumanEval tests sit with those
+  packages, while metrics tests are divided among engine, operator, and record
+  contracts and preprocessing step tests sit under `tests/preprocessing/steps`.
+
 ## 2026-08-05 (HumanEval evaluation contracts)
 
 - `dr_code.humaneval.batch_runner` owns the HumanEval batch protocol as one

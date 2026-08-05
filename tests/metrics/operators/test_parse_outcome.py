@@ -1,5 +1,3 @@
-"""Parse-outcome operator contracts."""
-
 from __future__ import annotations
 
 from ._helpers import (
@@ -29,7 +27,6 @@ def test_parse_outcome_reports_parse_error_for_invalid_code() -> None:
 
 
 def test_parse_outcome_accepts_text_artifacts() -> None:
-    """parse_outcome accepts raw text as well as code artifacts."""
     record = _extract(
         _definition([_question("parse_outcome")]), _text_trace("x = 1 + 2")
     )[0]

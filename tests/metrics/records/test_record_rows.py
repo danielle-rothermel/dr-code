@@ -1,5 +1,3 @@
-"""Flat metric-record row contracts."""
-
 from __future__ import annotations
 
 from ._builders import (
@@ -44,8 +42,7 @@ def test_record_rows_prefix_fact_columns_with_metric_and_name() -> None:
     )[0]
     assert row["text_stats.character_count"] == 4
     assert row["text_stats.word_count"] == 1
-    # Raw fact names never appear unprefixed, avoiding cross-metric
-    # collisions.
+
     assert "character_count" not in row
     assert "word_count" not in row
 
@@ -61,8 +58,7 @@ def test_record_rows_carry_each_facts_unit_in_a_sibling_column() -> None:
         ]
     )[0]
     assert row["text_stats.byte_count.unit"] == MetricFactUnit.BYTES
-    # The unit stays out of the value column name, so the same fact lines up
-    # across rows regardless of the unit it was measured in.
+
     assert "text_stats.byte_count.bytes" not in row
 
 
@@ -99,7 +95,6 @@ def test_record_rows_fact_columns_are_collision_free_across_metrics() -> None:
 
 
 def test_record_rows_status_column_distinguishes_absence_from_zero() -> None:
-    """Not-applicable ≠ measured zero: a status column, not a magic value."""
     from dr_code.metrics import RecordStatus, record_rows
 
     rows = record_rows(

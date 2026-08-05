@@ -1,5 +1,3 @@
-"""Domain tests for trace wiring."""
-
 from __future__ import annotations
 
 import operator
@@ -30,7 +28,6 @@ def _minimal_values() -> dict[str, TraceValue]:
 
 
 def _attempt_public_mutation(action: Callable[[], object]) -> None:
-    """Exercise either a mutable defensive copy or an immutable view."""
     try:
         action()
     except (AttributeError, TypeError):
@@ -107,9 +104,6 @@ def test_external_trace_stamps_producer_and_carries_boundary_data() -> None:
     assert trace.step_facts == step_facts
 
 
-# --- snapshotting ----------------------------------------------------
-
-
 def test_trace_snapshots_values_against_later_caller_mutation() -> None:
     values = _minimal_values()
     trace = Trace(values=values, producer=EXTERNAL_PRODUCER)
@@ -122,11 +116,7 @@ def test_trace_snapshots_values_against_later_caller_mutation() -> None:
 
 
 def test_trace_snapshots_json_payloads_against_later_caller_mutation() -> None:
-    # Freezing a model bars attribute assignment but not in-place mutation
-    # of a container it points at. JsonArtifact.payload is the only trace
-    # value holding arbitrary nested dict/list data, so it is deep-copied
-    # at construction -- otherwise a caller still holding the artifact
-    # could change what an existing trace records, and what it serializes.
+    # Freeze is shallow; copy nested JSON so callers cannot rewrite snapshots.
     payload = {"task_id": "HumanEval/0", "nested": {"names": ["a"]}}
     artifact = JsonArtifact(payload=payload)
     values = _minimal_values()

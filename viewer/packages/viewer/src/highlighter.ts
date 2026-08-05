@@ -7,7 +7,7 @@ export type Highlighter = Awaited<
   ReturnType<typeof createHighlighterCore>
 >;
 
-// Module-level singleton so every code panel shares one engine and one
+// Module-level singleton so every CodeBlock shares one engine and one
 // grammar/theme load. Import specifiers must stay literal for bundler
 // static analysis; theme imports mirror SHIKI_THEMES in themes.ts.
 let highlighterPromise: Promise<Highlighter> | null = null;

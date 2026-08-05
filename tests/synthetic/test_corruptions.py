@@ -1,5 +1,3 @@
-"""Functional invariants for every synthetic corruption."""
-
 from __future__ import annotations
 
 import ast

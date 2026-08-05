@@ -1,8 +1,3 @@
-"""Prepend uniform leading whitespace to every line.
-
-Simulates chat clients that render code with a fixed left margin.
-"""
-
 from __future__ import annotations
 
 import random
@@ -16,8 +11,6 @@ _INDENT_CHOICES: Final[tuple[int, ...]] = (2, 4, 8)
 
 
 class AddIndentation(Corruption):
-    """Indent every line uniformly by N spaces."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_INDENTATION
     VERSION: ClassVar[str] = "0"
 

@@ -1,5 +1,3 @@
-"""Metric-name vocabulary contracts."""
-
 from __future__ import annotations
 
 
@@ -25,4 +23,4 @@ def test_metric_name_members_round_trip_through_their_string_values() -> None:
     for value in EXPECTED_METRIC_NAMES:
         name = MetricName(value)
         assert name.value == value
-        assert name == str(name)  # StrEnum serializes to plain JSON
+        assert name == str(name)

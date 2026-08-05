@@ -1,5 +1,3 @@
-"""Shared call helpers for metrics-engine tests."""
-
 from __future__ import annotations
 
 
@@ -20,7 +18,6 @@ def _q(metric_name: str, on: str = "input", **settings) -> object:
 
 
 def _facts(record):
-    """The measured record's facts as a name-to-value mapping."""
     assert record.status.value == "measured", record
     return {fact.name: fact.value for fact in record.facts}
 

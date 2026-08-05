@@ -1,5 +1,3 @@
-"""Text-normalization preprocessing-step tests."""
-
 from __future__ import annotations
 
 import unicodedata
@@ -28,7 +26,6 @@ from dr_code.preprocessing.steps.trim_outer_blanks import TrimOuterBlanks
 from dr_code.trace import TextArtifact
 
 
-# Garbage inputs reused from the wrapped modules' existing fixtures.
 GARBAGE_TEXT = (
     "",
     "def broken(:\n",
@@ -36,8 +33,6 @@ GARBAGE_TEXT = (
     "plain prose, no code at all",
     "smart ‘quotes’ and “doubles”\r\nCRLF\ttabs  \n\n\n\n",
 )
-
-# --- atomic text steps wrap their functions --------------------------
 
 
 def test_normalize_line_endings_wraps_function() -> None:
@@ -79,7 +74,6 @@ def test_trim_outer_blanks_strips_newlines() -> None:
 
 @pytest.mark.parametrize("raw", GARBAGE_TEXT)
 def test_atomic_text_sequence_equals_normalize_text(raw: str) -> None:
-    """The six atomic steps, in order, reproduce normalize_text."""
     value = TextArtifact(text=raw)
     for step_cls in (
         NormalizeLineEndings,
@@ -92,9 +86,6 @@ def test_atomic_text_sequence_equals_normalize_text(raw: str) -> None:
         value = step_cls().apply(value).value
         assert isinstance(value, TextArtifact)
     assert value.text == normalize_text(raw)
-
-
-# --- blank-input guard -----------------------------------------------
 
 
 def test_reject_blank_input_passes_through_non_blank() -> None:

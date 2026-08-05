@@ -1,5 +1,3 @@
-"""Architecture contracts for the functional package layout."""
-
 from __future__ import annotations
 
 import ast

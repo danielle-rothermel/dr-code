@@ -1,5 +1,3 @@
-"""Build the synthetic test corpus."""
-
 from __future__ import annotations
 
 import random
@@ -25,7 +23,6 @@ def build_sample(
     recipe: Recipe,
     seed: int,
 ) -> SyntheticSample:
-    """Build a single synthetic sample for one (task, recipe) pair."""
     ground_truth = strip_docstrings(task.full_source)
     coordinate = SyntheticSampleCoordinate(
         humaneval_task_id=task.task_id,
@@ -47,7 +44,6 @@ def iter_dataset(
     recipes: Iterable[Recipe] = RECIPES,
     seed: int = 0,
 ) -> Iterator[SyntheticSample]:
-    """Yield one `SyntheticSample` per (task, recipe) pair."""
     recipes_list = list(recipes)
     for task in tasks:
         for recipe in recipes_list:
@@ -61,11 +57,6 @@ def build_dataset(
     *,
     snapshot_path: Path | None = None,
 ) -> list[SyntheticSample]:
-    """Build the full dataset list (in-memory).
-
-    If `tasks` is None, load HumanEvalPlus from Hugging Face unless an
-    explicit `snapshot_path` selects the offline snapshot source.
-    """
     if tasks is not None and snapshot_path is not None:
         raise ValueError("tasks and snapshot_path are mutually exclusive")
 
@@ -80,7 +71,6 @@ def build_dataset(
 
 
 def save_dataset(samples: Iterable[SyntheticSample], path: Path) -> int:
-    """Serialize samples as JSONL to `path`. Returns count written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with path.open("w", encoding="utf-8") as fh:
@@ -92,7 +82,6 @@ def save_dataset(samples: Iterable[SyntheticSample], path: Path) -> int:
 
 
 def load_dataset(path: Path) -> list[SyntheticSample]:
-    """Read a dataset JSONL artifact back into `SyntheticSample` objects."""
     samples: list[SyntheticSample] = []
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:

@@ -1,5 +1,3 @@
-"""Wrap source with prose intro and outro lines."""
-
 from __future__ import annotations
 
 import random
@@ -26,8 +24,6 @@ _OUTROS: Final[tuple[str, ...]] = (
 
 
 class AddProseWrapper(Corruption):
-    """Prepend an intro and append an outro line."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_PROSE_WRAPPER
     VERSION: ClassVar[str] = "0"
 

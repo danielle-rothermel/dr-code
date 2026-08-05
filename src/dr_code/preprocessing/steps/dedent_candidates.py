@@ -1,5 +1,3 @@
-"""Dedent each candidate."""
-
 from __future__ import annotations
 
 import textwrap
@@ -10,11 +8,6 @@ from dr_code.preprocessing.steps.base import CandidateMapStep
 
 
 class DedentCandidates(CandidateMapStep):
-    """``textwrap.dedent`` each candidate.
-
-    Definitions choose whether this step participates in candidate cleaning.
-    """
-
     NAME: ClassVar[StepName] = StepName.DEDENT_CANDIDATES
     VERSION: ClassVar[str] = "0"
 

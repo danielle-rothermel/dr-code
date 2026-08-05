@@ -1,5 +1,3 @@
-"""Contract and behavior tests for shared text analysis."""
-
 from __future__ import annotations
 
 import pytest

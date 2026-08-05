@@ -1,5 +1,3 @@
-"""Code-leakage operator contracts."""
-
 from __future__ import annotations
 
 from ._helpers import (
@@ -35,7 +33,6 @@ def test_code_leakage_matches_golden_values_field_for_field() -> None:
 
 
 def test_code_leakage_task_names_are_part_of_identity() -> None:
-    """task_names is a setting and therefore part of metric identity."""
     text = "def foo(x):\n    return foo(x)\n"
     none_rec = _extract(
         _definition([_question("code_leakage", task_names=[])]),
@@ -75,12 +72,6 @@ _SHARED_HEURISTIC_GOLDEN = {
 
 
 def test_code_leakage_pins_shared_heuristic_values() -> None:
-    """Pins code_leakage's use of the shared text_analysis regexes.
-
-    ``CODE_LIKE_LINE_RE`` counts six code-like lines, including the comment
-    and augmented assignment, and the whole-line fence matcher counts one
-    fenced block.
-    """
     record = _extract(
         _definition([_question("code_leakage", task_names=[])]),
         _text_trace(_SHARED_HEURISTIC_SAMPLE),

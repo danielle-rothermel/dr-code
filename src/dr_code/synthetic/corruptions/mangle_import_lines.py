@@ -1,5 +1,3 @@
-"""Mangle import lines so they fail to parse without repair."""
-
 from __future__ import annotations
 
 import random
@@ -17,7 +15,6 @@ _TRAILING_PROSE: Final[tuple[str, ...]] = (
 
 
 def _mangle(source: str, rng: random.Random) -> str:
-    """Mangle the first import line we encounter."""
     lines = source.splitlines(keepends=True)
     for i, raw in enumerate(lines):
         stripped = raw.lstrip()
@@ -25,14 +22,11 @@ def _mangle(source: str, rng: random.Random) -> str:
             body = raw.rstrip("\n")
             mangler = rng.choice(list(ImportMangleMode))
             if mangler is ImportMangleMode.TRAILING_PROSE:
-                # Append non-comment trailing text. Pure prose makes
-                # the line invalid.
                 lines[i] = body + rng.choice(_TRAILING_PROSE) + "\n"
             elif mangler is ImportMangleMode.UNBALANCED_PAREN:
                 lines[i] = body + " (extra_token_no_close\n"
-            else:  # trailing_comma — only for `from X import a, b,` style
+            else:
                 if "import" in body and "," not in body:
-                    # convert to `from X import (a,` form on the body
                     if body.startswith("import "):
                         mod = body[len("import ") :].strip()
                         lines[i] = f"from {mod} import (a,\n"
@@ -41,13 +35,10 @@ def _mangle(source: str, rng: random.Random) -> str:
                 else:
                     lines[i] = body + ",\n"
             return "".join(lines)
-    # No import found — fall back to injecting a broken one.
     return "from broken import (\n" + source
 
 
 class MangleImportLines(Corruption):
-    """Introduce a parse-blocking error in an import line."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.MANGLE_IMPORT_LINES
     VERSION: ClassVar[str] = "0"
 

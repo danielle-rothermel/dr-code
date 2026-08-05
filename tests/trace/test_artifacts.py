@@ -1,5 +1,3 @@
-"""Boundary tests for trace artifacts."""
-
 from __future__ import annotations
 
 import ast
@@ -36,8 +34,7 @@ def _candidate(source: str, *, location: int = 0) -> CodeCandidate:
     )
 
 
-#: The exact persisted wire shape of one candidate record, pinned as a
-#: literal so a field rename cannot silently change stored identity.
+# Literal payloads pin persisted artifact keys and candidate identity.
 _CANDIDATE_PAYLOAD = {
     "source": "first",
     "origins": [
@@ -182,7 +179,7 @@ def test_candidate_extended_appends_origin_and_keeps_prior_lineage() -> None:
 
     assert extended.source == "x = 2\n"
     assert extended.origins == (*origins_before, origin)
-    # The original record is untouched: lineage is appended, never replaced.
+
     assert candidate.origins == origins_before
     assert candidate.source == "x = 1\n"
 
@@ -205,9 +202,6 @@ def test_candidate_inspection_records_structure_without_verdicts() -> None:
 
 
 def test_candidate_origin_rejects_negative_input_location() -> None:
-    # An ordinal position in an operation's input is never negative, and
-    # the bound is enforced on load so externally supplied traces cannot
-    # carry lineage that names an impossible position.
     with pytest.raises(ValidationError):
         CandidateOrigin(
             operation=ExtractionOperation(operation_name="strip_fences"),
@@ -252,8 +246,6 @@ def test_candidate_inspection_rejects_impossible_structural_facts(
     fields: dict[str, object],
     reason: str,
 ) -> None:
-    # Producers never emit these combinations; the validator makes the
-    # same guarantee hold for inspections revalidated from stored traces.
     with pytest.raises(ValidationError):
         CandidateInspection(**fields)  # type: ignore[arg-type]
 
@@ -269,10 +261,6 @@ def test_candidate_inspection_rejects_impossible_structural_facts(
     ),
 )
 def test_source_validation_only_yields_valid_inspections(source: str) -> None:
-    # The invariants the validator enforces are the ones the upstream
-    # source validation already satisfies, across parsing and
-    # non-parsing sources, so enforcement rejects no reachable producer
-    # output.
     validation = validate_python_source_with_ast(source).validation
 
     inspection = CandidateInspection(

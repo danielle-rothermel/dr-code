@@ -1,5 +1,3 @@
-"""Alpha-rename local variable names to obscure names."""
-
 from __future__ import annotations
 
 import random
@@ -12,11 +10,6 @@ from dr_code.synthetic.corruptions.base import Corruption
 
 
 class RenameLocals(Corruption):
-    """Rename local variables to opaque `_vN` form.
-
-    Parameters keep their names — they are part of the signature contract.
-    """
-
     NAME: ClassVar[CorruptionName] = CorruptionName.RENAME_LOCALS
     VERSION: ClassVar[str] = "0"
 

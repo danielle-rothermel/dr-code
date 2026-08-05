@@ -2,8 +2,7 @@
 
 [![CI](https://github.com/danielle-rothermel/dr-code/actions/workflows/ci.yml/badge.svg)](https://github.com/danielle-rothermel/dr-code/actions/workflows/ci.yml)
 
-| [Project website](https://danielle-rothermel.github.io/dr-code/) | Personally owned dependencies: none |
-| --- | --- |
+**Personally owned dependencies:** none.
 
 **dr-code prepares, evaluates, analyzes, and visualizes Python code produced by
 language models.**
@@ -39,7 +38,7 @@ viewer, organized into these functional areas:
 
 ## Functional areas
 
-The sketches below show the stable shape of the primary contracts. They are
+The sketches below show the current shape of the primary contracts. They are
 abridged deliberately: `...` omits validators, defaults, derived fields, and
 implementation details that belong in the linked package.
 
@@ -307,8 +306,7 @@ functional packages. It owns reusable mechanisms, while benchmark decisions
 and measurement policy remain in their functional packages.
 
 ```python
-class FrozenModel(BaseModel):
-    """Immutable base for definitions and persisted artifacts."""
+class FrozenModel(BaseModel): ...
 
 
 class SandboxRunner(Protocol):

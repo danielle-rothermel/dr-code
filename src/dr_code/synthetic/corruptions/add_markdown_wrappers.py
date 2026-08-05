@@ -1,5 +1,3 @@
-"""Wrap each line with a markdown prefix (blockquote / numbered / bullet)."""
-
 from __future__ import annotations
 
 import random
@@ -31,8 +29,6 @@ def _apply_mode(source: str, mode: MarkdownWrapperMode) -> str:
 
 
 class AddMarkdownWrappers(Corruption):
-    """Prefix each line with a markdown list/blockquote marker."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_MARKDOWN_WRAPPERS
     VERSION: ClassVar[str] = "0"
 

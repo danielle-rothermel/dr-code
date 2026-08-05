@@ -1,5 +1,3 @@
-"""Tests for frozen, validated preprocessing definitions."""
-
 from __future__ import annotations
 
 import pytest
@@ -126,13 +124,7 @@ def test_definition_serializable_round_trip() -> None:
     assert restored.steps[0].settings == ExpandTabsSettings(tab_width=2)
 
 
-# ---------------------------------------------------------------------------
-# Settings belong to the named step; the discriminator is required.
-# ---------------------------------------------------------------------------
-
-
 def test_step_spec_rejects_settings_from_another_step() -> None:
-    """Another step's settings model is revalidated, not waved through."""
     with pytest.raises(ValidationError):
         StepSpec(
             instance_name="u",
@@ -160,7 +152,5 @@ def test_step_spec_accepts_plain_dict_settings() -> None:
 
 
 def test_step_spec_missing_step_raises_validation_error() -> None:
-    """A payload without the discriminator gets pydantic's missing-field
-    error, never a bare KeyError past the validation boundary."""
     with pytest.raises(ValidationError):
         StepSpec.model_validate({"instance_name": "n", "settings": {}})

@@ -1,5 +1,3 @@
-"""The complete registry of built-in metric operators."""
-
 from collections.abc import Mapping
 from types import MappingProxyType
 

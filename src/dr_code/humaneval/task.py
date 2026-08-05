@@ -1,13 +1,3 @@
-"""HumanEval task models, benchmark overrides, and dataset parsing.
-
-Holds the pydantic/dataclass evaluation models (tasks, case/task results and
-summaries, runner payload shapes), the ``EvaluationHarnessError`` raised for
-sandbox or runtime breakage, best-function selection, and the benchmark
-override table plus dataset parsing. Test parsing lives in
-``parsed_tests``; subprocess batch orchestration lives in ``runner``,
-and the standalone runner program lives in ``sandbox_runner_script``.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -43,14 +33,7 @@ class EvaluationCaseStatus(StrEnum):
 
 
 class HumanEvalTask(FrozenModel):
-    """One benchmark task whose parses are derived, never supplied.
-
-    ``parsed`` and ``parsed_tests`` are always recomputed from ``prompt +
-    canonical_solution`` and ``test``. A supplied value is accepted only when
-    it equals the recomputed one, so a task can never carry a parse that
-    disagrees with the source it claims to describe -- including one arriving
-    from a serialized payload.
-    """
+    """A HumanEval task whose supplied parses must match its source and tests."""
 
     task_id: str
     prompt: str
@@ -170,16 +153,6 @@ def select_best_function_name(
 
 
 class EvaluationTaskResult(BaseModel):
-    """One task's case results plus the readings derived from them.
-
-    The derived readings are computed fields excluded from serialization: the
-    stored fields are the result's identity, and every reading is recomputed
-    from ``results`` on the way back in. Serializing them would both duplicate
-    state that can drift and, under ``extra="forbid"``, make the model's own
-    dump un-revalidatable. ``EvaluationTaskSummary`` is the shape that carries
-    the readings across a boundary.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
@@ -321,8 +294,6 @@ class EvaluationHarnessError(RuntimeError):
 
 
 class HumanEvalTestReplacement(FrozenModel):
-    """One exact source replacement in a registered benchmark override."""
-
     old: str
     replacement: str
 
@@ -334,15 +305,11 @@ class HumanEvalOverride(FrozenModel):
 
 
 class HumanEvalOverrideEntry(FrozenModel):
-    """One task-specific entry in a registered override set."""
-
     task_id: str
     override: HumanEvalOverride
 
 
 class HumanEvalOverrideSetCoordinate(FrozenModel):
-    """Execution bundle and complete provenance for benchmark overrides."""
-
     override_set_id: str
     version: str
     entries: tuple[HumanEvalOverrideEntry, ...]
@@ -459,8 +426,6 @@ def resolve_humaneval_override_set(
 def parse_humaneval_dataset(
     rows: Iterable[Mapping[str, Any]],
 ) -> list[HumanEvalTask]:
-    """Parse rows using the one registered production override bundle."""
-
     return _parse_humaneval_dataset(rows, HUMANEVAL_OVERRIDE_SET)
 
 

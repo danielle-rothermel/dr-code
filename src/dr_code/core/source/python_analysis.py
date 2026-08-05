@@ -1,13 +1,3 @@
-"""Analysis helpers for Python source treated as code.
-
-Every source-level function here assumes its input is parseable Python and
-raises `SyntaxError` when it is not, except documented-total diagnostics such
-as `equivalent`. For transforms that modify parseable Python, see
-`dr_code.core.source.python_transforms`; for total best-effort work over text that only
-probably contains code, see `dr_code.core.source.text_transforms` and
-`dr_code.core.source.text_analysis`.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -82,7 +72,6 @@ class SourceTextSite:
 
 
 def validate_python(source: str) -> None:
-    """Raise `SyntaxError` if `source` is not parseable Python."""
     ast.parse(source)
 
 
@@ -95,8 +84,6 @@ class SourceValidationWithTree:
 def validate_python_source_with_ast(
     source: str,
 ) -> SourceValidationWithTree:
-    """Return parse/compile diagnostics without raising, plus the parsed
-    module for reuse (None when parsing failed)."""
     try:
         parsed_module = ast.parse(source)
     except (SyntaxError, ValueError) as exc:
@@ -132,12 +119,10 @@ def validate_python_source_with_ast(
 
 
 def validate_python_source(source: str) -> PythonSourceValidation:
-    """Return parse and compile diagnostics without raising."""
     return validate_python_source_with_ast(source).validation
 
 
 def is_string_literal_stmt(stmt: ast.stmt) -> bool:
-    """True if `stmt` is a bare string-literal expression (docstring shape)."""
     return (
         isinstance(stmt, ast.Expr)
         and isinstance(stmt.value, ast.Constant)
@@ -146,13 +131,8 @@ def is_string_literal_stmt(stmt: ast.stmt) -> bool:
 
 
 def equivalent(a: str, b: str) -> bool:
-    """True when docstrings stripped + `ast.unparse` match after parsing.
-
-    Total: unparseable input compares as not-equivalent instead of raising.
-    """
     try:
-        # Constraint: module-level import would cycle because code transforms
-        # compose the analysis enumeration helpers.
+        # Local import avoids the python_analysis/python_transforms cycle.
         from dr_code.core.source.python_transforms import strip_docstrings
 
         return strip_docstrings(a) == strip_docstrings(b)
@@ -161,7 +141,6 @@ def equivalent(a: str, b: str) -> bool:
 
 
 def module_level_names(tree: ast.Module) -> set[str]:
-    """Names bound directly in `tree`'s module scope."""
     return set(_scope_bindings(tree.body))
 
 
@@ -202,7 +181,6 @@ def _annotation_site(
 def function_params(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[ast.arg]:
-    """All parameters of `node` in declaration order, including vararg/kwarg."""
     args = [
         *node.args.posonlyargs,
         *node.args.args,
@@ -218,7 +196,6 @@ def function_params(
 def find_function_node(
     tree: ast.AST,
 ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
-    """First function definition in `tree` (or `tree` itself); None if absent."""
     if isinstance(tree, ast.FunctionDef | ast.AsyncFunctionDef):
         return tree
     return next(
@@ -234,7 +211,6 @@ def find_function_node(
 def format_function_signature(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> str:
-    """Render the signature line, e.g. `def f(x: int) -> str:`."""
     prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
     args = ast.unparse(node.args)
     returns = f" -> {ast.unparse(node.returns)}" if node.returns else ""
@@ -244,7 +220,6 @@ def format_function_signature(
 def extract_function_args(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[FunctionArgument]:
-    """Named parameters with unparsed annotations; excludes vararg/kwarg."""
     variadic_arg_ids = {
         id(arg)
         for arg in (node.args.vararg, node.args.kwarg)
@@ -277,7 +252,6 @@ def _function_signature_site(
 
 
 def extract_function_signatures(tree: ast.AST) -> list[FunctionSignatureSite]:
-    """A `FunctionSignatureSite` for every function defined in `tree`."""
     return [
         _function_signature_site(node)
         for node in ast.walk(tree)
@@ -286,7 +260,6 @@ def extract_function_signatures(tree: ast.AST) -> list[FunctionSignatureSite]:
 
 
 def annotation_sites(tree: ast.AST) -> list[AnnotationSite]:
-    """Every annotation in `tree` as a site (parameter, return, variable)."""
     sites: list[AnnotationSite] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -363,7 +336,6 @@ class _ScopeDeclarationVisitor(ast.NodeVisitor):
 
 
 def _scope_declarations(body: Iterable[ast.stmt]) -> tuple[set[str], set[str]]:
-    """Return direct `global` and `nonlocal` declarations in `body`."""
     visitor = _ScopeDeclarationVisitor()
     for statement in body:
         visitor.visit(statement)
@@ -511,11 +483,6 @@ def _scope_bindings(
 
 
 def function_locals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """Names owned by `node`, in first-binding order.
-
-    Child lexical scopes are excluded. Names declared `global` or `nonlocal`
-    belong to another scope and are excluded even when assigned in this body.
-    """
     return _scope_bindings(
         node.body,
         initial=(argument.arg for argument in function_params(node)),
@@ -523,7 +490,6 @@ def function_locals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
 
 
 def _lambda_locals(node: ast.Lambda) -> set[str]:
-    """Names owned by `node`'s lambda scope."""
     arguments = (
         *node.args.posonlyargs,
         *node.args.args,
@@ -550,7 +516,6 @@ def _type_parameter_names(node: ast.AST) -> set[str]:
 def _descendant_scope_binders(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> set[str]:
-    """Names that bind inside a child lexical scope of `node`."""
     names: set[str] = set()
     for descendant in ast.walk(node):
         if descendant is node:
@@ -576,7 +541,6 @@ def _descendant_scope_binders(
 
 
 def _identifier_names(tree: ast.AST) -> set[str]:
-    """Variable-like identifiers appearing anywhere in `tree`."""
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     if any(
         isinstance(node, ast.Call)
@@ -610,7 +574,6 @@ def _identifier_names(tree: ast.AST) -> set[str]:
 
 
 def extract_hash_comments(code_str: str) -> list[SourceTextSite]:
-    """Every `#` comment in `code_str` as a `SourceTextSite` with location."""
     tokens = tokenize.generate_tokens(io.StringIO(code_str).readline)
     return [
         SourceTextSite(
@@ -640,7 +603,6 @@ def _docstring_owner_name(node: ast.AST) -> str | None:
 
 
 def extract_docstrings(tree: ast.AST) -> list[SourceTextSite]:
-    """Every docstring in `tree` as a `SourceTextSite` with owner and location."""
     docstrings: list[SourceTextSite] = []
     for node in ast.walk(tree):
         if not isinstance(
@@ -673,7 +635,6 @@ def extract_docstrings(tree: ast.AST) -> list[SourceTextSite]:
 
 
 def collect_comments(code_str: str, tree: ast.AST) -> str:
-    """Hash comments and docstrings joined in source-line order."""
     items = [*extract_hash_comments(code_str), *extract_docstrings(tree)]
     return "\n".join(
         site.text

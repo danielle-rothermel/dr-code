@@ -1,11 +1,3 @@
-"""Metric-definition contracts.
-
-Covers ``MetricQuestion`` / ``MetricsDefinition`` — frozen, equality-based
-comparability, the unique ``(metric, on, settings)`` validator, and settings
-as part of the explicit declaration.
-
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -42,11 +34,6 @@ def _definition(
     return MetricsDefinition(**base)
 
 
-# ===========================================================================
-# MetricQuestion.
-# ===========================================================================
-
-
 def test_metric_question_carries_metric_on_settings() -> None:
     question = _question()
     assert question.settings == OperatorSettings()
@@ -74,7 +61,6 @@ def test_metric_question_carries_a_settings_dict() -> None:
 
 
 def test_metric_question_field_set_is_exactly_metric_on_settings() -> None:
-    """Precise schema: questions carry only the three identity fields."""
     from dr_code.metrics.definition import MetricQuestion
 
     assert set(MetricQuestion.model_fields) == {"metric", "on", "settings"}
@@ -89,7 +75,6 @@ def test_metric_question_is_frozen() -> None:
 
 
 def test_metric_questions_compare_equal_by_value() -> None:
-    """Structured equality is the comparability contract."""
     assert _question() == _question()
 
 
@@ -108,7 +93,6 @@ def test_metric_questions_differ_on_settings() -> None:
 
 
 def test_metric_question_settings_are_order_independent() -> None:
-    """Dict key ordering does not affect equality (settings are identity)."""
     from dr_code.metrics import MetricName, MetricQuestion
 
     a = MetricQuestion(
@@ -122,11 +106,6 @@ def test_metric_question_settings_are_order_independent() -> None:
         settings={"compression": {"level": 9, "method": "gzip"}},
     )
     assert a == b
-
-
-# ===========================================================================
-# MetricsDefinition.
-# ===========================================================================
 
 
 def test_metrics_definition_carries_id_version_questions() -> None:
@@ -173,7 +152,6 @@ def test_metrics_definition_is_frozen() -> None:
 
 
 def test_metrics_definition_questions_are_required() -> None:
-    """Definitions require an explicit question sequence."""
     from dr_code.metrics import MetricsDefinition
 
     with pytest.raises(ValidationError) as exc_info:
@@ -209,17 +187,7 @@ def test_metrics_definition_json_round_trip_is_lossless() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Uniqueness of (metric, on, settings) triples.
-# ---------------------------------------------------------------------------
-
-
 def test_duplicate_metric_on_settings_triple_is_rejected() -> None:
-    """Distinct questions need a distinct triple; a duplicate is a wiring bug.
-
-    Resolve the import before ``pytest.raises`` so an import failure cannot be
-    mistaken for the expected validation failure.
-    """
     from dr_code.metrics import MetricName  # noqa: F401 — resolve before assert
 
     assert _question().metric == MetricName.TEXT_STATS
@@ -242,7 +210,6 @@ def test_same_metric_different_on_key_is_allowed() -> None:
 
 
 def test_same_metric_on_key_different_settings_is_allowed() -> None:
-    """Settings participate in identity: two codec levels are two questions."""
     from dr_code.metrics import MetricName
 
     definition = _definition(
@@ -261,7 +228,6 @@ def test_same_metric_on_key_different_settings_is_allowed() -> None:
 
 
 def test_metric_question_rejects_settings_from_another_operator() -> None:
-    """Another operator's settings model is revalidated, not waved through."""
     from pydantic import ValidationError
 
     from dr_code.metrics import MetricName, MetricQuestion

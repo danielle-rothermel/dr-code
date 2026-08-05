@@ -1,5 +1,3 @@
-"""Trim leading and trailing newlines."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -10,8 +8,6 @@ from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class TrimOuterBlanks(Step):
-    """Strip leading and trailing runs of newlines."""
-
     NAME: ClassVar[StepName] = StepName.TRIM_OUTER_BLANKS
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT

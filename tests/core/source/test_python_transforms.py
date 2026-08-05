@@ -1,5 +1,3 @@
-"""Contract and behavior tests for Python source transforms."""
-
 from __future__ import annotations
 
 import ast

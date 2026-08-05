@@ -1,5 +1,3 @@
-"""Registered-coordinate guards and settings-bearing recipe coordinates."""
-
 from __future__ import annotations
 
 import random
@@ -26,7 +24,6 @@ SOURCE = "def add(a, b):\n    return a + b\n"
 
 
 def _impersonating_recipe() -> Recipe:
-    """A recipe claiming a registered name/version with altered corruptions."""
     registered = RECIPES_BY_NAME["clean"]
     return registered.model_copy(
         update={
@@ -90,10 +87,7 @@ def test_resolve_recipe_rejects_unregistered_coordinate(
 
 
 def test_fence_recipes_differ_by_settings_not_only_by_name() -> None:
-    # Contract pin: these corruption coordinates are persisted recipe
-    # identity. The registered name, version, and every setting name and
-    # value below are the stored format; changing any of them changes the
-    # coordinate of every sample already generated.
+    # These literal coordinates pin persisted recipe identity.
     tagged = recipe_coordinate(RECIPES_BY_NAME["fenced_tagged"])
     untagged = recipe_coordinate(RECIPES_BY_NAME["fenced_untagged"])
 
@@ -129,9 +123,7 @@ def test_fence_recipes_produce_their_declared_tag() -> None:
 def test_recipe_coordinate_gives_settingless_corruptions_an_empty_tuple() -> (
     None
 ):
-    # Contract pin: a corruption with no tunables persists an empty settings
-    # tuple, never an omitted or null field. The absence of settings is part
-    # of the stored coordinate.
+    # Empty settings are part of the persisted corruption coordinate.
     coordinate = recipe_coordinate(RECIPES_BY_NAME["smart_quoted"])
 
     assert coordinate.corruptions == (
@@ -141,12 +133,7 @@ def test_recipe_coordinate_gives_settingless_corruptions_an_empty_tuple() -> (
     )
 
 
-# --- persisted settings-bearing recipe coordinates (wire format) ----------
-
-#: Every registered recipe whose coordinate carries at least one non-empty
-#: corruption setting, in registration order. Pinning the whole set (rather
-#: than named recipes) means a new settings-bearing recipe, or a drifted
-#: setting on an existing one, fails here rather than passing unobserved.
+# This literal pins every settings-bearing persisted recipe coordinate.
 _SETTINGS_BEARING_RECIPE_COORDINATES: Final[
     dict[str, tuple[dict[str, object], ...]]
 ] = {
@@ -211,11 +198,6 @@ _SETTINGS_BEARING_RECIPE_COORDINATES: Final[
 
 
 def test_settings_bearing_recipe_coordinates_are_pinned() -> None:
-    # Contract pin: the corruption coordinates below are persisted synthetic
-    # sample identity — registered names, component versions, and every
-    # setting name and value. A failure means the wire format changed and
-    # must be a deliberate, versioned decision, never a mechanical test
-    # update. New settings-bearing recipes must be added here explicitly.
     actual = {
         recipe.name: tuple(
             corruption.model_dump(mode="python")
@@ -231,14 +213,7 @@ def test_settings_bearing_recipe_coordinates_are_pinned() -> None:
     assert actual == _SETTINGS_BEARING_RECIPE_COORDINATES
 
 
-# --- settings belong to the named corruption; the discriminator is required
-
-
 def test_corruption_spec_rejects_settings_from_another_corruption() -> None:
-    """Another corruption's settings model is revalidated, not waved
-    through: a foreign instance would otherwise poison the persisted
-    coordinate and serialize to a payload that cannot be reloaded."""
-
     class _ForeignSettings(CorruptionSettings):
         bogus: int = 7
 
@@ -278,7 +253,5 @@ def test_corruption_spec_accepts_plain_dict_settings() -> None:
 
 
 def test_corruption_spec_missing_corruption_raises_validation_error() -> None:
-    """A payload without the discriminator gets pydantic's missing-field
-    error, never a bare KeyError past the validation boundary."""
     with pytest.raises(ValidationError):
         CorruptionSpec.model_validate({"settings": {}})

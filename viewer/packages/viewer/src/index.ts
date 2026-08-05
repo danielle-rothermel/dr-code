@@ -1,4 +1,3 @@
-/** Domain-agnostic React primitives for code visualization. */
 export { CodeBlock, type CodeBlockProps } from "./code-block.js";
 export {
   CodeDiff,

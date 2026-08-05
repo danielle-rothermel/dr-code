@@ -1,5 +1,3 @@
-"""Boundary tests for causal absence."""
-
 from __future__ import annotations
 
 import pytest

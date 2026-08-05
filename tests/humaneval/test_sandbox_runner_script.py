@@ -1,5 +1,3 @@
-"""Tests for the HumanEval sandbox runner script."""
-
 from __future__ import annotations
 
 import ast
@@ -21,14 +19,6 @@ def test_runner_script_source_compiles() -> None:
 def test_runner_script_reserves_its_results_channel(
     local_runner: SandboxRunner,
 ) -> None:
-    """A candidate that prints protocol JSON cannot reach the host.
-
-    The runner captures its results handle before candidate code runs and
-    points ``sys.stdout`` at stderr, so a candidate printing a complete,
-    well-formed results array does not add to (or replace) what the host
-    parses. Without the redirection this forged array would be the first thing
-    on stdout and would decide the task's score.
-    """
     forged = json.dumps(
         [
             {
@@ -44,7 +34,8 @@ def test_runner_script_reserves_its_results_channel(
         ]
     )
     task = _task()
-    # The candidate fails every case, then forges an all-passed result set.
+
+    # Adversarial fixture: failing code forges an all-passed protocol payload.
     candidate = f"print({forged!r})\ndef add_one(x):\n    return x + 1000\n"
 
     result = evaluate_humaneval_code(
@@ -61,11 +52,6 @@ def test_runner_script_reserves_its_results_channel(
 def test_runner_script_sends_candidate_output_to_stderr(
     local_runner: SandboxRunner,
 ) -> None:
-    """Candidate prints are preserved as diagnostics on the bounded stderr.
-
-    Redirecting rather than discarding keeps a candidate's own output
-    debuggable while keeping it off the results channel.
-    """
     request = build_humaneval_batch_request(
         task=_task(),
         candidate_code=(
@@ -90,13 +76,8 @@ def test_runner_script_sends_candidate_output_to_stderr(
 
 
 def test_runner_script_emits_only_through_its_protocol_handle() -> None:
-    """Nothing in the runner writes results with a bare ``print``.
-
-    ``emit_results`` is the single writer to the captured handle; a ``print``
-    reintroduced anywhere in the program would land on the redirected stdout
-    and silently drop the results the host is waiting for.
-    """
     tree = ast.parse(runner_script())
+    # A bare print would bypass the captured protocol handle.
     printed = [
         node
         for node in ast.walk(tree)

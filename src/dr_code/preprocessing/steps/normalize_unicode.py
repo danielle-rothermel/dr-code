@@ -1,5 +1,3 @@
-"""NFKC Unicode normalization."""
-
 from __future__ import annotations
 
 import unicodedata
@@ -11,11 +9,6 @@ from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class NormalizeUnicode(Step):
-    """Apply NFKC Unicode normalization.
-
-    Lifted out of ``normalize_text`` as its own atomic step.
-    """
-
     NAME: ClassVar[StepName] = StepName.NORMALIZE_UNICODE
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT

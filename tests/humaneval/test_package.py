@@ -1,5 +1,3 @@
-"""Tests for the public HumanEval package facade."""
-
 from __future__ import annotations
 
 import dr_code.humaneval as humaneval

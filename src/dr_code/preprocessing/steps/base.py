@@ -1,10 +1,3 @@
-"""Preprocessing step base classes.
-
-Mirrors ``synthetic/corruptions/base.py``: a uniform base class with a
-``NAME`` classvar and an ``apply`` method. One difference — preprocessing
-steps take **no rng**: determinism is settings + input only.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -26,28 +19,13 @@ from dr_code.preprocessing.names import StepName
 
 
 class StepSettings(FrozenModel):
-    """Base for per-step settings; each ``Step`` subclass declares its own.
-
-    A step with no tunables uses this empty base directly.
-    """
+    pass
 
 
 SettingsT = TypeVar("SettingsT", bound=StepSettings)
 
 
 class StepFailedError(Exception):
-    """A data failure: the step cannot produce output without guessing.
-
-    Carries a machine-readable ``code`` naming the failure kind, a
-    free-form ``cause`` detailing it, and optional structured ``evidence``
-    as finite JSON values. Converted to ``Absent`` by the runner, which
-    copies code and cause onto the ``Absent`` and records ``evidence`` as
-    the failing step's facts — the ``Absent`` itself stays a bare failure
-    record, and evidence lives where every other step's description of its
-    own output lives. Never escapes the runner. Distinct from
-    ``WiringError`` (a definition bug raised at bind time).
-    """
-
     def __init__(
         self,
         code: PreprocessingFailureCode,
@@ -63,39 +41,20 @@ class StepFailedError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class StepOutput:
-    """One step's deterministic result.
-
-    ``facts`` describe the output (chosen alternative, rejection reasons,
-    candidate counts) as finite JSON values; a step may describe, never
-    prefer.
-    """
-
     value: Artifact
     facts: Mapping[str, JsonFactValue] = field(default_factory=dict)
 
 
 class Step(Generic[SettingsT]):
-    """Base class for preprocessing steps.
-
-    Subclasses declare ``NAME``, ``VERSION``, ``INPUT``/``OUTPUT`` kinds,
-    and a ``Settings`` model. ``apply`` is deterministic: same settings +
-    input => same output (no RNG, ambient state, or clocks).
-    """
-
     NAME: ClassVar[StepName]
-    # Manual component version. Bump when the step changes accepted inputs,
-    # produced outputs or facts, defaults, or failure behavior; not for
-    # comments, formatting, or behavior-preserving refactors. Stays ``"0"``
-    # while development mode (``[tool.dr-code.component-versioning]`` in
-    # ``pyproject.toml``) is enabled.
+    # In development mode, keep VERSION at "0". Afterward, bump it for
+    # accepted-input, output, fact, default, or failure changes.
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     OUTPUT: ClassVar[ArtifactKind]
     Settings: ClassVar[type[StepSettings]] = StepSettings
 
     def __init__(self, settings: SettingsT | None = None) -> None:
-        # Optional so steps with no tunables instantiate as ``StepCls()``;
-        # binding always passes explicit validated settings.
         self.settings: SettingsT = (
             settings
             if settings is not None
@@ -107,21 +66,11 @@ class Step(Generic[SettingsT]):
 
 
 def candidate_set(value: Artifact) -> CodeCandidateSetArtifact:
-    """Narrow an Artifact to its candidate-set member."""
     assert isinstance(value, CodeCandidateSetArtifact)
     return value
 
 
 class CandidateMapStep(Step[StepSettings]):
-    """Elementwise ``CandidateSet -> CandidateSet``; fan-out stays data.
-
-    ``apply`` maps over candidates in order, flattening list results in
-    place so splits (e.g. name-guard) preserve relative candidate order.
-    Each produced candidate's lineage is extended with this step's
-    operation and the ordinal of the input candidate it came from, so a
-    split's parts all record the candidate they were split out of.
-    """
-
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
     OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 

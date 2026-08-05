@@ -1,12 +1,3 @@
-"""Step registry — name-keyed lookup, mirroring ``synthetic.corruptions``.
-
-Add a step by:
-
-1. Implement it as a subclass of ``Step`` in its own file.
-2. Import and register it here in ``REGISTRY``.
-3. Add a paired entry in ``StepName`` (kept in sync by the registry test).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping

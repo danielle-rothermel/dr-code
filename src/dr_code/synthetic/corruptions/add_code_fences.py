@@ -1,5 +1,3 @@
-"""Wrap source in a Markdown code fence with an explicitly chosen tag."""
-
 from __future__ import annotations
 
 import random
@@ -12,14 +10,10 @@ from dr_code.core.source.text_transforms import wrap_code_fence
 
 
 class AddCodeFencesSettings(CorruptionSettings):
-    """Which language tag the emitted fence carries."""
-
     language_tag: FenceLangTag = FenceLangTag.NONE
 
 
 class AddCodeFences(Corruption[AddCodeFencesSettings]):
-    """Wrap the source in ```` ``` ```` with the configured tag (or none)."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_CODE_FENCES
     VERSION: ClassVar[str] = "0"
     Settings: ClassVar[type[CorruptionSettings]] = AddCodeFencesSettings

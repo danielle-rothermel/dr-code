@@ -1,5 +1,3 @@
-"""One explicitly parameterized compressed-length measurement."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping

@@ -1,5 +1,3 @@
-"""Frozen, serializable preprocessing definitions."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -14,13 +12,6 @@ from dr_code.preprocessing.names import StepName
 
 
 class StepSpec(FrozenModel):
-    """One named step instance with its settings.
-
-    ``instance_name`` becomes the trace key; renaming creates a new
-    definition. ``settings`` is the registered step's concrete frozen model,
-    resolved while the definition crosses this validation boundary.
-    """
-
     instance_name: str
     step: StepName
     settings: SerializeAsAny[StepSettings] = Field(
@@ -34,8 +25,6 @@ class StepSpec(FrozenModel):
             return value
         data = dict(value)
         if "step" not in data:
-            # Let pydantic report the missing discriminator as a
-            # ValidationError instead of raising KeyError out of band.
             return data
         step = StepName(data["step"])
         from dr_code.preprocessing.registry import REGISTRY
@@ -48,11 +37,6 @@ class StepSpec(FrozenModel):
 
 
 class PreprocessingDefinition(FrozenModel):
-    """Ordered, named step instances and settings.
-
-    Frozen and serializable. Fully describes the pipeline; no hidden defaults.
-    """
-
     definition_id: str
     version: str
     steps: tuple[StepSpec, ...]
@@ -61,7 +45,6 @@ class PreprocessingDefinition(FrozenModel):
     @model_validator(mode="after")
     def _validate_instance_names(self) -> Self:
         names = [spec.instance_name for spec in self.steps]
-        # instance names must be unique and must not be reserved keys
         reserved = RESERVED_KEYS & set(names)
         if reserved:
             raise WiringError(

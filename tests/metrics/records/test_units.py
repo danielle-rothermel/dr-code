@@ -1,5 +1,3 @@
-"""Metric-fact unit vocabulary contracts."""
-
 from __future__ import annotations
 
 

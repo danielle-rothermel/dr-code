@@ -1,12 +1,3 @@
-"""Transforms that operate on Python source as code.
-
-Every source-level function here assumes its input is parseable Python and
-raises `SyntaxError` when it is not. Tree-level helpers assume the caller
-owns the tree. For best-effort transforms over text that only probably
-contains code (raw LLM output, markdown, mixed prose), see
-`dr_code.core.source.text_transforms` — its functions are total and never raise.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -32,7 +23,6 @@ from dr_code.core.source.python_analysis import (
     validate_python,
 )
 
-#: Prefix used for alpha-renamed local variables (`_v0`, `_v1`, ...).
 RENAMED_LOCAL_PREFIX: Final[str] = "_v"
 
 _UNSAFE_LOCAL_RENAME_MAPPING: Final[str] = (
@@ -51,14 +41,12 @@ SCOPE_NODE_TYPES = (
 def strip_leading_docstring(
     node: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
 ) -> None:
-    """Drop `node`'s leading docstring in place, keeping the body parseable."""
     body = node.body
     if body and is_string_literal_stmt(body[0]):
         node.body = body[1:] or [ast.Pass()]
 
 
 def strip_docstrings_in_tree(tree: ast.AST) -> ast.AST:
-    """Drop leading docstrings from every scope in `tree`, in place."""
     for node in ast.walk(tree):
         if isinstance(node, SCOPE_NODE_TYPES):
             strip_leading_docstring(node)
@@ -66,7 +54,6 @@ def strip_docstrings_in_tree(tree: ast.AST) -> ast.AST:
 
 
 def strip_docstrings(source: str) -> str:
-    """Remove all docstrings via an `ast.unparse` round-trip."""
     tree = strip_docstrings_in_tree(ast.parse(source))
     ast.fix_missing_locations(tree)
     return ast.unparse(tree)
@@ -125,7 +112,6 @@ def strip_type_annotations_in_tree(
     *,
     keep: Callable[[AnnotationSite], bool] | None = None,
 ) -> ast.AST:
-    """Drop selected annotations from `tree` in place."""
     sites = annotation_sites(tree)
     annassign_replacements = {
         id(site.owner): _replacement_for_annassign(site)
@@ -145,8 +131,6 @@ def strip_type_annotations_in_tree(
 
 
 def strip_type_annotations(source: str) -> str:
-    """Drop annotations: `def f(x: int) -> str:` -> `def f(x):`,
-    `x: int = 1` -> `x = 1`."""
     tree = strip_type_annotations_in_tree(ast.parse(source))
     ast.fix_missing_locations(tree)
     return ast.unparse(tree)
@@ -156,12 +140,6 @@ def rename_locals_in_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     mapping: dict[str, str],
 ) -> ast.FunctionDef | ast.AsyncFunctionDef:
-    """Apply a capture-safe `mapping` within one function's lexical scope.
-
-    Raises `ValueError` with the owned unsafe-mapping diagnostic when names are
-    not identifiers, replacements are not injective, or a replacement could
-    capture an existing name.
-    """
     if not mapping:
         return node
     _validate_local_rename_mapping(node, mapping)
@@ -215,12 +193,6 @@ def _validate_local_rename_mapping(
 def _preserved_local_names(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> set[str]:
-    """Local bindings intentionally kept stable by the public transform.
-
-    Nested definition names retain the transform's established output shape.
-    A dotted import without `as` binds its top-level package; adding an alias
-    would instead bind the imported leaf module and change attribute access.
-    """
     names: set[str] = set()
 
     class PreservedNameVisitor(ast.NodeVisitor):
@@ -294,8 +266,6 @@ def _target_names(target: ast.expr) -> set[str]:
 
 
 class _LexicalLocalRenamer(ast.NodeTransformer):
-    """Rename function-owned names without crossing lexical ownership."""
-
     def __init__(
         self,
         reserved: set[str],
@@ -549,7 +519,6 @@ def alpha_rename_locals_in_tree(
     *,
     rename_params: bool = True,
 ) -> ast.Module:
-    """Alpha-rename function locals to `_v0`, `_v1`, ... in `tree`."""
     reserved = _identifier_names(tree)
     _LexicalLocalRenamer(
         reserved,
@@ -559,12 +528,6 @@ def alpha_rename_locals_in_tree(
 
 
 def alpha_rename_locals(source: str, *, rename_params: bool = True) -> str:
-    """Alpha-rename function locals to `_v0`, `_v1`, ... per function.
-
-    Module-level names (functions, classes, top-level assignments, imports)
-    are preserved. With `rename_params=False`, parameters keep their names
-    (they are part of the signature contract) and only body locals rename.
-    """
     tree = ast.parse(source)
     alpha_rename_locals_in_tree(tree, rename_params=rename_params)
     ast.fix_missing_locations(tree)
@@ -572,7 +535,6 @@ def alpha_rename_locals(source: str, *, rename_params: bool = True) -> str:
 
 
 def remove_top_level_imports(source: str) -> str:
-    """Delete top-level import lines, keeping the rest of the source intact."""
     import_linenos = top_level_import_linenos(ast.parse(source))
     if not import_linenos:
         return source
@@ -586,7 +548,6 @@ def remove_top_level_imports(source: str) -> str:
 
 
 def dedupe_imports(source: str) -> str:
-    """Drop exact-duplicate import lines, keeping the first occurrence."""
     validate_python(source)
     seen: set[str] = set()
     out: list[str] = []

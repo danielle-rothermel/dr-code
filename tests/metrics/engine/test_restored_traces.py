@@ -1,11 +1,3 @@
-"""Restored-trace record equality.
-
-The determinism promise: *same canonical inputs + same metric
-identity/settings ⇒ same record*. Restored (deserialized) traces start with
-cold caches but must measure identically to fresh traces. These tests cover
-that promise across the three producer origins and the cache-hit path.
-"""
-
 from __future__ import annotations
 
 from dr_code.core.execution.sandbox import SandboxCompletedProcess
@@ -78,11 +70,6 @@ def _namespace():
 
 
 def _answer(record):
-    """Comparable projection: identity, status, and ordered facts.
-
-    Producer lineage legitimately differs across origins, so equality of the
-    measured answer is what the determinism promise guarantees.
-    """
     from dr_code.metrics import MeasuredRecord
 
     facts = record.facts if isinstance(record, MeasuredRecord) else ()
@@ -103,11 +90,6 @@ def _extract(definition, trace, **kwargs):
 
 def _stub_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
     return SandboxCompletedProcess(returncode=0, stdout="[]", stderr="")
-
-
-# ===========================================================================
-# Fresh, deserialized, and external traces produce equal records.
-# ===========================================================================
 
 
 def test_deserialized_trace_measures_identically_to_fresh() -> None:
@@ -131,11 +113,6 @@ def test_external_trace_measures_identically_to_preprocessing_producer() -> (
     assert [_answer(r) for r in _extract(definition, external)] == [
         _answer(r) for r in _extract(definition, preprocessing)
     ]
-
-
-# ===========================================================================
-# Execution-backed records are equal for restored and fresh traces.
-# ===========================================================================
 
 
 def _code_test_definition():
@@ -170,7 +147,6 @@ def test_code_test_record_equal_across_fresh_and_restored(
 def test_batch_over_identical_traces_yields_equal_record_sets(
     task, code_test_trace
 ) -> None:
-    """A sweep of identical traces yields identical record sets per trace."""
     from dr_code.metrics import extract_metrics_batch
 
     fresh = code_test_trace(CODE, task)

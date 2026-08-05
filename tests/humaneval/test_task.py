@@ -1,5 +1,3 @@
-"""Tests for HumanEval task construction and overrides."""
-
 from __future__ import annotations
 
 import json
@@ -55,12 +53,6 @@ def test_parse_humaneval_dataset_builds_tasks() -> None:
 
 
 def test_task_recomputes_parses_instead_of_trusting_them() -> None:
-    """A supplied parse is derived truth, not caller-supplied truth.
-
-    Omitting the parses and supplying the correct ones produce the same task,
-    so nothing is gained by supplying them -- and nothing wrong can be
-    smuggled in by supplying them.
-    """
     derived = _task()
     supplied = HumanEvalTask(
         task_id=derived.task_id,
@@ -76,7 +68,6 @@ def test_task_recomputes_parses_instead_of_trusting_them() -> None:
 
 
 def test_task_rejects_a_parse_disagreeing_with_its_source() -> None:
-    """A parse of some other code cannot ride along with this task."""
     other = HumanEvalTask(
         task_id="HumanEval/other",
         prompt="def subtract_one(x):\n",
@@ -100,7 +91,6 @@ def test_task_rejects_a_parse_disagreeing_with_its_source() -> None:
 
 
 def test_task_rejects_parsed_tests_disagreeing_with_the_test_field() -> None:
-    """Parsed tests cannot describe cases the raw ``test`` field does not."""
     other_test = (
         "def check(candidate):\n"
         "    inputs = [(9,)]\n"
@@ -125,7 +115,6 @@ def test_task_rejects_parsed_tests_disagreeing_with_the_test_field() -> None:
 
 
 def test_task_is_frozen_and_its_notes_are_immutable() -> None:
-    """Nothing can edit a validated task after the fact."""
     task = _task()
 
     assert isinstance(task.notes, tuple)
@@ -138,11 +127,6 @@ def test_task_is_frozen_and_its_notes_are_immutable() -> None:
 
 
 def test_task_round_trips_through_its_field_payload() -> None:
-    """Serialized fields rebuild an equal task, parses included.
-
-    Computed fields are excluded because they are derived, not stored: the
-    field payload is the task's identity and the parses come back from it.
-    """
     task = _task(test=_input_result_test())
     payload = json.loads(
         task.model_dump_json(exclude=set(HumanEvalTask.model_computed_fields))
@@ -156,7 +140,6 @@ def test_task_round_trips_through_its_field_payload() -> None:
 
 
 def test_override_notes_reach_the_task_as_an_immutable_tuple() -> None:
-    """Override notes land on the frozen task without a mutable seam."""
     row = _row("HumanEval/99", 1)
     applied = _apply_humaneval_override(
         row,

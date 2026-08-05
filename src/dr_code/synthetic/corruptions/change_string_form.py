@@ -1,5 +1,3 @@
-"""Swap f-string forms with .format() equivalents (for a few patterns)."""
-
 from __future__ import annotations
 
 import ast
@@ -11,13 +9,10 @@ from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import CorruptionName
 from dr_code.synthetic.corruptions.base import Corruption
 
-#: Match simple f-strings like f"hello {x}" or f'hello {x}' with one variable.
 _FSTRING_RE = re.compile(r"""f(['"])([^"'{}]*)\{(\w+)\}([^"'{}]*)\1""")
 
 
 def _f_to_format(source: str) -> str:
-    """Rewrite simple f-strings as .format() calls."""
-
     def repl(m: re.Match[str]) -> str:
         pre, name, post = m.group(2), m.group(3), m.group(4)
         return f'"{pre}{{}}{post}".format({name})'
@@ -45,8 +40,6 @@ def _format_call_for_literal(value: str) -> ast.Call:
 
 
 class _FirstStringLiteralToFormat(ast.NodeTransformer):
-    """Replace the first non-docstring string literal with a ``.format()`` call."""
-
     def __init__(self) -> None:
         self.changed = False
 
@@ -107,8 +100,6 @@ class _FirstStringLiteralToFormat(ast.NodeTransformer):
 
 
 class _WrapReturnWithFormatGuard(ast.NodeTransformer):
-    """Wrap the first ``return`` in a tautological ``.format()`` guard."""
-
     def __init__(self) -> None:
         self.changed = False
 
@@ -132,7 +123,6 @@ class _WrapReturnWithFormatGuard(ast.NodeTransformer):
 
 
 def _literal_to_format_fallback(source: str) -> str:
-    """Fallback when no f-strings exist: corrupt via ``.format()`` usage."""
     for converter_cls in (
         _FirstStringLiteralToFormat,
         _WrapReturnWithFormatGuard,
@@ -153,15 +143,11 @@ def _literal_to_format_fallback(source: str) -> str:
 
 
 class ChangeStringForm(Corruption):
-    """Convert simple f-strings to `.format()` calls."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.CHANGE_STRING_FORM
     VERSION: ClassVar[str] = "0"
 
     def apply(self, source: str, rng: random.Random) -> CorruptedSample:
-        del (
-            rng
-        )  # deterministic fallback; rng reserved for future stochastic picks
+        del rng
         corrupted = _f_to_format(source)
         if corrupted == source:
             corrupted = _literal_to_format_fallback(source)

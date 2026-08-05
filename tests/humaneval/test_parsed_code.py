@@ -1,5 +1,3 @@
-"""Tests for parsed HumanEval code summaries."""
-
 from __future__ import annotations
 
 from dr_code.core.source.python_analysis import validate_python_source

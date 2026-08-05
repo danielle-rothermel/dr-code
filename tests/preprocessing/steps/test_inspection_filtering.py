@@ -1,5 +1,3 @@
-"""Candidate-inspection and filtering preprocessing-step tests."""
-
 from __future__ import annotations
 
 import pytest
@@ -29,7 +27,6 @@ from dr_code.trace import (
 
 
 def _candidate_set(*sources: str) -> CodeCandidateSetArtifact:
-    """A candidate set whose records carry a plain synthetic origin."""
     return CodeCandidateSetArtifact(
         candidates=tuple(
             CodeCandidate(
@@ -49,7 +46,6 @@ def _candidate_set(*sources: str) -> CodeCandidateSetArtifact:
 
 
 def _inspected(*sources: str) -> InspectedCodeCandidateSetArtifact:
-    """Run the inspection step to build a genuine inspected set."""
     value = InspectCandidates().apply(_candidate_set(*sources)).value
     assert isinstance(value, InspectedCodeCandidateSetArtifact)
     return value
@@ -59,9 +55,6 @@ def _inspected_sources(
     value: InspectedCodeCandidateSetArtifact,
 ) -> tuple[str, ...]:
     return tuple(item.candidate.source for item in value.candidates)
-
-
-# --- inspection: one parse, structural facts only --------------------
 
 
 def test_inspection_records_compilable_source_facts() -> None:
@@ -116,9 +109,6 @@ def test_inspection_facts_report_counts() -> None:
     assert out.facts["compiles_count"] == 1
 
 
-# --- filters read the stored inspection ------------------------------
-
-
 def test_filter_compilable_uses_the_stored_inspection() -> None:
     out = FilterCompilable().apply(
         _inspected("def f():\n    return 1", "def broken(:")
@@ -156,14 +146,9 @@ def test_filter_code_repr_drops_repr_assignments() -> None:
 
 
 def test_filters_keep_survivors_and_their_inspections_identical() -> None:
-    # Filters remove candidates; they never rewrite a survivor's source,
-    # so a survivor's record and its inspection are carried through whole.
     inspected = _inspected("def f():\n    return 1", "def broken(:")
     out = FilterCompilable().apply(inspected)
     assert out.value.candidates[0] == inspected.candidates[0]
-
-
-# --- materialization returns everything that survived ----------------
 
 
 def test_materialize_returns_the_complete_set_in_order() -> None:

@@ -1,21 +1,3 @@
-"""HumanEval's sandbox-backed metric operator.
-
-This operator is HumanEval-specific by construction, not merely by its type
-annotations: it uses the HumanEval batch request and result protocol owned by
-``dr_code.humaneval.runner`` and depends on ``HumanEvalTask.parsed_tests``
-semantics. There is deliberately no generic ``Task`` supertype -- a
-single-implementation abstraction with a guessed interface would be premature.
-The shared interface gets extracted when a second benchmark exists to constrain
-it; until then the HumanEval scope is kept honest through naming and
-docstrings.
-
-Requests are built by ``runner.build_humaneval_batch_request`` and
-outcomes are read by ``runner.interpret_subprocess_batch_result``, so
-this operator and the direct batch path share one protocol implementation.
-Only the failure *attribution* differs: metrics turns runner-protocol breakage
-into candidate-attributable case errors instead of raising.
-"""
-
 from __future__ import annotations
 
 import math
@@ -216,17 +198,6 @@ def _results_from_outcome(
     timeout_seconds: float,
     outcome: ExecutionOutcome,
 ) -> list[EvaluationCaseResult]:
-    """Read a cached execution outcome through the HumanEval protocol.
-
-    Timeout and output-limit outcomes are synthesized by the execution cache
-    rather than returned by the sandbox, so they are mapped before the shared
-    reader sees them. Everything else -- kill returncodes, unexpected nonzero
-    exits, and malformed runner output -- is candidate-controlled data that
-    ``interpret_subprocess_batch_result`` already classifies; metrics only
-    differs in attributing its protocol errors to the candidate as case
-    errors rather than aborting the batch.
-    """
-
     if is_timeout_outcome(outcome):
         return runner.timeout_results(
             task=task,

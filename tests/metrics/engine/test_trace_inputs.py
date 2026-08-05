@@ -1,5 +1,3 @@
-"""Trace-input binding contracts for the metrics engine."""
-
 from __future__ import annotations
 
 import pytest
@@ -28,7 +26,6 @@ def test_missing_on_key_is_a_wiring_error_before_any_work(
 
 
 def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
-    """ast_stats requires CODE; a TEXT key is a kind mismatch (bind-time)."""
     trace = external_trace(
         {
             "input": TextArtifact(text="not code"),
@@ -42,7 +39,6 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
 
 
 def test_missing_auxiliary_key_is_a_wiring_error(counting_runner) -> None:
-    """code_test needs its task key; a key absent from the namespace is wiring."""
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = external_trace(
         {
@@ -70,8 +66,6 @@ def test_batch_wiring_error_runs_no_sandbox_work(counting_runner) -> None:
 
 
 def test_absent_on_key_yields_not_applicable_with_cause() -> None:
-    """Absent input ⇒ NOT_APPLICABLE carrying the Absent lineage,
-    distinct from a missing key (which is a wiring error)."""
     trace = external_trace(
         {
             "input": Absent(
@@ -101,8 +95,6 @@ def test_absent_on_key_yields_not_applicable_with_cause() -> None:
 
 
 def test_absent_auxiliary_yields_not_applicable() -> None:
-    """code_test whose task aux is present-but-Absent is not-applicable, not a
-    wiring bug."""
     candidate = "def add_one(x):\n    return x + 1\n"
     code = CodeArtifact(source=candidate)
     trace = external_trace(
