@@ -18,8 +18,9 @@ The two readings that name a code field explicitly come first, so a
 response that declares which part is its answer is not shadowed by a
 general scrape of some other field:
 
-1. ``json_code_field`` — a top-level JSON object's ``code`` value, then
-   that value's segments.
+1. ``json_code_field`` — the ``code`` value of a JSON object, read from
+   the whole response and from each of its fenced blocks, then that
+   value's segments.
 2. ``field_marker`` — the value of a ``[[ ## code ## ]]`` field marker,
    then that value's segments.
 
@@ -195,21 +196,52 @@ def _declared_code_sources(value: str) -> list[str]:
     return ordered
 
 
-def _json_code_field(text: str) -> list[str]:
-    """A top-level JSON object's ``code`` value, and its segments."""
+def _json_object_code_value(text: str) -> str | None:
+    """The ``code`` value of ``text`` read as a whole JSON object."""
     stripped = text.strip()
     if not (stripped.startswith("{") and stripped.endswith("}")):
-        return []
+        return None
     try:
         decoded = json.loads(stripped)
     except (json.JSONDecodeError, TypeError):
-        return []
+        return None
     if not isinstance(decoded, dict):
-        return []
+        return None
     value = decoded.get(CODE_FIELD_NAME)
     if not isinstance(value, str) or not value.strip():
-        return []
-    return _declared_code_sources(value)
+        return None
+    return value
+
+
+def _json_code_field(text: str) -> list[str]:
+    """A JSON object's ``code`` value, and its segments.
+
+    The object is read from the response as written *and* from each of its
+    fenced blocks, because a response that answers in JSON commonly puts
+    the envelope inside a fence — ```` ```json ```` or an untagged one —
+    and a fenced envelope is the same declaration as a bare one. Reading
+    only the bare shape leaves the declaration unread and the response is
+    scraped instead, so whatever a general segment reading happens to find
+    takes the ordinal the declared field should have held.
+
+    Decoding stays strict: an envelope is read only when the block is a
+    complete JSON object carrying a non-blank string ``code``. Nothing is
+    repaired, so a truncated or malformed envelope contributes nothing here
+    and the scraping readings still get their chance at the response.
+    """
+    values = [
+        value
+        for source in (text, *split_by_fences(text)[1])
+        if (value := _json_object_code_value(source)) is not None
+    ]
+    sources: list[str] = []
+    for value in values:
+        sources.extend(
+            source
+            for source in _declared_code_sources(value)
+            if source not in sources
+        )
+    return sources
 
 
 def _field_marker(text: str) -> list[str]:
@@ -241,8 +273,9 @@ def _escaped_markdown(text: str) -> list[str]:
 #: Representation -> the reading that produces its candidate sources. The
 #: mapping's order is the order candidates are contributed in.
 #:
-#: The two readings that name a code field explicitly — a JSON ``code`` key
-#: and a ``[[ ## code ## ]]`` marker — come first, ahead of the readings
+#: The two readings that name a code field explicitly — a JSON ``code`` key,
+#: fenced or bare, and a ``[[ ## code ## ]]`` marker — come first, ahead of
+#: the readings
 #: that scrape code out of arbitrary text. A response that says which part
 #: is its answer is answering the question directly, while a segment scrape
 #: is inference; when both fire, the response's own declaration is the

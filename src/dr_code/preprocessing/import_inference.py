@@ -5,13 +5,16 @@ Public step bodies behind the ``repair_import_lines`` /
 ``infer_necessary_imports``, which runs all three in one call. Names in
 ``IMPORT_ALIAS_MAP`` are injected only when referenced and not bound anywhere
 in the candidate's syntax tree — a conservative rule, since injecting a wrong
-import is worse than skipping one.
+import is worse than skipping one. Injected imports follow the module header
+a candidate already carries: a leading docstring, then contiguous
+``from __future__`` imports.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+import warnings
 from typing import Final
 
 IMPORT_ALIAS_MAP: Final[dict[str, str]] = {
@@ -53,11 +56,13 @@ TRAILING_JUNK_RE: Final[re.Pattern[str]] = re.compile(r"\s*(?:#|//|--|/\*).*$")
 
 
 def infer_missing_imports(source: str) -> str:
-    """Prepend imports for mapped names referenced but never bound.
+    """Insert imports for mapped names referenced but never bound.
 
     Parses ``source``; for each ``IMPORT_ALIAS_MAP`` name referenced but not
-    bound anywhere in the tree, prepends its import statement. Unparseable
-    input passes through unchanged.
+    bound anywhere in the tree, inserts its import statement at the earliest
+    line that keeps the module's own header intact — see
+    ``_inferred_import_insertion_line``. Unparseable input passes through
+    unchanged.
     """
     tree = _parse_or_none(source)
     if tree is None:
@@ -72,7 +77,47 @@ def infer_missing_imports(source: str) -> str:
     ]
     if not imports:
         return source
-    return "\n".join(imports) + "\n" + source
+    import_block = "\n".join(imports) + "\n"
+    insertion_line = _inferred_import_insertion_line(tree)
+    if insertion_line == 0:
+        return import_block + source
+    lines = source.splitlines(keepends=True)
+    offset = sum(len(line) for line in lines[:insertion_line])
+    return source[:offset] + import_block + source[offset:]
+
+
+def _inferred_import_insertion_line(tree: ast.Module) -> int:
+    """The line inferred imports go after: header first, then imports.
+
+    Two leading constructs own the top of a module and cannot be displaced.
+    A ``from __future__`` import is only legal before any other statement,
+    so an import placed above one compiles nowhere and the candidate is
+    dropped by the compilability filter. A leading string expression is the
+    module docstring only while it is the first statement; an import above
+    it demotes it to a bare expression and the module loses its ``__doc__``.
+
+    Returns the 1-based line the import block follows — the end of a
+    leading docstring plus any contiguous ``from __future__`` imports after
+    it — or ``0`` when the module has neither and the block goes first.
+    """
+    body = tree.body
+    index = 0
+    insertion_line = 0
+    if body and isinstance(body[0], ast.Expr):
+        value = body[0].value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            insertion_line = body[0].end_lineno or body[0].lineno
+            index = 1
+    while index < len(body):
+        statement = body[index]
+        if not (
+            isinstance(statement, ast.ImportFrom)
+            and statement.module == "__future__"
+        ):
+            break
+        insertion_line = statement.end_lineno or statement.lineno
+        index += 1
+    return insertion_line
 
 
 def repair_import_lines(source: str) -> tuple[str, bool]:
@@ -111,7 +156,7 @@ def infer_necessary_imports(source: str) -> str:
     return dedupe_import_lines(inferred)
 
 
-def _parse_or_none(text: str) -> ast.AST | None:
+def _parse_or_none(text: str) -> ast.Module | None:
     """Parse ``text``, or ``None`` when it is not parseable Python.
 
     ``ValueError`` is caught alongside ``SyntaxError`` because text that
@@ -120,11 +165,19 @@ def _parse_or_none(text: str) -> ast.AST | None:
     input, not a repair opportunity, so it passes through untouched and is
     rejected by the compilability filter, matching
     ``code_analysis.validate_python_source_with_ast``.
+
+    ``SyntaxWarning`` is suppressed because this parse is speculative:
+    structural cleaning asks whether text is parseable, it does not own
+    diagnostic facts about it. Inspection later parses the surviving source
+    and records its diagnostics in the trace, so letting a warning escape
+    here only duplicates that record against text that may not survive.
     """
-    try:
-        return ast.parse(text)
-    except (SyntaxError, ValueError):
-        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        try:
+            return ast.parse(text)
+        except (SyntaxError, ValueError):
+            return None
 
 
 def _repair_import_line(line: str) -> str | None:

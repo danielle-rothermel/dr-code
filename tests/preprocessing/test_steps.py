@@ -635,6 +635,37 @@ def test_extraction_reads_a_top_level_json_code_field() -> None:
     )
 
 
+@pytest.mark.parametrize("tag", ["json", ""])
+def test_extraction_reads_a_json_code_field_inside_a_fence(tag: str) -> None:
+    envelope = json.dumps({"code": "def f():\n    return 1"})
+    out = _extract(f"Here it is:\n\n```{tag}\n{envelope}\n```\n\nDone.")
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_reads_a_fenced_json_code_field_once() -> None:
+    """A bare envelope inside its own fence is not read twice."""
+    envelope = json.dumps({"code": "def f():\n    return 1"})
+    out = _extract(f"```json\n{envelope}\n```")
+    sources = [
+        candidate.source
+        for candidate in out.value.candidates
+        if candidate.origins[0].operation.operation_name
+        == Representation.JSON_CODE_FIELD.value
+    ]
+    assert len(sources) == len(set(sources))
+
+
+def test_extraction_ignores_a_malformed_fenced_json_envelope() -> None:
+    """Decoding stays strict: a truncated envelope is never repaired."""
+    out = _extract('```json\n{"code": "def f():\\n    return 1"\n```')
+    assert Representation.JSON_CODE_FIELD.value not in _origin_operations(
+        out.value
+    )
+
+
 def test_extraction_reads_a_field_marker_value() -> None:
     out = _extract(
         "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"
