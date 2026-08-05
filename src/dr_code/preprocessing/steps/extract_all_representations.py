@@ -19,8 +19,9 @@ response that declares which part is its answer is not shadowed by a
 general scrape of some other field:
 
 1. ``json_code_field`` — the ``code`` value of a JSON object, read from
-   the whole response and from each of its fenced blocks, then that
-   value's segments.
+   the whole response and from the fenced blocks of its answer region —
+   the ``[[ ## code ## ]]`` field when the response marks one, the whole
+   response otherwise — then that value's segments.
 2. ``field_marker`` — the value of a ``[[ ## code ## ]]`` field marker,
    then that value's segments.
 
@@ -213,6 +214,19 @@ def _json_object_code_value(text: str) -> str | None:
     return value
 
 
+def _envelope_fences(text: str) -> list[str]:
+    """The fenced blocks a JSON envelope may be read from.
+
+    The answer region, when the response marks one: a response using field
+    markers is answering under ``[[ ## code ## ]]``, and its other fields
+    carry material it did not write. Absent that marker — including a
+    response with markers but no code field, which declares no answer
+    region anywhere — nothing narrows the response and every fence is read.
+    """
+    region = field_marker_value(text, field_name=CODE_FIELD_NAME)
+    return split_by_fences(text if region is None else region)[1]
+
+
 def _json_code_field(text: str) -> list[str]:
     """A JSON object's ``code`` value, and its segments.
 
@@ -228,10 +242,20 @@ def _json_code_field(text: str) -> list[str]:
     complete JSON object carrying a non-blank string ``code``. Nothing is
     repaired, so a truncated or malformed envelope contributes nothing here
     and the scraping readings still get their chance at the response.
+
+    Which fences are scanned is bounded by what the response declares. A
+    response carrying field markers has already named its answer region, so
+    only that region's fences are read: a ``[[ ## prompt ## ]]`` holding a
+    worked example or a reference implementation is context the response was
+    given, not an answer it wrote, and reading its envelope would let the
+    example take the ordinal ahead of the marked answer — the shadowing this
+    reading's position exists to prevent. A response with no markers has
+    named no region, so its whole text is the answer and every fence is
+    read.
     """
     values = [
         value
-        for source in (text, *split_by_fences(text)[1])
+        for source in (text, *_envelope_fences(text))
         if (value := _json_object_code_value(source)) is not None
     ]
     sources: list[str] = []
@@ -275,14 +299,16 @@ def _escaped_markdown(text: str) -> list[str]:
 #:
 #: The two readings that name a code field explicitly — a JSON ``code`` key,
 #: fenced or bare, and a ``[[ ## code ## ]]`` marker — come first, ahead of
-#: the readings
-#: that scrape code out of arbitrary text. A response that says which part
-#: is its answer is answering the question directly, while a segment scrape
-#: is inference; when both fire, the response's own declaration is the
-#: better candidate. Without this, a fenced block in some *other* marked
-#: field (a ``[[ ## prompt ## ]]`` carrying a starter or reference
-#: function) is scraped first and shadows the marked answer under an
-#: acceptance policy that takes the lowest surviving ordinal.
+#: the readings that scrape code out of arbitrary text. A response that says
+#: which part is its answer is answering the question directly, while a
+#: segment scrape is inference; when both fire, the response's own
+#: declaration is the better candidate. Without this, a fenced block in some
+#: *other* marked field (a ``[[ ## prompt ## ]]`` carrying a starter or
+#: reference function) is scraped first and shadows the marked answer under
+#: an acceptance policy that takes the lowest surviving ordinal. Ordering
+#: alone does not settle that case: the envelope reading is itself bounded
+#: to the answer region, so a non-code field's envelope is not read as the
+#: response's declaration either — see ``_envelope_fences``.
 #:
 #: This orders the readings; it does not make any of them exclusive.
 #: Every representation still contributes every candidate it finds.

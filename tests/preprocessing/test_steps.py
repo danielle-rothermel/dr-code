@@ -685,6 +685,38 @@ def test_extraction_ignores_a_malformed_fenced_json_envelope() -> None:
     )
 
 
+def test_extraction_ignores_a_fenced_envelope_outside_the_code_field() -> None:
+    """A marked response's other fields are not read as its declaration.
+
+    A ``[[ ## prompt ## ]]`` carrying a worked example is context the
+    response was given, not an answer it wrote. Reading its envelope would
+    put the example ahead of the marked answer under an acceptance policy
+    that takes the lowest surviving ordinal.
+    """
+    envelope = json.dumps({"code": "def reference():\n    return 999"})
+    out = _extract(
+        f"[[ ## prompt ## ]]\nFor example:\n\n```json\n{envelope}\n```\n\n"
+        "[[ ## code ## ]]\ndef f():\n    return 1\n"
+    )
+    assert "def reference():\n    return 999" not in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value not in _origin_operations(
+        out.value
+    )
+    assert out.value.candidates[0].source == "def f():\n    return 1"
+
+
+def test_extraction_reads_a_fenced_envelope_inside_the_code_field() -> None:
+    """The marked answer's own fenced envelope is still the declaration."""
+    envelope = json.dumps({"code": "def f():\n    return 1"})
+    out = _extract(
+        f"[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\n```json\n{envelope}\n```"
+    )
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value in _origin_operations(
+        out.value
+    )
+
+
 def test_extraction_reads_a_field_marker_value() -> None:
     out = _extract(
         "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"

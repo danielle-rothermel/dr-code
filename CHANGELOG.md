@@ -3,11 +3,15 @@
 ## 2026-08-05 (extraction recall)
 
 - `extract_all_representations` reads a JSON `code` field from the response
-  as written *and* from each of its fenced blocks, so a response that puts
-  its envelope inside a ```` ```json ```` fence still has its declared code
-  field read rather than scraped. Decoding stays strict: an envelope is
-  read only when the block is a complete JSON object carrying a non-blank
-  string `code`, and nothing is repaired.
+  as written *and* from the fenced blocks of its answer region, so a
+  response that puts its envelope inside a ```` ```json ```` fence still has
+  its declared code field read rather than scraped. The answer region is the
+  `[[ ## code ## ]]` field when the response marks one and the whole
+  response otherwise, so a worked example fenced under a
+  `[[ ## prompt ## ]]` is not read as the response's own declaration.
+  Decoding stays strict: an envelope is read only when the block is a
+  complete JSON object carrying a non-blank string `code`, and nothing is
+  repaired.
 - `drop_after_last_return` locates the salvage boundary by tokenizing
   rather than by matching lines. A `NEWLINE` token fires only once bracket
   continuations close, so a `return` spanning several lines is kept whole
