@@ -7,6 +7,7 @@ import ast
 import pytest
 
 from dr_code.core.source.python_transforms import (
+    RENAMED_LOCAL_PREFIX,
     alpha_rename_locals_in_tree,
     alpha_rename_locals,
     dedupe_imports,
@@ -26,6 +27,31 @@ SOURCE_TO_SOURCE_TRANSFORMS = (
     strip_docstrings,
     strip_type_annotations,
 )
+
+
+def _run_entrypoint(source: str) -> object:
+    namespace: dict[str, object] = {}
+    exec(compile(source, "<alpha-rename-test>", "exec"), namespace)
+    entrypoint = namespace["run"]
+    assert callable(entrypoint)
+    return entrypoint()
+
+
+def _assert_alpha_rename_preserves_result(source: str) -> None:
+    transformed = alpha_rename_locals(source, rename_params=False)
+    entrypoint = next(
+        node
+        for node in ast.parse(transformed).body
+        if isinstance(node, ast.FunctionDef) and node.name == "run"
+    )
+    assignment = next(
+        node for node in entrypoint.body if isinstance(node, ast.Assign)
+    )
+    target = assignment.targets[0]
+    assert isinstance(target, ast.Name)
+    assert target.id.startswith(RENAMED_LOCAL_PREFIX)
+
+    assert _run_entrypoint(source) == _run_entrypoint(transformed)
 
 
 @pytest.mark.parametrize(
@@ -135,9 +161,68 @@ def test_alpha_rename_locals_preserves_nested_scope_semantics() -> None:
         "shadowed"
     ]
     assert renamed_assignment_targets
-    assert original_namespace["build"](3)(5) == transformed_namespace[
-        "build"
-    ](3)(5)
+    assert original_namespace["build"](3)(5) == transformed_namespace["build"](
+        3
+    )(5)
+
+
+def test_alpha_rename_locals_updates_nonlocal_bindings() -> None:
+    source = (
+        "def run():\n"
+        "    value = 1\n"
+        "    def increment():\n"
+        "        nonlocal value\n"
+        "        value += 1\n"
+        "        return value\n"
+        "    return increment(), value\n"
+    )
+
+    _assert_alpha_rename_preserves_result(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
+            "def run():\n    value = 10\n    return (lambda _v0: value)(3)\n",
+            id="descendant-lambda-parameter",
+        ),
+        pytest.param(
+            "def run():\n"
+            "    value = 10\n"
+            "    return [value + _v0 for _v0 in (1, 2)]\n",
+            id="comprehension-binder",
+        ),
+        pytest.param(
+            "def run():\n"
+            "    value = 10\n"
+            "    class Box:\n"
+            "        _v0 = 3\n"
+            "        result = value + _v0\n"
+            "    return Box.result\n",
+            id="nested-class-binder",
+        ),
+        pytest.param(
+            "def run():\n"
+            "    value = 10\n"
+            "    def _v0():\n"
+            "        return 3\n"
+            "    return value + _v0()\n",
+            id="nested-function-name",
+        ),
+        pytest.param(
+            "_v0: int = 10\n"
+            "def run():\n"
+            "    value = 3\n"
+            "    return value + _v0\n",
+            id="module-annassign-binder",
+        ),
+    ],
+)
+def test_alpha_rename_locals_generates_fresh_names_across_scopes(
+    source: str,
+) -> None:
+    _assert_alpha_rename_preserves_result(source)
 
 
 def test_rename_locals_in_function_applies_mapping_to_one_function() -> None:
@@ -152,6 +237,31 @@ def test_rename_locals_in_function_applies_mapping_to_one_function() -> None:
     assert ast.unparse(tree) == (
         "def f(value):\n    result = value + 1\n    return result"
     )
+
+
+def test_rename_locals_in_function_updates_captures_not_shadowing() -> None:
+    source = (
+        "def run():\n"
+        "    value = 10\n"
+        "    def capture():\n"
+        "        return value\n"
+        "    def shadow(value):\n"
+        "        return value + 1\n"
+        "    return capture(), shadow(3)\n"
+    )
+    tree = ast.parse(source)
+    function = tree.body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    rename_locals_in_function(function, {"value": "renamed"})
+
+    shadow = next(
+        node
+        for node in function.body
+        if isinstance(node, ast.FunctionDef) and node.name == "shadow"
+    )
+    assert [argument.arg for argument in shadow.args.args] == ["value"]
+    assert _run_entrypoint(source) == _run_entrypoint(ast.unparse(tree))
 
 
 def test_alpha_rename_locals_in_tree_matches_source_transform() -> None:
