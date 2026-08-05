@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-08-05 (HumanEval evaluation contracts)
+
+- `dr_code.humaneval.batch_runner` owns the HumanEval batch protocol as one
+  implementation: `build_humaneval_batch_request` builds every request and
+  `interpret_subprocess_batch_result` reads every completed process back into
+  case results. The `code_test` metrics operator routes through both and
+  assembles an `EvaluationTaskResult`, so request bytes, top-level-function
+  selection, best-function selection, and coverage are computed once rather
+  than once per scored path. The operator's remaining difference is
+  attribution: runner-protocol breakage becomes candidate-attributable case
+  errors instead of raising. `tests/metrics/test_operator_parity.py` pins the
+  operator's requests byte-identical to the canonical ones.
+- The sandbox runner reserves its results channel. It captures the protocol
+  stdout handle before candidate code runs, points `sys.stdout` at the bounded
+  stderr, and writes results only through `emit_results`, so a candidate that
+  prints well-formed protocol JSON cannot add to or replace what the host
+  parses; candidate output is preserved on stderr as a diagnostic. Direct
+  file-descriptor writes remain outside what this contains.
+- `HumanEvalTask` is a `FrozenModel` carrying `notes` as a tuple. Its
+  validator always recomputes `parsed` and `parsed_tests` from
+  `prompt + canonical_solution` and `test`, and rejects a supplied value that
+  disagrees, so a task can never carry a parse describing other code.
+- `EvaluationTaskResult`'s five derived readings (`best_function_name`,
+  `failures`, `coverage_complete`, `passed`, `status_counts`) no longer
+  serialize, so the model's own dump revalidates under `extra="forbid"` and
+  the readings are recomputed from `results`. `EvaluationTaskSummary` remains
+  the shape that carries the readings across a boundary.
+- `tests/metrics/test_registry.py` derives every operator result model from
+  `REGISTRY` — through `compute`'s return annotation and that model's
+  subclasses — and asserts `UNITS` matches the field set exactly. This catches
+  a unit declared for a field that no longer exists and a field on a variant
+  no test exercises, neither of which `to_facts()` can catch at runtime.
+
 ## 2026-08-05 (extraction recall)
 
 - `extract_all_representations` reads a JSON `code` field from the response

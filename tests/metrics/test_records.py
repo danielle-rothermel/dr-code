@@ -85,35 +85,6 @@ def test_metric_fact_unit_is_the_closed_unit_vocabulary() -> None:
     assert {unit.value for unit in MetricFactUnit} == EXPECTED_FACT_UNITS
 
 
-def test_every_operator_declares_a_unit_for_every_fact_it_emits() -> None:
-    """Units are declared at the operator, not guessed at assembly time."""
-    from dr_code.metrics import MetricFactUnit
-    from dr_code.metrics.operators.ast_stats import AstStatsResult
-    from dr_code.metrics.operators.code_leakage import CodeLeakageResult
-    from dr_code.metrics.operators.code_test import CodeTestResult
-    from dr_code.metrics.operators.compressed_length import (
-        CompressedLengthResult,
-        CompressedLengthWithReferenceResult,
-    )
-    from dr_code.metrics.operators.parse_outcome import ParseOutcomeResult
-    from dr_code.metrics.operators.text_stats import TextStatsResult
-
-    for result_class in (
-        AstStatsResult,
-        CodeLeakageResult,
-        CodeTestResult,
-        CompressedLengthResult,
-        CompressedLengthWithReferenceResult,
-        ParseOutcomeResult,
-        TextStatsResult,
-    ):
-        assert set(result_class.model_fields) == set(result_class.UNITS), (
-            result_class.__name__
-        )
-        for unit in result_class.UNITS.values():
-            assert isinstance(unit, MetricFactUnit), result_class.__name__
-
-
 def test_a_result_field_without_a_declared_unit_fails_loudly() -> None:
     """A new fact cannot reach a record carrying an unlabelled value."""
     from dr_code.metrics.operators.base import OperatorResult
