@@ -78,6 +78,24 @@ def test_trace_producer_rejects_incomplete_or_mixed_variants(
         TypeAdapter(TraceProducer).validate_python(payload)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_component_setting_rejects_non_finite_float(value: float) -> None:
+    with pytest.raises(ValidationError):
+        ComponentSetting(name="threshold", value=value)
+
+
+def test_component_setting_finite_float_round_trips_through_json() -> None:
+    setting = ComponentSetting(name="threshold", value=0.5)
+
+    assert ComponentSetting.model_validate_json(setting.model_dump_json()) == (
+        setting
+    )
+
+
 # --- settings projection: tuple support and rejected shapes ----------
 
 
