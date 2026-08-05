@@ -394,7 +394,7 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
         ),
     ],
 )
-def test_apply_cleaning_extracts_known_submission_shapes(
+def test_cleaning_extracts_known_submission_shapes(
     source: str,
     expected_fragment: str,
 ) -> None:
@@ -751,12 +751,12 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.status_counts == {"passed": 1}
 
 
-def test_apply_cleaning_returns_empty_for_blank_input() -> None:
+def test_cleaning_returns_empty_for_blank_input() -> None:
     assert apply_cleaning_with_trace("").candidates == []
     assert apply_cleaning_with_trace("   \n\t  ").candidates == []
 
 
-def test_apply_cleaning_supports_tilde_fences() -> None:
+def test_cleaning_supports_tilde_fences() -> None:
     source = "~~~python\ndef add_one(x):\n    return x + 1\n~~~"
     candidates = apply_cleaning_with_trace(
         source, apply_dedent=True

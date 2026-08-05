@@ -125,7 +125,7 @@ _PROFILES = [
 ]
 
 
-# --- intended-identical parity across current coordinates -----------------
+# --- intended-identical parity across coordinates -------------------------
 
 
 @pytest.mark.parametrize(

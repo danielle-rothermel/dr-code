@@ -158,7 +158,7 @@ def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     assert "import random" not in result
 
 
-def test_apply_cleaning_infers_imports_for_compilable_candidate() -> None:
+def test_cleaning_infers_imports_for_compilable_candidate() -> None:
     source = "```python\ndef f(x):\n    return np.array([x])\n```"
     candidates = apply_cleaning_with_trace(
         source, apply_dedent=True

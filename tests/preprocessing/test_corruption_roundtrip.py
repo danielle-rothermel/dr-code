@@ -24,7 +24,8 @@ running the best-effort definition partitions the recipes empirically
 
   These six recipes are the independently-verified, ratified non-recoverable
   set, listed in ``NON_RECOVERABLE_RECIPES``. Exempting them from the
-  *equivalence* assertion is correct behaviour, not a gap. For every exempted recipe we still assert something meaningful:
+  *equivalence* assertion is correct behaviour, not a gap. For every
+  exempted recipe we still assert something meaningful:
   **output parity with ``extract_code_with_profile``**. Both APIs must give up
   or return the same non-equivalent source. No exempted recipe sits in an
   assertion-free bucket.

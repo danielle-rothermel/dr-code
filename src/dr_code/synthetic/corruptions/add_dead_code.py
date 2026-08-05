@@ -1,4 +1,4 @@
-"""Inject dead code (unused variables / unreachable statements)."""
+"""Prepend an unused import that leaves program behavior unchanged."""
 
 from __future__ import annotations
 
