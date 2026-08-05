@@ -26,7 +26,10 @@ from dr_code.preprocessing.steps.base import (
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
+    CandidateOrigin,
+    CodeCandidate,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
     TextArtifact,
 )
 
@@ -49,22 +52,41 @@ ExtractionStrategyFn = Callable[[str], CodeCandidateSetArtifact | None]
 
 def _to_candidate_set(
     blocks: list[str],
+    *,
+    strategy: ExtractionStrategy,
 ) -> CodeCandidateSetArtifact | None:
     """Apply ``code_like_blocks`` fan-out, drop whitespace-only blocks.
 
     ``code_like_blocks`` filters prose blocks and splits anchored segments.
     Returning ``None`` when no code-like candidate survives advances the
-    first-success ladder to its next strategy.
+    first-success ladder to its next strategy. Each surviving candidate's
+    single origin names the winning strategy and its own ordinal within
+    the candidate list this operation produces — a position after the
+    fan-out and the blank-block filter, not an index into the blocks the
+    operation read.
     """
-    candidates = [block for block in code_like_blocks(blocks) if block.strip()]
-    if not candidates:
+    sources = [block for block in code_like_blocks(blocks) if block.strip()]
+    if not sources:
         return None
-    return CodeCandidateSetArtifact(candidates=tuple(candidates))
+    operation = ExtractionOperation(operation_name=strategy.value)
+    return CodeCandidateSetArtifact(
+        candidates=tuple(
+            CodeCandidate(
+                source=source,
+                origins=(
+                    CandidateOrigin(operation=operation, input_location=index),
+                ),
+            )
+            for index, source in enumerate(sources)
+        )
+    )
 
 
 def _fenced_blocks(text: str) -> CodeCandidateSetArtifact | None:
     """Fenced blocks when present, otherwise the first unfenced block."""
-    return _to_candidate_set(candidate_blocks(text))
+    return _to_candidate_set(
+        candidate_blocks(text), strategy=ExtractionStrategy.FENCED_BLOCKS
+    )
 
 
 def _markdown_wrapper(text: str) -> CodeCandidateSetArtifact | None:
@@ -72,7 +94,9 @@ def _markdown_wrapper(text: str) -> CodeCandidateSetArtifact | None:
     stripped = [
         strip_markdown_wrappers(block) for block in candidate_blocks(text)
     ]
-    return _to_candidate_set(stripped)
+    return _to_candidate_set(
+        stripped, strategy=ExtractionStrategy.MARKDOWN_WRAPPER
+    )
 
 
 def _escaped_python(text: str) -> CodeCandidateSetArtifact | None:
@@ -80,7 +104,10 @@ def _escaped_python(text: str) -> CodeCandidateSetArtifact | None:
     unescaped = recover_escaped_python(text)
     if unescaped is None:
         return None
-    return _to_candidate_set(candidate_blocks(unescaped))
+    return _to_candidate_set(
+        candidate_blocks(unescaped),
+        strategy=ExtractionStrategy.ESCAPED_PYTHON,
+    )
 
 
 def _escaped_markdown_wrapper(
@@ -98,7 +125,9 @@ def _escaped_markdown_wrapper(
     stripped = [
         strip_markdown_wrappers(block) for block in candidate_blocks(unescaped)
     ]
-    return _to_candidate_set(stripped)
+    return _to_candidate_set(
+        stripped, strategy=ExtractionStrategy.ESCAPED_MARKDOWN_WRAPPER
+    )
 
 
 STRATEGY_REGISTRY: dict[str, ExtractionStrategyFn] = {

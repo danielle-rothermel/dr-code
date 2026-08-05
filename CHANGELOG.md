@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-05
+
+- Trace persistence requires schema version 3.
+- Trace construction snapshots the supplied values mapping and deep-copies
+  step facts, so later caller mutation cannot change an existing trace.
+  Artifact payloads, `JsonArtifact.payload` included, are copied at
+  validation, so the snapshot covers them too.
+- Step facts widened from string values to validated finite JSON: string
+  keys, finite floats, no container cycles, and no non-JSON values, enforced
+  at both trace construction and the persistence boundary.
+- `Absent` carries a required `failure_code`, a producer-owned string naming
+  the failure kind; preprocessing steps raise `StepFailedError` with an
+  explicit code and the runner propagates it unchanged.
+- Code candidates are nested records — `ExtractionOperation`,
+  `CandidateOrigin`, and `CodeCandidate` — carrying an ordered lineage that
+  extraction and elementwise steps extend as they transform a source.
+- Added the inspected-candidate artifact: `CandidateInspection`,
+  `InspectedCodeCandidate`, and `InspectedCodeCandidateSetArtifact`, whose
+  inspection fields are structural only.
+
 ## 2026-08-04
 
 - Removed dead public API and unreachable code paths across the HumanEval,

@@ -217,12 +217,15 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     extract_val = trace.value("e")
     assert is_absent(extract_val)
     assert extract_val.failed_step == "e"
+    assert extract_val.failure_code == "no_alternative_produced_candidates"
     assert extract_val.cause == "no alternative produced candidates"
 
     # downstream steps inherit the same Absent, propagated_through grows
     strip_val = trace.value("s")
     assert is_absent(strip_val)
     assert strip_val.failed_step == "e"
+    # the originating step's failure code propagates unchanged
+    assert strip_val.failure_code == "no_alternative_produced_candidates"
     assert "s" in strip_val.propagated_through
 
     out = trace.value("output")
@@ -247,6 +250,7 @@ def test_run_select_first_empty_set_yields_absent() -> None:
     out = trace.value("output")
     assert is_absent(out)
     assert out.failed_step == "sel"
+    assert out.failure_code == "no_candidate_survived_filtering"
     assert out.cause == "no candidate survived filtering"
     # rejection reason recorded as fact
     assert "rejected_0" in trace.step_facts["flt"]

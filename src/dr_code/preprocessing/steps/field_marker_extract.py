@@ -7,6 +7,7 @@ from typing import ClassVar
 from dr_code.humaneval.code_parsing import field_marker_value
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import (
+    FailureCode,
     Step,
     StepFailedError,
     StepOutput,
@@ -15,7 +16,10 @@ from dr_code.preprocessing.steps.base import (
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
+    CandidateOrigin,
+    CodeCandidate,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
     TextArtifact,
 )
 
@@ -48,11 +52,28 @@ class FieldMarkerExtract(Step[FieldMarkerExtractSettings]):
         )
         if field_value is None:
             raise StepFailedError(
-                f"missing field marker for {self.settings.field_name!r}"
+                FailureCode.MISSING_FIELD_MARKER,
+                f"missing field marker for {self.settings.field_name!r}",
             )
-        candidate = field_value.strip()
-        if not candidate:
-            raise StepFailedError("empty field-marker code")
+        source = field_value.strip()
+        if not source:
+            raise StepFailedError(
+                FailureCode.EMPTY_FIELD_MARKER_VALUE,
+                "empty field-marker code",
+            )
+        # The marker value is the whole extracted region, so its origin is
+        # this step's operation at the input's single location.
+        candidate = CodeCandidate(
+            source=source,
+            origins=(
+                CandidateOrigin(
+                    operation=ExtractionOperation(
+                        operation_name=self.NAME.value
+                    ),
+                    input_location=0,
+                ),
+            ),
+        )
         return StepOutput(
             value=CodeCandidateSetArtifact(candidates=(candidate,)),
             facts={"field_name": self.settings.field_name},

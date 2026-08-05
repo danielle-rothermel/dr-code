@@ -71,10 +71,44 @@ from dr_code.text_transforms import (
     strip_trailing_whitespace,
 )
 from dr_code.trace import (
+    CandidateOrigin,
     CodeArtifact,
+    CodeCandidate,
     CodeCandidateSetArtifact,
+    ExtractionOperation,
     TextArtifact,
 )
+
+
+def _candidate_set(*sources: str) -> CodeCandidateSetArtifact:
+    """A candidate set whose records carry a plain synthetic origin."""
+    return CodeCandidateSetArtifact(
+        candidates=tuple(
+            CodeCandidate(
+                source=source,
+                origins=(
+                    CandidateOrigin(
+                        operation=ExtractionOperation(
+                            operation_name="fenced_blocks"
+                        ),
+                        input_location=index,
+                    ),
+                ),
+            )
+            for index, source in enumerate(sources)
+        )
+    )
+
+
+def _sources(value: CodeCandidateSetArtifact) -> tuple[str, ...]:
+    return tuple(candidate.source for candidate in value.candidates)
+
+
+def _operations(candidate: CodeCandidate) -> tuple[str, ...]:
+    return tuple(
+        origin.operation.operation_name for origin in candidate.origins
+    )
+
 
 # Garbage inputs reused from the wrapped modules' existing fixtures.
 GARBAGE_TEXT = (
@@ -108,11 +142,11 @@ def _apply_twice(step_cls: type[Step], value) -> object:
     try:
         first = step.apply(value)
     except StepFailedError as exc:
-        first = ("failed", exc.cause)
+        first = ("failed", exc.code, exc.cause)
     try:
         second = step.apply(value)
     except StepFailedError as exc:
-        second = ("failed", exc.cause)
+        second = ("failed", exc.code, exc.cause)
     return (first, second)
 
 
@@ -131,8 +165,8 @@ def _sample_for(step_cls: type[Step]):
         return TextArtifact(text="```python\ndef f():\n    return 1\n```\n")
     if step_cls.INPUT.value == "code":
         return CodeArtifact(source="def f():\n    return 1\n")
-    return CodeCandidateSetArtifact(
-        candidates=("def f():\n    return 1\n", "def g():\n    return 2\n")
+    return _candidate_set(
+        "def f():\n    return 1\n", "def g():\n    return 2\n"
     )
 
 
@@ -152,33 +186,29 @@ def test_normalize_unicode_applies_nfkc() -> None:
 
 
 def test_normalize_smart_quotes_converts_delimiters() -> None:
-    cs = CodeCandidateSetArtifact(candidates=("x = “a”\n",))
-    out = NormalizeSmartQuotes().apply(cs)
-    assert out.value == CodeCandidateSetArtifact(candidates=('x = "a"\n',))
+    out = NormalizeSmartQuotes().apply(_candidate_set("x = “a”\n"))
+    assert _sources(out.value) == ('x = "a"\n',)
 
 
 def test_normalize_smart_quotes_preserves_string_contents() -> None:
     src = 'x = "don’t “quote” me"\n'
-    cs = CodeCandidateSetArtifact(candidates=(src,))
-    out = NormalizeSmartQuotes().apply(cs)
-    assert out.value == CodeCandidateSetArtifact(candidates=(src,))
+    out = NormalizeSmartQuotes().apply(_candidate_set(src))
+    assert _sources(out.value) == (src,)
 
 
 def test_normalize_smart_quotes_comment_apostrophe_not_a_delimiter() -> None:
     # The apostrophe in the comment must not open string state; the real
     # literal's smart-quote contents stay preserved.
     src = "# don't\nx = 'a“b'\n"
-    cs = CodeCandidateSetArtifact(candidates=(src,))
-    out = NormalizeSmartQuotes().apply(cs)
-    assert out.value == CodeCandidateSetArtifact(candidates=(src,))
+    out = NormalizeSmartQuotes().apply(_candidate_set(src))
+    assert _sources(out.value) == (src,)
 
 
 def test_normalize_smart_quotes_converts_delimiters_after_comment() -> None:
     src = "# don't\ndef f():\n    return “x”"
     expected = '# don\'t\ndef f():\n    return "x"'
-    cs = CodeCandidateSetArtifact(candidates=(src,))
-    out = NormalizeSmartQuotes().apply(cs)
-    assert out.value == CodeCandidateSetArtifact(candidates=(expected,))
+    out = NormalizeSmartQuotes().apply(_candidate_set(src))
+    assert _sources(out.value) == (expected,)
 
 
 def test_expand_tabs_uses_tab_width_setting() -> None:
@@ -230,43 +260,45 @@ def test_atomic_text_sequence_equals_normalize_text(raw: str) -> None:
 
 
 def test_strip_fences_wraps_function() -> None:
-    cs = CodeCandidateSetArtifact(candidates=("```python\nx = 1\n```",))
-    out = StripFences().apply(cs)
-    assert out.value == CodeCandidateSetArtifact(
-        candidates=(strip_code_fences("```python\nx = 1\n```"),)
-    )
+    out = StripFences().apply(_candidate_set("```python\nx = 1\n```"))
+    assert _sources(out.value) == (strip_code_fences("```python\nx = 1\n```"),)
 
 
 def test_dedent_wraps_textwrap() -> None:
-    cs = CodeCandidateSetArtifact(candidates=("    x = 1\n    y = 2\n",))
-    out = DedentCandidates().apply(cs)
-    assert out.value == CodeCandidateSetArtifact(
-        candidates=("x = 1\ny = 2\n",)
-    )
+    out = DedentCandidates().apply(_candidate_set("    x = 1\n    y = 2\n"))
+    assert _sources(out.value) == ("x = 1\ny = 2\n",)
+
+
+def test_candidate_map_step_extends_lineage_with_its_operation() -> None:
+    out = DedentCandidates().apply(_candidate_set("    x = 1\n"))
+    (candidate,) = out.value.candidates
+    assert _operations(candidate) == ("fenced_blocks", "dedent_candidates")
+    assert candidate.origins[-1].input_location == 0
 
 
 def test_split_on_name_guard_flattens_in_place() -> None:
     src = "def f():\n    return 1\nif __name__ == '__main__':\n    pass"
-    cs = CodeCandidateSetArtifact(candidates=(src,))
-    out = SplitOnNameGuard().apply(cs)
-    assert out.value.candidates == tuple(drop_if_name(src))
+    out = SplitOnNameGuard().apply(_candidate_set(src))
+    assert _sources(out.value) == tuple(drop_if_name(src))
 
 
 def test_split_on_name_guard_preserves_order_with_multiple() -> None:
     a = "def a():\n    return 1\nif __name__ == '__main__':\n    pass"
     b = "def b():\n    return 2\n"
-    cs = CodeCandidateSetArtifact(candidates=(a, b))
-    out = SplitOnNameGuard().apply(cs)
-    assert out.value.candidates == (*drop_if_name(a), *drop_if_name(b))
+    out = SplitOnNameGuard().apply(_candidate_set(a, b))
+    assert _sources(out.value) == (*drop_if_name(a), *drop_if_name(b))
+    # Every part records the ordinal of the candidate it was split out of.
+    locations = [
+        candidate.origins[-1].input_location
+        for candidate in out.value.candidates
+    ]
+    assert locations == [0] * len(drop_if_name(a)) + [1] * len(drop_if_name(b))
 
 
 def test_drop_after_last_return_wraps_function() -> None:
     src = "def f():\n    return 1\nprint('x')"
-    cs = CodeCandidateSetArtifact(candidates=(src,))
-    out = DropAfterLastReturn().apply(cs)
-    assert out.value == CodeCandidateSetArtifact(
-        candidates=(drop_after_last_return(src),)
-    )
+    out = DropAfterLastReturn().apply(_candidate_set(src))
+    assert _sources(out.value) == (drop_after_last_return(src),)
 
 
 # --- import-step sequence ≡ infer_necessary_imports -----------------
@@ -287,37 +319,40 @@ def test_import_step_sequence_equals_infer_necessary_imports(
 ) -> None:
     """repair -> infer -> dedupe, in order, reproduces
     infer_necessary_imports, on garbage-input cases."""
-    value: CodeCandidateSetArtifact = CodeCandidateSetArtifact(
-        candidates=(source,)
-    )
+    value: CodeCandidateSetArtifact = _candidate_set(source)
     for step_cls in (RepairImportLines, InferMissingImports, DedupeImports):
         value = step_cls().apply(value).value
         assert isinstance(value, CodeCandidateSetArtifact)
-    assert value.candidates == (infer_necessary_imports(source),)
+    assert _sources(value) == (infer_necessary_imports(source),)
 
 
 # --- filters record rejection facts ----------------------------------
 
 
 def test_filter_compilable_keeps_compilable() -> None:
-    cs = CodeCandidateSetArtifact(candidates=("x = 1\n", "def broken(:\n"))
-    out = FilterCompilable().apply(cs)
-    assert out.value.candidates == ("x = 1\n",)
+    out = FilterCompilable().apply(_candidate_set("x = 1\n", "def broken(:\n"))
+    assert _sources(out.value) == ("x = 1\n",)
     assert "rejected_1" in out.facts
     assert "SyntaxError" in out.facts["rejected_1"]
 
 
+def test_filters_keep_survivor_lineage_unchanged() -> None:
+    # Filters remove candidates; they never transform a survivor's source,
+    # so a survivor's lineage is carried through untouched.
+    cs = _candidate_set("x = 1\n", "def broken(:\n")
+    out = FilterCompilable().apply(cs)
+    assert out.value.candidates[0] == cs.candidates[0]
+
+
 def test_filter_plain_literal_drops_literals() -> None:
-    cs = CodeCandidateSetArtifact(candidates=("[1, 2, 3]", "x = 1\n"))
-    out = FilterPlainLiteral().apply(cs)
-    assert out.value.candidates == ("x = 1\n",)
+    out = FilterPlainLiteral().apply(_candidate_set("[1, 2, 3]", "x = 1\n"))
+    assert _sources(out.value) == ("x = 1\n",)
     assert out.facts["rejected_0"] == "plain literal module"
 
 
 def test_filter_code_repr_drops_repr_assignments() -> None:
-    cs = CodeCandidateSetArtifact(candidates=('code = "x = 1"', "x = 1\n"))
-    out = FilterCodeRepr().apply(cs)
-    assert out.value.candidates == ("x = 1\n",)
+    out = FilterCodeRepr().apply(_candidate_set('code = "x = 1"', "x = 1\n"))
+    assert _sources(out.value) == ("x = 1\n",)
     assert out.facts["rejected_0"] == "code repr assignment"
 
 
@@ -325,24 +360,23 @@ def test_filter_code_repr_drops_repr_assignments() -> None:
 
 
 def test_select_first_picks_first_candidate() -> None:
-    cs = CodeCandidateSetArtifact(candidates=("a", "b"))
-    out = SelectFirst().apply(cs)
+    out = SelectFirst().apply(_candidate_set("a", "b"))
     assert out.value == CodeArtifact(source="a")
 
 
 def test_select_first_empty_set_raises() -> None:
-    from dr_code.preprocessing.steps.base import StepFailedError
+    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
 
-    cs = CodeCandidateSetArtifact(candidates=())
-    with pytest.raises(StepFailedError):
-        SelectFirst().apply(cs)
+    with pytest.raises(StepFailedError) as excinfo:
+        SelectFirst().apply(_candidate_set())
+    assert excinfo.value.code == FailureCode.NO_CANDIDATE_SURVIVED_FILTERING
 
 
 def test_return_all_passes_through_with_count() -> None:
-    cs = CodeCandidateSetArtifact(candidates=("a", "b"))
+    cs = _candidate_set("a", "b")
     out = ReturnAll().apply(cs)
     assert out.value == cs
-    assert out.facts["candidate_count"] == "2"
+    assert out.facts["candidate_count"] == 2
 
 
 # --- extract_candidates: strategy ladder -----------------------------
@@ -352,7 +386,19 @@ def test_extract_candidates_records_chosen_alternative() -> None:
     fenced = "```python\ndef f():\n    return 1\n```"
     out = ExtractCandidates().apply(TextArtifact(text=fenced))
     assert out.facts["alternative"] == "fenced_blocks"
-    assert out.value.candidates == ("def f():\n    return 1",)
+    assert _sources(out.value) == ("def f():\n    return 1",)
+
+
+def test_extract_candidates_origin_names_the_winning_strategy() -> None:
+    fenced = "```python\ndef f():\n    return 1\n```\n```python\nx = 1\n```"
+    out = ExtractCandidates().apply(TextArtifact(text=fenced))
+    assert [
+        (
+            candidate.origins[0].operation.operation_name,
+            candidate.origins[0].input_location,
+        )
+        for candidate in out.value.candidates
+    ] == [("fenced_blocks", 0), ("fenced_blocks", 1)]
 
 
 def test_extract_candidates_markdown_strategy_when_no_fence() -> None:
@@ -361,14 +407,15 @@ def test_extract_candidates_markdown_strategy_when_no_fence() -> None:
     text = "> def f():\n>     return 1"
     out = ExtractCandidates().apply(TextArtifact(text=text))
     assert out.facts["alternative"] == "markdown_wrapper"
-    assert out.value.candidates == ("def f():\n    return 1",)
+    assert _sources(out.value) == ("def f():\n    return 1",)
+    assert _operations(out.value.candidates[0]) == ("markdown_wrapper",)
 
 
 def test_extract_candidates_escaped_python_strategy() -> None:
     text = r"prose\ndef f():\n    return 1"
     out = ExtractCandidates().apply(TextArtifact(text=text))
     assert out.facts["alternative"] == "escaped_python"
-    assert "def f():" in out.value.candidates[0]
+    assert "def f():" in out.value.candidates[0].source
 
 
 def test_extract_candidates_tuple_subset_setting() -> None:
@@ -402,18 +449,15 @@ def test_extract_candidates_escaped_markdown_wrapper_strategy() -> None:
     text = json.dumps("- def add(a, b):\n-     return a + b")
     out = ExtractCandidates().apply(TextArtifact(text=text))
     assert out.facts["alternative"] == "escaped_markdown_wrapper"
-    assert out.value.candidates == ("def add(a, b):\n    return a + b",)
+    assert _sources(out.value) == ("def add(a, b):\n    return a + b",)
 
 
 def test_extract_candidates_all_fail_raises() -> None:
-    from dr_code.preprocessing.steps.base import StepFailedError
+    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
 
-    out_err = None
-    try:
+    with pytest.raises(StepFailedError) as excinfo:
         ExtractCandidates().apply(TextArtifact(text="just prose, no code"))
-    except StepFailedError:
-        out_err = "raised"
-    assert out_err == "raised"
+    assert excinfo.value.code == FailureCode.NO_ALTERNATIVE_PRODUCED_CANDIDATES
 
 
 def test_extract_candidates_empty_input_raises() -> None:
@@ -431,15 +475,27 @@ def test_field_marker_extracts_code_field() -> None:
         "[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\ndef f():\n    return 1\n"
     )
     out = FieldMarkerExtract().apply(TextArtifact(text=text))
-    assert out.value.candidates == ("def f():\n    return 1",)
+    assert _sources(out.value) == ("def f():\n    return 1",)
     assert out.facts["field_name"] == "code"
+    assert _operations(out.value.candidates[0]) == ("field_marker_extract",)
 
 
 def test_field_marker_missing_raises() -> None:
-    from dr_code.preprocessing.steps.base import StepFailedError
+    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
 
-    with pytest.raises(StepFailedError):
+    with pytest.raises(StepFailedError) as excinfo:
         FieldMarkerExtract().apply(TextArtifact(text="no markers here"))
+    assert excinfo.value.code == FailureCode.MISSING_FIELD_MARKER
+
+
+def test_field_marker_empty_value_raises() -> None:
+    from dr_code.preprocessing.steps.base import FailureCode, StepFailedError
+
+    with pytest.raises(StepFailedError) as excinfo:
+        FieldMarkerExtract().apply(
+            TextArtifact(text="[[ ## code ## ]]\n   \n")
+        )
+    assert excinfo.value.code == FailureCode.EMPTY_FIELD_MARKER_VALUE
 
 
 def test_field_marker_custom_field_name() -> None:
@@ -447,4 +503,4 @@ def test_field_marker_custom_field_name() -> None:
     out = FieldMarkerExtract(
         FieldMarkerExtractSettings(field_name="solution")
     ).apply(TextArtifact(text=text))
-    assert out.value.candidates == ("x = 1",)
+    assert _sources(out.value) == ("x = 1",)

@@ -32,7 +32,9 @@ from dr_code.trace import (
     CodeCandidateSetArtifact,
     ComponentCoordinate,
     ExternalPreprocessingTraceProducer,
+    InspectedCodeCandidateSetArtifact,
     JsonArtifact,
+    JsonFactValue,
     PreprocessingDefinitionCoordinate,
     PreprocessingTraceProducer,
     StepCoordinate,
@@ -57,6 +59,9 @@ _KIND_TYPES = {
     ArtifactKind.TEXT: TextArtifact,
     ArtifactKind.CODE: CodeArtifact,
     ArtifactKind.CODE_CANDIDATE_SET: CodeCandidateSetArtifact,
+    ArtifactKind.INSPECTED_CODE_CANDIDATE_SET: (
+        InspectedCodeCandidateSetArtifact
+    ),
     ArtifactKind.JSON: JsonArtifact,
 }
 
@@ -161,10 +166,10 @@ def _run_definition(
           value or Absent -> run step / skip-and-propagate
           record value under bound.instance_name; merge facts
 
-    ``StepFailedError`` -> ``Absent`` (failed_step=instance_name, cause);
-    downstream steps record the same ``Absent`` with
-    ``propagated_through`` extended. Always completes: the trace has
-    ``input``, one value per instance name, and ``output``.
+    ``StepFailedError`` -> ``Absent`` (failed_step=instance_name, plus the
+    step's failure code and cause); downstream steps record the same
+    ``Absent`` with ``propagated_through`` extended. Always completes: the
+    trace has ``input``, one value per instance name, and ``output``.
     """
     bound_steps = bind_definition(definition)
 
@@ -179,13 +184,14 @@ def _run_definition(
             )
 
     values: dict[str, Artifact | Absent] = {INPUT_KEY: input_value}
-    step_facts: dict[str, dict[str, str]] = {}
+    step_facts: dict[str, dict[str, JsonFactValue]] = {}
 
     current: Artifact | Absent = input_value
     for bound in bound_steps:
         if is_absent(current):
             current = Absent(
                 failed_step=current.failed_step,
+                failure_code=current.failure_code,
                 cause=current.cause,
                 propagated_through=(
                     *current.propagated_through,
@@ -198,6 +204,7 @@ def _run_definition(
             except StepFailedError as exc:
                 current = Absent(
                     failed_step=bound.instance_name,
+                    failure_code=exc.code,
                     cause=exc.cause,
                 )
             else:

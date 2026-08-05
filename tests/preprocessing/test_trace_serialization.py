@@ -111,6 +111,30 @@ def test_round_trip_preserves_candidate_set_kind() -> None:
     assert extracted == trace.value("extract_candidates")
 
 
+def test_round_trip_preserves_candidate_lineage() -> None:
+    # Candidate records carry lineage through the persistence boundary, and
+    # cleaning steps have extended it by the time the set reaches the last
+    # elementwise step.
+    trace = _trace(_FENCED)
+    restored = _assert_json_round_trip(trace)
+    cleaned = restored.value("dedupe_imports")
+    assert isinstance(cleaned, CodeCandidateSetArtifact)
+    (candidate,) = cleaned.candidates
+    assert [
+        origin.operation.operation_name for origin in candidate.origins
+    ] == [
+        "fenced_blocks",
+        "strip_fences",
+        "dedent_candidates",
+        "normalize_smart_quotes",
+        "split_on_name_guard",
+        "drop_after_last_return",
+        "repair_import_lines",
+        "infer_missing_imports",
+        "dedupe_imports",
+    ]
+
+
 def test_json_round_trip_is_lossless() -> None:
     _assert_json_round_trip(_trace(_FENCED))
 
@@ -129,8 +153,22 @@ def test_round_trip_preserves_absent_output_and_lineage() -> None:
     restored_output = restored.value("output")
     assert isinstance(restored_output, Absent)
     assert restored_output.failed_step == output.failed_step
+    assert restored_output.failure_code == output.failure_code
     assert restored_output.cause == output.cause
     assert restored_output.propagated_through == output.propagated_through
+
+
+def test_round_trip_preserves_the_producer_failure_code() -> None:
+    # The step's own failure code reaches the persisted Absent unchanged.
+    trace = _trace("Just an explanation, no code at all.\n")
+    output = trace.value("output")
+    assert is_absent(output)
+    assert output.failure_code == "no_alternative_produced_candidates"
+
+    restored = _assert_json_round_trip(trace)
+    restored_output = restored.value("output")
+    assert isinstance(restored_output, Absent)
+    assert restored_output.failure_code == "no_alternative_produced_candidates"
 
 
 def test_round_trip_preserves_absent_propagation_through_steps() -> None:
