@@ -347,7 +347,7 @@ def test_import_step_sequence_equals_infer_necessary_imports(
 def test_salvage_adds_a_candidate_and_keeps_the_original() -> None:
     src = "def f():\n    return 1\nprint('trailing')"
     out = AddLastReturnSalvage().apply(_candidate_set(src))
-    assert _sources(out.value) == (src, drop_after_last_return(src))
+    assert _sources(out.value) == (src, "def f():\n    return 1\n")
     assert out.facts["salvaged_count"] == 1
 
 
@@ -357,14 +357,33 @@ def test_salvage_appends_immediately_after_its_source() -> None:
     out = AddLastReturnSalvage().apply(_candidate_set(a, b))
     assert _sources(out.value) == (
         a,
-        drop_after_last_return(a),
+        "def a():\n    return 1\n",
         b,
-        drop_after_last_return(b),
+        "def b():\n    return 2\n",
     )
+
+
+def test_salvage_keeps_a_bracketed_return_whole() -> None:
+    """The salvage of a multi-line return compiles, not cut mid-bracket."""
+    src = "def f(x):\n    return (\n        x +\n        1\n    )\nProse.\n"
+    out = AddLastReturnSalvage().apply(_candidate_set(src))
+    _original, salvage = _sources(out.value)
+    assert (
+        salvage == "def f(x):\n    return (\n        x +\n        1\n    )\n"
+    )
+    compile(salvage, "<salvaged>", "exec")
 
 
 def test_salvage_contributes_nothing_when_truncation_is_a_no_op() -> None:
     src = "def f():\n    return 1"
+    out = AddLastReturnSalvage().apply(_candidate_set(src))
+    assert _sources(out.value) == (src,)
+    assert out.facts["salvaged_count"] == 0
+
+
+def test_salvage_contributes_nothing_without_a_return_boundary() -> None:
+    src = "def f():\n    pass\nProse."
+    assert drop_after_last_return(src) is None
     out = AddLastReturnSalvage().apply(_candidate_set(src))
     assert _sources(out.value) == (src,)
     assert out.facts["salvaged_count"] == 0
@@ -629,6 +648,69 @@ def test_extraction_reads_a_whole_response_json_string() -> None:
 
 def test_extraction_reads_a_top_level_json_code_field() -> None:
     out = _extract(json.dumps({"code": "def f():\n    return 1"}))
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value in _origin_operations(
+        out.value
+    )
+
+
+@pytest.mark.parametrize("tag", ["json", ""])
+def test_extraction_reads_a_json_code_field_inside_a_fence(tag: str) -> None:
+    envelope = json.dumps({"code": "def f():\n    return 1"})
+    out = _extract(f"Here it is:\n\n```{tag}\n{envelope}\n```\n\nDone.")
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_reads_a_fenced_json_code_field_once() -> None:
+    """A bare envelope inside its own fence is not read twice."""
+    envelope = json.dumps({"code": "def f():\n    return 1"})
+    out = _extract(f"```json\n{envelope}\n```")
+    sources = [
+        candidate.source
+        for candidate in out.value.candidates
+        if candidate.origins[0].operation.operation_name
+        == Representation.JSON_CODE_FIELD.value
+    ]
+    assert len(sources) == len(set(sources))
+
+
+def test_extraction_ignores_a_malformed_fenced_json_envelope() -> None:
+    """Decoding stays strict: a truncated envelope is never repaired."""
+    out = _extract('```json\n{"code": "def f():\\n    return 1"\n```')
+    assert Representation.JSON_CODE_FIELD.value not in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_ignores_a_fenced_envelope_outside_the_code_field() -> None:
+    """A marked response's other fields are not read as its declaration.
+
+    A ``[[ ## prompt ## ]]`` carrying a worked example is context the
+    response was given, not an answer it wrote. Reading its envelope would
+    put the example ahead of the marked answer under an acceptance policy
+    that takes the lowest surviving ordinal.
+    """
+    envelope = json.dumps({"code": "def reference():\n    return 999"})
+    out = _extract(
+        f"[[ ## prompt ## ]]\nFor example:\n\n```json\n{envelope}\n```\n\n"
+        "[[ ## code ## ]]\ndef f():\n    return 1\n"
+    )
+    assert "def reference():\n    return 999" not in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value not in _origin_operations(
+        out.value
+    )
+    assert out.value.candidates[0].source == "def f():\n    return 1"
+
+
+def test_extraction_reads_a_fenced_envelope_inside_the_code_field() -> None:
+    """The marked answer's own fenced envelope is still the declaration."""
+    envelope = json.dumps({"code": "def f():\n    return 1"})
+    out = _extract(
+        f"[[ ## prompt ## ]]\nWhat?\n[[ ## code ## ]]\n```json\n{envelope}\n```"
+    )
     assert "def f():\n    return 1" in _sources(out.value)
     assert Representation.JSON_CODE_FIELD.value in _origin_operations(
         out.value

@@ -27,7 +27,6 @@ GARBAGE_INPUTS = (
 
 TOTAL_TRANSFORMS = (
     collapse_blank_runs,
-    drop_after_last_return,
     normalize_line_endings,
     normalize_text,
     strip_code_fences,
@@ -125,5 +124,69 @@ def test_drop_if_name_splits_before_main_guard() -> None:
 
 def test_drop_after_last_return_truncates_trailing_lines() -> None:
     assert drop_after_last_return("def f():\n    return 1\nprint('x')") == (
-        "def f():\n    return 1"
+        "def f():\n    return 1\n"
     )
+
+
+def test_drop_after_last_return_keeps_a_bracketed_return_whole() -> None:
+    """A return spanning lines ends where its brackets close, not before."""
+    source = (
+        "def f(x):\n"
+        "    return (\n"
+        "        x +\n"
+        "        1\n"
+        "    )\n"
+        "Trailing prose.\n"
+    )
+
+    truncated = drop_after_last_return(source)
+
+    assert truncated == (
+        "def f(x):\n    return (\n        x +\n        1\n    )\n"
+    )
+    compile(truncated, "<salvaged>", "exec")
+
+
+def test_drop_after_last_return_ignores_a_return_inside_a_docstring() -> None:
+    source = 'def f():\n    """return 5"""\n    return 1\nProse.'
+
+    assert drop_after_last_return(source) == (
+        'def f():\n    """return 5"""\n    return 1\n'
+    )
+
+
+def test_drop_after_last_return_ignores_a_return_inside_a_comment() -> None:
+    source = "def f():\n    # return 5\n    return 1\nProse."
+
+    assert drop_after_last_return(source) == (
+        "def f():\n    # return 5\n    return 1\n"
+    )
+
+
+def test_drop_after_last_return_ends_at_a_semicolon_terminated_return() -> (
+    None
+):
+    assert drop_after_last_return("def f():\n    return 1; x = 2\nProse.") == (
+        "def f():\n    return 1;"
+    )
+
+
+@pytest.mark.parametrize(
+    ("reason", "source"),
+    [
+        ("no return at all", "def f():\n    pass\nProse."),
+        ("return outside a function body", "return 1\nProse."),
+        ("return never completes", "def f():\n    return (\n        1,\n"),
+        ("not code at all", "plain prose, no code at all"),
+        ("nothing to tokenize", ""),
+        ("text the tokenizer cannot encode", "def f():\n    return '\ud800'"),
+    ],
+)
+def test_drop_after_last_return_fails_closed(reason: str, source: str) -> None:
+    """No locatable boundary means no salvage, never a salvage to nothing."""
+    assert drop_after_last_return(source) is None, reason
+
+
+@pytest.mark.parametrize("source", GARBAGE_INPUTS)
+def test_drop_after_last_return_never_raises(source: str) -> None:
+    assert drop_after_last_return(source) in (None, source)

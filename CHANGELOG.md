@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-08-05 (extraction recall)
+
+- `extract_all_representations` reads a JSON `code` field from the response
+  as written *and* from the fenced blocks of its answer region, so a
+  response that puts its envelope inside a ```` ```json ```` fence still has
+  its declared code field read rather than scraped. The answer region is the
+  `[[ ## code ## ]]` field when the response marks one and the whole
+  response otherwise, so a worked example fenced under a
+  `[[ ## prompt ## ]]` is not read as the response's own declaration.
+  Decoding stays strict: an envelope is read only when the block is a
+  complete JSON object carrying a non-blank string `code`, and nothing is
+  repaired.
+- `drop_after_last_return` locates the salvage boundary by tokenizing
+  rather than by matching lines. A `NEWLINE` token fires only once bracket
+  continuations close, so a `return` spanning several lines is kept whole
+  instead of being cut mid-bracket, and returns written inside strings or
+  comments are not boundaries. It returns `None` when no boundary can be
+  located — a malformed token, an unterminated bracket, or text it cannot
+  tokenize — so a salvage that cannot be located is never performed.
+  `add_last_return_salvage` contributes nothing for such a candidate.
+- `infer_missing_imports` inserts inferred imports after the module header
+  a candidate already carries: a leading docstring, then contiguous
+  `from __future__` imports. An import above either of those is a defect —
+  it makes a `from __future__` candidate uncompilable and demotes a module
+  docstring to a bare expression.
+- The speculative repair parse in import inference suppresses
+  `SyntaxWarning` while probing candidate text, so warnings from invalid
+  escape sequences in arbitrary decoder output never leak to the caller's
+  warning filters. The suppression is scoped to the probe parse only.
+- `tests/preprocessing/fixtures/hard_examples.json` pins extraction against
+  130 recorded LLM decoder outputs with human verdicts, partitioned into
+  development and holdout sets. The cases are evidence, not a
+  specification: disagreements are enumerated as individually-reasoned
+  strict `xfail`s, so an open decision stays visible and a case that starts
+  agreeing fails as `XPASS`.
+
 ## 2026-08-05 (evaluation package)
 
 - `dr_code.evaluation` declares and reduces evaluations. It is

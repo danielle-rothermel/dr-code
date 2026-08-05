@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
-from dr_code.preprocessing.import_inference import infer_necessary_imports
+from dr_code.humaneval.code_parsing import extract_humaneval_code
+from dr_code.preprocessing.import_inference import (
+    infer_necessary_imports,
+    repair_import_lines,
+)
 
 
 @pytest.mark.parametrize(
@@ -154,3 +160,75 @@ def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     result = infer_necessary_imports(source)
     assert "random.randint" in result
     assert "import random" not in result
+
+
+def test_inferred_import_follows_and_preserves_module_docstring() -> None:
+    source = (
+        '"""Module documentation."""\n\n'
+        "def circumference(radius):\n"
+        "    return 2 * math.pi * radius\n"
+    )
+
+    result = infer_necessary_imports(source)
+
+    assert result.startswith('"""Module documentation."""\nimport math\n')
+    namespace: dict[str, object] = {}
+    exec(compile(result, "<inferred>", "exec"), namespace)
+    assert namespace["__doc__"] == "Module documentation."
+
+
+def test_inferred_import_follows_docstring_and_contiguous_futures() -> None:
+    source = (
+        '"""Module documentation."""\n'
+        "from __future__ import annotations\n"
+        "from __future__ import generator_stop\n\n"
+        "def circumference(radius: float) -> float:\n"
+        "    return 2 * math.pi * radius\n"
+    )
+
+    result = infer_necessary_imports(source)
+
+    assert result.startswith(
+        '"""Module documentation."""\n'
+        "from __future__ import annotations\n"
+        "from __future__ import generator_stop\n"
+        "import math\n"
+    )
+    compile(result, "<inferred>", "exec")
+
+
+def test_inferred_import_leads_a_module_with_no_header() -> None:
+    source = "def circumference(radius):\n    return 2 * math.pi * radius\n"
+
+    assert infer_necessary_imports(source) == f"import math\n{source.strip()}"
+
+
+def test_speculative_repair_parse_does_not_leak_syntax_warnings() -> None:
+    invalid_escape = chr(92) + "q"
+    source = f"import re  # noqa\nvalue = '{invalid_escape}'\n"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", SyntaxWarning)
+        repaired, _changed = repair_import_lines(source)
+
+    assert caught == []
+    assert "import re" in repaired
+
+
+def test_future_import_candidate_survives_extraction() -> None:
+    """A ``from __future__`` candidate compiles, so it is accepted."""
+    source = (
+        "```python\n"
+        "from __future__ import annotations\n\n"
+        "def circumference(radius: float) -> float:\n"
+        "    return 2 * math.pi * radius\n"
+        "```"
+    )
+
+    result = extract_humaneval_code(source)
+
+    assert result.succeeded
+    assert result.accepted_code is not None
+    assert result.accepted_code.startswith(
+        "from __future__ import annotations\nimport math\n"
+    )
