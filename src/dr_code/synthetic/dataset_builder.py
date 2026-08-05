@@ -58,16 +58,21 @@ def build_dataset(
     tasks: Iterable[HumanEvalPlusTask] | None = None,
     recipes: Iterable[Recipe] = RECIPES,
     seed: int = 0,
-    prefer_snapshot: bool = True,
+    *,
+    snapshot_path: Path | None = None,
 ) -> list[SyntheticSample]:
     """Build the full dataset list (in-memory).
 
-    If `tasks` is None, load HumanEvalPlus through the explicit
-    `prefer_snapshot` source choice.
+    If `tasks` is None, load HumanEvalPlus from Hugging Face unless an
+    explicit `snapshot_path` selects the offline snapshot source.
     """
+    if tasks is not None and snapshot_path is not None:
+        raise ValueError("tasks and snapshot_path are mutually exclusive")
+
     if tasks is None:
         tasks_iter: Iterable[HumanEvalPlusTask] = load_humaneval_plus(
-            prefer_snapshot=prefer_snapshot
+            prefer_snapshot=snapshot_path is not None,
+            snapshot_path=snapshot_path,
         )
     else:
         tasks_iter = tasks

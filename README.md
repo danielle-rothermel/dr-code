@@ -254,7 +254,8 @@ def build_dataset(
     tasks: Iterable[HumanEvalPlusTask] | None = None,
     recipes: Iterable[Recipe] = RECIPES,
     seed: int = 0,
-    prefer_snapshot: bool = True,
+    *,
+    snapshot_path: Path | None = None,
 ) -> list[SyntheticSample]: ...
 ```
 
