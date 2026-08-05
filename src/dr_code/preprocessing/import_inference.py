@@ -1,8 +1,8 @@
 """Infer, repair, and dedupe import lines for extracted code candidates.
 
 Public step bodies behind the ``repair_import_lines`` /
-``infer_missing_imports`` / ``dedupe_imports`` steps and the combined
-``humaneval.import_inference.infer_necessary_imports`` API. Names in
+``infer_missing_imports`` / ``dedupe_imports`` steps, plus
+``infer_necessary_imports``, which runs all three in one call. Names in
 ``IMPORT_ALIAS_MAP`` are injected only when referenced and not bound anywhere
 in the candidate's syntax tree — a conservative rule, since injecting a wrong
 import is worse than skipping one.
