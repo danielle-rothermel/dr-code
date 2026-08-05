@@ -31,7 +31,10 @@ SOURCE_TO_SOURCE_TRANSFORMS = (
 
 def _run_entrypoint(source: str) -> object:
     namespace: dict[str, object] = {}
-    exec(compile(source, "<alpha-rename-test>", "exec"), namespace)
+    exec(
+        compile(source, "<alpha-rename-test>", "exec", dont_inherit=True),
+        namespace,
+    )
     entrypoint = namespace["run"]
     assert callable(entrypoint)
     return entrypoint()
@@ -184,6 +187,77 @@ def test_alpha_rename_locals_updates_nonlocal_bindings() -> None:
     "source",
     [
         pytest.param(
+            "def run():\n"
+            "    T = 'outer'\n"
+            "    def inner[T](value: T) -> T:\n"
+            "        return value\n"
+            "    return inner.__annotations__['return'].__name__\n",
+            id="generic-function",
+        ),
+        pytest.param(
+            "def run():\n"
+            "    T = 'outer'\n"
+            "    class Inner[T]:\n"
+            "        value: T\n"
+            "    return Inner.__annotations__['value'].__name__\n",
+            id="generic-class",
+        ),
+        pytest.param(
+            "def run():\n"
+            "    T = str\n"
+            "    type Alias[T] = tuple[T]\n"
+            "    return Alias.__value__[0].__name__\n",
+            id="generic-type-alias",
+        ),
+    ],
+)
+def test_alpha_rename_locals_respects_type_parameter_annotation_scopes(
+    source: str,
+) -> None:
+    _assert_alpha_rename_preserves_result(source)
+
+
+def test_alpha_rename_locals_preserves_method_class_cell_semantics() -> None:
+    source = (
+        "def run():\n"
+        "    __class__ = 'outer'\n"
+        "    class Base:\n"
+        "        marker = 'base'\n"
+        "    class Inner(Base):\n"
+        "        def explicit_class(self):\n"
+        "            return __class__.__name__\n"
+        "        def inherited_marker(self):\n"
+        "            return super().marker\n"
+        "    instance = Inner()\n"
+        "    return instance.explicit_class(), instance.inherited_marker()\n"
+    )
+
+    _assert_alpha_rename_preserves_result(source)
+
+
+def test_alpha_rename_locals_can_rename_method_parameter_used_by_super() -> (
+    None
+):
+    source = (
+        "class Base:\n"
+        "    marker = 'base'\n"
+        "class Inner(Base):\n"
+        "    def inherited_marker(self):\n"
+        "        return super().marker\n"
+        "def run():\n"
+        "    return Inner().inherited_marker()\n"
+    )
+
+    transformed = alpha_rename_locals(source)
+
+    assert _run_entrypoint(source) == _run_entrypoint(transformed)
+    assert "def inherited_marker(_v" in transformed
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(
             "def run():\n    value = 10\n    return (lambda _v0: value)(3)\n",
             id="descendant-lambda-parameter",
         ),
@@ -262,6 +336,104 @@ def test_rename_locals_in_function_updates_captures_not_shadowing() -> None:
     )
     assert [argument.arg for argument in shadow.args.args] == ["value"]
     assert _run_entrypoint(source) == _run_entrypoint(ast.unparse(tree))
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        pytest.param({"value": "not valid"}, id="invalid-replacement"),
+        pytest.param({"not valid": "renamed"}, id="invalid-source"),
+        pytest.param({"value": "class"}, id="keyword-replacement"),
+        pytest.param(
+            {"value": "renamed", "other": "renamed"},
+            id="non-injective",
+        ),
+    ],
+)
+def test_rename_locals_in_function_rejects_invalid_mapping_shape(
+    mapping: dict[str, str],
+) -> None:
+    tree = ast.parse("def run(value, other):\n    return value + other\n")
+    function = tree.body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "^unsafe local rename mapping: names must be valid Python "
+            "identifiers, replacements must be unique and fresh$"
+        ),
+    ):
+        rename_locals_in_function(function, mapping)
+
+
+@pytest.mark.parametrize(
+    "source,mapping",
+    [
+        pytest.param(
+            "def run(value):\n    return value + existing\n",
+            {"value": "existing"},
+            id="unmapped-reference",
+        ),
+        pytest.param(
+            "def run(value):\n"
+            "    def inner(existing):\n"
+            "        return value + existing\n"
+            "    return inner(1)\n",
+            {"value": "existing"},
+            id="descendant-function-binder",
+        ),
+        pytest.param(
+            "def run(value):\n"
+            "    return (lambda existing: value + existing)(1)\n",
+            {"value": "existing"},
+            id="descendant-lambda-binder",
+        ),
+        pytest.param(
+            "def run(value):\n"
+            "    return [value + existing for existing in (1,)]\n",
+            {"value": "existing"},
+            id="descendant-comprehension-binder",
+        ),
+        pytest.param(
+            "def run(value):\n"
+            "    def inner[existing]():\n"
+            "        return value, existing\n"
+            "    return inner()\n",
+            {"value": "existing"},
+            id="descendant-type-parameter",
+        ),
+        pytest.param(
+            "class Base:\n"
+            "    pass\n"
+            "class Inner(Base):\n"
+            "    def run(self):\n"
+            "        return super()\n",
+            {"self": "__class__"},
+            id="implicit-class-cell",
+        ),
+    ],
+)
+def test_rename_locals_in_function_rejects_capture_unsafe_mapping(
+    source: str,
+    mapping: dict[str, str],
+) -> None:
+    tree = ast.parse(source)
+    function = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "run"
+    )
+    assert isinstance(function, ast.FunctionDef)
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "^unsafe local rename mapping: names must be valid Python "
+            "identifiers, replacements must be unique and fresh$"
+        ),
+    ):
+        rename_locals_in_function(function, mapping)
 
 
 def test_alpha_rename_locals_in_tree_matches_source_transform() -> None:

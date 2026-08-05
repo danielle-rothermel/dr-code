@@ -54,6 +54,18 @@ def test_validate_python_source_with_ast_returns_reusable_tree() -> None:
     assert validated.tree is None
 
 
+def test_validate_python_source_distinguishes_parse_from_compile_failure() -> (
+    None
+):
+    validated = validate_python_source_with_ast("return 1\n")
+
+    assert validated.validation.parse_ok is True
+    assert validated.validation.parse_error is None
+    assert isinstance(validated.tree, ast.Module)
+    assert validated.validation.compile_ok is False
+    assert validated.validation.compile_error is not None
+
+
 def test_equivalent_ignores_formatting_and_docstrings() -> None:
     a = 'def f(x):\n    """Doc."""\n    return (x + 1)\n'
     b = "def f(x):\n    return x + 1\n"

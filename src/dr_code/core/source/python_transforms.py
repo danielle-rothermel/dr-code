@@ -10,6 +10,7 @@ contains code (raw LLM output, markdown, mixed prose), see
 from __future__ import annotations
 
 import ast
+import keyword
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Final
@@ -17,10 +18,12 @@ from typing import Final
 from dr_code.core.source.python_analysis import (
     AnnotationKind,
     AnnotationSite,
+    _descendant_scope_binders,
     _identifier_names,
     _lambda_locals,
     _scope_bindings,
     _scope_declarations,
+    _type_parameter_names,
     annotation_sites,
     function_locals,
     function_params,
@@ -31,6 +34,11 @@ from dr_code.core.source.python_analysis import (
 
 #: Prefix used for alpha-renamed local variables (`_v0`, `_v1`, ...).
 RENAMED_LOCAL_PREFIX: Final[str] = "_v"
+
+_UNSAFE_LOCAL_RENAME_MAPPING: Final[str] = (
+    "unsafe local rename mapping: names must be valid Python identifiers, "
+    "replacements must be unique and fresh"
+)
 
 SCOPE_NODE_TYPES = (
     ast.Module,
@@ -148,9 +156,15 @@ def rename_locals_in_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     mapping: dict[str, str],
 ) -> ast.FunctionDef | ast.AsyncFunctionDef:
-    """Apply `mapping` within one function's lexical scope."""
+    """Apply a capture-safe `mapping` within one function's lexical scope.
+
+    Raises `ValueError` with the owned unsafe-mapping diagnostic when names are
+    not identifiers, replacements are not injective, or a replacement could
+    capture an existing name.
+    """
     if not mapping:
         return node
+    _validate_local_rename_mapping(node, mapping)
     _LexicalLocalRenamer(
         reserved=set(),
         rename_params=True,
@@ -158,6 +172,44 @@ def rename_locals_in_function(
         target_mapping=mapping,
     ).visit(node)
     return node
+
+
+def _is_identifier(name: object) -> bool:
+    return (
+        isinstance(name, str)
+        and name.isidentifier()
+        and not keyword.iskeyword(name)
+    )
+
+
+def _target_mapping(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    mapping: dict[str, str],
+) -> dict[str, str]:
+    preserved_names = _preserved_local_names(node)
+    return {
+        name: replacement
+        for name, replacement in mapping.items()
+        if name in function_locals(node) and name not in preserved_names
+    }
+
+
+def _validate_local_rename_mapping(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    mapping: dict[str, str],
+) -> None:
+    if not all(
+        _is_identifier(name) and _is_identifier(replacement)
+        for name, replacement in mapping.items()
+    ) or len(set(mapping.values())) != len(mapping):
+        raise ValueError(_UNSAFE_LOCAL_RENAME_MAPPING)
+
+    effective_mapping = _target_mapping(node, mapping)
+    replacements = set(effective_mapping.values())
+    unmapped_identifiers = _identifier_names(node) - set(effective_mapping)
+    descendant_binders = _descendant_scope_binders(node)
+    if replacements & (unmapped_identifiers | descendant_binders):
+        raise ValueError(_UNSAFE_LOCAL_RENAME_MAPPING)
 
 
 def _preserved_local_names(
@@ -327,13 +379,7 @@ class _LexicalLocalRenamer(ast.NodeTransformer):
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> dict[str, str]:
         if node is self._target:
-            preserved_names = _preserved_local_names(node)
-            return {
-                name: replacement
-                for name, replacement in (self._target_mapping or {}).items()
-                if name in function_locals(node)
-                and name not in preserved_names
-            }
+            return _target_mapping(node, self._target_mapping or {})
         if self._target is not None:
             return {}
         reserved = self._reserved | {
@@ -350,23 +396,32 @@ class _LexicalLocalRenamer(ast.NodeTransformer):
     def _visit_function(
         self, node: ast.FunctionDef | ast.AsyncFunctionDef
     ) -> ast.FunctionDef | ast.AsyncFunctionDef:
+        is_method = bool(self._scopes and self._scopes[-1].kind == "class")
         node.decorator_list = [
             self.visit(item) for item in node.decorator_list
         ]
-        node.returns = self.visit(node.returns) if node.returns else None
-        node.type_params = [
-            self.visit(item) for item in getattr(node, "type_params", [])
-        ]
-        for argument in function_params(node):
-            if argument.annotation is not None:
-                argument.annotation = self.visit(argument.annotation)
         node.args.defaults = [self.visit(item) for item in node.args.defaults]
         node.args.kw_defaults = [
             self.visit(item) if item is not None else None
             for item in node.args.kw_defaults
         ]
 
+        type_parameter_names = _type_parameter_names(node)
+        if type_parameter_names:
+            self._scopes.append(
+                _ScopeFrame("type_parameters", type_parameter_names, set(), {})
+            )
+        node.type_params = [
+            self.visit(item) for item in getattr(node, "type_params", [])
+        ]
+        node.returns = self.visit(node.returns) if node.returns else None
+        for argument in function_params(node):
+            if argument.annotation is not None:
+                argument.annotation = self.visit(argument.annotation)
+
         bound_names = set(function_locals(node))
+        if is_method:
+            bound_names.add("__class__")
         global_names, _ = _scope_declarations(node.body)
         mapping = self._function_mapping(node)
         for argument in function_params(node):
@@ -377,6 +432,8 @@ class _LexicalLocalRenamer(ast.NodeTransformer):
         )
         node.body = [self.visit(statement) for statement in node.body]
         self._scopes.pop()
+        if type_parameter_names:
+            self._scopes.pop()
         return node
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
@@ -398,11 +455,16 @@ class _LexicalLocalRenamer(ast.NodeTransformer):
         node.decorator_list = [
             self.visit(item) for item in node.decorator_list
         ]
-        node.bases = [self.visit(item) for item in node.bases]
-        node.keywords = [self.visit(item) for item in node.keywords]
+        type_parameter_names = _type_parameter_names(node)
+        if type_parameter_names:
+            self._scopes.append(
+                _ScopeFrame("type_parameters", type_parameter_names, set(), {})
+            )
         node.type_params = [
             self.visit(item) for item in getattr(node, "type_params", [])
         ]
+        node.bases = [self.visit(item) for item in node.bases]
+        node.keywords = [self.visit(item) for item in node.keywords]
         global_names, _ = _scope_declarations(node.body)
         self._scopes.append(
             _ScopeFrame(
@@ -411,6 +473,21 @@ class _LexicalLocalRenamer(ast.NodeTransformer):
         )
         node.body = [self.visit(statement) for statement in node.body]
         self._scopes.pop()
+        if type_parameter_names:
+            self._scopes.pop()
+        return node
+
+    def visit_TypeAlias(self, node: ast.TypeAlias) -> ast.TypeAlias:
+        node.name = self.visit(node.name)
+        type_parameter_names = _type_parameter_names(node)
+        if type_parameter_names:
+            self._scopes.append(
+                _ScopeFrame("type_parameters", type_parameter_names, set(), {})
+            )
+        node.type_params = [self.visit(item) for item in node.type_params]
+        node.value = self.visit(node.value)
+        if type_parameter_names:
+            self._scopes.pop()
         return node
 
     def visit_Lambda(self, node: ast.Lambda) -> ast.Lambda:

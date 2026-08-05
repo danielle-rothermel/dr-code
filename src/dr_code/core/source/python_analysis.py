@@ -537,9 +537,56 @@ def _lambda_locals(node: ast.Lambda) -> set[str]:
     return set(visitor.names)
 
 
+def _type_parameter_names(node: ast.AST) -> set[str]:
+    return {
+        type_param.name
+        for type_param in getattr(node, "type_params", ())
+        if isinstance(
+            type_param, ast.TypeVar | ast.ParamSpec | ast.TypeVarTuple
+        )
+    }
+
+
+def _descendant_scope_binders(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> set[str]:
+    """Names that bind inside a child lexical scope of `node`."""
+    names: set[str] = set()
+    for descendant in ast.walk(node):
+        if descendant is node:
+            continue
+        if isinstance(descendant, ast.FunctionDef | ast.AsyncFunctionDef):
+            names.update(function_locals(descendant))
+            names.update(_type_parameter_names(descendant))
+        elif isinstance(descendant, ast.ClassDef):
+            names.update(_scope_bindings(descendant.body))
+            names.update(_type_parameter_names(descendant))
+            names.add("__class__")
+        elif isinstance(descendant, ast.Lambda):
+            names.update(_lambda_locals(descendant))
+        elif isinstance(
+            descendant,
+            ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+        ):
+            for generator in descendant.generators:
+                names.update(_target_names((generator.target,)))
+        elif isinstance(descendant, ast.TypeAlias):
+            names.update(_type_parameter_names(descendant))
+    return names
+
+
 def _identifier_names(tree: ast.AST) -> set[str]:
     """Variable-like identifiers appearing anywhere in `tree`."""
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    if any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "super"
+        and not node.args
+        and not node.keywords
+        for node in ast.walk(tree)
+    ):
+        names.add("__class__")
     for node in ast.walk(tree):
         if isinstance(node, ast.arg):
             names.add(node.arg)
