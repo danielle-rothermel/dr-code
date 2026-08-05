@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from dr_code.humaneval.sandbox import (
-    CANDIDATE_KILL_RETURNCODES,
     SandboxOutputLimitError,
     SandboxRunner,
     SandboxTimeoutError,
@@ -134,14 +133,3 @@ def is_output_limit_outcome(outcome: ExecutionOutcome) -> bool:
     """Whether an outcome represents candidate output flooding."""
 
     return outcome.returncode == _OUTPUT_LIMIT_RETURNCODE
-
-
-def is_candidate_kill_outcome(outcome: ExecutionOutcome) -> bool:
-    """Whether an outcome represents a candidate-provoked hard kill.
-
-    A sibling of the timeout / output-limit predicates: the kill returncodes
-    (e.g. SIGKILL/SIGSEGV) are things candidate code can provoke, so this is
-    candidate-attributable data, not infrastructure breakage.
-    """
-
-    return outcome.returncode in CANDIDATE_KILL_RETURNCODES

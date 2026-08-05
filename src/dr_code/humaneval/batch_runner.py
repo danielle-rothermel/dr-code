@@ -1,22 +1,29 @@
 """Subprocess batch orchestration for HumanEval evaluation.
 
-Runs candidate code against parsed test cases inside the sandbox and maps the
-runner's JSON output back into ``EvaluationCaseResult`` rows. The subprocess
-runner validates each returned case result, but it currently preserves partial
-runner output rather than requiring one returned row per parsed test case.
-Tightening that cardinality check would be a benchmark behavior change and is
-deferred until per-test score persistence semantics are defined. Returned case
-ids must still be known and unique so partial output can never inflate
-coverage.
+Owns the single canonical HumanEval batch protocol: ``build_humaneval_batch_
+request`` builds every request, and ``interpret_subprocess_batch_result``
+interprets every completed process back into ``EvaluationCaseResult`` rows.
+Both the direct batch path here and the ``code_test`` metrics operator route
+through them, so the request bytes and the result reading have one
+implementation.
+
+The runner validates each returned case result, but it currently preserves
+partial runner output rather than requiring one returned row per parsed test
+case. Tightening that cardinality check would be a benchmark behavior change
+and is deferred until per-test score persistence semantics are defined.
+Returned case ids must still be known and unique so partial output can never
+inflate coverage.
 
 Failure attribution: candidate-attributable terminations (memory/CPU-limit
 SIGKILL, interpreter crash, SystemExit, output floods) are scored as case
 errors or timeouts; ``EvaluationHarnessError``/``HarnessFailure`` is reserved
-for sandbox or runtime breakage so operators can alert on it. Candidate code
-runs in the same in-container interpreter as the trusted runner, so a
-deliberately adversarial candidate can still forge its own task's case
-results; the sandbox boundary guarantees host, credential, and network
-isolation, not single-task score integrity against adversarial submissions.
+for sandbox or runtime breakage so operators can alert on it. The runner
+captures the protocol stdout handle before candidate code runs and redirects
+Python-level candidate output to stderr, so accidental candidate prints do
+not reach the results channel. A deliberately adversarial candidate can
+still forge its own task's case results through the runner's module globals
+or a direct write to file descriptor 1; cross-task and cross-candidate
+score integrity does not depend on this channel.
 """
 
 from __future__ import annotations
@@ -24,6 +31,7 @@ from __future__ import annotations
 import ast
 import json
 import time
+from dataclasses import dataclass
 from functools import cache
 from importlib.resources import files
 
@@ -36,6 +44,7 @@ from dr_code.humaneval.parsed_tests import (
 )
 from dr_code.humaneval.sandbox import (
     CANDIDATE_KILL_RETURNCODES,
+    SandboxCompletedProcess,
     SandboxOutputLimitError,
     SandboxRunner,
     SandboxTimeoutError,
@@ -50,6 +59,15 @@ from dr_code.humaneval.task import (
     HumanEvalRunnerPayload,
     HumanEvalTask,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class HumanEvalBatchRequest:
+    """Trusted runner source and opaque input for one HumanEval batch."""
+
+    source: str
+    input_json: str
+    timeout_seconds: float
 
 
 def evaluate_humaneval_code(
@@ -104,14 +122,17 @@ def evaluate_humaneval_code(
     )
 
 
-# PARITY COORDINATION: ``dr_code.metrics.operators.code_test`` duplicates this
-# rule. Legal duplicate top-level function names are all returned, so behavior
-# changes must update both implementations and their parity tests.
 def top_level_function_names(
     code_str: str,
     *,
     parsed_module: ast.Module | None = None,
 ) -> list[str]:
+    """Every top-level function defined by candidate source, in order.
+
+    Legal duplicate names are all returned, so their case results stack under
+    one name downstream and can prevent ``coverage_complete``.
+    """
+
     tree = parsed_module if parsed_module is not None else ast.parse(code_str)
     return [
         node.name
@@ -130,32 +151,26 @@ def run_subprocess_batch(
     runner_source: str | None = None,
     run_in_sandbox: SandboxRunner = run_python_in_sandbox,
 ) -> list[EvaluationCaseResult]:
-    parsed_tests = require_parsed_tests(task)
-    check_payloads = (
-        checks
-        if checks is not None
-        else list(parsed_tests.iter_checks(candidate_name="candidate"))
-    )
-    payload = HumanEvalRunnerPayload(
-        task_id=task.task_id,
+    request = build_humaneval_batch_request(
+        task=task,
         candidate_code=candidate_code,
-        support_code=parsed_tests.support_code,
         function_name=function_name,
-        test_type=parsed_tests.test_type,
-        checks=check_payloads,
+        timeout_seconds=timeout_seconds,
+        checks=checks,
+        runner_source=runner_source,
     )
     started_at = time.perf_counter()
     try:
         completed = run_in_sandbox(
-            source=runner_source or runner_script(),
-            input_json=payload.model_dump_json(),
-            timeout_seconds=timeout_seconds,
+            source=request.source,
+            input_json=request.input_json,
+            timeout_seconds=request.timeout_seconds,
         )
     except SandboxTimeoutError:
         return timeout_results(
             task=task,
             function_name=function_name,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=request.timeout_seconds,
         )
     except SandboxOutputLimitError as exc:
         return error_results(
@@ -177,8 +192,68 @@ def run_subprocess_batch(
             case_results=case_results,
             cause=exc,
         ) from exc
-    elapsed_seconds = time.perf_counter() - started_at
 
+    return interpret_subprocess_batch_result(
+        task=task,
+        function_name=function_name,
+        completed=completed,
+        elapsed_seconds=time.perf_counter() - started_at,
+    )
+
+
+def build_humaneval_batch_request(
+    *,
+    task: HumanEvalTask,
+    candidate_code: str,
+    function_name: str,
+    timeout_seconds: float,
+    checks: list[SingleCaseCheck] | None = None,
+    runner_source: str | None = None,
+) -> HumanEvalBatchRequest:
+    """Build the complete sandbox request for one HumanEval batch.
+
+    The one place a HumanEval runner payload is assembled. Every caller --
+    the direct batch path and the ``code_test`` operator -- gets byte-identical
+    request input for the same task, candidate, and function name.
+    """
+
+    parsed_tests = require_parsed_tests(task)
+    check_payloads = (
+        checks
+        if checks is not None
+        else list(parsed_tests.iter_checks(candidate_name="candidate"))
+    )
+    payload = HumanEvalRunnerPayload(
+        task_id=task.task_id,
+        candidate_code=candidate_code,
+        support_code=parsed_tests.support_code,
+        function_name=function_name,
+        test_type=parsed_tests.test_type,
+        checks=check_payloads,
+    )
+    return HumanEvalBatchRequest(
+        source=runner_source or runner_script(),
+        input_json=payload.model_dump_json(),
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def interpret_subprocess_batch_result(
+    *,
+    task: HumanEvalTask,
+    function_name: str,
+    completed: SandboxCompletedProcess,
+    elapsed_seconds: float,
+) -> list[EvaluationCaseResult]:
+    """Read one completed process through the HumanEval runner protocol.
+
+    The one place runner output is turned into case results. Returncode
+    attribution, JSON decoding, per-case validation, and the known/unique
+    case-id rule all live here, so the direct batch path and the ``code_test``
+    operator read a given process identically.
+    """
+
+    parsed_tests = require_parsed_tests(task)
     if completed.returncode in CANDIDATE_KILL_RETURNCODES:
         message = (
             f"sandbox killed candidate execution (exit {completed.returncode}"

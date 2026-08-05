@@ -42,15 +42,22 @@ class EvaluationCaseStatus(StrEnum):
     TIMEOUT = "timeout"
 
 
-class HumanEvalTask(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class HumanEvalTask(FrozenModel):
+    """One benchmark task whose parses are derived, never supplied.
+
+    ``parsed`` and ``parsed_tests`` are always recomputed from ``prompt +
+    canonical_solution`` and ``test``. A supplied value is accepted only when
+    it equals the recomputed one, so a task can never carry a parse that
+    disagrees with the source it claims to describe -- including one arriving
+    from a serialized payload.
+    """
 
     task_id: str
     prompt: str
     canonical_solution: str
     entry_point: str
     test: str
-    notes: list[str] = Field(default_factory=list)
+    notes: tuple[str, ...] = ()
     parsed: ParsedCode | None = None
     parsed_tests: ParsedTests | None = None
 
@@ -68,13 +75,19 @@ class HumanEvalTask(BaseModel):
 
     @model_validator(mode="after")
     def parse_code(self) -> Self:
-        if self.parsed is None:
-            self.parsed = parse_code(
-                display_title=self.task_id,
-                code_str=self.ground_truth_code,
+        parsed = parse_code(
+            display_title=self.task_id,
+            code_str=self.ground_truth_code,
+        )
+        if self.parsed is not None and self.parsed != parsed:
+            raise ValueError(
+                "parsed code must match prompt and canonical_solution"
             )
-        if self.parsed_tests is None:
-            self.parsed_tests = parse_humaneval_tests(self.test)
+        parsed_tests = parse_humaneval_tests(self.test)
+        if self.parsed_tests is not None and self.parsed_tests != parsed_tests:
+            raise ValueError("parsed tests must match the raw test field")
+        object.__setattr__(self, "parsed", parsed)
+        object.__setattr__(self, "parsed_tests", parsed_tests)
         return self
 
 
@@ -133,10 +146,6 @@ def _results_for_function(
     ]
 
 
-# PARITY COORDINATION: ``dr_code.metrics.operators.code_test`` implements the
-# same selection rule over bare statuses instead of ``EvaluationCaseResult``
-# objects. ``tests/metrics/test_operator_parity.py`` pins the selectors equal;
-# behavior changes must update both implementations.
 def select_best_function_name(
     *,
     function_names: list[str],
@@ -161,6 +170,16 @@ def select_best_function_name(
 
 
 class EvaluationTaskResult(BaseModel):
+    """One task's case results plus the readings derived from them.
+
+    The derived readings are computed fields excluded from serialization: the
+    stored fields are the result's identity, and every reading is recomputed
+    from ``results`` on the way back in. Serializing them would both duplicate
+    state that can drift and, under ``extra="forbid"``, make the model's own
+    dump un-revalidatable. ``EvaluationTaskSummary`` is the shape that carries
+    the readings across a boundary.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
@@ -169,7 +188,7 @@ class EvaluationTaskResult(BaseModel):
     total_cases: int
     results: list[EvaluationCaseResult] = Field(default_factory=list)
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def best_function_name(self) -> str | None:
         return select_best_function_name(
@@ -178,7 +197,7 @@ class EvaluationTaskResult(BaseModel):
             results=self.results,
         )
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def failures(self) -> list[EvaluationCaseResult]:
         best_function_name = self.best_function_name
@@ -191,10 +210,7 @@ class EvaluationTaskResult(BaseModel):
             and result.status is not EvaluationCaseStatus.PASSED
         ]
 
-    # PARITY COORDINATION: duplicated by the coverage_complete value in
-    # ``dr_code.metrics.operators.code_test.CodeTest.compute``. The metrics
-    # parity test keeps both active scoring paths equal.
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def coverage_complete(self) -> bool:
         best_function_name = self.best_function_name
@@ -206,7 +222,7 @@ class EvaluationTaskResult(BaseModel):
         )
         return len(function_results) == self.total_cases
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def passed(self) -> bool:
         best_function_name = self.best_function_name
@@ -223,7 +239,7 @@ class EvaluationTaskResult(BaseModel):
             for result in function_results
         )
 
-    @computed_field
+    @computed_field(exclude_if=lambda _value: True)
     @property
     def status_counts(self) -> dict[str, int]:
         best_function_name = self.best_function_name

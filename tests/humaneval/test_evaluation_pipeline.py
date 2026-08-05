@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 import dr_code.humaneval as humaneval
 from dr_code.code_analysis import validate_python_source
@@ -27,6 +28,7 @@ from dr_code.humaneval import (
     parse_humaneval_dataset,
 )
 from dr_code.humaneval.batch_runner import (
+    build_humaneval_batch_request,
     evaluate_humaneval_code,
     require_parsed_tests,
     run_subprocess_batch,
@@ -737,6 +739,61 @@ def _partial_evaluation_result(task: HumanEvalTask) -> EvaluationTaskResult:
     )
 
 
+def test_evaluation_task_result_round_trips_through_its_own_dump() -> None:
+    """The model's own dump revalidates, and the readings come back.
+
+    Under ``extra="forbid"`` a serialized derived reading would be rejected on
+    the way back in, so the five readings never serialize; they are recomputed
+    from ``results``.
+    """
+    evaluation = _partial_evaluation_result(_task())
+    payload = evaluation.model_dump()
+
+    assert not {
+        "best_function_name",
+        "failures",
+        "coverage_complete",
+        "passed",
+        "status_counts",
+    } & set(payload)
+
+    restored = EvaluationTaskResult.model_validate(payload)
+
+    assert restored == evaluation
+    assert restored.best_function_name == evaluation.best_function_name
+    assert restored.coverage_complete == evaluation.coverage_complete
+    assert restored.passed == evaluation.passed
+    assert restored.status_counts == evaluation.status_counts
+    assert restored.failures == evaluation.failures
+
+
+def test_evaluation_task_result_round_trips_through_json() -> None:
+    """The JSON dump revalidates too, readings intact."""
+    evaluation = _partial_evaluation_result(_task())
+
+    restored = EvaluationTaskResult.model_validate_json(
+        evaluation.model_dump_json()
+    )
+
+    assert restored == evaluation
+
+
+def test_evaluation_task_summary_still_carries_the_readings() -> None:
+    """Readings cross a boundary as a summary, not as a task result.
+
+    Excluding them from ``EvaluationTaskResult`` does not make them
+    unpublishable: ``to_summary`` is the shape that carries them.
+    """
+    evaluation = _partial_evaluation_result(_task())
+    summary = evaluation.to_summary()
+    payload = summary.model_dump()
+
+    assert payload["best_function_name"] == evaluation.best_function_name
+    assert payload["passed"] == evaluation.passed
+    assert payload["status_counts"] == evaluation.status_counts
+    assert payload["failure_count"] == len(evaluation.failures)
+
+
 def test_evaluation_outcome_reports_incomplete_for_partial_coverage() -> None:
     evaluation = _partial_evaluation_result(_task())
 
@@ -1115,6 +1172,119 @@ def test_parse_humaneval_dataset_builds_tasks() -> None:
     assert tasks[0].parsed_tests is not None
 
 
+def test_task_recomputes_parses_instead_of_trusting_them() -> None:
+    """A supplied parse is derived truth, not caller-supplied truth.
+
+    Omitting the parses and supplying the correct ones produce the same task,
+    so nothing is gained by supplying them -- and nothing wrong can be
+    smuggled in by supplying them.
+    """
+    derived = _task()
+    supplied = HumanEvalTask(
+        task_id=derived.task_id,
+        prompt=derived.prompt,
+        canonical_solution=derived.canonical_solution,
+        entry_point=derived.entry_point,
+        test=derived.test,
+        parsed=derived.parsed,
+        parsed_tests=derived.parsed_tests,
+    )
+
+    assert supplied == derived
+
+
+def test_task_rejects_a_parse_disagreeing_with_its_source() -> None:
+    """A parse of some other code cannot ride along with this task."""
+    other = HumanEvalTask(
+        task_id="HumanEval/other",
+        prompt="def subtract_one(x):\n",
+        canonical_solution="    return x - 1\n",
+        entry_point="subtract_one",
+        test=_input_result_test(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="parsed code must match prompt and canonical_solution",
+    ):
+        HumanEvalTask(
+            task_id="HumanEval/fixture",
+            prompt="def add_one(x):\n",
+            canonical_solution="    return x + 1\n",
+            entry_point="add_one",
+            test=_input_result_test(),
+            parsed=other.parsed,
+        )
+
+
+def test_task_rejects_parsed_tests_disagreeing_with_the_test_field() -> None:
+    """Parsed tests cannot describe cases the raw ``test`` field does not."""
+    other_test = (
+        "def check(candidate):\n"
+        "    inputs = [(9,)]\n"
+        "    results = [10]\n"
+        "    for inp, expected in zip(inputs, results):\n"
+        "        assertion(candidate(*inp), expected)\n"
+    )
+    other = _task(test=other_test)
+
+    with pytest.raises(
+        ValueError,
+        match="parsed tests must match the raw test field",
+    ):
+        HumanEvalTask(
+            task_id="HumanEval/fixture",
+            prompt="def add_one(x):\n",
+            canonical_solution="    return x + 1\n",
+            entry_point="add_one",
+            test=_input_result_test(),
+            parsed_tests=other.parsed_tests,
+        )
+
+
+def test_task_is_frozen_and_its_notes_are_immutable() -> None:
+    """Nothing can edit a validated task after the fact."""
+    task = _task()
+
+    assert isinstance(task.notes, tuple)
+    with pytest.raises(ValidationError):
+        task.notes = ("added later",)  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        task.prompt = "def other(x):\n"  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        task.notes.append("added later")  # type: ignore[attr-defined]
+
+
+def test_task_round_trips_through_its_field_payload() -> None:
+    """Serialized fields rebuild an equal task, parses included.
+
+    Computed fields are excluded because they are derived, not stored: the
+    field payload is the task's identity and the parses come back from it.
+    """
+    task = _task(test=_input_result_test())
+    payload = json.loads(
+        task.model_dump_json(exclude=set(HumanEvalTask.model_computed_fields))
+    )
+
+    restored = HumanEvalTask.model_validate(payload)
+
+    assert restored == task
+    assert restored.parsed == task.parsed
+    assert restored.parsed_tests == task.parsed_tests
+
+
+def test_override_notes_reach_the_task_as_an_immutable_tuple() -> None:
+    """Override notes land on the frozen task without a mutable seam."""
+    row = _row("HumanEval/99", 1)
+    applied = _apply_humaneval_override(
+        row,
+        {"HumanEval/99": HumanEvalOverride(notes=("fixed the assertion",))},
+    )
+    task = HumanEvalTask(**applied)
+
+    assert task.notes == ("fixed the assertion",)
+
+
 def test_require_parsed_tests_raises_when_missing() -> None:
     task = HumanEvalTask.model_construct(
         task_id="HumanEval/fixture",
@@ -1134,6 +1304,102 @@ def test_require_parsed_tests_raises_when_missing() -> None:
 
 def test_runner_script_source_compiles() -> None:
     compile(runner_script(), "<runner>", "exec")
+
+
+def test_runner_script_reserves_its_results_channel(
+    local_runner: SandboxRunner,
+) -> None:
+    """A candidate that prints protocol JSON cannot reach the host.
+
+    The runner captures its results handle before candidate code runs and
+    points ``sys.stdout`` at stderr, so a candidate printing a complete,
+    well-formed results array does not add to (or replace) what the host
+    parses. Without the redirection this forged array would be the first thing
+    on stdout and would decide the task's score.
+    """
+    forged = json.dumps(
+        [
+            {
+                "case_id": case_id,
+                "status": "passed",
+                "message": "",
+                "input_repr": "",
+                "expected_output_repr": "",
+                "actual_output_repr": "",
+                "elapsed_seconds": 0.0,
+            }
+            for case_id in ("case_0", "case_1")
+        ]
+    )
+    task = _task()
+    # The candidate fails every case, then forges an all-passed result set.
+    candidate = f"print({forged!r})\ndef add_one(x):\n    return x + 1000\n"
+
+    result = evaluate_humaneval_code(
+        task=task,
+        candidate_code=candidate,
+        timeout_seconds=10.0,
+        run_in_sandbox=local_runner,
+    )
+
+    assert result.status_counts == {"failed": 2}
+    assert result.passed is False
+
+
+def test_runner_script_sends_candidate_output_to_stderr(
+    local_runner: SandboxRunner,
+) -> None:
+    """Candidate prints are preserved as diagnostics on the bounded stderr.
+
+    Redirecting rather than discarding keeps a candidate's own output
+    debuggable while keeping it off the results channel.
+    """
+    request = build_humaneval_batch_request(
+        task=_task(),
+        candidate_code=(
+            "print('candidate diagnostic')\n"
+            "def add_one(x):\n    return x + 1\n"
+        ),
+        function_name="add_one",
+        timeout_seconds=10.0,
+    )
+    completed = local_runner(
+        source=request.source,
+        input_json=request.input_json,
+        timeout_seconds=request.timeout_seconds,
+    )
+
+    assert "candidate diagnostic" not in completed.stdout
+    assert "candidate diagnostic" in completed.stderr
+    assert [row["status"] for row in json.loads(completed.stdout)] == [
+        "passed",
+        "passed",
+    ]
+
+
+def test_runner_script_emits_only_through_its_protocol_handle() -> None:
+    """Nothing in the runner writes results with a bare ``print``.
+
+    ``emit_results`` is the single writer to the captured handle; a ``print``
+    reintroduced anywhere in the program would land on the redirected stdout
+    and silently drop the results the host is waiting for.
+    """
+    tree = ast.parse(runner_script())
+    printed = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "print"
+    ]
+    assert printed == []
+
+    emitters = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "emit_results" in emitters
 
 
 def test_runner_script_source_is_dependency_free() -> None:

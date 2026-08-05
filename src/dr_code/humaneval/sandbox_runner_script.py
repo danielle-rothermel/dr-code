@@ -1,14 +1,30 @@
 # Standalone program executed inside the sandbox container via
-# ``python -I -c <source>``. It reads one JSON line from stdin and prints a
+# ``python -I -c <source>``. It reads one JSON line from stdin and writes a
 # JSON list of case results. It must stay dependency-free (no ``dr_code``
 # imports) because it runs in a locked-down, interpreter-isolated container,
 # and it must NEVER be imported by host code: it has top-level side effects
 # (it reads stdin at import time). The host reads this file's text via
 # ``importlib.resources`` and executes it as a string; it does not import it.
+#
+# The results channel is captured before any candidate code runs, and
+# ``sys.stdout`` and ``sys.__stdout__`` both point at the bounded stderr for
+# the rest of the program, so a candidate that prints -- including
+# well-formed protocol JSON -- does not reach the channel the host parses.
+# This contains accidental and naive collisions only, not an adversarial
+# candidate: code executed in this interpreter can still reach the runner's
+# own module globals (``protocol_stdout``, ``emit_results``) or write to
+# file descriptor 1 directly (``os.write(1, ...)``) and forge its own
+# task's case results. Single-task result integrity against a deliberately
+# adversarial candidate is not a guarantee this script can make.
 import json
+import sys
 import time
 import traceback
 
+protocol_stdout = sys.stdout
+sys.stdout = sys.stderr
+# ``setattr`` because ``sys.__stdout__`` is typed as the original stream.
+setattr(sys, "__stdout__", sys.stderr)
 payload = json.loads(input())
 
 FIELD_LIMIT = 8000
@@ -26,6 +42,12 @@ def assertion(actual, expected, atol=0):
         assert abs(actual - expected) <= atol
     else:
         assert actual == expected
+
+
+def emit_results(results):
+    protocol_stdout.write(json.dumps(results))
+    protocol_stdout.write("\n")
+    protocol_stdout.flush()
 
 
 def build_namespace():
@@ -98,7 +120,7 @@ except BaseException:
                 "elapsed_seconds": 0.0,
             }
         )
-    print(json.dumps(results))
+    emit_results(results)
     raise SystemExit(0)
 
 results = []
@@ -148,4 +170,4 @@ for check in payload["checks"]:
                 "elapsed_seconds": time.perf_counter() - started_at,
             }
         )
-print(json.dumps(results))
+emit_results(results)
