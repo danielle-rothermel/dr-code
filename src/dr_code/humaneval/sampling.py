@@ -9,7 +9,6 @@ from datasets import load_dataset  # type: ignore[import-not-found]
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
 from dr_code.humaneval.task import (
-    HUMANEVAL_OVERRIDE_SET,
     HumanEvalOverrideSetCoordinate,
     HumanEvalTask,
     parse_humaneval_dataset,
@@ -128,30 +127,6 @@ def validate_snapshot_header(
             f"{header.override_set!r} != {registered!r}"
         )
     return registered
-
-
-def write_humaneval_snapshot_rows(
-    rows: Sequence[HumanEvalRow],
-    *,
-    snapshot_path: Path,
-    dataset_name: str = DEFAULT_HUMANEVAL_DATASET_NAME,
-    hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
-) -> Path:
-    snapshot = HumanEvalRawRowsSnapshot(
-        header=HumanEvalRawRowsSnapshotHeader(
-            schema_version=HUMANEVAL_RAW_ROW_SNAPSHOT_SCHEMA_VERSION,
-            dataset_id=dataset_name,
-            hf_revision=hf_revision,
-            override_set=HUMANEVAL_OVERRIDE_SET,
-        ),
-        rows=tuple(HumanEvalRawRow.model_validate(row) for row in rows),
-    )
-    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot_path.write_text(
-        snapshot.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
-    return snapshot_path
 
 
 def sample_humaneval_tasks_from_rows(

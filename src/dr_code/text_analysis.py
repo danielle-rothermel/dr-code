@@ -139,6 +139,7 @@ __all__ = [
     "CODE_ANCHOR_LINE_RE",
     "CODE_LIKE_LINE_RE",
     "FENCE_LINE_RE",
+    "LINE_SEP",
     "OPERATOR_CHARS",
     "WORD_RE",
     "candidate_blocks",

@@ -40,7 +40,6 @@ from dr_code.humaneval.parsed_tests import (
     parse_humaneval_tests,
 )
 from dr_code.humaneval.sampling import (
-    HUMANEVAL_OVERRIDE_SET,
     HumanEvalRawRowsSnapshot,
     validate_snapshot_header,
     load_humaneval_rows,
@@ -54,6 +53,7 @@ from dr_code.humaneval.scoring import (
     score_humaneval_submission,
 )
 from dr_code.humaneval.task import (
+    HUMANEVAL_OVERRIDE_SET,
     EvaluationCaseResult,
     EvaluationHarnessError,
     EvaluationTaskResult,
