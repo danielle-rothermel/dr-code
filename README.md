@@ -72,6 +72,7 @@ class PreprocessingDefinition(FrozenModel):
 class BoundPreprocessingRunner:
     definition: PreprocessingDefinition
     producer: TraceProducer
+    ...
 
     def run(self, input_value: Artifact) -> Trace: ...
 
@@ -273,11 +274,15 @@ interface CodeBlockProps {
   code: string;
   lang?: string;
   theme?: "light" | "dark";
+  className?: string;
 }
 
 interface CodeDiffProps {
   oldContent: string;
   newContent: string;
+  oldName?: string;
+  newName?: string;
+  lang?: string;
   mode?: "split" | "unified";
   theme?: "light" | "dark";
 }
@@ -286,6 +291,7 @@ interface StatusBadgeProps {
   status: "success" | "failure" | "warning" | "neutral";
   children: ReactNode;
   theme?: "light" | "dark";
+  className?: string;
 }
 ```
 
