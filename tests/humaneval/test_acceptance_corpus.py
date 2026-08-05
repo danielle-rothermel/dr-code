@@ -1,6 +1,6 @@
 """Extraction pinned against a corpus of recorded decoder outputs.
 
-``fixtures/hard_examples.json`` holds 130 real LLM decoder outputs, each
+``corpus/hard_examples.json`` holds 130 real LLM decoder outputs, each
 carrying a human verdict on what extraction owes it: ``candidates`` with the
 exact source that should be accepted, or ``absent`` when the response
 contains no answer to extract. The corpus is partitioned into a development
@@ -27,9 +27,7 @@ from dr_code.humaneval.acceptance import (
     humaneval_runner,
 )
 
-_FIXTURE: Final[Path] = (
-    Path(__file__).parent / "fixtures" / "hard_examples.json"
-)
+_FIXTURE: Final[Path] = Path(__file__).parent / "corpus" / "hard_examples.json"
 
 #: Case id -> why extraction does not yet agree with the recorded verdict.
 #: Every entry is a deliberate open decision, not a defect to fix in place.
