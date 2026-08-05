@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from typing import Annotated, Final, Literal, TypeAlias
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from dr_code.core.models import FrozenModel
 
@@ -19,6 +20,15 @@ class ComponentSetting(FrozenModel):
 
     name: str
     value: ComponentSettingValue
+
+    @field_validator("value")
+    @classmethod
+    def reject_non_finite_float(
+        cls, value: ComponentSettingValue
+    ) -> ComponentSettingValue:
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("component setting value must be finite")
+        return value
 
 
 def coordinate_settings(
