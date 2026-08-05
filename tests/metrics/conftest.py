@@ -13,7 +13,6 @@ container runtime.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
@@ -26,8 +25,6 @@ from dr_code.core.execution.sandbox import (
     SandboxTimeoutError,
 )
 from dr_code.humaneval.task import (
-    EvaluationCaseStatus,
-    EvaluationTaskResult,
     HumanEvalTask,
 )
 from dr_code.trace import (
@@ -76,18 +73,6 @@ def _make_task(
 @pytest.fixture
 def task() -> HumanEvalTask:
     return _make_task()
-
-
-@pytest.fixture
-def good_submission() -> str:
-    """A submission that passes every case of the ``task`` fixture."""
-    return "def add_one(x):\n    return x + 1\n"
-
-
-@pytest.fixture
-def failing_submission() -> str:
-    """A submission that compiles and runs but fails assertions."""
-    return "def add_one(x):\n    return x - 1\n"
 
 
 # ---------------------------------------------------------------------------
@@ -213,29 +198,6 @@ class CountingRunner:
         return len(self.calls)
 
 
-def _scripted_runner(
-    *,
-    stdout: str = "[]",
-    stderr: str = "",
-    returncode: int = 0,
-) -> SandboxRunner:
-    """Build a runner that returns a fixed completed process."""
-
-    def run(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        return SandboxCompletedProcess(
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-        )
-
-    return run
-
-
 def _raising_runner(exc: BaseException) -> SandboxRunner:
     """A runner that always raises (infra breakage or candidate timeout)."""
 
@@ -263,81 +225,6 @@ def counting_runner(local_runner: SandboxRunner) -> CountingRunner:
 
 
 @pytest.fixture
-def scripted_runner() -> Callable[..., SandboxRunner]:
-    """Build a runner returning a fixed completed process."""
-    return _scripted_runner
-
-
-@pytest.fixture
 def raising_runner() -> Callable[[BaseException], SandboxRunner]:
     """Build a runner that always raises the supplied exception."""
     return _raising_runner
-
-
-# ---------------------------------------------------------------------------
-# Scripted runner-JSON builders for deterministic code_test parity.
-# These script the runner's stdout so parity does not need a subprocess.
-# ---------------------------------------------------------------------------
-
-
-def _partial_pass_runner_output(
-    *,
-    passed: tuple[str, ...] = ("case_0",),
-    case_ids: tuple[str, ...] = ("case_0", "case_1"),
-) -> str:
-    """Runner JSON that passes ``passed`` and fails the rest of ``case_ids``."""
-    payload = []
-    for case_id in case_ids:
-        status = (
-            EvaluationCaseStatus.PASSED.value
-            if case_id in passed
-            else EvaluationCaseStatus.FAILED.value
-        )
-        payload.append(
-            {
-                "case_id": case_id,
-                "status": status,
-                "message": "",
-                "input_repr": "[1]",
-                "expected_output_repr": "2",
-                "actual_output_repr": "2",
-                "elapsed_seconds": 0.0,
-                "timeout_seconds": None,
-            }
-        )
-    return json.dumps(payload)
-
-
-@pytest.fixture
-def partial_pass_runner_output() -> Callable[..., str]:
-    """Build runner JSON passing some case ids and failing the rest."""
-    return _partial_pass_runner_output
-
-
-# ---------------------------------------------------------------------------
-# Oracle runner: delegate to the existing runner for parity comparisons.
-# ---------------------------------------------------------------------------
-
-
-def _evaluate_oracle(
-    task: HumanEvalTask,
-    candidate_code: str,
-    *,
-    timeout_seconds: float,
-    run_in_sandbox: SandboxRunner,
-) -> EvaluationTaskResult:
-    """Run the existing runner to get the oracle EvaluationTaskResult."""
-    from dr_code.humaneval.runner import evaluate_humaneval_code
-
-    return evaluate_humaneval_code(
-        task=task,
-        candidate_code=candidate_code,
-        timeout_seconds=timeout_seconds,
-        run_in_sandbox=run_in_sandbox,
-    )
-
-
-@pytest.fixture
-def evaluate_oracle() -> Callable[..., EvaluationTaskResult]:
-    """Evaluate a candidate through ``runner`` for parity comparison."""
-    return _evaluate_oracle

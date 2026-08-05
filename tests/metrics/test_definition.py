@@ -258,3 +258,44 @@ def test_same_metric_on_key_different_settings_is_allowed() -> None:
         ),
     )
     assert len(definition.questions) == 2
+
+
+def test_metric_question_rejects_settings_from_another_operator() -> None:
+    """Another operator's settings model is revalidated, not waved through."""
+    from pydantic import ValidationError
+
+    from dr_code.metrics import MetricName, MetricQuestion
+    from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
+
+    with pytest.raises(ValidationError):
+        MetricQuestion(
+            metric=MetricName.TEXT_STATS,
+            on="output",
+            settings=CodeLeakageSettings(task_names=("x",)),
+        )
+
+
+def test_metric_question_accepts_its_own_settings_instance_and_dict() -> None:
+    from dr_code.metrics import MetricName, MetricQuestion
+    from dr_code.metrics.operators.code_leakage import CodeLeakageSettings
+
+    expected = CodeLeakageSettings(task_names=("x",))
+    from_instance = MetricQuestion(
+        metric=MetricName.CODE_LEAKAGE, on="output", settings=expected
+    )
+    from_dict = MetricQuestion(
+        metric=MetricName.CODE_LEAKAGE,
+        on="output",
+        settings={"task_names": ["x"]},
+    )
+    assert from_instance.settings == expected
+    assert from_dict.settings == expected
+
+
+def test_metric_question_missing_metric_raises_validation_error() -> None:
+    from pydantic import ValidationError
+
+    from dr_code.metrics import MetricQuestion
+
+    with pytest.raises(ValidationError):
+        MetricQuestion.model_validate({"on": "output", "settings": {}})
