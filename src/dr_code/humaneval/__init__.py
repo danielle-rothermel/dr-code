@@ -1,14 +1,8 @@
 from dr_code.humaneval.code_parsing import (
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE,
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID,
-    BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION,
-    STRICT_FIELD_MARKER_PARSER_PROFILE,
-    STRICT_FIELD_MARKER_PARSER_PROFILE_ID,
-    STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION,
     CodeExtractionResult,
-    CodeParserProfile,
-    extract_code_with_profile,
-    resolve_parser_profile,
+    accept_first_surviving,
+    extract_humaneval_code,
+    humaneval_runner,
 )
 from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
 from dr_code.humaneval.profiles import (
@@ -19,6 +13,7 @@ from dr_code.humaneval.profiles import (
     HUMANEVAL_SCORING_PROFILE_VERSION,
     HumanEvalScoringProfile,
     HumanEvalMetricsProfile,
+    PreprocessingDefinitionReference,
     resolve_humaneval_scoring_profile,
 )
 from dr_code.humaneval.sampling import (
@@ -49,11 +44,7 @@ from dr_code.humaneval.task import (
 )
 
 __all__ = (
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION",
     "CodeExtractionResult",
-    "CodeParserProfile",
     "CompletedScore",
     "DEFAULT_HUMANEVAL_SCORING_PROFILE",
     "DEFAULT_HUMANEVAL_TIMEOUT_SECONDS",
@@ -75,16 +66,15 @@ __all__ = (
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION",
+    "PreprocessingDefinitionReference",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
-    "extract_code_with_profile",
+    "accept_first_surviving",
+    "extract_humaneval_code",
+    "humaneval_runner",
     "load_humaneval_rows",
     "parse_humaneval_dataset",
     "resolve_humaneval_scoring_profile",
-    "resolve_parser_profile",
     "sample_humaneval_tasks",
     "sample_humaneval_tasks_from_rows",
     "score_humaneval_submission",

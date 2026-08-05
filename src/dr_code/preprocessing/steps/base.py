@@ -7,9 +7,8 @@ steps take **no rng**: determinism is settings + input only.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import UNIQUE, StrEnum, verify
 from typing import ClassVar, Generic, TypeVar, cast
 
 from dr_code.base import FrozenModel
@@ -22,29 +21,8 @@ from dr_code.trace import (
     ExtractionOperation,
     JsonFactValue,
 )
+from dr_code.preprocessing.failures import PreprocessingFailureCode
 from dr_code.preprocessing.names import StepName
-
-
-@verify(UNIQUE)
-class FailureCode(StrEnum):
-    """The failure vocabulary preprocessing steps raise.
-
-    Preprocessing owns these codes; the trace layer stores whichever string
-    a producer stamps into ``Absent.failure_code`` without interpreting it.
-
-    Never build a payload by iterating this enum: the set of members is a
-    closed vocabulary, not an ordered list, and its iteration order is not
-    part of any persisted format. Reference members individually by name.
-    """
-
-    #: No alternative in a step's first-success ladder produced candidates.
-    NO_ALTERNATIVE_PRODUCED_CANDIDATES = "no_alternative_produced_candidates"
-    #: The configured field marker is absent from the input.
-    MISSING_FIELD_MARKER = "missing_field_marker"
-    #: The configured field marker is present but its value is empty.
-    EMPTY_FIELD_MARKER_VALUE = "empty_field_marker_value"
-    #: Every extracted candidate was dropped by the structural filters.
-    NO_CANDIDATE_SURVIVED_FILTERING = "no_candidate_survived_filtering"
 
 
 class StepSettings(FrozenModel):
@@ -60,18 +38,27 @@ SettingsT = TypeVar("SettingsT", bound=StepSettings)
 class StepFailedError(Exception):
     """A data failure: the step cannot produce output without guessing.
 
-    Raised with a ``FailureCode`` member naming the failure kind plus a
-    free-form ``cause`` detailing it; ``code`` is stored as that member's
-    plain string, the form the trace layer records. Converted to
-    ``Absent`` by the runner, which copies both through; never escapes
-    ``run_preprocessing``.
-    Distinct from ``WiringError`` (a definition bug raised at bind time).
+    Carries a machine-readable ``code`` naming the failure kind, a
+    free-form ``cause`` detailing it, and optional structured ``evidence``
+    as finite JSON values. Converted to ``Absent`` by the runner, which
+    copies code and cause onto the ``Absent`` and records ``evidence`` as
+    the failing step's facts — the ``Absent`` itself stays a bare failure
+    record, and evidence lives where every other step's description of its
+    own output lives. Never escapes the runner. Distinct from
+    ``WiringError`` (a definition bug raised at bind time).
     """
 
-    def __init__(self, code: FailureCode, cause: str) -> None:
+    def __init__(
+        self,
+        code: PreprocessingFailureCode,
+        cause: str,
+        *,
+        evidence: Mapping[str, JsonFactValue] | None = None,
+    ) -> None:
         super().__init__(cause)
-        self.code = code.value
+        self.code = code
         self.cause = cause
+        self.evidence: Mapping[str, JsonFactValue] = evidence or {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +95,7 @@ class Step(Generic[SettingsT]):
 
     def __init__(self, settings: SettingsT | None = None) -> None:
         # Optional so steps with no tunables instantiate as ``StepCls()``;
-        # bind_definition always passes explicit validated settings.
+        # binding always passes explicit validated settings.
         self.settings: SettingsT = (
             settings
             if settings is not None
@@ -117,6 +104,12 @@ class Step(Generic[SettingsT]):
 
     def apply(self, value: Artifact) -> StepOutput:  # pragma: no cover
         raise NotImplementedError
+
+
+def candidate_set(value: Artifact) -> CodeCandidateSetArtifact:
+    """Narrow an Artifact to its candidate-set member."""
+    assert isinstance(value, CodeCandidateSetArtifact)
+    return value
 
 
 class CandidateMapStep(Step[StepSettings]):
@@ -138,7 +131,7 @@ class CandidateMapStep(Step[StepSettings]):
     def apply(self, value: Artifact) -> StepOutput:
         operation = ExtractionOperation(operation_name=self.NAME.value)
         mapped: list[CodeCandidate] = []
-        for index, candidate in enumerate(_candidate_set(value).candidates):
+        for index, candidate in enumerate(candidate_set(value).candidates):
             origin = CandidateOrigin(operation=operation, input_location=index)
             result = self.apply_to_candidate(candidate.source)
             sources = result if isinstance(result, list) else [result]
@@ -150,42 +143,11 @@ class CandidateMapStep(Step[StepSettings]):
         )
 
 
-class AlternativesStep(Step[SettingsT], Generic[SettingsT]):
-    """Ordered first-success ladder inside one step — never pipeline branches.
-
-    ``apply`` tries alternatives conservative-first; the winner's name is
-    recorded as ``facts["alternative"]``; all-fail raises
-    ``StepFailedError``.
-    """
-
-    def alternatives(
-        self,
-    ) -> tuple[tuple[str, Callable[[Artifact], Artifact | None]], ...]:
-        raise NotImplementedError
-
-    def apply(self, value: Artifact) -> StepOutput:
-        for name, strategy_fn in self.alternatives():
-            result = strategy_fn(value)
-            if result is not None:
-                return StepOutput(value=result, facts={"alternative": name})
-        raise StepFailedError(
-            FailureCode.NO_ALTERNATIVE_PRODUCED_CANDIDATES,
-            "no alternative produced candidates",
-        )
-
-
-def _candidate_set(value: Artifact) -> CodeCandidateSetArtifact:
-    """Narrow an Artifact to its candidate-set member."""
-    assert isinstance(value, CodeCandidateSetArtifact)
-    return value
-
-
 __all__ = [
-    "AlternativesStep",
     "CandidateMapStep",
-    "FailureCode",
     "Step",
     "StepFailedError",
     "StepOutput",
     "StepSettings",
+    "candidate_set",
 ]

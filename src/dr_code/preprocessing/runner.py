@@ -1,16 +1,21 @@
 """Bind-time wiring + single-fold runner over a preprocessing definition.
 
-Mirrors ``synthetic.dataset_builder.apply_recipe``: a single mechanical
-fold over bound steps. Bind-time wiring failures raise ``WiringError``
-before any input is processed — incompatible definitions are wiring bugs,
-not data. Runtime data failures (``StepFailedError``) become ``Absent``
-with the cause, and the pipeline always completes with a full trace.
+Binding and running are separate. ``bind_preprocessing`` resolves and
+validates a definition once, returning a ``BoundPreprocessingRunner`` whose
+``run`` performs the fold for each input; a caller processing many
+responses under one definition pays resolution and validation once.
+``run_preprocessing`` is the one-shot wrapper over exactly that path.
 
-Two entry points stamp provenance on the resulting trace.
-``run_preprocessing`` resolves the canonical registered definition for the
+Bind-time wiring failures raise ``WiringError`` before any input is
+processed — incompatible definitions are wiring bugs, not data. Runtime
+data failures (``StepFailedError``) become ``Absent`` with the failing
+step's code and cause, and the pipeline always completes with a full trace.
+
+Binding stamps provenance on every trace the runner produces.
+``bind_preprocessing`` resolves the canonical registered definition for the
 caller's ``(definition_id, version)``, rejects a caller-built object that
 claims a registered coordinate without matching it, and stamps
-``PreprocessingTraceProducer``. ``run_external_preprocessing`` accepts an
+``PreprocessingTraceProducer``. ``bind_external_preprocessing`` accepts an
 unregistered definition and stamps ``ExternalPreprocessingTraceProducer``.
 Traces assembled outside the component system carry
 ``ExternalTraceProducer``.
@@ -40,6 +45,7 @@ from dr_code.trace import (
     StepCoordinate,
     TextArtifact,
     Trace,
+    TraceProducer,
     WiringError,
     coordinate_settings,
     is_absent,
@@ -67,7 +73,7 @@ _KIND_TYPES = {
 
 
 @dataclass(frozen=True, slots=True)
-class BoundStep:
+class _BoundStep:
     """A resolved step instance bound to validated settings."""
 
     instance_name: str
@@ -75,15 +81,15 @@ class BoundStep:
     coordinate: StepCoordinate
 
 
-def bind_definition(
+def _bind_steps(
     definition: PreprocessingDefinition,
-) -> tuple[BoundStep, ...]:
+) -> tuple[_BoundStep, ...]:
     """Resolve each ``StepSpec``, validate settings, and chain kinds.
 
     Any mismatch (unknown step, bad settings, incompatible INPUT/OUTPUT
     kind chain) raises ``WiringError`` before any input is processed.
     """
-    bound: list[BoundStep] = []
+    bound: list[_BoundStep] = []
     expected_input: ArtifactKind | None = None
 
     for spec in definition.steps:
@@ -111,7 +117,7 @@ def bind_definition(
         expected_input = step.OUTPUT
 
         bound.append(
-            BoundStep(
+            _BoundStep(
                 instance_name=instance_name,
                 step=step,
                 coordinate=StepCoordinate(
@@ -128,11 +134,111 @@ def bind_definition(
     return tuple(bound)
 
 
-def run_preprocessing(
+@dataclass(frozen=True, slots=True)
+class BoundPreprocessingRunner:
+    """A validated definition, ready to run over any number of inputs.
+
+    Construct one through ``bind_preprocessing`` or
+    ``bind_external_preprocessing``; both resolve the definition, wire its
+    steps, and fix the provenance every produced trace carries. Running is
+    then a pure fold with no further validation.
+    """
+
+    definition: PreprocessingDefinition
+    steps: tuple[_BoundStep, ...]
+    producer: TraceProducer
+
+    def run(self, input_value: Artifact) -> Trace:
+        """Execute the bound definition as a single mechanical fold.
+
+          value = input_value
+          for bound in self.steps:
+              value or Absent -> run step / skip-and-propagate
+              record value under bound.instance_name; merge facts
+
+        ``StepFailedError`` -> ``Absent`` (failed_step=instance_name, plus
+        the step's failure code and cause), with the failure's structured
+        evidence recorded as that step's facts — the ``Absent`` stays a
+        bare failure record and evidence lives where every other step's
+        description of its own output lives. Downstream steps record the
+        same ``Absent`` with ``propagated_through`` extended. Always
+        completes: the trace has ``input``, one value per instance name,
+        and ``output``.
+        """
+        if self.steps:
+            first_input_kind = self.steps[0].step.INPUT
+            expected_type = _KIND_TYPES[first_input_kind]
+            if not isinstance(input_value, expected_type):
+                raise WiringError(
+                    f"input artifact kind {type(input_value).__name__!r} "
+                    f"does not match first step input "
+                    f"{first_input_kind.value!r}"
+                )
+
+        values: dict[str, Artifact | Absent] = {INPUT_KEY: input_value}
+        step_facts: dict[str, dict[str, JsonFactValue]] = {}
+
+        current: Artifact | Absent = input_value
+        for bound in self.steps:
+            if is_absent(current):
+                current = Absent(
+                    failed_step=current.failed_step,
+                    failure_code=current.failure_code,
+                    cause=current.cause,
+                    propagated_through=(
+                        *current.propagated_through,
+                        bound.instance_name,
+                    ),
+                )
+            else:
+                try:
+                    output = bound.step.apply(current)
+                except StepFailedError as exc:
+                    current = Absent(
+                        failed_step=bound.instance_name,
+                        failure_code=exc.code.value,
+                        cause=exc.cause,
+                    )
+                    if exc.evidence:
+                        step_facts[bound.instance_name] = dict(exc.evidence)
+                else:
+                    current = output.value
+                    if output.facts:
+                        step_facts[bound.instance_name] = dict(output.facts)
+            values[bound.instance_name] = current
+
+        values[OUTPUT_KEY] = current
+
+        return Trace(
+            values=values, producer=self.producer, step_facts=step_facts
+        )
+
+
+def _bind(
     definition: PreprocessingDefinition,
-    input_value: Artifact,
-) -> Trace:
-    """Run one exact registered definition as a mechanical fold."""
+    *,
+    registered: bool,
+) -> BoundPreprocessingRunner:
+    steps = _bind_steps(definition)
+    coordinate = PreprocessingDefinitionCoordinate(
+        definition_id=definition.definition_id,
+        version=definition.version,
+        steps=tuple(bound.coordinate for bound in steps),
+    )
+    producer = (
+        PreprocessingTraceProducer(definition=coordinate)
+        if registered
+        else ExternalPreprocessingTraceProducer(definition=coordinate)
+    )
+    return BoundPreprocessingRunner(
+        definition=definition, steps=steps, producer=producer
+    )
+
+
+def bind_preprocessing(
+    definition: PreprocessingDefinition,
+) -> BoundPreprocessingRunner:
+    """Bind one exact registered definition, validating it once."""
     registered = resolve_preprocessing_definition(
         definition_id=definition.definition_id,
         version=definition.version,
@@ -142,95 +248,42 @@ def run_preprocessing(
             "preprocessing definition does not match its registered "
             f"coordinate: {definition.definition_id}@{definition.version}"
         )
-    return _run_definition(registered, input_value, registered=True)
+    return _bind(registered, registered=True)
+
+
+def bind_external_preprocessing(
+    definition: PreprocessingDefinition,
+) -> BoundPreprocessingRunner:
+    """Bind an explicitly unregistered definition with external provenance.
+
+    The escape hatch for definitions that are not in the registry — a
+    one-off pipeline in a test or an experiment. The resulting traces are
+    stamped ``external_preprocessing`` so nothing downstream can mistake
+    them for output of a registered component.
+    """
+    return _bind(definition, registered=False)
+
+
+def run_preprocessing(
+    definition: PreprocessingDefinition,
+    input_value: Artifact,
+) -> Trace:
+    """Bind one exact registered definition and run it over one input."""
+    return bind_preprocessing(definition).run(input_value)
 
 
 def run_external_preprocessing(
     definition: PreprocessingDefinition,
     input_value: Artifact,
 ) -> Trace:
-    """Run an explicitly unregistered definition with external provenance."""
-    return _run_definition(definition, input_value, registered=False)
-
-
-def _run_definition(
-    definition: PreprocessingDefinition,
-    input_value: Artifact,
-    *,
-    registered: bool,
-) -> Trace:
-    """Execute a validated definition as a single mechanical fold.
-
-      value = input_value
-      for bound in bind_definition(definition):
-          value or Absent -> run step / skip-and-propagate
-          record value under bound.instance_name; merge facts
-
-    ``StepFailedError`` -> ``Absent`` (failed_step=instance_name, plus the
-    step's failure code and cause); downstream steps record the same
-    ``Absent`` with ``propagated_through`` extended. Always completes: the
-    trace has ``input``, one value per instance name, and ``output``.
-    """
-    bound_steps = bind_definition(definition)
-
-    if bound_steps:
-        first_input_kind = bound_steps[0].step.INPUT
-        expected_type = _KIND_TYPES[first_input_kind]
-        if not isinstance(input_value, expected_type):
-            raise WiringError(
-                f"input artifact kind {type(input_value).__name__!r} "
-                f"does not match first step input "
-                f"{first_input_kind.value!r}"
-            )
-
-    values: dict[str, Artifact | Absent] = {INPUT_KEY: input_value}
-    step_facts: dict[str, dict[str, JsonFactValue]] = {}
-
-    current: Artifact | Absent = input_value
-    for bound in bound_steps:
-        if is_absent(current):
-            current = Absent(
-                failed_step=current.failed_step,
-                failure_code=current.failure_code,
-                cause=current.cause,
-                propagated_through=(
-                    *current.propagated_through,
-                    bound.instance_name,
-                ),
-            )
-        else:
-            try:
-                output = bound.step.apply(current)
-            except StepFailedError as exc:
-                current = Absent(
-                    failed_step=bound.instance_name,
-                    failure_code=exc.code,
-                    cause=exc.cause,
-                )
-            else:
-                current = output.value
-                if output.facts:
-                    step_facts[bound.instance_name] = dict(output.facts)
-        values[bound.instance_name] = current
-
-    values[OUTPUT_KEY] = current
-
-    coordinate = PreprocessingDefinitionCoordinate(
-        definition_id=definition.definition_id,
-        version=definition.version,
-        steps=tuple(bound.coordinate for bound in bound_steps),
-    )
-    producer = (
-        PreprocessingTraceProducer(definition=coordinate)
-        if registered
-        else ExternalPreprocessingTraceProducer(definition=coordinate)
-    )
-    return Trace(values=values, producer=producer, step_facts=step_facts)
+    """Bind an unregistered definition and run it over one input."""
+    return bind_external_preprocessing(definition).run(input_value)
 
 
 __all__ = [
-    "BoundStep",
-    "bind_definition",
+    "BoundPreprocessingRunner",
+    "bind_external_preprocessing",
+    "bind_preprocessing",
     "run_external_preprocessing",
     "run_preprocessing",
 ]

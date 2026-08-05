@@ -1,4 +1,4 @@
-"""Tests for bind_definition wiring and run_preprocessing execution."""
+"""Binding, folding, and the persisted producer coordinate."""
 
 from __future__ import annotations
 
@@ -6,24 +6,22 @@ from typing import Final
 
 import pytest
 
-from dr_code.preprocessing.definition import (
+from dr_code.preprocessing import (
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+    BoundPreprocessingRunner,
     PreprocessingDefinition,
+    PreprocessingFailureCode,
     StepSpec,
-)
-from dr_code.preprocessing.definitions import (
-    BEST_EFFORT_HUMANEVAL_DEFINITION,
-    STRICT_FIELD_MARKER_DEFINITION,
-)
-from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.runner import (
-    BoundStep,
-    bind_definition,
+    bind_external_preprocessing,
+    bind_preprocessing,
     run_external_preprocessing,
     run_preprocessing,
 )
+from dr_code.preprocessing.names import StepName
 from dr_code.trace import (
     CodeArtifact,
     ComponentSetting,
+    InspectedCodeCandidateSetArtifact,
     TextArtifact,
     Trace,
     WiringError,
@@ -49,14 +47,15 @@ def test_bind_resolves_steps() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
-    bound = bind_definition(definition)
-    assert len(bound) == 1
-    assert isinstance(bound[0], BoundStep)
-    assert bound[0].instance_name == "n"
+    bound = bind_external_preprocessing(definition)
+    assert isinstance(bound, BoundPreprocessingRunner)
+    assert len(bound.steps) == 1
+    assert bound.steps[0].instance_name == "n"
+    assert bound.definition == definition
 
 
 def test_bind_empty_definition() -> None:
-    assert bind_definition(_def(())) == ()
+    assert bind_external_preprocessing(_def(())).steps == ()
 
 
 def test_bind_unknown_step_raises_wiring_error() -> None:
@@ -69,7 +68,7 @@ def test_bind_unknown_step_raises_wiring_error() -> None:
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr(runner_mod, "REGISTRY", {})
         with pytest.raises(WiringError):
-            bind_definition(definition)
+            bind_external_preprocessing(definition)
 
 
 def test_step_spec_rejects_bad_settings_at_definition_boundary() -> None:
@@ -95,19 +94,78 @@ def test_bind_broken_kind_chain_raises_wiring_error() -> None:
         )
     )
     with pytest.raises(WiringError):
-        bind_definition(definition)
+        bind_external_preprocessing(definition)
+
+
+def test_bind_rejects_filter_before_inspection() -> None:
+    # A filter reads inspections, so it cannot follow a bare candidate set:
+    # the kind chain is what makes "filter before inspecting" unbuildable.
+    definition = _def(
+        (
+            StepSpec(
+                instance_name="e",
+                step=StepName.EXTRACT_ALL_REPRESENTATIONS,
+            ),
+            StepSpec(instance_name="f", step=StepName.FILTER_COMPILABLE),
+        )
+    )
+    with pytest.raises(WiringError):
+        bind_external_preprocessing(definition)
 
 
 def test_bind_accepts_valid_kind_chain() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
+            StepSpec(
+                instance_name="e",
+                step=StepName.EXTRACT_ALL_REPRESENTATIONS,
+            ),
             StepSpec(instance_name="s", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            StepSpec(instance_name="i", step=StepName.INSPECT_CANDIDATES),
+            StepSpec(
+                instance_name="m", step=StepName.MATERIALIZE_CANDIDATE_SET
+            ),
         )
     )
-    bound = bind_definition(definition)
-    assert len(bound) == 3
+    assert len(bind_external_preprocessing(definition).steps) == 4
+
+
+# --- a binding runs many inputs --------------------------------------
+
+
+def test_one_binding_runs_many_inputs() -> None:
+    bound = bind_external_preprocessing(
+        _def((StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),))
+    )
+    first = bound.run(TextArtifact(text="ｄｅｆ"))
+    second = bound.run(TextArtifact(text="ｃｌａｓｓ"))
+    assert first.value("output") == TextArtifact(text="def")
+    assert second.value("output") == TextArtifact(text="class")
+    # Traces are independent; a run never mutates its binding.
+    assert first.value("input") == TextArtifact(text="ｄｅｆ")
+
+
+def test_one_shot_runner_matches_the_bound_path() -> None:
+    definition = _def(
+        (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
+    )
+    value = TextArtifact(text="ｄｅｆ")
+    one_shot = run_external_preprocessing(definition, value)
+    bound = bind_external_preprocessing(definition).run(value)
+    assert one_shot.values == bound.values
+    assert one_shot.producer == bound.producer
+
+
+def test_registered_one_shot_matches_its_binding() -> None:
+    value = TextArtifact(text="def f():\n    return 1\n")
+    one_shot = run_preprocessing(
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION, value
+    )
+    bound = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION).run(
+        value
+    )
+    assert one_shot.values == bound.values
+    assert one_shot.producer == bound.producer
 
 
 # --- run: basic execution -------------------------------------------
@@ -138,17 +196,30 @@ def test_run_produces_trace_with_producer_stamp() -> None:
     assert trace.producer.definition.steps[0].component.version == "0"
 
 
-def test_registered_run_rejects_definition_coordinate_impersonation() -> None:
+def test_registered_bind_rejects_coordinate_impersonation() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),),
-        definition_id="humaneval-best-effort",
+        definition_id="exhaustive-function-candidates",
     ).model_copy(update={"version": "0"})
 
     with pytest.raises(
         ValueError,
         match="does not match its registered coordinate",
     ):
-        run_preprocessing(definition, TextArtifact(text="x"))
+        bind_preprocessing(definition)
+
+
+def test_external_binding_accepts_an_unregistered_definition() -> None:
+    # The explicit escape hatch: an unregistered definition binds, and its
+    # traces are stamped external so nothing mistakes them for registered.
+    bound = bind_external_preprocessing(
+        _def(
+            (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),),
+            definition_id="not-registered",
+        )
+    )
+    assert bound.producer.kind == "external_preprocessing"
+    assert bound.run(TextArtifact(text="x")).producer == bound.producer
 
 
 def test_producer_coordinate_distinguishes_resolved_step_settings() -> None:
@@ -181,7 +252,6 @@ def test_producer_coordinate_distinguishes_resolved_step_settings() -> None:
     assert first.definition_id == second.definition_id
     assert first.version == second.version
     assert first_producer != second_producer
-    assert first_producer.kind == "external_preprocessing"
     assert first_producer.definition.steps[0].component.settings == (
         ComponentSetting(name="tab_width", value=2),
     )
@@ -194,9 +264,14 @@ def test_run_empty_definition_output_equals_input() -> None:
 
 def test_run_input_kind_mismatch_raises_wiring_error() -> None:
     definition = _def(
-        (StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),)
+        (
+            StepSpec(
+                instance_name="e",
+                step=StepName.EXTRACT_ALL_REPRESENTATIONS,
+            ),
+        )
     )
-    # extract_candidates expects Text; pass a CodeArtifact.
+    # extract_all_representations expects Text; pass a CodeArtifact.
     with pytest.raises(WiringError):
         run_external_preprocessing(definition, CodeArtifact(source="x = 1"))
 
@@ -204,144 +279,161 @@ def test_run_input_kind_mismatch_raises_wiring_error() -> None:
 # --- run: Absent propagation -----------------------------------------
 
 
-def test_run_failed_step_yields_absent_and_complete_trace() -> None:
-    definition = _def(
+def _short_definition() -> PreprocessingDefinition:
+    return _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
+            StepSpec(instance_name="guard", step=StepName.REJECT_BLANK_INPUT),
+            StepSpec(
+                instance_name="e",
+                step=StepName.EXTRACT_ALL_REPRESENTATIONS,
+            ),
             StepSpec(instance_name="s", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
         )
     )
-    trace = run_external_preprocessing(definition, TextArtifact(text=""))
 
-    extract_val = trace.value("e")
-    assert is_absent(extract_val)
-    assert extract_val.failed_step == "e"
-    assert extract_val.failure_code == "no_alternative_produced_candidates"
-    assert extract_val.cause == "no alternative produced candidates"
+
+def test_run_failed_step_yields_absent_and_complete_trace() -> None:
+    trace = run_external_preprocessing(
+        _short_definition(), TextArtifact(text="")
+    )
+
+    guard_value = trace.value("guard")
+    assert is_absent(guard_value)
+    assert guard_value.failed_step == "guard"
+    assert guard_value.failure_code == PreprocessingFailureCode.BLANK_INPUT
+    assert guard_value.cause == "input text is empty or whitespace-only"
 
     # downstream steps inherit the same Absent, propagated_through grows
-    strip_val = trace.value("s")
-    assert is_absent(strip_val)
-    assert strip_val.failed_step == "e"
+    extract_value = trace.value("e")
+    assert is_absent(extract_value)
+    assert extract_value.failed_step == "guard"
     # the originating step's failure code propagates unchanged
-    assert strip_val.failure_code == "no_alternative_produced_candidates"
-    assert "s" in strip_val.propagated_through
+    assert extract_value.failure_code == PreprocessingFailureCode.BLANK_INPUT
+    assert "e" in extract_value.propagated_through
 
     out = trace.value("output")
     assert is_absent(out)
-    assert out.failed_step == "e"
+    assert out.failed_step == "guard"
+    assert out.propagated_through == ("e", "s")
 
     # every instance name retained + input/output
-    assert set(trace.values) == {"input", "e", "s", "sel", "output"}
+    assert set(trace.values) == {"input", "guard", "e", "s", "output"}
 
 
-def test_run_select_first_empty_set_yields_absent() -> None:
+def test_failure_evidence_lands_in_the_failing_steps_facts() -> None:
+    # Evidence describes the failing step's own output, so it lives with
+    # every other step's facts; the Absent stays a bare failure record.
+    trace = run_external_preprocessing(
+        _short_definition(), TextArtifact(text="   ")
+    )
+    assert trace.step_facts["guard"] == {"input_length": 3}
+    absent = trace.value("output")
+    assert is_absent(absent)
+    assert absent.failure_code == PreprocessingFailureCode.BLANK_INPUT
+
+
+def test_extraction_failure_evidence_names_every_representation() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="flt", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            StepSpec(
+                instance_name="e",
+                step=StepName.EXTRACT_ALL_REPRESENTATIONS,
+            ),
         )
     )
-    trace = run_external_preprocessing(
-        definition, TextArtifact(text="def broken(:")
-    )
-    out = trace.value("output")
-    assert is_absent(out)
-    assert out.failed_step == "sel"
-    assert out.failure_code == "no_candidate_survived_filtering"
-    assert out.cause == "no candidate survived filtering"
-    # rejection reason recorded as fact
-    assert "rejected_0" in trace.step_facts["flt"]
+    trace = run_external_preprocessing(definition, TextArtifact(text="  \n "))
+    assert is_absent(trace.value("output"))
+    assert set(trace.step_facts["e"].values()) == {0}
 
 
 def test_run_step_facts_merged() -> None:
     definition = _def(
         (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
+            StepSpec(
+                instance_name="e",
+                step=StepName.EXTRACT_ALL_REPRESENTATIONS,
+            ),
         )
     )
     trace = run_external_preprocessing(
         definition,
         TextArtifact(text="```python\ndef f():\n    return 1\n```"),
     )
-    assert trace.step_facts["e"] == {"alternative": "fenced_blocks"}
+    assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
-def test_run_propagated_absent_records_each_step() -> None:
-    definition = _def(
-        (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="a", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="b", step=StepName.DEDENT_CANDIDATES),
-            StepSpec(instance_name="c", step=StepName.SPLIT_ON_NAME_GUARD),
-        )
+# --- run: the registered definition end to end -----------------------
+
+
+def _registered_output(raw: str):
+    return run_preprocessing(
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION, TextArtifact(text=raw)
+    ).value("output")
+
+
+def test_registered_definition_materializes_an_inspected_set() -> None:
+    out = _registered_output(
+        "Here is the code:\n```python\ndef f(x):\n    return np.array(x)\n```"
     )
-    trace = run_external_preprocessing(definition, TextArtifact(text=""))
-    out = trace.value("output")
+    assert isinstance(out, InspectedCodeCandidateSetArtifact)
+    assert out.candidates
+    accepted = out.candidates[0]
+    assert "import numpy as np" in accepted.candidate.source
+    assert accepted.inspection.compiles
+    assert accepted.inspection.top_level_function_names == ("f",)
+
+
+def test_registered_definition_blank_input_is_its_own_failure() -> None:
+    out = _registered_output("   \n\t ")
     assert is_absent(out)
-    assert out.propagated_through == ("a", "b", "c")
+    assert out.failure_code == PreprocessingFailureCode.BLANK_INPUT
 
 
-# --- run: full fenced pipeline --------------------------------------
-
-
-def test_run_full_fenced_pipeline() -> None:
-    definition = _def(
-        (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sf", step=StepName.STRIP_FENCES),
-            StepSpec(instance_name="ng", step=StepName.SPLIT_ON_NAME_GUARD),
-            StepSpec(instance_name="rr", step=StepName.DROP_AFTER_LAST_RETURN),
-            StepSpec(instance_name="ri", step=StepName.REPAIR_IMPORT_LINES),
-            StepSpec(instance_name="ii", step=StepName.INFER_MISSING_IMPORTS),
-            StepSpec(instance_name="dd", step=StepName.DEDUPE_IMPORTS),
-            StepSpec(instance_name="fc", step=StepName.FILTER_COMPILABLE),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
-        )
+def test_registered_definition_prose_survives_nothing() -> None:
+    out = _registered_output("This is an explanation with no code at all.")
+    assert is_absent(out)
+    assert out.failure_code == (
+        PreprocessingFailureCode.NO_CANDIDATE_SURVIVED_FILTERING
     )
-    raw = (
-        "Here is the code:\n"
-        "```python\n"
-        "def f(x):\n    return np.array(x)\n```\n"
-    )
-    trace = run_external_preprocessing(definition, TextArtifact(text=raw))
-    out = trace.value("output")
-    assert isinstance(out, CodeArtifact)
-    assert "import numpy as np" in out.source
-    assert "def f(x):" in out.source
-    assert trace.step_facts["e"] == {"alternative": "fenced_blocks"}
 
 
-def test_pipeline_prose_only_yields_absent() -> None:
-    definition = _def(
-        (
-            StepSpec(instance_name="e", step=StepName.EXTRACT_CANDIDATES),
-            StepSpec(instance_name="sel", step=StepName.SELECT_FIRST),
-        )
-    )
-    trace = run_external_preprocessing(
-        definition, TextArtifact(text="just prose, no code at all")
-    )
-    assert is_absent(trace.value("output"))
+def test_registered_definition_keeps_salvage_as_an_extra_candidate() -> None:
+    # Trailing prose after the last return produces two survivors: the
+    # candidate as written and its truncation. Nothing is destroyed.
+    out = _registered_output("def f():\n    return 1\nprint('trailing')\n")
+    assert isinstance(out, InspectedCodeCandidateSetArtifact)
+    sources = [item.candidate.source for item in out.candidates]
+    assert "def f():\n    return 1\nprint('trailing')" in sources
+    assert "def f():\n    return 1" in sources
+
+
+def test_registered_definition_deduplicates_across_representations() -> None:
+    # A bare function body is read as the raw response and as a text
+    # segment; both readings reach the same source, so one survivor
+    # carries both origins.
+    out = _registered_output("def f():\n    return 1\n")
+    assert isinstance(out, InspectedCodeCandidateSetArtifact)
+    (only,) = out.candidates
+    operations = [
+        origin.operation.operation_name for origin in only.candidate.origins
+    ]
+    assert operations.count("raw_response") == 1
+    assert "text_segments" in operations
 
 
 # --- persisted producer coordinate (wire-format contract) ------------
 
-# The dicts below pin the exact persisted producer coordinate of every
-# registered definition: definition ids, versions, instance names,
-# registered component names, and every setting name and value. Setting
-# names are derived from Python field names, so a field rename silently
-# rewrites stored trace identity. A failure here means the wire format
-# changed and must be a deliberate, versioned decision — never a
-# mechanical test update.
+# The dict below pins the exact persisted producer coordinate of the
+# registered definition: definition id, version, instance names, registered
+# component names, and every setting name and value. Setting names are
+# derived from Python field names, so a field rename silently rewrites
+# stored trace identity. A failure here means the wire format changed and
+# must be a deliberate, versioned decision — never a mechanical update.
 
-_BEST_EFFORT_PRODUCER_JSON: Final[dict[str, object]] = {
+_EXHAUSTIVE_PRODUCER_JSON: Final[dict[str, object]] = {
     "kind": "preprocessing",
     "definition": {
-        "definition_id": "humaneval-best-effort",
+        "definition_id": "exhaustive-function-candidates",
         "version": "0",
         "steps": [
             {
@@ -393,21 +485,19 @@ _BEST_EFFORT_PRODUCER_JSON: Final[dict[str, object]] = {
                 },
             },
             {
-                "instance_name": "extract_candidates",
+                "instance_name": "reject_blank_input",
                 "component": {
-                    "registered_name": "extract_candidates",
+                    "registered_name": "reject_blank_input",
                     "version": "0",
-                    "settings": [
-                        {
-                            "name": "alternatives",
-                            "value": [
-                                "fenced_blocks",
-                                "markdown_wrapper",
-                                "escaped_python",
-                                "escaped_markdown_wrapper",
-                            ],
-                        }
-                    ],
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "extract_all_representations",
+                "component": {
+                    "registered_name": "extract_all_representations",
+                    "version": "0",
+                    "settings": [],
                 },
             },
             {
@@ -443,14 +533,6 @@ _BEST_EFFORT_PRODUCER_JSON: Final[dict[str, object]] = {
                 },
             },
             {
-                "instance_name": "drop_after_last_return",
-                "component": {
-                    "registered_name": "drop_after_last_return",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
                 "instance_name": "repair_import_lines",
                 "component": {
                     "registered_name": "repair_import_lines",
@@ -475,6 +557,38 @@ _BEST_EFFORT_PRODUCER_JSON: Final[dict[str, object]] = {
                 },
             },
             {
+                "instance_name": "add_last_return_salvage",
+                "component": {
+                    "registered_name": "add_last_return_salvage",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "drop_blank_candidates",
+                "component": {
+                    "registered_name": "drop_blank_candidates",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "dedupe_candidates",
+                "component": {
+                    "registered_name": "dedupe_candidates",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "inspect_candidates",
+                "component": {
+                    "registered_name": "inspect_candidates",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
                 "instance_name": "filter_plain_literal",
                 "component": {
                     "registered_name": "filter_plain_literal",
@@ -499,59 +613,17 @@ _BEST_EFFORT_PRODUCER_JSON: Final[dict[str, object]] = {
                 },
             },
             {
-                "instance_name": "select_first",
+                "instance_name": "filter_top_level_functions",
                 "component": {
-                    "registered_name": "select_first",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-        ],
-    },
-}
-
-_FIELD_MARKER_PRODUCER_JSON: Final[dict[str, object]] = {
-    "kind": "preprocessing",
-    "definition": {
-        "definition_id": "humaneval-field-marker",
-        "version": "0",
-        "steps": [
-            {
-                "instance_name": "field_marker_extract",
-                "component": {
-                    "registered_name": "field_marker_extract",
-                    "version": "0",
-                    "settings": [{"name": "field_name", "value": "code"}],
-                },
-            },
-            {
-                "instance_name": "filter_plain_literal",
-                "component": {
-                    "registered_name": "filter_plain_literal",
+                    "registered_name": "filter_top_level_functions",
                     "version": "0",
                     "settings": [],
                 },
             },
             {
-                "instance_name": "filter_code_repr",
+                "instance_name": "materialize_candidate_set",
                 "component": {
-                    "registered_name": "filter_code_repr",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
-                "instance_name": "filter_compilable",
-                "component": {
-                    "registered_name": "filter_compilable",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
-                "instance_name": "select_first",
-                "component": {
-                    "registered_name": "select_first",
+                    "registered_name": "materialize_candidate_set",
                     "version": "0",
                     "settings": [],
                 },
@@ -561,19 +633,11 @@ _FIELD_MARKER_PRODUCER_JSON: Final[dict[str, object]] = {
 }
 
 
-@pytest.mark.parametrize(
-    ("definition", "expected"),
-    [
-        (BEST_EFFORT_HUMANEVAL_DEFINITION, _BEST_EFFORT_PRODUCER_JSON),
-        (STRICT_FIELD_MARKER_DEFINITION, _FIELD_MARKER_PRODUCER_JSON),
-    ],
-    ids=["best-effort", "field-marker"],
-)
-def test_registered_definition_producer_matches_persisted_coordinate(
-    definition: PreprocessingDefinition,
-    expected: dict[str, object],
-) -> None:
+def test_registered_definition_producer_matches_persisted_coordinate() -> None:
     trace = run_preprocessing(
-        definition, TextArtifact(text="def f():\n    return 1\n")
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+        TextArtifact(text="def f():\n    return 1\n"),
     )
-    assert trace.producer.model_dump(mode="json") == expected
+    assert trace.producer.model_dump(mode="json") == (
+        _EXHAUSTIVE_PRODUCER_JSON
+    )

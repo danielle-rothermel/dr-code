@@ -4,7 +4,7 @@ One file rather than per-module files because the stages compose into a
 single pipeline and are asserted against each other: ``task`` (tasks,
 overrides, dataset parsing), ``sampling`` (row loading and task sampling),
 ``parsed_tests`` and ``parsed_code`` (structured test/code parsing),
-``code_extraction`` (candidate cleaning), ``batch_runner`` (subprocess
+``code_parsing`` (acceptance policy), ``batch_runner`` (subprocess
 batch execution), and ``scoring`` (submission outcomes). It also pins the
 ``dr_code.humaneval`` package ``__all__``, which spans every stage above.
 """
@@ -32,7 +32,8 @@ from dr_code.humaneval.batch_runner import (
     run_subprocess_batch,
     runner_script,
 )
-from dr_code.humaneval.code_extraction import apply_cleaning_with_trace
+from dr_code.humaneval.code_parsing import extract_humaneval_code
+from dr_code.preprocessing import PreprocessingFailureCode
 from dr_code.humaneval.parsed_code import ParsedCode, parse_code
 from dr_code.humaneval.parsed_tests import (
     HumanEvalTestCaseKind,
@@ -93,11 +94,7 @@ def snapshot_tasks() -> list[HumanEvalTask]:
 
 
 EXPECTED_HUMANEVAL_PUBLIC_API = {
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE",
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_ID",
-    "BEST_EFFORT_HUMANEVAL_PARSER_PROFILE_VERSION",
     "CodeExtractionResult",
-    "CodeParserProfile",
     "CompletedScore",
     "DEFAULT_HUMANEVAL_SCORING_PROFILE",
     "DEFAULT_HUMANEVAL_TIMEOUT_SECONDS",
@@ -119,16 +116,15 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE_ID",
-    "STRICT_FIELD_MARKER_PARSER_PROFILE_VERSION",
+    "PreprocessingDefinitionReference",
     "SampledHumanEvalTask",
     "SubmissionOutcome",
-    "extract_code_with_profile",
+    "accept_first_surviving",
+    "extract_humaneval_code",
+    "humaneval_runner",
     "load_humaneval_rows",
     "parse_humaneval_dataset",
     "resolve_humaneval_scoring_profile",
-    "resolve_parser_profile",
     "sample_humaneval_tasks",
     "sample_humaneval_tasks_from_rows",
     "score_humaneval_submission",
@@ -394,19 +390,30 @@ def test_parsed_code_summary_excludes_runtime_ast() -> None:
         ),
     ],
 )
-def test_cleaning_extracts_known_submission_shapes(
+def test_extraction_accepts_known_submission_shapes(
     source: str,
     expected_fragment: str,
 ) -> None:
-    candidates = apply_cleaning_with_trace(
-        source, apply_dedent=True
-    ).candidates
+    result = extract_humaneval_code(source)
 
-    assert candidates
-    assert expected_fragment in candidates[0]
-    assert validate_python_source(candidates[0]).compile_ok
-    assert "if __name__" not in candidates[0]
-    assert "print('trailing')" not in candidates[0]
+    assert result.succeeded
+    assert expected_fragment in result.accepted_code
+    assert validate_python_source(result.accepted_code).compile_ok
+    # The name guard is split away during cleaning, so it never reaches an
+    # accepted candidate.
+    assert "if __name__" not in result.accepted_code
+
+
+def test_trailing_statements_survive_alongside_their_salvage() -> None:
+    # Truncating at the last return is additive: the candidate as written
+    # is accepted, and its truncation is also present in the set rather
+    # than having replaced it.
+    result = extract_humaneval_code(
+        "def add_one(x):\n    return x + 1\nprint('trailing')\n"
+    )
+    assert result.succeeded
+    assert "print('trailing')" in result.accepted_code
+    assert result.candidate_count == 2
 
 
 def test_evaluation_passes_when_best_function_passes(
@@ -751,19 +758,19 @@ def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
     assert result.status_counts == {"passed": 1}
 
 
-def test_cleaning_returns_empty_for_blank_input() -> None:
-    assert apply_cleaning_with_trace("").candidates == []
-    assert apply_cleaning_with_trace("   \n\t  ").candidates == []
+def test_extraction_reports_blank_input_as_its_own_failure() -> None:
+    for blank in ("", "   \n\t  "):
+        result = extract_humaneval_code(blank)
+        assert not result.succeeded
+        assert result.failure_code == PreprocessingFailureCode.BLANK_INPUT
 
 
-def test_cleaning_supports_tilde_fences() -> None:
+def test_extraction_supports_tilde_fences() -> None:
     source = "~~~python\ndef add_one(x):\n    return x + 1\n~~~"
-    candidates = apply_cleaning_with_trace(
-        source, apply_dedent=True
-    ).candidates
+    result = extract_humaneval_code(source)
 
-    assert candidates
-    assert "def add_one" in candidates[0]
+    assert result.succeeded
+    assert "def add_one" in result.accepted_code
 
 
 def test_validate_python_source_reports_syntax_errors() -> None:

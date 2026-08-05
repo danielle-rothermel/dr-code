@@ -1,46 +1,29 @@
-"""Drop candidates that are code-repr assignments."""
+"""Drop candidates that are code-representation assignments."""
 
 from __future__ import annotations
 
 from typing import ClassVar
 
-from dr_code.humaneval.code_parsing import is_code_repr_assignment
 from dr_code.preprocessing.names import StepName
-from dr_code.preprocessing.steps.base import Step, StepOutput
-from dr_code.trace import (
-    Artifact,
-    ArtifactKind,
-    CodeCandidate,
-    CodeCandidateSetArtifact,
-    JsonFactValue,
+from dr_code.preprocessing.steps.inspected_filter import InspectedFilterStep
+from dr_code.preprocessing.steps.representation import (
+    is_code_representation_assignment,
 )
+from dr_code.trace import InspectedCodeCandidate
 
 
-class FilterCodeRepr(Step):
-    """Drop candidates that are ``code = "..."`` repr assignments.
-
-    Wraps ``code_parsing.is_code_repr_assignment``. Rejections are
-    recorded as facts.
-    """
+class FilterCodeRepr(InspectedFilterStep):
+    """Drop candidates that are exactly a ``code = "..."`` assignment."""
 
     NAME: ClassVar[StepName] = StepName.FILTER_CODE_REPR
     VERSION: ClassVar[str] = "0"
-    INPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
-    OUTPUT: ClassVar[ArtifactKind] = ArtifactKind.CODE_CANDIDATE_SET
 
-    def apply(self, value: Artifact) -> StepOutput:
-        assert isinstance(value, CodeCandidateSetArtifact)
-        survivors: list[CodeCandidate] = []
-        facts: dict[str, JsonFactValue] = {}
-        for index, candidate in enumerate(value.candidates):
-            if is_code_repr_assignment(candidate.source):
-                facts[f"rejected_{index}"] = "code repr assignment"
-            else:
-                survivors.append(candidate)
-        return StepOutput(
-            value=CodeCandidateSetArtifact(candidates=tuple(survivors)),
-            facts=facts,
-        )
+    def rejection_reason(
+        self, inspected: InspectedCodeCandidate
+    ) -> str | None:
+        if is_code_representation_assignment(inspected.candidate.source):
+            return "code representation assignment"
+        return None
 
 
 __all__ = ["FilterCodeRepr"]

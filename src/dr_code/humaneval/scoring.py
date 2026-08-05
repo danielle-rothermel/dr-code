@@ -19,8 +19,9 @@ from pydantic import (
 from dr_code.humaneval.batch_runner import evaluate_humaneval_code
 from dr_code.humaneval.code_parsing import (
     CodeExtractionResult,
-    extract_code_with_profile,
+    extract_humaneval_code,
 )
+from dr_code.preprocessing import PreprocessingFailureCode
 from dr_code.humaneval.profiles import (
     HUMANEVAL_SCORING_PROFILE_ID,
     HUMANEVAL_SCORING_PROFILE_VERSION,
@@ -101,11 +102,8 @@ def score_humaneval_submission(
         scoring_profile_version=scoring_profile_version,
     )
 
-    extraction = extract_code_with_profile(
-        raw_submission,
-        profile=scoring_profile.parser_profile,
-    )
-    if extraction.extracted_code is None:
+    extraction = extract_humaneval_code(raw_submission)
+    if extraction.accepted_code is None:
         outcome = extraction_failure_outcome(extraction)
         return CompletedScore(
             raw_submission=raw_submission,
@@ -119,9 +117,9 @@ def score_humaneval_submission(
     try:
         evaluation = evaluate_humaneval_code(
             task=task,
-            candidate_code=extraction.extracted_code,
+            candidate_code=extraction.accepted_code,
             timeout_seconds=scoring_profile.timeout_seconds,
-            candidate_ast=extraction.parsed_candidate,
+            candidate_ast=extraction.accepted_tree,
             run_in_sandbox=run_in_sandbox,
         )
     except EvaluationHarnessError as exc:
@@ -164,7 +162,12 @@ def score_humaneval_submission(
 def extraction_failure_outcome(
     extraction: CodeExtractionResult,
 ) -> SubmissionOutcome:
-    if extraction.extraction_error == "empty raw submission":
+    """Map preprocessing's failure code onto a submission outcome.
+
+    Blank input is its own outcome: an empty response is a different
+    finding from a response that carried no recoverable code.
+    """
+    if extraction.failure_code == PreprocessingFailureCode.BLANK_INPUT:
         return SubmissionOutcome.EMPTY_SUBMISSION
     return SubmissionOutcome.EXTRACTION_FAILED
 

@@ -112,9 +112,18 @@ def infer_necessary_imports(source: str) -> str:
 
 
 def _parse_or_none(text: str) -> ast.AST | None:
+    """Parse ``text``, or ``None`` when it is not parseable Python.
+
+    ``ValueError`` is caught alongside ``SyntaxError`` because text that
+    cannot be encoded at all — a lone surrogate, a null byte — raises from
+    ``ast.parse`` rather than failing to parse. Such text is unusable
+    input, not a repair opportunity, so it passes through untouched and is
+    rejected by the compilability filter, matching
+    ``code_analysis.validate_python_source_with_ast``.
+    """
     try:
         return ast.parse(text)
-    except SyntaxError:
+    except (SyntaxError, ValueError):
         return None
 
 
