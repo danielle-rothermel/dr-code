@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final, get_args
 
 from dr_code.trace.absent import Absent
-from dr_code.trace.artifacts import Artifact
+from dr_code.trace.artifacts import Artifact, JsonArtifact
 from dr_code.trace.facts import (
     FactError,
     JsonFactValue,
@@ -40,6 +41,22 @@ class WiringError(Exception):
     raise this error when they encounter incompatible wiring rather than
     recording it as a per-input outcome.
     """
+
+
+def _snapshot_value(value: TraceValue) -> TraceValue:
+    """The value as the trace will hold it, independent of the caller.
+
+    Every trace value is a frozen model, but freezing only bars attribute
+    assignment: it does not stop a caller from mutating a container the
+    model still points at. ``JsonArtifact.payload`` is the one trace value
+    holding arbitrary nested ``dict``/``list`` data, so it is the only one
+    that needs copying — every other artifact carries strings, tuples of
+    frozen models, or scalars, none of which can be mutated in place.
+    """
+
+    if isinstance(value, JsonArtifact):
+        return JsonArtifact(payload=copy.deepcopy(value.payload))
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +103,11 @@ class Trace:
             snapshot_facts = validate_step_facts(self.step_facts)
         except FactError as exc:
             raise WiringError(f"invalid step facts: {exc}") from exc
-        object.__setattr__(self, "values", dict(self.values))
+        object.__setattr__(
+            self,
+            "values",
+            {key: _snapshot_value(val) for key, val in self.values.items()},
+        )
         object.__setattr__(self, "step_facts", snapshot_facts)
 
     def value(self, key: str) -> TraceValue:

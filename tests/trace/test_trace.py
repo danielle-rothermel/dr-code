@@ -12,6 +12,7 @@ from dr_code.trace import (
     INPUT_KEY,
     OUTPUT_KEY,
     Absent,
+    JsonArtifact,
     TextArtifact,
     Trace,
     TraceValue,
@@ -102,6 +103,27 @@ def test_trace_snapshots_values_against_later_caller_mutation() -> None:
 
     assert set(trace.values) == {INPUT_KEY, OUTPUT_KEY}
     assert trace.value(INPUT_KEY) == TextArtifact(text="input")
+
+
+def test_trace_snapshots_json_payloads_against_later_caller_mutation() -> None:
+    # Freezing a model bars attribute assignment but not in-place mutation
+    # of a container it points at. JsonArtifact.payload is the only trace
+    # value holding arbitrary nested dict/list data, so it is deep-copied
+    # at construction -- otherwise a caller still holding the artifact
+    # could change what an existing trace records, and what it serializes.
+    payload = {"task_id": "HumanEval/0", "nested": {"names": ["a"]}}
+    artifact = JsonArtifact(payload=payload)
+    values = _minimal_values()
+    values["task"] = artifact
+    trace = Trace(values=values, producer=EXTERNAL_PRODUCER)
+
+    payload["task_id"] = "mutated after construction"
+    payload["nested"]["names"].append("b")
+    artifact.payload["nested"]["names"].append("c")
+
+    assert trace.value("task") == JsonArtifact(
+        payload={"task_id": "HumanEval/0", "nested": {"names": ["a"]}}
+    )
 
 
 def test_trace_deep_copies_step_facts_against_later_mutation() -> None:
