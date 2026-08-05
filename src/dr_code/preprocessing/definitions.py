@@ -58,25 +58,35 @@ _TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
     _spec("trim_outer_blanks", StepName.TRIM_OUTER_BLANKS),
 )
 
-#: Candidate-local cleaning, every step extending the lineage of the
+#: Candidate-local shaping, every step extending the lineage of the
 #: candidate it rewrites: strip fences, dedent, string-aware smart-quote
 #: recovery (so smart-delimited code compiles while quote *contents*
-#: survive), split on the ``if __name__`` guard, then repair / infer /
-#: dedupe imports.
+#: survive), then split on the ``if __name__`` guard.
 #:
-#: Import inference belongs here, with the other cleaning, and not after
-#: inspection: it rewrites a candidate's source, and an inspection must
-#: always describe the exact source it accompanies. Running it after
-#: inspection would leave every stored inspection describing text the
+#: These steps and the import steps below both belong before inspection,
+#: never after it: they rewrite a candidate's source, and an inspection
+#: must always describe the exact source it accompanies. Running either
+#: after inspection would leave every stored inspection describing text the
 #: candidate no longer holds, and the filters reading those inspections
 #: would be answering questions about a source that no longer exists.
 #: Placing every source-mutating step before ``inspect_candidates`` is what
 #: makes one parse per candidate both correct and sufficient.
-_CANDIDATE_CLEANING: Final[tuple[StepSpec, ...]] = (
+_CANDIDATE_SHAPING: Final[tuple[StepSpec, ...]] = (
     _spec("strip_fences", StepName.STRIP_FENCES),
     _spec("dedent", StepName.DEDENT_CANDIDATES),
     _spec("normalize_smart_quotes", StepName.NORMALIZE_SMART_QUOTES),
     _spec("split_on_name_guard", StepName.SPLIT_ON_NAME_GUARD),
+)
+
+#: Import repair and inference, running after the last-return salvage.
+#:
+#: Inference is parse-driven: it no-ops on a source it cannot parse. A
+#: candidate whose only defect is trailing prose is unparseable until the
+#: salvage truncates it, so inference must see the salvage's output or the
+#: truncated candidate is accepted still missing the import its body needs.
+#: These steps stay before ``inspect_candidates`` like every other
+#: source-mutating step, so inspections still describe exact sources.
+_CANDIDATE_IMPORTS: Final[tuple[StepSpec, ...]] = (
     _spec("repair_import_lines", StepName.REPAIR_IMPORT_LINES),
     _spec("infer_missing_imports", StepName.INFER_MISSING_IMPORTS),
     _spec("dedupe_imports", StepName.DEDUPE_IMPORTS),
@@ -101,16 +111,18 @@ _CANDIDATE_FILTERS: Final[tuple[StepSpec, ...]] = (
 #: 2. Reject blank input, so "there was nothing here" is its own failure.
 #: 3. Extract candidates additively from every supported representation —
 #:    no representation shadows another, and nothing is chosen yet.
-#: 4. Clean each candidate, extending its lineage. Import inference is part
-#:    of cleaning, for the ordering reason documented above.
+#: 4. Shape each candidate, extending its lineage.
 #: 5. Add last-return truncations as *additional* candidates, so the
 #:    salvage never destroys the candidate it was salvaged from.
-#: 6. Drop blank candidates that cleaning emptied.
-#: 7. Merge exact-duplicate sources, concatenating their lineages.
-#: 8. Inspect each remaining source exactly once — the last word on
+#: 6. Repair and infer imports, after the salvage so a candidate that only
+#:    becomes parseable once truncated still gets the imports its body
+#:    needs — parse-driven inference no-ops on unparseable source.
+#: 7. Drop blank candidates that shaping emptied.
+#: 8. Merge exact-duplicate sources, concatenating their lineages.
+#: 9. Inspect each remaining source exactly once — the last word on
 #:    structure, and the last time any source is parsed.
-#: 9. Filter on the stored inspections and sources.
-#: 10. Materialize everything that survived, in order. ``candidate_ordinal``
+#: 10. Filter on the stored inspections and sources.
+#: 11. Materialize everything that survived, in order. ``candidate_ordinal``
 #:     indexes this final set.
 EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION: Final[PreprocessingDefinition] = (
     PreprocessingDefinition(
@@ -123,8 +135,9 @@ EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION: Final[PreprocessingDefinition] = (
                 "extract_all_representations",
                 StepName.EXTRACT_ALL_REPRESENTATIONS,
             ),
-            *_CANDIDATE_CLEANING,
+            *_CANDIDATE_SHAPING,
             _spec("add_last_return_salvage", StepName.ADD_LAST_RETURN_SALVAGE),
+            *_CANDIDATE_IMPORTS,
             _spec("drop_blank_candidates", StepName.DROP_BLANK_CANDIDATES),
             _spec("dedupe_candidates", StepName.DEDUPE_CANDIDATES),
             _spec("inspect_candidates", StepName.INSPECT_CANDIDATES),

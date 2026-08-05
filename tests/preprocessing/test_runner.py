@@ -533,6 +533,14 @@ _EXHAUSTIVE_PRODUCER_JSON: Final[dict[str, object]] = {
                 },
             },
             {
+                "instance_name": "add_last_return_salvage",
+                "component": {
+                    "registered_name": "add_last_return_salvage",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
                 "instance_name": "repair_import_lines",
                 "component": {
                     "registered_name": "repair_import_lines",
@@ -552,14 +560,6 @@ _EXHAUSTIVE_PRODUCER_JSON: Final[dict[str, object]] = {
                 "instance_name": "dedupe_imports",
                 "component": {
                     "registered_name": "dedupe_imports",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
-                "instance_name": "add_last_return_salvage",
-                "component": {
-                    "registered_name": "add_last_return_salvage",
                     "version": "0",
                     "settings": [],
                 },

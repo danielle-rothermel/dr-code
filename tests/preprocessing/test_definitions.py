@@ -39,10 +39,10 @@ _EXPECTED_STEP_INSTANCES: Final[tuple[str, ...]] = (
     "dedent",
     "normalize_smart_quotes",
     "split_on_name_guard",
+    "add_last_return_salvage",
     "repair_import_lines",
     "infer_missing_imports",
     "dedupe_imports",
-    "add_last_return_salvage",
     "drop_blank_candidates",
     "dedupe_candidates",
     "inspect_candidates",
@@ -155,6 +155,17 @@ def test_every_source_mutating_step_precedes_inspection() -> None:
             f"{mutating} rewrites candidate sources and must run before "
             "inspect_candidates"
         )
+
+
+def test_import_inference_follows_the_last_return_salvage() -> None:
+    # Inference is parse-driven and no-ops on source it cannot parse, so a
+    # candidate that only becomes parseable once the salvage truncates it
+    # would otherwise be accepted still missing the import its body needs.
+    instances = [spec.instance_name for spec in _definition().steps]
+
+    assert instances.index("add_last_return_salvage") < instances.index(
+        "infer_missing_imports"
+    )
 
 
 def test_dedupe_precedes_inspection_and_filters_follow_it() -> None:

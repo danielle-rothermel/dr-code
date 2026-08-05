@@ -14,10 +14,12 @@
 - One registered definition, `exhaustive-function-candidates@0`, replaces
   the two previous registered definitions. It reads every supported
   representation additively rather than taking the first that succeeds,
-  cleans each candidate, adds last-return truncation as an additional
-  candidate, drops blanks, merges exact duplicates while concatenating
-  their lineages, inspects each source exactly once, filters on the stored
-  inspection, and materializes every survivor.
+  shapes each candidate, adds last-return truncation as an additional
+  candidate, repairs and infers imports (after the truncation, so a
+  candidate that only becomes parseable once truncated still gets the
+  imports its body needs), drops blanks, merges exact duplicates while
+  concatenating their lineages, inspects each source exactly once, filters
+  on the stored inspection, and materializes every survivor.
 - Removed the first-success strategy ladder and its public strategy
   registry, the alternatives step base, destructive last-return
   truncation, single-candidate selection, and the redundant pass-through

@@ -416,6 +416,21 @@ def test_trailing_statements_survive_alongside_their_salvage() -> None:
     assert result.candidate_count == 2
 
 
+def test_salvaged_candidate_still_gets_its_inferred_imports() -> None:
+    # A submission whose only defect is trailing prose is unparseable until
+    # the last-return salvage truncates it. Import inference is parse-driven
+    # and no-ops on unparseable source, so it must run after the salvage --
+    # otherwise the truncated candidate is accepted still referencing `np`
+    # with no import, and fails at runtime with NameError.
+    result = extract_humaneval_code(
+        "def f(x):\n    return np.array(x)\nThis is trailing prose.\n"
+    )
+
+    assert result.succeeded
+    assert "import numpy as np" in result.accepted_code
+    assert validate_python_source(result.accepted_code).compile_ok
+
+
 def test_evaluation_passes_when_best_function_passes(
     local_runner: SandboxRunner,
 ) -> None:
