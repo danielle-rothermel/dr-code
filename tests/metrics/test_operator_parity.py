@@ -492,10 +492,13 @@ def test_code_test_nonzero_exit_attributed_to_candidate(
 def test_code_test_malformed_stdout_attributed_to_candidate(
     task, good_submission, code_test_trace, scripted_runner
 ) -> None:
-    """Malformed runner stdout (candidate shares the runner's stdout) is
-    candidate data: it becomes all-ERROR case statuses in a measured record,
-    not a batch-aborting error. Covers the JSON-decode / shape / case-id
-    validation branches."""
+    """Malformed runner stdout is candidate data: it becomes all-ERROR case
+    statuses in a measured record, not a batch-aborting error. Covers the
+    JSON-decode / shape / case-id validation branches.
+
+    The runner reserves its results channel, so well-formed stdout is trusted
+    output; malformed stdout still means a broken batch, and metrics attributes
+    a broken batch to the candidate rather than aborting."""
     for bad_stdout in (
         "this is not json{",  # JSON decode failure
         '{"not": "a list"}',  # wrong shape (object, not list)
