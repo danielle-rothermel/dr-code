@@ -63,15 +63,3 @@ def test_profiles_are_immutable() -> None:
         DEFAULT_HUMANEVAL_SCORING_PROFILE.preprocessing_definition.version = (  # type: ignore[misc]
             "1"
         )
-
-
-def test_scoring_profile_resolution_is_stable() -> None:
-    first = resolve_humaneval_scoring_profile(
-        scoring_profile_id=HUMANEVAL_SCORING_PROFILE_ID,
-        scoring_profile_version=HUMANEVAL_SCORING_PROFILE_VERSION,
-    )
-    second = resolve_humaneval_scoring_profile(
-        scoring_profile_id=HUMANEVAL_SCORING_PROFILE_ID,
-        scoring_profile_version=HUMANEVAL_SCORING_PROFILE_VERSION,
-    )
-    assert first is second

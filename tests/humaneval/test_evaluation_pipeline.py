@@ -89,13 +89,6 @@ def raw_snapshot() -> HumanEvalRawRowsSnapshot:
     )
 
 
-@pytest.fixture(scope="module")
-def snapshot_tasks() -> list[HumanEvalTask]:
-    return parse_humaneval_dataset(
-        load_humaneval_rows(snapshot_path=SNAPSHOT_PATH)
-    )
-
-
 EXPECTED_HUMANEVAL_PUBLIC_API = {
     "CodeExtractionResult",
     "CompletedScore",
@@ -270,24 +263,35 @@ def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
 
 def test_raw_row_snapshot_rehydrates_byte_equal_checks(
     raw_snapshot: HumanEvalRawRowsSnapshot,
-    snapshot_tasks: list[HumanEvalTask],
 ) -> None:
+    snapshot_rows = [row.model_dump(mode="json") for row in raw_snapshot.rows]
+    loaded_rows = load_humaneval_rows(snapshot_path=SNAPSHOT_PATH)
+
     assert raw_snapshot.header.override_set == HUMANEVAL_OVERRIDE_SET
-    assert [task.task_id for task in snapshot_tasks] == [
+    assert loaded_rows == snapshot_rows
+
+    tasks = parse_humaneval_dataset(loaded_rows)
+    assert [task.task_id for task in tasks] == [
         row.task_id for row in raw_snapshot.rows
     ]
 
-    fresh_tasks = parse_humaneval_dataset(
-        [row.model_dump(mode="json") for row in raw_snapshot.rows]
+    override_entry = HUMANEVAL_OVERRIDE_SET.entries[0]
+    override_task = next(
+        task for task in tasks if task.task_id == override_entry.task_id
     )
-    for fresh_task, snapshot_task in zip(
-        fresh_tasks,
-        snapshot_tasks,
-        strict=True,
-    ):
-        assert _check_payload_bytes(snapshot_task) == _check_payload_bytes(
-            fresh_task
-        )
+    assert override_task.notes == override_entry.override.notes
+    assert (
+        override_task.canonical_solution
+        == override_entry.override.canonical_solution
+    )
+    for replacement in override_entry.override.test_replacements:
+        assert replacement.old not in override_task.test
+        assert replacement.replacement in override_task.test
+
+    for task in tasks:
+        generated_checks = _check_payload_bytes(task)
+        assert generated_checks
+        assert all(generated_checks)
 
 
 @pytest.mark.parametrize(
@@ -1034,6 +1038,17 @@ def test_score_humaneval_submission_reports_empty_submission() -> None:
     assert result.extraction.raw_submission == " \n\t "
     assert result.outcome is SubmissionOutcome.EMPTY_SUBMISSION
     assert result.evaluation is None
+
+
+def test_scoring_reports_extraction_failure_without_top_level_functions() -> (
+    None
+):
+    result = score_humaneval_submission(
+        raw_submission="x = 1\n",
+        task=_task(),
+    )
+
+    assert result.outcome is SubmissionOutcome.EXTRACTION_FAILED
 
 
 def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
