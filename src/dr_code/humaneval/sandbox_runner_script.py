@@ -6,14 +6,16 @@
 # (it reads stdin at import time). The host reads this file's text via
 # ``importlib.resources`` and executes it as a string; it does not import it.
 #
-# The results channel is captured before any candidate code runs and is never
-# rebound afterwards, so only ``emit_results`` can write to it. Python-level
-# candidate output goes to the bounded stderr instead: ``sys.stdout`` and
-# ``sys.__stdout__`` both point at stderr for the rest of the program, so a
-# candidate that prints -- including well-formed protocol JSON -- cannot reach
-# the channel the host parses. Direct file-descriptor writes (``os.write(1,
-# ...)``) bypass the Python-level objects and remain outside what this
-# redirection can contain.
+# The results channel is captured before any candidate code runs, and
+# ``sys.stdout`` and ``sys.__stdout__`` both point at the bounded stderr for
+# the rest of the program, so a candidate that prints -- including
+# well-formed protocol JSON -- does not reach the channel the host parses.
+# This contains accidental and naive collisions only, not an adversarial
+# candidate: code executed in this interpreter can still reach the runner's
+# own module globals (``protocol_stdout``, ``emit_results``) or write to
+# file descriptor 1 directly (``os.write(1, ...)``) and forge its own
+# task's case results. Single-task result integrity against a deliberately
+# adversarial candidate is not a guarantee this script can make.
 import json
 import sys
 import time

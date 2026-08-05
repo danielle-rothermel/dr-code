@@ -19,8 +19,11 @@ SIGKILL, interpreter crash, SystemExit, output floods) are scored as case
 errors or timeouts; ``EvaluationHarnessError``/``HarnessFailure`` is reserved
 for sandbox or runtime breakage so operators can alert on it. The runner
 captures the protocol stdout handle before candidate code runs and redirects
-Python-level candidate output to stderr, so candidate prints cannot reach the
-results channel.
+Python-level candidate output to stderr, so accidental candidate prints do
+not reach the results channel. A deliberately adversarial candidate can
+still forge its own task's case results through the runner's module globals
+or a direct write to file descriptor 1; cross-task and cross-candidate
+score integrity does not depend on this channel.
 """
 
 from __future__ import annotations

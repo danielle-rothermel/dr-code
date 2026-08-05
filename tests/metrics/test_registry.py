@@ -27,9 +27,11 @@ def _registered_result_classes() -> dict[str, type]:
     discovered: dict[str, type] = {}
 
     def collect(result_class: type) -> None:
-        if not issubclass(result_class, OperatorResult):
+        if not isinstance(result_class, type) or not issubclass(
+            result_class, OperatorResult
+        ):
             raise AssertionError(
-                f"{result_class.__name__} is not an OperatorResult"
+                f"{result_class!r} is not an OperatorResult class"
             )
         discovered[result_class.__name__] = result_class
         for subclass in result_class.__subclasses__():

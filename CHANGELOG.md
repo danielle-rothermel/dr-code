@@ -15,9 +15,11 @@
 - The sandbox runner reserves its results channel. It captures the protocol
   stdout handle before candidate code runs, points `sys.stdout` at the bounded
   stderr, and writes results only through `emit_results`, so a candidate that
-  prints well-formed protocol JSON cannot add to or replace what the host
-  parses; candidate output is preserved on stderr as a diagnostic. Direct
-  file-descriptor writes remain outside what this contains.
+  prints — including well-formed protocol JSON — does not collide with what
+  the host parses; candidate output is preserved on stderr as a diagnostic.
+  This contains accidental collisions, not an adversarial candidate, which
+  can still forge its own task's case results through the runner's module
+  globals or a direct write to file descriptor 1.
 - `HumanEvalTask` is a `FrozenModel` carrying `notes` as a tuple. Its
   validator always recomputes `parsed` and `parsed_tests` from
   `prompt + canonical_solution` and `test`, and rejects a supplied value that
