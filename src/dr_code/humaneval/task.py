@@ -133,10 +133,6 @@ def _results_for_function(
     ]
 
 
-# PARITY COORDINATION: ``dr_code.metrics.operators.code_test`` implements the
-# same selection rule over bare statuses instead of ``EvaluationCaseResult``
-# objects. ``tests/metrics/test_operator_parity.py`` pins the selectors equal;
-# behavior changes must update both implementations.
 def select_best_function_name(
     *,
     function_names: list[str],
@@ -191,9 +187,6 @@ class EvaluationTaskResult(BaseModel):
             and result.status is not EvaluationCaseStatus.PASSED
         ]
 
-    # PARITY COORDINATION: duplicated by the coverage_complete value in
-    # ``dr_code.metrics.operators.code_test.CodeTest.compute``. The metrics
-    # parity test keeps both active scoring paths equal.
     @computed_field
     @property
     def coverage_complete(self) -> bool:

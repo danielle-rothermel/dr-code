@@ -532,74 +532,105 @@ def test_code_test_sandbox_error_still_propagates(
         )
 
 
-def test_code_test_selector_parity_with_task_selector() -> None:
-    """Parity guard for the duplicated best-function truth: the operator's
-    ``_best_function_name`` and ``humaneval.task.select_best_function_name``
-    agree over the same synthetic status sets."""
-    from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
-    from dr_code.humaneval.task import (
-        EvaluationCaseResult,
-        EvaluationCaseStatus,
-        select_best_function_name,
+def test_code_test_requests_are_the_canonical_batch_request(task) -> None:
+    """The operator does not build its own runner payload.
+
+    Both scored paths reach the sandbox through
+    ``batch_runner.build_humaneval_batch_request``, so for one task, candidate,
+    and function name the request the operator submits is byte-identical to the
+    one the direct batch path submits. Equality on ``input_json`` is the guard
+    that matters: it is the payload the runner parses, so any divergence in
+    check construction, support code, or field naming shows up here.
+    """
+    from dr_code.humaneval.batch_runner import build_humaneval_batch_request
+    from dr_code.metrics.operators.code_test import CodeTest, CodeTestSettings
+    from dr_code.trace import CodeArtifact, JsonArtifact
+
+    candidate = (
+        "def add_one(x):\n    return x + 1\ndef decoy(x):\n    return x - 1\n"
     )
-    from dr_code.metrics.operators.code_test import (
-        _best_function_name,
-        _passed_counts,
+    timeout_seconds = 5.0
+    operator = CodeTest(CodeTestSettings(timeout_seconds=timeout_seconds))
+    requests = operator.execution_requests(
+        CodeArtifact(source=candidate),
+        {"task": JsonArtifact(payload=task.model_dump(mode="json"))},
     )
 
-    P = EvaluationCaseStatus.PASSED
-    F = EvaluationCaseStatus.FAILED
+    function_names = ["add_one", "decoy"]
+    assert len(requests) == len(function_names)
+    for request, function_name in zip(requests, function_names, strict=True):
+        canonical = build_humaneval_batch_request(
+            task=task,
+            candidate_code=candidate,
+            function_name=function_name,
+            timeout_seconds=timeout_seconds,
+        )
+        assert request.input_json == canonical.input_json, function_name
+        assert request.source == canonical.source, function_name
+        assert request.timeout_seconds == canonical.timeout_seconds
 
-    scenarios = [
-        # (function_names, entry_point, statuses_by_name)
-        (["add_one"], "add_one", {"add_one": [P, P]}),
-        (
-            ["add_one", "decoy"],
-            "add_one",
-            {"add_one": [P, P], "decoy": [F, F]},
-        ),
-        # Decoy passes more cases: mechanical max ignores the entry point.
-        (
-            ["add_one", "decoy"],
-            "add_one",
-            {"add_one": [P, F], "decoy": [P, P]},
-        ),
-        # Tie on passes: entry-point tiebreak wins.
-        (["add_one", "decoy"], "add_one", {"add_one": [P], "decoy": [P]}),
-        # Tie, neither is the entry point: earliest index wins.
-        (["a", "b"], "entry", {"a": [P], "b": [P]}),
-        # No statuses recorded at all.
-        (["a", "b"], "a", {}),
-        ([], "a", {}),
-    ]
 
-    for function_names, entry_point, statuses_by_name in scenarios:
-        results = [
-            EvaluationCaseResult(
-                task_id="t",
-                case_id=f"{name}-{index}",
-                function_name=name,
-                status=status,
-                test_type=HumanEvalTestCaseKind.INPUT_RESULT,
-            )
-            for name, statuses in statuses_by_name.items()
-            for index, status in enumerate(statuses)
-        ]
-        operator_pick = _best_function_name(
-            function_names=function_names,
-            entry_point=entry_point,
-            passed_counts=_passed_counts(statuses_by_name),
-        )
-        task_pick = select_best_function_name(
-            function_names=function_names,
-            entry_point=entry_point,
-            results=results,
-        )
-        assert operator_pick == task_pick, (
-            function_names,
-            entry_point,
-            statuses_by_name,
-        )
+def test_code_test_function_names_come_from_the_shared_rule(task) -> None:
+    """One top-level-function rule feeds both paths.
+
+    The operator submits one request per name that
+    ``batch_runner.top_level_function_names`` returns, so the two paths cannot
+    disagree about which functions get evaluated.
+    """
+    from dr_code.humaneval.batch_runner import top_level_function_names
+    from dr_code.metrics.operators.code_test import CodeTest, CodeTestSettings
+    from dr_code.trace import CodeArtifact, JsonArtifact
+
+    # Async and duplicate top-level names are both in scope of the rule.
+    candidate = (
+        "def add_one(x):\n    return x + 1\n"
+        "async def fetch(x):\n    return x\n"
+        "def add_one(x):\n    return x + 2\n"
+        "class Ignored:\n    def method(self):\n        return 0\n"
+    )
+    operator = CodeTest(CodeTestSettings())
+    requests = operator.execution_requests(
+        CodeArtifact(source=candidate),
+        {"task": JsonArtifact(payload=task.model_dump(mode="json"))},
+    )
+
+    names = top_level_function_names(candidate)
+    assert names == ["add_one", "fetch", "add_one"]
+    assert len(requests) == len(names)
+
+
+def test_code_test_selection_is_the_task_selection_rule(
+    task, local_runner, code_test_trace, evaluate_oracle
+) -> None:
+    """The operator's best-function fact is the task selector's answer.
+
+    The operator builds an ``EvaluationTaskResult`` and reads
+    ``best_function_name`` off it, so ``select_best_function_name`` is the only
+    selection rule in the codebase. This pins the observable end of that: a
+    decoy that passes more cases wins over the entry point, mechanically.
+    """
+    from dr_code.humaneval.task import select_best_function_name
+
+    # ``decoy`` matches the task's expectations; the entry point does not.
+    candidate = (
+        "def add_one(x):\n    return x - 1\ndef decoy(x):\n    return x + 1\n"
+    )
+    record = _extract(
+        _definition([_code_test_question()]),
+        code_test_trace(candidate, task),
+        run_in_sandbox=local_runner,
+    )[0]
+    oracle = evaluate_oracle(
+        task, candidate, timeout_seconds=5.0, run_in_sandbox=local_runner
+    )
+
+    assert _value(record, "best_function_name") == "decoy"
+    assert _value(record, "best_function_name") == oracle.best_function_name
+    assert oracle.best_function_name == select_best_function_name(
+        function_names=oracle.function_names,
+        entry_point=task.entry_point,
+        results=oracle.results,
+    )
 
 
 def test_code_test_best_function_is_mechanical_max_passes(
