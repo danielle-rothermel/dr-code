@@ -15,8 +15,8 @@ class AddMultipleSolutions(Corruption):
     """Emit a "Option 1 / Option 2" message with two fenced blocks.
 
     The first block is the real source. The second block is a trivial
-    placeholder. The recovery contract just requires the fence extractor
-    to find both candidates — the validator picks the one that parses.
+    placeholder that raises ``NotImplementedError``, so the corrupted text
+    carries two fenced candidates instead of one.
     """
 
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_MULTIPLE_SOLUTIONS

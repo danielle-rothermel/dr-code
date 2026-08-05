@@ -4,8 +4,8 @@ Holds the pydantic/dataclass evaluation models (tasks, case/task results and
 summaries, runner payload shapes), the ``EvaluationHarnessError`` raised for
 sandbox or runtime breakage, best-function selection, and the benchmark
 override table plus dataset parsing. Test parsing lives in
-``parsed_tests``; subprocess batch orchestration and the sandbox runner
-script live in ``batch_runner``.
+``parsed_tests``; subprocess batch orchestration lives in ``batch_runner``,
+and the standalone runner program lives in ``sandbox_runner_script``.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Pure HumanEval scoring primitives.
+"""HumanEval submission scoring: parse, execute in the sandbox, classify.
 
 `SubmissionOutcome` is part of the score contract so consumers can persist
 why a submission scored zero without parsing error text.

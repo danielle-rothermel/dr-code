@@ -1,8 +1,8 @@
 """Load HumanEvalPlus ground-truth solutions.
 
-The "Plus" variant matters because it ships extended unit tests — useful
-for future opt-in execution-based equivalence checks. The plain
-`canonical_solution` + `prompt` text is used for our syntactic ground truth.
+The "Plus" variant ships extended unit tests, which are carried on the task
+model's `test` field. The plain `canonical_solution` + `prompt` text is what
+is used for our syntactic ground truth.
 
 If network access is unavailable, callers must explicitly opt into the offline
 JSON snapshot under `tests/corpus/humanevalplus_snapshot.json`.

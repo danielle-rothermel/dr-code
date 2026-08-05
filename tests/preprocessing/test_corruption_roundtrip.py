@@ -18,13 +18,13 @@ running the best-effort current definition partitions the recipes empirically
   - ``dead_code`` / ``renamed_locals`` / ``string_form_swap`` rewrite the AST
     (extra statements, renamed bindings, swapped string forms) — an extracted
     candidate compiles but is not semantically equivalent to the original.
-    These four are the independently-verified, ratified non-recoverable set.
   - ``truncated_midfn`` / ``truncated_and_unfenced`` break the source at an
     RNG-chosen point, so the outcome is seed-dependent and never reliably
     equivalent.
 
-  Exempting these from the *equivalence* assertion is correct behaviour, not a
-  gap. For every exempted recipe we still assert something meaningful:
+  These six recipes are the independently-verified, ratified non-recoverable
+  set, listed in ``NON_RECOVERABLE_RECIPES``. Exempting them from the
+  *equivalence* assertion is correct behaviour, not a gap. For every exempted recipe we still assert something meaningful:
   **output parity with ``extract_code_with_profile``**. Both APIs must give up
   or return the same non-equivalent source. No exempted recipe sits in an
   assertion-free bucket.
