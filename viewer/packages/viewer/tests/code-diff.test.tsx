@@ -10,18 +10,20 @@ describe("CodeDiff", () => {
   it(
     "computes and renders a diff from two plain strings",
     async () => {
-      render(<CodeDiff oldContent={OLD_CONTENT} newContent={NEW_CONTENT} />);
+      const { container } = render(
+        <CodeDiff oldContent={OLD_CONTENT} newContent={NEW_CONTENT} />,
+      );
       await waitFor(
         () => {
-          expect(document.querySelector(".drv-code-diff-pending")).toBeNull();
+          expect(container.querySelector(".drv-code-diff-pending")).toBeNull();
         },
         { timeout: 10_000 },
       );
-      const container = document.querySelector(".drv-code-diff");
-      expect(container?.textContent).toContain("return 1");
-      expect(container?.textContent).toContain("return 2");
+      const diff = container.querySelector(".drv-code-diff");
+      expect(diff?.textContent).toContain("return 1");
+      expect(diff?.textContent).toContain("return 2");
       expect(
-        container
+        diff
           ?.querySelector<HTMLElement>(".diff-style-root")
           ?.style.getPropertyValue("--diff-font-size--"),
       ).toBe("11px");

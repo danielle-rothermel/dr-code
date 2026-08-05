@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { CodeBlock } from "../src/code-block.js";
@@ -8,15 +8,15 @@ const TYPESCRIPT_SNIPPET = "const answer: number = 42;\n";
 
 describe("CodeBlock", () => {
   it("shows plain code immediately, then Shiki markup", async () => {
-    render(<CodeBlock code={PYTHON_SNIPPET} />);
-    expect(screen.getByText(/def double/)).toBeDefined();
+    const { container } = render(<CodeBlock code={PYTHON_SNIPPET} />);
+    expect(within(container).getByText(/def double/)).toBeDefined();
     expect(
-      document.querySelector(".drv-code-block pre:not(.shiki)"),
+      container.querySelector(".drv-code-block pre:not(.shiki)"),
     ).not.toBeNull();
     await waitFor(() => {
-      expect(document.querySelector(".drv-code-block pre.shiki")).not.toBeNull();
+      expect(container.querySelector(".drv-code-block pre.shiki")).not.toBeNull();
     });
-    expect(document.querySelector(".drv-code-block")?.textContent).toContain(
+    expect(container.querySelector(".drv-code-block")?.textContent).toContain(
       "def double",
     );
   });
