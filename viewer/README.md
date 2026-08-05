@@ -131,14 +131,14 @@ during development without a separate viewer build.
 From `viewer/`, install dependencies and start the development server:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm --filter @dr-code/gallery dev
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @dr-code/gallery dev
 ```
 
 Build the gallery without starting a server:
 
 ```bash
-pnpm --filter @dr-code/gallery build
+corepack pnpm --filter @dr-code/gallery build
 ```
 
 ## Verification
@@ -146,10 +146,10 @@ pnpm --filter @dr-code/gallery build
 Run the complete workspace checks from `viewer/`:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm build
-pnpm test
+CI=1 corepack pnpm install --frozen-lockfile
+corepack pnpm typecheck
+corepack pnpm build
+corepack pnpm test
 ```
 
 The recursive typecheck and build commands cover both the publishable package

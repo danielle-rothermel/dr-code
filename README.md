@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/danielle-rothermel/dr-code/actions/workflows/ci.yml/badge.svg)](https://github.com/danielle-rothermel/dr-code/actions/workflows/ci.yml)
 
+[Terms and contracts](https://danielle-rothermel.github.io/dr-code/) ·
+[terms source](https://github.com/danielle-rothermel/dr-code/blob/main/.defs/terms.toml) ·
+[contracts source](https://github.com/danielle-rothermel/dr-code/blob/main/.defs/contracts.toml)
+
 **Personally owned dependencies:** none.
 
 **dr-code prepares, evaluates, analyzes, and visualizes Python code produced by
@@ -18,7 +22,7 @@ viewer, organized into these functional areas:
 - **[Measurement](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/metrics)
   and [evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/evaluation)**
   extracts typed measurements from traces, declares evaluation plans, and
-  reduces complete inputs into explicit score outcomes.
+  reduces complete measurement slots into typed aggregation outcomes.
 - **[HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)**
   loads and samples benchmark tasks, extracts candidate solutions, runs them
   in an isolated Python sandbox, and reports structured outcomes.
@@ -186,8 +190,8 @@ def aggregate(request: AggregationInput) -> AggregationResult: ...
 ### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
 
 HumanEval owns the benchmark-specific task, extraction, sandbox protocol, and
-scoring policy. Scoring returns a discriminated result so a completed
-evaluation cannot be confused with harness failure.
+scoring policy. Scoring returns a discriminated result so a completed scoring
+outcome cannot be confused with harness failure.
 
 ```python
 class HumanEvalTask(FrozenModel):
@@ -321,15 +325,33 @@ class SandboxRunner(Protocol):
 
 ## Development
 
-The canonical test run is serial:
+Install the locked development environment and commit hook once per clone:
 
 ```console
-uv run pytest
+uv sync --locked
+uv run pre-commit install
+```
+
+The hook runs `scripts/pre-check.sh`, which verifies the locked environment,
+Ruff formatting and lint, ty, `.defs`, the local Python suite, and the viewer.
+Run `scripts/pre-check.sh --fix` explicitly when you want Ruff and ty to modify
+the working tree.
+
+The canonical local Python test run is serial and excludes the live Docker
+probes:
+
+```console
+uv run pytest -m "not oci"
 ```
 
 For faster local feedback, run the same suite with an ephemeral xdist install;
 CI remains serial so its ordering and resource use stay reproducible:
 
 ```console
-uv run --with pytest-xdist pytest -n 4
+uv run --with pytest-xdist pytest -n 4 -m "not oci"
 ```
+
+Tests marked `oci` require Docker and the digest-pinned sandbox image. They
+skip locally unless `DR_CODE_RUN_SANDBOX_TESTS=1`; CI runs them separately.
+The [viewer verification guide](viewer/README.md#verification) documents its
+independent typecheck, build, and test commands.

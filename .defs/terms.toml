@@ -1,0 +1,281 @@
+#:schema ./terms.schema.json
+
+# Shared vocabulary for dr-code. Definitions stay conceptual; exported_symbols
+# records the public code that implements each term.
+
+[[terms]]
+name = "boundary model"
+definition = """
+A validated immutable value that crosses a serialization, persistence, fixture,
+or untrusted-input boundary."""
+exported_symbols = ["dr_code.core.models.FrozenModel"]
+
+[[terms]]
+name = "trace value"
+definition = """
+One named observation in a trace, represented as either an artifact or an
+explicit absence."""
+exported_symbols = ["dr_code.trace.TraceValue"]
+
+[[terms]]
+name = "artifact"
+definition = """
+A typed value preserved by a trace: text, Python source without a validity
+guarantee, candidate collections, inspected candidates, or finite JSON."""
+exported_symbols = [
+  "dr_code.trace.Artifact",
+  "dr_code.trace.ArtifactKind",
+  "dr_code.trace.TextArtifact",
+  "dr_code.trace.CodeArtifact",
+  "dr_code.trace.CodeCandidateSetArtifact",
+  "dr_code.trace.InspectedCodeCandidateSetArtifact",
+  "dr_code.trace.JsonArtifact",
+]
+is_a = ["trace value"]
+
+[[terms]]
+name = "code candidate"
+definition = """
+A Python-source hypothesis extracted or transformed from an input, retaining
+the ordered origins that explain how it arose."""
+exported_symbols = [
+  "dr_code.trace.CodeCandidate",
+  "dr_code.trace.CandidateOrigin",
+  "dr_code.trace.ExtractionOperation",
+  "dr_code.trace.CandidateInspection",
+]
+
+[[terms]]
+name = "absence"
+definition = """
+An explicit failed-computation value naming the originating step, failure
+code, cause, and later steps through which the failure propagated. It is not
+a missing trace key."""
+exported_symbols = ["dr_code.trace.Absent", "dr_code.trace.is_absent"]
+is_a = ["trace value"]
+
+[[terms]]
+name = "trace producer"
+definition = """
+The coordinate identifying where a trace came from, including the resolved
+definition, component versions, and settings when preprocessing produced it."""
+exported_symbols = [
+  "dr_code.trace.TraceProducer",
+  "dr_code.trace.ExternalTraceProducer",
+  "dr_code.trace.PreprocessingTraceProducer",
+  "dr_code.trace.ExternalPreprocessingTraceProducer",
+]
+part_of = ["trace"]
+
+[[terms]]
+name = "trace"
+definition = """
+A defensive snapshot containing required input and output values, optional
+intermediate values, structured step facts, and a trace producer."""
+exported_symbols = [
+  "dr_code.trace.Trace",
+  "dr_code.trace.SerializedTrace",
+  "dr_code.trace.serialize_trace",
+  "dr_code.trace.deserialize_trace",
+  "dr_code.trace.external_trace",
+]
+
+[[terms]]
+name = "preprocessing definition"
+definition = """
+A versioned ordered declaration of uniquely named source-processing steps and
+their settings."""
+exported_symbols = [
+  "dr_code.preprocessing.PreprocessingDefinition",
+  "dr_code.preprocessing.StepSpec",
+  "dr_code.preprocessing.StepName",
+]
+part_of = ["evaluation procedure"]
+
+[[terms]]
+name = "preprocessing runner"
+definition = """
+A bound preprocessing definition reusable across inputs to produce complete
+traces."""
+exported_symbols = [
+  "dr_code.preprocessing.BoundPreprocessingRunner",
+  "dr_code.preprocessing.bind_preprocessing",
+  "dr_code.preprocessing.bind_external_preprocessing",
+  "dr_code.preprocessing.run_preprocessing",
+  "dr_code.preprocessing.run_external_preprocessing",
+]
+
+[[terms]]
+name = "metric question"
+definition = """
+A request for one named metric on one trace key under resolved settings."""
+exported_symbols = [
+  "dr_code.metrics.MetricQuestion",
+  "dr_code.metrics.MetricQuestionCoordinate",
+  "dr_code.metrics.MetricName",
+]
+part_of = ["metrics definition"]
+
+[[terms]]
+name = "metrics definition"
+definition = """
+A versioned ordered collection of distinct metric questions."""
+exported_symbols = [
+  "dr_code.metrics.MetricsDefinition",
+  "dr_code.metrics.MetricsDefinitionCoordinate",
+]
+part_of = ["evaluation procedure"]
+
+[[terms]]
+name = "metric fact"
+definition = """
+A named finite measured value with an explicit unit."""
+exported_symbols = [
+  "dr_code.metrics.MetricFact",
+  "dr_code.metrics.MetricFactUnit",
+]
+
+[[terms]]
+name = "metric record"
+definition = """
+The self-identifying answer to one metric question: measured facts, an
+explicit not-applicable absence, or an operator failure."""
+exported_symbols = [
+  "dr_code.metrics.MetricRecord",
+  "dr_code.metrics.MetricRecordIdentity",
+  "dr_code.metrics.MeasuredRecord",
+  "dr_code.metrics.NotApplicableRecord",
+  "dr_code.metrics.OperatorFailureRecord",
+  "dr_code.metrics.RecordStatus",
+]
+
+[[terms]]
+name = "evaluation procedure"
+definition = """
+The composition of one complete preprocessing definition and one complete
+metrics definition."""
+exported_symbols = ["dr_code.evaluation.EvaluationProcedure"]
+part_of = ["evaluation plan"]
+
+[[terms]]
+name = "evaluation plan"
+definition = """
+A versioned composition of an ordered task selection, repeat structure,
+evaluation procedure, and aggregation policy."""
+exported_symbols = [
+  "dr_code.evaluation.EvaluationPlan",
+  "dr_code.evaluation.TaskSet",
+  "dr_code.evaluation.RepeatPlan",
+]
+
+[[terms]]
+name = "aggregation policy"
+definition = """
+The declared metric question, fact, statistic, and separate treatment of
+not-applicable and operator-failure records used for reduction."""
+exported_symbols = [
+  "dr_code.evaluation.AggregationPolicy",
+  "dr_code.evaluation.AggregationStatistic",
+  "dr_code.evaluation.NotApplicablePolicy",
+]
+part_of = ["evaluation plan"]
+
+[[terms]]
+name = "aggregation result"
+definition = """
+A typed reduction outcome that distinguishes a finite result from missing
+input, policy refusal, an empty denominator, or a non-finite computation."""
+exported_symbols = [
+  "dr_code.evaluation.AggregationResult",
+  "dr_code.evaluation.AggregationOk",
+  "dr_code.evaluation.AggregationMissing",
+  "dr_code.evaluation.AggregationNotApplicable",
+  "dr_code.evaluation.AggregationEmptyDenominator",
+  "dr_code.evaluation.AggregationNonFinite",
+  "dr_code.evaluation.aggregate",
+]
+
+[[terms]]
+name = "score"
+definition = """
+A finite non-text measurement under an evaluation coordinate that names the
+unique metric facts from which it derives."""
+exported_symbols = [
+  "dr_code.evaluation.Score",
+  "dr_code.evaluation.EvaluationCoordinate",
+]
+
+[[terms]]
+name = "HumanEval task"
+definition = """
+A validated benchmark problem containing its prompt, canonical solution,
+entry point, tests, and benchmark metadata."""
+exported_symbols = [
+  "dr_code.humaneval.HumanEvalTask",
+  "dr_code.humaneval.HumanEvalPlusTask",
+]
+
+[[terms]]
+name = "HumanEval submission score"
+definition = """
+A discriminated result that separates a completed submission outcome from
+evaluation-harness failure."""
+exported_symbols = [
+  "dr_code.humaneval.HumanEvalSubmissionScore",
+  "dr_code.humaneval.CompletedScore",
+  "dr_code.humaneval.HarnessFailure",
+  "dr_code.humaneval.SubmissionOutcome",
+  "dr_code.humaneval.score_humaneval_submission",
+]
+
+[[terms]]
+name = "sandbox runner"
+definition = """
+A capability that evaluates Python source with JSON input under a finite
+timeout and returns process status and captured output."""
+exported_symbols = [
+  "dr_code.core.execution.sandbox.SandboxRunner",
+  "dr_code.core.execution.sandbox.SandboxCompletedProcess",
+  "dr_code.core.execution.sandbox.run_python_in_sandbox",
+]
+
+[[terms]]
+name = "synthetic corruption"
+definition = """
+A versioned deterministic source transformation parameterized by validated
+settings and random state."""
+exported_symbols = ["dr_code.synthetic.Corruption"]
+part_of = ["synthetic recipe"]
+
+[[terms]]
+name = "synthetic recipe"
+definition = """
+A versioned ordered composition of registered synthetic corruptions."""
+exported_symbols = [
+  "dr_code.synthetic.Recipe",
+  "dr_code.synthetic.apply_recipe",
+]
+
+[[terms]]
+name = "synthetic sample"
+definition = """
+A known solution paired with corrupted source and identified by its HumanEval
+task, complete recipe coordinate, and generation seed."""
+exported_symbols = [
+  "dr_code.synthetic.models.SyntheticSample",
+  "dr_code.synthetic.models.SyntheticSampleCoordinate",
+  "dr_code.synthetic.build_sample",
+  "dr_code.synthetic.build_dataset",
+]
+
+[[terms]]
+name = "viewer primitive"
+definition = """
+A domain-independent presentation component for source, source differences,
+or semantic status, leaving data acquisition and product layout to its
+consumer."""
+exported_symbols = [
+  "@dr-code/viewer:CodeBlock",
+  "@dr-code/viewer:CodeDiff",
+  "@dr-code/viewer:StatusBadge",
+]

@@ -1,21 +1,22 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  python:
-    name: Python ${{ matrix.python-version }}
+  validate:
+    name: Validate Python ${{ matrix.python-version }}
     runs-on: depot-ubuntu-24.04
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -28,28 +29,18 @@ jobs:
         with:
           version-file: pyproject.toml
           python-version: ${{ matrix.python-version }}
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
+          enable-cache: false
       - run: uv sync --locked
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run ty check
-      - name: Validate .defs structure
-        if: matrix.python-version == '3.13'
-        run: uvx tombi@1.2.5 lint --offline .defs/terms.toml .defs/contracts.toml
       - run: uv run pytest -m "not oci"
-      - name: Build distributions
-        if: matrix.python-version == '3.13'
-        run: uv build
-      - name: Check distribution metadata
-        if: matrix.python-version == '3.13'
-        run: uvx --from twine==7.0.0 twine check --strict dist/*
 
   oci:
-    name: OCI sandbox
+    name: Validate OCI sandbox
     runs-on: depot-ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,10 +49,7 @@ jobs:
         with:
           version-file: pyproject.toml
           python-version: "3.13"
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
+          enable-cache: false
       - run: uv sync --locked
       - name: Preload shared immutable OCI Python sandbox image
         run: docker pull "$DR_CODE_SANDBOX_IMAGE"
@@ -74,8 +62,10 @@ jobs:
           DR_CODE_SANDBOX_IMAGE: python:3.13.14-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
 
   viewer:
-    name: Viewer
+    name: Validate viewer
     runs-on: depot-ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,3 +86,52 @@ jobs:
         working-directory: viewer
       - run: pnpm test
         working-directory: viewer
+
+  build:
+    name: Build distributions
+    needs: [validate, oci, viewer]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify tag matches pyproject version
+        run: |
+          version="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          expected="v${version}"
+          if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
+            echo "Pushed tag '${GITHUB_REF_NAME}' does not match pyproject version (expected '${expected}')" >&2
+            exit 1
+          fi
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version-file: pyproject.toml
+          python-version: "3.13"
+          enable-cache: false
+      - run: uv build
+      - run: uvx --from twine==7.0.0 twine check --strict dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/dr-code
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/

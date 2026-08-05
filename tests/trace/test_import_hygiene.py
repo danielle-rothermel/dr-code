@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sysconfig
 from importlib.util import resolve_name
 from pathlib import Path
 
@@ -89,13 +90,21 @@ def test_trace_runtime_import_loads_only_approved_boundaries(
 def test_trace_runtime_probe_reports_injected_boundary_crossings(
     run_python_script,
 ) -> None:
+    nested_third_party = (
+        Path(sysconfig.get_path("stdlib"))
+        / "site-packages"
+        / "unexpected_file_dependency"
+        / "__init__.py"
+    )
     result = run_python_script(
         IMPORT_PROBE,
         "dr_code.core.source.python_analysis",
         "unexpected_dependency",
+        f"unexpected_file_dependency={nested_third_party}",
     )
 
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
     assert _loaded_siblings(report) == ["dr_code.core.source.python_analysis"]
     assert "unexpected_dependency" in report["third_party_roots"]
+    assert "unexpected_file_dependency" in report["third_party_roots"]
