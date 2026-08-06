@@ -56,7 +56,7 @@ from dr_exec import (
 
 EXECUTION_REQUEST_SCHEMA: Final[str] = "dr-code/python-execution-request"
 EXECUTION_REQUEST_SCHEMA_VERSION: Final[int] = 1
-MAX_EXECUTION_INPUT_BYTES: Final[int] = 1_048_576
+MAX_EXECUTION_INPUT_BYTES: Final[int] = 2_097_152
 MAX_EXECUTION_STREAM_BYTES: Final[int] = 1_048_576
 _NANOSECONDS_PER_SECOND: Final[int] = 1_000_000_000
 # The child inherits nothing from the operator environment; hashing stays

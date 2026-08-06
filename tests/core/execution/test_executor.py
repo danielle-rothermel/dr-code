@@ -83,9 +83,7 @@ class TestJobDeclaration:
     def test_budgets_are_finite_on_every_enforced_axis(self) -> None:
         budgets = _job().budgets
         assert budgets.wall_time == FiniteDurationLimit(max_ns=2_000_000_000)
-        assert budgets.input_bytes == FiniteByteLimit(
-            max_bytes=MAX_EXECUTION_INPUT_BYTES
-        )
+        assert budgets.input_bytes == FiniteByteLimit(max_bytes=2_097_152)
         payload_output = budgets.payload_output
         assert isinstance(payload_output, FiniteOutput)
         assert payload_output.max_bytes == 2 * MAX_EXECUTION_STREAM_BYTES

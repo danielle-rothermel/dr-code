@@ -20,6 +20,8 @@
   failures from candidate setup failures and case outcomes. Metrics report
   harness failures as operator failures while retaining candidate-attributable
   errors as measured evidence.
+- Import repair preserves valid imports nested inside submitted functions, and
+  Python execution accepts up to 2 MiB of input for large HumanEval test sets.
 
 ## 0.1.4 - 2026-08-06
 
