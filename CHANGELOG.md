@@ -6,11 +6,12 @@
   `run_preprocessing_cached` keys raw input text, the bound runner's resolved
   producer coordinate, and the trace schema version through dr-store's
   `derive_cache_key`, stores serialized traces in a `RecordCache`, and returns
-  a trace equal to the one a fresh run produces.
+  a trace equal to the one a fresh run produces. Cache failures and entries
+  whose producer or input does not match the request are logged and treated as
+  misses.
   `open_sqlite_record_cache` composes a SQLite-backed cache at a
   caller-supplied path. No existing call site consults a cache.
-- dr-store is a dependency, pinned to the unreleased commit that introduces its
-  record-cache primitive.
+- dr-store 0.1.3 supplies the record-cache primitive.
 - The `code_test` operator reuses the engine's parsed module for its
   top-level-function selection and keeps the validated HumanEval task per exact
   payload for the life of a binding, so a batch over one task no longer

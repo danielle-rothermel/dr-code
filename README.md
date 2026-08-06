@@ -326,7 +326,13 @@ class SandboxRunner(Protocol):
 [`dr_code.caching`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
 memoizes preprocessing traces over a [dr-store](https://github.com/danielle-rothermel/dr-store)
 record cache. It is opt-in: nothing in the packages above consults a cache, and
-a hit returns the trace a fresh run produces.
+a hit returns the trace a fresh run produces. Invalid entries and cache
+failures are logged and fall through to uncached execution.
+
+While development mode keeps component versions at `"0"`, discard persistent
+caches after preprocessing source, Python runtime, or dependency changes. Once
+development mode ends, every such behavior-affecting change requires a version
+bump for each affected preprocessing component before reusing its cache.
 
 ```python
 def preprocessing_trace_cache_key(

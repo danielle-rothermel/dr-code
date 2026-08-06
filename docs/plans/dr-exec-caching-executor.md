@@ -115,7 +115,5 @@ weaker guarantee visible at the call site.
 1. dr-code's execution path cuts over to dr-exec. dr-code PR #91 records the
    adoption requirements; until that lands there is no dr-exec caller whose
    repeats this would serve.
-2. The dr-store cache primitive PR merges and releases, so the key helper and
-   `RecordCache` are depended on by version rather than by commit.
-3. Then this executor, as an additive capability with no change to
+2. Then this executor, as an additive capability with no change to
    `ProcessExecutor`, `FakeExecutor`, or the `Executor` protocol.

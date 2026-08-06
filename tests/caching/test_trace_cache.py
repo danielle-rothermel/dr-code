@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+
+import pytest
 from dr_store import MemoryBackend, ObjectStore, RecordCache
 
 from dr_code.caching import (
+    TRACE_RECORD_SCHEMA,
     open_sqlite_record_cache,
     preprocessing_trace_cache_key,
     run_preprocessing_cached,
@@ -18,7 +22,9 @@ from dr_code.preprocessing import (
 from dr_code.trace import (
     Absent,
     InspectedCodeCandidateSetArtifact,
+    TextArtifact,
     is_absent,
+    serialize_trace,
 )
 
 _FENCED = "Here is the code:\n```python\ndef f(x):\n    return x + 1\n```\n"
@@ -43,6 +49,16 @@ class _CountingRunner:
 
 def _memory_cache() -> RecordCache:
     return RecordCache(ObjectStore(MemoryBackend()))
+
+
+def _cache_bound_to_trace(key: str, trace) -> RecordCache:  # noqa: ANN001
+    store = ObjectStore(MemoryBackend())
+    reference, _ = store.put(
+        TRACE_RECORD_SCHEMA,
+        serialize_trace(trace).model_dump(mode="json"),
+    )
+    store.bind(key, reference)
+    return RecordCache(store)
 
 
 def _bound() -> _CountingRunner:
@@ -111,6 +127,48 @@ def test_empty_cache_misses_and_returns_the_direct_run() -> None:
     )
 
 
+class _ReadFailingCache:
+    def get(self, key: str, *, schema: str) -> None:
+        raise OSError("read unavailable")
+
+    def put(self, key: str, schema: str, record: object) -> None:
+        pass
+
+
+class _WriteFailingCache:
+    def get(self, key: str, *, schema: str) -> None:
+        return None
+
+    def put(self, key: str, schema: str, record: object) -> None:
+        raise OSError("write unavailable")
+
+
+def test_read_failure_runs_fresh_and_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runner = _bound()
+
+    with caplog.at_level(logging.WARNING):
+        trace = run_preprocessing_cached(_FENCED, runner, _ReadFailingCache())
+
+    assert runner.runs == 1
+    assert trace.value("input") == TextArtifact(text=_FENCED)
+    assert "cache read failed; running fresh" in caplog.text
+
+
+def test_write_failure_returns_fresh_trace_and_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runner = _bound()
+
+    with caplog.at_level(logging.WARNING):
+        trace = run_preprocessing_cached(_FENCED, runner, _WriteFailingCache())
+
+    assert runner.runs == 1
+    assert trace.value("input") == TextArtifact(text=_FENCED)
+    assert "cache write failed; returning fresh trace" in caplog.text
+
+
 def _external(definition_id: str) -> PreprocessingDefinition:
     return PreprocessingDefinition(
         definition_id=definition_id,
@@ -139,6 +197,42 @@ def test_key_is_stable_across_equal_bindings() -> None:
     ) == preprocessing_trace_cache_key(
         _FENCED, bind_external_preprocessing(_external("one"))
     )
+
+
+def test_hit_with_wrong_input_runs_fresh(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runner = _bound()
+    wrong = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION).run(
+        TextArtifact(text=_PROSE)
+    )
+    key = preprocessing_trace_cache_key(_FENCED, runner)
+    cache = _cache_bound_to_trace(key, wrong)
+
+    with caplog.at_level(logging.WARNING):
+        trace = run_preprocessing_cached(_FENCED, runner, cache)
+
+    assert runner.runs == 1
+    assert trace.value("input") == TextArtifact(text=_FENCED)
+    assert "cache entry has the wrong input" in caplog.text
+
+
+def test_hit_with_wrong_producer_runs_fresh(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runner = _bound()
+    wrong = bind_external_preprocessing(_external("wrong")).run(
+        TextArtifact(text=_FENCED)
+    )
+    key = preprocessing_trace_cache_key(_FENCED, runner)
+    cache = _cache_bound_to_trace(key, wrong)
+
+    with caplog.at_level(logging.WARNING):
+        trace = run_preprocessing_cached(_FENCED, runner, cache)
+
+    assert runner.runs == 1
+    assert trace.producer == runner.producer
+    assert "cache entry has the wrong producer" in caplog.text
 
 
 def test_sqlite_cache_serves_a_hit_from_a_reopened_database(

@@ -109,8 +109,9 @@ exported_symbols = [
 name = "preprocessing trace cache"
 definition = """
 An opt-in memoization of preprocessing traces keyed by raw input text and the
-producing runner's resolved coordinate. It changes cost, never results, and
-no existing call site consults it."""
+producing runner's resolved coordinate. Invalid entries and cache failures
+degrade to uncached execution, so it changes cost, never results, and no
+existing call site consults it."""
 exported_symbols = [
   "dr_code.caching.run_preprocessing_cached",
   "dr_code.caching.preprocessing_trace_cache_key",
