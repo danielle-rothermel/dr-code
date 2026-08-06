@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Benchmark an experimental in-memory per-step preprocessing cache."""
+"""Benchmark existing preprocessing caches and estimate test-result reuse."""
 
 from __future__ import annotations
 
@@ -14,9 +14,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import fmean, median
+from tempfile import TemporaryDirectory
 from time import perf_counter
 
 import polars as pl
+from dr_store import SqliteRecordCache
 
 from bootstrap_statistics import (
     BootstrapConfidenceInterval,
@@ -26,26 +28,21 @@ from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
 from dr_code.humaneval.metric_operator import CodeTest, CodeTestSettings
 from dr_code.humaneval.sampling import load_humaneval_rows
 from dr_code.metrics.engine.execution import ExecutionRequest
+from dr_code.caching import run_preprocessing_cached
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
-    BoundPreprocessingRunner,
     StepName,
     bind_preprocessing,
 )
-from dr_code.preprocessing.steps.base import StepFailedError
 from dr_code.trace import (
-    INPUT_KEY,
     OUTPUT_KEY,
     Absent,
-    Artifact,
     CodeArtifact,
     CodeCandidateSetArtifact,
     InspectedCodeCandidateSetArtifact,
-    JsonFactValue,
     JsonArtifact,
     TextArtifact,
     Trace,
-    is_absent,
     serialize_trace,
 )
 
@@ -61,30 +58,6 @@ _RAW_CANDIDATE_KEY = StepName.EXTRACT_ALL_REPRESENTATIONS.value
 _DERIVED_TASK_FIELDS: frozenset[str] = frozenset(
     {"parsed", "parsed_tests", *HumanEvalTask.model_computed_fields}
 )
-
-
-@dataclass(frozen=True, slots=True)
-class _CachedStepResult:
-    value: Artifact | Absent
-    facts: dict[str, JsonFactValue]
-
-
-@dataclass(slots=True)
-class _MutableStepStats:
-    lookups: int = 0
-    hits: int = 0
-    misses: int = 0
-    skipped_absent: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class _StepStats:
-    instance_name: str
-    lookups: int
-    hits: int
-    misses: int
-    skipped_absent: int
-    entries: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,15 +175,17 @@ class _TaskBenchmark:
     rows: int
     distinct_outputs: int
     uncached_seconds: float
-    cold_seconds: float
-    warm_seconds: float
-    cold_stats: tuple[_StepStats, ...]
-    warm_stats: tuple[_StepStats, ...]
+    cold_cache_seconds: float
+    warm_cache_seconds: float
     candidates: _CandidateMeasurements
 
     @property
     def cold_speedup(self) -> float:
-        return self.uncached_seconds / self.cold_seconds
+        return self.uncached_seconds / self.cold_cache_seconds
+
+    @property
+    def warm_speedup(self) -> float:
+        return self.uncached_seconds / self.warm_cache_seconds
 
     @property
     def success_rate(self) -> float:
@@ -231,97 +206,6 @@ class _TaskBenchmark:
     @property
     def execution_request_reuse(self) -> _ReuseStats:
         return _reuse_stats(self.candidates.execution_request_keys)
-
-
-class _InMemoryStepCacheRunner:
-    """Experimental runner mirroring the production runner's semantics."""
-
-    def __init__(self, runner: BoundPreprocessingRunner) -> None:
-        self._runner = runner
-        self._caches: dict[str, dict[Artifact, _CachedStepResult]] = {
-            bound.instance_name: {} for bound in runner.steps
-        }
-        self._stats = self._new_stats()
-
-    def _new_stats(self) -> dict[str, _MutableStepStats]:
-        return {
-            bound.instance_name: _MutableStepStats()
-            for bound in self._runner.steps
-        }
-
-    def reset_stats(self) -> None:
-        self._stats = self._new_stats()
-
-    def stats(self) -> tuple[_StepStats, ...]:
-        return tuple(
-            _StepStats(
-                instance_name=bound.instance_name,
-                lookups=self._stats[bound.instance_name].lookups,
-                hits=self._stats[bound.instance_name].hits,
-                misses=self._stats[bound.instance_name].misses,
-                skipped_absent=(
-                    self._stats[bound.instance_name].skipped_absent
-                ),
-                entries=len(self._caches[bound.instance_name]),
-            )
-            for bound in self._runner.steps
-        )
-
-    def run(self, input_value: TextArtifact) -> Trace:
-        values: dict[str, Artifact | Absent] = {INPUT_KEY: input_value}
-        step_facts: dict[str, dict[str, JsonFactValue]] = {}
-        current: Artifact | Absent = input_value
-
-        # Bound step internals are used only by this isolated experiment.
-        for bound in self._runner.steps:
-            stats = self._stats[bound.instance_name]
-            if is_absent(current):
-                stats.skipped_absent += 1
-                current = Absent(
-                    failed_step=current.failed_step,
-                    failure_code=current.failure_code,
-                    cause=current.cause,
-                    propagated_through=(
-                        *current.propagated_through,
-                        bound.instance_name,
-                    ),
-                )
-            else:
-                stats.lookups += 1
-                cache = self._caches[bound.instance_name]
-                result = cache.get(current)
-                if result is None:
-                    stats.misses += 1
-                    try:
-                        output = bound.step.apply(current)
-                    except StepFailedError as exc:
-                        result = _CachedStepResult(
-                            value=Absent(
-                                failed_step=bound.instance_name,
-                                failure_code=exc.code.value,
-                                cause=exc.cause,
-                            ),
-                            facts=dict(exc.evidence),
-                        )
-                    else:
-                        result = _CachedStepResult(
-                            value=output.value,
-                            facts=dict(output.facts),
-                        )
-                    cache[current] = result
-                else:
-                    stats.hits += 1
-                current = result.value
-                if result.facts:
-                    step_facts[bound.instance_name] = dict(result.facts)
-            values[bound.instance_name] = current
-
-        values[OUTPUT_KEY] = current
-        return Trace(
-            values=values,
-            producer=self._runner.producer,
-            step_facts=step_facts,
-        )
 
 
 def _parquet_path(value: str) -> Path:
@@ -356,13 +240,6 @@ def _assert_same_traces(
             raise RuntimeError(
                 f"{label} trace differs for sample_id {sample_id!r}"
             )
-
-
-def _hit_rate(stats: tuple[_StepStats, ...]) -> tuple[int, int, float]:
-    hits = sum(step.hits for step in stats)
-    lookups = sum(step.lookups for step in stats)
-    rate = hits / lookups if lookups else 0.0
-    return hits, lookups, rate
 
 
 def _reuse_stats(keys: Iterable[str]) -> _ReuseStats:
@@ -497,25 +374,10 @@ def _candidate_measurements(
     )
 
 
-def _print_step_stats(label: str, stats: tuple[_StepStats, ...]) -> None:
-    hits, lookups, rate = _hit_rate(stats)
-    print(f"{label} hit rate: {rate:.2%} ({hits:,}/{lookups:,})")
-    print(
-        f"{'step':32} {'lookups':>9} {'hits':>9} {'misses':>9} "
-        f"{'hit rate':>10} {'skipped':>9} {'entries':>9}"
-    )
-    for step in stats:
-        step_rate = step.hits / step.lookups if step.lookups else 0.0
-        print(
-            f"{step.instance_name:32} {step.lookups:9,d} "
-            f"{step.hits:9,d} {step.misses:9,d} {step_rate:9.2%} "
-            f"{step.skipped_absent:9,d} {step.entries:9,d}"
-        )
-
-
 def _benchmark_task(
     task: HumanEvalTask,
     task_rows: pl.DataFrame,
+    preprocessing_cache: SqliteRecordCache,
 ) -> _TaskBenchmark:
     sample_ids: list[str] = task_rows.get_column("sample_id").to_list()
     decoder_outputs: list[str] = task_rows.get_column(
@@ -531,31 +393,30 @@ def _benchmark_task(
         for text in decoder_outputs
     ]
     baseline_seconds = perf_counter() - baseline_started
-    cached_runner = _InMemoryStepCacheRunner(
-        bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
+    cached_runner = bind_preprocessing(
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
     )
     cold_started = perf_counter()
     cold_traces = [
-        cached_runner.run(TextArtifact(text=text)) for text in decoder_outputs
+        run_preprocessing_cached(text, cached_runner, preprocessing_cache)
+        for text in decoder_outputs
     ]
-    cold_seconds = perf_counter() - cold_started
-    cold_stats = cached_runner.stats()
+    cold_cache_seconds = perf_counter() - cold_started
     _assert_same_traces(
-        label="cold per-step cache",
+        label="cold SQLite whole-trace cache",
         sample_ids=sample_ids,
         expected=baseline_traces,
         actual=cold_traces,
     )
 
-    cached_runner.reset_stats()
     warm_started = perf_counter()
     warm_traces = [
-        cached_runner.run(TextArtifact(text=text)) for text in decoder_outputs
+        run_preprocessing_cached(text, cached_runner, preprocessing_cache)
+        for text in decoder_outputs
     ]
-    warm_seconds = perf_counter() - warm_started
-    warm_stats = cached_runner.stats()
+    warm_cache_seconds = perf_counter() - warm_started
     _assert_same_traces(
-        label="warm per-step cache",
+        label="warm SQLite whole-trace cache",
         sample_ids=sample_ids,
         expected=baseline_traces,
         actual=warm_traces,
@@ -566,28 +427,22 @@ def _benchmark_task(
         rows=len(decoder_outputs),
         distinct_outputs=len(set(decoder_outputs)),
         uncached_seconds=baseline_seconds,
-        cold_seconds=cold_seconds,
-        warm_seconds=warm_seconds,
-        cold_stats=cold_stats,
-        warm_stats=warm_stats,
+        cold_cache_seconds=cold_cache_seconds,
+        warm_cache_seconds=warm_cache_seconds,
         candidates=candidates,
     )
 
 
-def _aggregate_cold_hit_rate(results: Sequence[_TaskBenchmark]) -> float:
-    hits = 0
-    lookups = 0
-    for result in results:
-        result_hits, result_lookups, _ = _hit_rate(result.cold_stats)
-        hits += result_hits
-        lookups += result_lookups
-    return hits / lookups
-
-
 def _aggregate_cold_speedup(results: Sequence[_TaskBenchmark]) -> float:
     uncached_seconds = sum(result.uncached_seconds for result in results)
-    cold_seconds = sum(result.cold_seconds for result in results)
-    return uncached_seconds / cold_seconds
+    cold_cache_seconds = sum(result.cold_cache_seconds for result in results)
+    return uncached_seconds / cold_cache_seconds
+
+
+def _aggregate_warm_speedup(results: Sequence[_TaskBenchmark]) -> float:
+    uncached_seconds = sum(result.uncached_seconds for result in results)
+    warm_cache_seconds = sum(result.warm_cache_seconds for result in results)
+    return uncached_seconds / warm_cache_seconds
 
 
 def _aggregate_preprocessing_success_rate(
@@ -746,14 +601,16 @@ def _print_single_task(result: _TaskBenchmark) -> None:
         f"({result.rows / result.uncached_seconds:,.2f} traces/second)"
     )
     print(
-        f"Cold per-step cache: {result.cold_seconds:.6f} seconds "
+        "Cold SQLite whole-trace cache: "
+        f"{result.cold_cache_seconds:.6f} seconds "
         f"({result.cold_speedup:.2f}x baseline)"
     )
     print(
-        f"Warm per-step cache: {result.warm_seconds:.6f} seconds "
-        f"({result.uncached_seconds / result.warm_seconds:.2f}x baseline)"
+        "Warm SQLite whole-trace cache: "
+        f"{result.warm_cache_seconds:.6f} seconds "
+        f"({result.warm_speedup:.2f}x baseline)"
     )
-    print("Trace equivalence: exact for cold and warm cache runs")
+    print("Trace equivalence: exact for cold and warm whole-trace cache runs")
     print()
     print("Testing-cache estimates with an initially empty cache:")
     _print_row_cache_summary(result.row_cache)
@@ -772,10 +629,6 @@ def _print_single_task(result: _TaskBenchmark) -> None:
         result.execution_request_reuse,
     )
     print("No candidate code was executed.")
-    print()
-    _print_step_stats("Cold per-step cache", result.cold_stats)
-    print()
-    _print_step_stats("Warm per-step cache", result.warm_stats)
 
 
 def _print_task_sample(
@@ -787,18 +640,20 @@ def _print_task_sample(
 ) -> None:
     print(
         f"{'task':18} {'rows':>8} {'success':>8} {'success rate':>13} "
-        f"{'distinct':>9} {'hit rate':>10} "
-        f"{'uncached':>10} {'cold':>10} {'speedup':>9}"
+        f"{'distinct':>9} {'uncached':>10} {'cold':>10} {'warm':>10} "
+        f"{'cold x':>8} {'warm x':>8}"
     )
     for result in results:
-        _, _, hit_rate = _hit_rate(result.cold_stats)
         print(
             f"{result.task_id:18} {result.rows:8,d} "
             f"{result.row_cache.successful_rows:8,d} "
             f"{result.success_rate:12.2%} "
-            f"{result.distinct_outputs:9,d} {hit_rate:9.2%} "
+            f"{result.distinct_outputs:9,d} "
             f"{result.uncached_seconds:9.3f}s "
-            f"{result.cold_seconds:9.3f}s {result.cold_speedup:8.2f}x"
+            f"{result.cold_cache_seconds:9.3f}s "
+            f"{result.warm_cache_seconds:9.3f}s "
+            f"{result.cold_speedup:7.2f}x "
+            f"{result.warm_speedup:7.2f}x"
         )
 
     print()
@@ -847,16 +702,16 @@ def _print_task_sample(
         ),
     )
 
-    hit_rate_interval = bootstrap_confidence_interval(
+    cold_speedup_interval = bootstrap_confidence_interval(
         results,
-        _aggregate_cold_hit_rate,
+        _aggregate_cold_speedup,
         confidence_level=confidence_level,
         resamples=bootstrap_resamples,
         seed=seed,
     )
-    speedup_interval = bootstrap_confidence_interval(
+    warm_speedup_interval = bootstrap_confidence_interval(
         results,
-        _aggregate_cold_speedup,
+        _aggregate_warm_speedup,
         confidence_level=confidence_level,
         resamples=bootstrap_resamples,
         seed=seed,
@@ -896,13 +751,13 @@ def _print_task_sample(
         percentage=True,
     )
     _print_interval(
-        "Aggregate cold-cache hit rate",
-        hit_rate_interval,
-        percentage=True,
+        "Aggregate uncached-to-cold whole-trace-cache speedup",
+        cold_speedup_interval,
+        percentage=False,
     )
     _print_interval(
-        "Aggregate uncached-to-cold speedup",
-        speedup_interval,
+        "Aggregate uncached-to-warm whole-trace-cache speedup",
+        warm_speedup_interval,
         percentage=False,
     )
     _print_interval(
@@ -924,7 +779,10 @@ def _print_task_sample(
         f"Bootstrap unit: task; resamples: {bootstrap_resamples:,}; "
         f"seed: {seed}"
     )
-    print("Trace equivalence: exact for every selected task")
+    print(
+        "Trace equivalence: exact for cold and warm whole-trace cache "
+        "runs for every selected task"
+    )
     print("Candidate reuse was planned without executing candidate code.")
 
 
@@ -951,8 +809,8 @@ def _load_selected_tasks(
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare exhaustive preprocessing with an experimental "
-            "in-memory per-step cache."
+            "Compare exhaustive preprocessing with the existing SQLite "
+            "whole-trace cache and estimate test-result reuse."
         )
     )
     parser.add_argument(
@@ -1061,14 +919,25 @@ def main() -> int:
     task_load_seconds = perf_counter() - task_load_started
 
     results: list[_TaskBenchmark] = []
-    for index, task_id in enumerate(selected_task_ids, start=1):
-        task_rows = selected_rows.filter(pl.col("task_id") == task_id)
-        print(
-            f"Benchmarking task {index}/{len(selected_task_ids)}: "
-            f"{task_id} ({task_rows.height:,} rows)",
-            flush=True,
-        )
-        results.append(_benchmark_task(tasks_by_id[task_id], task_rows))
+    with TemporaryDirectory(
+        prefix="dr-code-preprocessing-cache-benchmark-"
+    ) as temporary_directory:
+        cache_path = Path(temporary_directory) / "traces.sqlite3"
+        with SqliteRecordCache(cache_path) as preprocessing_cache:
+            for index, task_id in enumerate(selected_task_ids, start=1):
+                task_rows = selected_rows.filter(pl.col("task_id") == task_id)
+                print(
+                    f"Benchmarking task {index}/{len(selected_task_ids)}: "
+                    f"{task_id} ({task_rows.height:,} rows)",
+                    flush=True,
+                )
+                results.append(
+                    _benchmark_task(
+                        tasks_by_id[task_id],
+                        task_rows,
+                        preprocessing_cache,
+                    )
+                )
 
     print(f"Parquet: {arguments.parquet}")
     print(
