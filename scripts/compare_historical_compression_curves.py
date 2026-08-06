@@ -44,8 +44,8 @@ _SYNTHETIC_MODEL = "synthetic:openai/gpt-5-nano/low"
 _ZSTD_LEVEL = 22
 _PANEL_METHODS = ("zstd22", "zstd_dict22_4k")
 _PANEL_TITLES = {
-    "zstd22": "zstd level 22",
-    "zstd_dict22_4k": "zstd level 22 + MBPP dictionary (4 KiB)",
+    "zstd22": "Zstd 22",
+    "zstd_dict22_4k": "Zstd 22 + 4 KiB Dict",
 }
 _GT_METHODS = (
     "raw_utf8",
@@ -82,10 +82,7 @@ _NEW_REQUIRED_COLUMNS = (
     "test_pass_fraction",
     "gt_code_without_comments",
 )
-_CAVEAT = (
-    "Descriptive historical comparison: task set, provider date, and "
-    "evaluation infrastructure differ between runs."
-)
+_CAVEAT = "Runs differ in tasks, date, and infrastructure."
 
 
 class _DictionaryFile(FrozenModel):
@@ -694,21 +691,21 @@ def _plot_curves(
         _plot_gt_references(axis, gt_references)
         axis.set_xscale("log")
         axis.set_title(_PANEL_TITLES[method])
-        axis.set_xlabel("Mean description bytes / raw GT-code bytes")
+        axis.set_xlabel("Description / GT Code (bytes)")
         axis.grid(alpha=0.25)
-    axes[0].set_ylabel("Mean test pass fraction")
+    axes[0].set_ylabel("Pass Rate")
     axes[0].set_ylim(0, 1.14)
     figure.text(
         0.5,
         0.975,
-        "GPT-5 Nano/low: generated-description compression vs decoder pass rate",
+        "GPT-5 Nano/low: Compression vs Pass Rate",
         ha="center",
         fontsize=14,
     )
     figure.text(
         0.5,
         0.94,
-        "GT-code stars are fixed references; current labels are target character-budget ratios",
+        "Stars: GT code  ·  Labels: target budget ratio",
         ha="center",
         fontsize=9,
         color="#444444",
@@ -750,7 +747,7 @@ def _plot_curves(
                 marker="o",
                 markerfacecolor="white",
                 linewidth=1.7,
-                label="Without lossless compression",
+                label="Off",
             ),
             Line2D(
                 [],
@@ -759,10 +756,10 @@ def _plot_curves(
                 linestyle="-",
                 marker="o",
                 linewidth=2,
-                label="With lossless compression",
+                label="On",
             ),
         ],
-        title="Generated description",
+        title="Lossless Compression",
         loc="lower center",
         bbox_to_anchor=(0.68, 0.065),
         ncol=2,
@@ -773,7 +770,7 @@ def _plot_curves(
     figure.text(
         0.5,
         0.02,
-        f"* {_CAVEAT}",
+        _CAVEAT,
         ha="center",
         fontsize=9,
         color="#444444",
@@ -782,7 +779,7 @@ def _plot_curves(
         figure.text(
             0.5,
             0.5,
-            "SYNTHETIC NEW DATA",
+            "SYNTHETIC",
             ha="center",
             va="center",
             fontsize=42,
