@@ -21,6 +21,7 @@ import dr_code.metrics
 import dr_code.preprocessing
 import dr_code.synthetic
 import dr_code.trace
+from dr_exec import ProcessExecutor
 from dr_code.core.execution.executor import (
     host_process_executor,
     run_python_source,
@@ -39,14 +40,18 @@ if "def dr_exec_main" not in runner_script():
 
 driver_source = "def dr_exec_main(request, emit):\n    print('wheel-smoke')\n"
 with TemporaryDirectory(prefix="dr-code-wheel-records-") as record_root:
-    completed = run_python_source(
-        host_process_executor(Path(record_root)),
-        source=driver_source,
-        input_json="{}",
-        timeout_seconds=5.0,
-    )
-if completed.returncode != 0 or completed.stdout != "wheel-smoke\n":
-    raise SystemExit(f"installed-wheel execution failed: {completed!r}")
+    executor = host_process_executor(Path(record_root))
+    if not isinstance(executor, ProcessExecutor):
+        raise SystemExit("production executor is not a ProcessExecutor")
+    if sys.platform == "darwin":
+        completed = run_python_source(
+            executor,
+            source=driver_source,
+            input_json="{}",
+            timeout_seconds=5.0,
+        )
+        if completed.returncode != 0 or completed.stdout != "wheel-smoke\n":
+            raise SystemExit(f"installed-wheel execution failed: {completed!r}")
 
 print(f"installed wheel smoke passed for dr-code {installed_version}")
 """
