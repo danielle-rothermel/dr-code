@@ -2,6 +2,11 @@
 
 ## 0.1.3 - 2026-08-06
 
+- Publication checks install the built wheel into an isolated environment and
+  exercise its public modules, packaged HumanEval driver, version metadata, and
+  a real `ProcessExecutor` job before upload. Hatchling is pinned exactly, the
+  PyPI environment admits release tags only, and the local pre-check refuses a
+  stale lockfile without allowing later commands to rewrite it.
 - Sandboxed execution is cut over to
   [dr-exec](https://github.com/danielle-rothermel/dr-exec) 0.1.4.
   The execution adapter uses

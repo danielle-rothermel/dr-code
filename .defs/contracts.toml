@@ -28,16 +28,19 @@ date = "2026-08-06"
 check = "uv run pytest tests/test_release_contract.py"
 
 [[contracts]]
-title = "Releases come from immutable main commits"
+title = "Releases come from validated immutable main commits"
 statement = """
 PyPI publication requires a version-matching release tag whose commit belongs
-to main. Only the configured release actor creates release tags, and an
-existing release tag cannot be updated or deleted."""
+to main, an isolated smoke test of the installed wheel, and access to the
+release-tag-only PyPI environment. Only the configured release actor creates
+release tags, and an existing release tag cannot be updated or deleted."""
 rationale = """
 Passing validation establishes build quality but not repository approval.
-Main ancestry retains the pull-request boundary, while restricted creation
-and immutability keep the tag from bypassing or changing that provenance."""
+Main ancestry retains the pull-request boundary, installed-wheel execution
+checks the artifact that is uploaded, and the environment and tag restrictions
+keep publication from bypassing or changing that provenance."""
 date = "2026-08-06"
+check = "uv build && uv run python scripts/check_built_wheel.py"
 
 [[contracts]]
 title = "Core depends on no functional package"
