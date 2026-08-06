@@ -191,7 +191,7 @@ def main() -> int:
     tasks.write_parquet(TASK_RESULTS)
     complete_count = generations.get_column("evaluation_complete").sum()
     logger.info(
-        "Summarized %,d candidate results and %,d/%d complete generations",
+        "Summarized %d candidate results and %d/%d complete generations",
         candidate_results.height,
         complete_count,
         generations.height,

@@ -120,11 +120,11 @@ def main() -> int:
     coverage.write_parquet(SAMPLING_COVERAGE)
     missing_cells = coverage.filter(~pl.col("selected")).height
     logger.info(
-        "Selected %,d generations containing %,d candidates",
+        "Selected %d generations containing %d candidates",
         selected.height,
         selected.get_column("candidate_count").sum(),
     )
-    logger.info("Unavailable task-setting-model cells: %,d", missing_cells)
+    logger.info("Unavailable task-setting-model cells: %d", missing_cells)
     logger.info("Wrote sample to %s", SELECTED_SAMPLE)
     logger.info("Wrote coverage to %s", SAMPLING_COVERAGE)
     return 0

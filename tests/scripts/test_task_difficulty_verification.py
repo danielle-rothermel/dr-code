@@ -34,6 +34,11 @@ _SUMMARIZE = _load_script("04_summarize_results.py")
 _SETTINGS = _load_script("workflow_settings.py")
 
 
+def test_workflow_logging_uses_supported_percent_placeholders() -> None:
+    for path in _SCRIPT_DIRECTORY.glob("*.py"):
+        assert "%," not in path.read_text()
+
+
 def _generation_row(
     sample_id: str,
     *,

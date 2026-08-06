@@ -242,7 +242,7 @@ def main() -> int:
     )
     tasks = _load_tasks(HUMANEVAL_SNAPSHOT, task_ids)
     logger.info(
-        "Loaded %,d selected generations across %,d tasks",
+        "Loaded %d selected generations across %d tasks",
         selected.height,
         len(task_ids),
     )

@@ -178,7 +178,7 @@ def preprocess_distinct_outputs(
             results[output] = _candidate_sources(trace.value(OUTPUT_KEY))
             if index % 500 == 0:
                 logger.info(
-                    "Preprocessed %,d distinct outputs in %.1f seconds",
+                    "Preprocessed %d distinct outputs in %.1f seconds",
                     index,
                     perf_counter() - started,
                 )
@@ -246,12 +246,12 @@ def main() -> int:
     started = perf_counter()
     logger.info("Loading %s", GENERATION_CORPUS)
     corpus = pl.read_parquet(GENERATION_CORPUS)
-    logger.info("Loaded %,d rows and %d columns", corpus.height, corpus.width)
+    logger.info("Loaded %d rows and %d columns", corpus.height, corpus.width)
 
     rows = classify_generation_rows(corpus)
     outputs: list[str] = rows.get_column("decoder_output").to_list()
     logger.info(
-        "Classified %,d complete nonblank rows with %,d distinct outputs",
+        "Classified %d complete nonblank rows with %d distinct outputs",
         rows.height,
         len(set(outputs)),
     )
@@ -264,7 +264,7 @@ def main() -> int:
     eligible.write_parquet(ELIGIBLE_CORPUS)
     summary.write_parquet(PREPROCESSING_SUMMARY)
     logger.info(
-        "Wrote %,d eligible rows (%.2f%%) to %s",
+        "Wrote %d eligible rows (%.2f%%) to %s",
         eligible.height,
         100 * eligible.height / rows.height,
         ELIGIBLE_CORPUS,
