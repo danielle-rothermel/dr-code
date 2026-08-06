@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 - 2026-08-06
+
+- Verification scripts load selected nonblank HumanEval generations eagerly
+  with Polars, benchmark exhaustive preprocessing and cache reuse, and report
+  task-level bootstrap confidence intervals for candidate and row reuse.
+- HumanEval generation-length analysis produces versioned summary data and
+  plots for comparing output distributions.
+
 ## 0.1.3 - 2026-08-06
 
 - Publication checks install the built wheel into an isolated environment and
