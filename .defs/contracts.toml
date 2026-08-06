@@ -198,3 +198,26 @@ Producer coordinates distinguish declared component versions and settings,
 not ambient runtime or dependency bytes. Reusing an entry after an unrecorded
 behavior change would make the result depend on stale state."""
 date = "2026-08-05"
+
+[[contracts]]
+title = "Execution cache persistence is scoped and checkpointed"
+statement = """
+A persistent execution cache bulk-loads each planned request key at most once,
+then serves point reads and writes from memory. Persistent keys include the
+opaque request key, the full digest of a mandatory caller-owned runtime
+identity, and the versioned execution-cache namespace. Strictly invalid records
+are observable misses. One background writer keeps at most one atomic batch in
+flight, coalesces later outcomes, retains failed batches for a later checkpoint,
+and attempts a final checkpoint during normal close. Persistent failures never
+fail evaluation. Within one runtime scope, an execution key deterministically
+identifies an equivalent outcome, so a concurrent first-writer winner requires
+no winner-record readback after checkpointing."""
+rationale = """
+Bulk boundaries keep storage latency off the execution hot path, runtime scope
+prevents reuse across ambient behavior changes absent from the request, strict
+restoration prevents malformed data from becoming evidence, and retryable
+checkpoint state preserves best-effort durability without coupling evaluation
+success to cache availability. Determinism within the scope is the condition
+that makes dr-store's first-writer binding safe across processes."""
+date = "2026-08-06"
+check = "uv run pytest tests/caching/test_execution_cache.py"
