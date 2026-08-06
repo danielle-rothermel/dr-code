@@ -43,9 +43,9 @@ dev = [
 [tool.uv]
 required-version = "==0.11.25"
 
-# dr-store's record cache is unreleased; pin the exact reviewed commit.
+# Use the local dr-store checkout while its record cache is under development.
 [tool.uv.sources]
-dr-store = { git = "https://github.com/danielle-rothermel/dr-store", rev = "8656db5e5428c6ce637cd5b223bac8b4396604f3" }
+dr-store = { path = "../dr-store" }
 
 # Development mode pins every component to initial-version. Only repository
 # contract tests read this marker; runtime code does not, and persisted

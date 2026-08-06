@@ -55,9 +55,9 @@ def run_preprocessing_cached(
     misses fall through to a fresh run.
     """
     key = preprocessing_trace_cache_key(text, runner)
-    record = cache.get(key, schema=TRACE_RECORD_SCHEMA)
-    if record is not None:
-        return deserialize_trace(SerializedTrace.model_validate(record))
+    hit = cache.get(key, schema=TRACE_RECORD_SCHEMA)
+    if hit is not None:
+        return deserialize_trace(SerializedTrace.model_validate(hit.record))
     trace = runner.run(TextArtifact(text=text))
     cache.put(
         key,
