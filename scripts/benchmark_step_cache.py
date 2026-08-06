@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -18,9 +19,14 @@ from bootstrap_statistics import (
     BootstrapConfidenceInterval,
     bootstrap_confidence_interval,
 )
+from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
+from dr_code.humaneval.metric_operator import CodeTest, CodeTestSettings
+from dr_code.humaneval.sampling import load_humaneval_rows
+from dr_code.metrics.engine.execution import ExecutionRequest
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     BoundPreprocessingRunner,
+    StepName,
     bind_preprocessing,
 )
 from dr_code.preprocessing.steps.base import StepFailedError
@@ -29,8 +35,11 @@ from dr_code.trace import (
     OUTPUT_KEY,
     Absent,
     Artifact,
+    CodeArtifact,
+    CodeCandidateSetArtifact,
     InspectedCodeCandidateSetArtifact,
     JsonFactValue,
+    JsonArtifact,
     TextArtifact,
     Trace,
     is_absent,
@@ -41,7 +50,11 @@ _ROOT = Path(__file__).parents[1]
 _DEFAULT_CORPUS = (
     _ROOT.parent / "gen-viewer" / "data" / "generation-corpus.parquet"
 )
+_DEFAULT_HUMANEVAL_SNAPSHOT = (
+    _ROOT / "tests" / "corpus" / "humanevalplus_snapshot.json"
+)
 _REQUIRED_COLUMNS = frozenset({"decoder_output", "sample_id", "task_id"})
+_RAW_CANDIDATE_KEY = StepName.EXTRACT_ALL_REPRESENTATIONS.value
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +82,20 @@ class _StepStats:
 
 
 @dataclass(frozen=True, slots=True)
+class _ReuseStats:
+    occurrences: int
+    unique_keys: int
+
+    @property
+    def hits(self) -> int:
+        return self.occurrences - self.unique_keys
+
+    @property
+    def hit_rate(self) -> float:
+        return self.hits / self.occurrences if self.occurrences else 0.0
+
+
+@dataclass(frozen=True, slots=True)
 class _TaskBenchmark:
     task_id: str
     rows: int
@@ -79,6 +106,9 @@ class _TaskBenchmark:
     warm_seconds: float
     cold_stats: tuple[_StepStats, ...]
     warm_stats: tuple[_StepStats, ...]
+    raw_candidate_keys: tuple[str, ...]
+    final_candidate_keys: tuple[str, ...]
+    execution_request_keys: tuple[str, ...]
 
     @property
     def cold_speedup(self) -> float:
@@ -87,6 +117,18 @@ class _TaskBenchmark:
     @property
     def success_rate(self) -> float:
         return self.successful_rows / self.rows
+
+    @property
+    def raw_candidate_reuse(self) -> _ReuseStats:
+        return _reuse_stats(self.raw_candidate_keys)
+
+    @property
+    def final_candidate_reuse(self) -> _ReuseStats:
+        return _reuse_stats(self.final_candidate_keys)
+
+    @property
+    def execution_request_reuse(self) -> _ReuseStats:
+        return _reuse_stats(self.execution_request_keys)
 
 
 class _InMemoryStepCacheRunner:
@@ -221,6 +263,67 @@ def _hit_rate(stats: tuple[_StepStats, ...]) -> tuple[int, int, float]:
     return hits, lookups, rate
 
 
+def _reuse_stats(keys: Iterable[str]) -> _ReuseStats:
+    occurrences = 0
+    unique_keys: set[str] = set()
+    for key in keys:
+        occurrences += 1
+        unique_keys.add(key)
+    return _ReuseStats(
+        occurrences=occurrences,
+        unique_keys=len(unique_keys),
+    )
+
+
+def _execution_request_key(request: ExecutionRequest) -> str:
+    return json.dumps(
+        request.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _candidate_reuse_keys(
+    traces: Sequence[Trace],
+    task: HumanEvalTask,
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    raw_candidate_keys: list[str] = []
+    final_candidate_keys: list[str] = []
+    execution_request_keys: list[str] = []
+    code_test = CodeTest(CodeTestSettings())
+    task_artifact = JsonArtifact(payload=task.model_dump(mode="json"))
+
+    for trace in traces:
+        raw_candidates = trace.value(_RAW_CANDIDATE_KEY)
+        if isinstance(raw_candidates, CodeCandidateSetArtifact):
+            raw_candidate_keys.extend(
+                candidate.source for candidate in raw_candidates.candidates
+            )
+
+        final_candidates = trace.value(OUTPUT_KEY)
+        if not isinstance(
+            final_candidates,
+            InspectedCodeCandidateSetArtifact,
+        ):
+            continue
+        for inspected_candidate in final_candidates.candidates:
+            source = inspected_candidate.candidate.source
+            final_candidate_keys.append(source)
+            requests = code_test.execution_requests(
+                CodeArtifact(source=source),
+                {code_test.settings.task_key: task_artifact},
+            )
+            execution_request_keys.extend(
+                _execution_request_key(request) for request in requests
+            )
+
+    return (
+        tuple(raw_candidate_keys),
+        tuple(final_candidate_keys),
+        tuple(execution_request_keys),
+    )
+
+
 def _print_step_stats(label: str, stats: tuple[_StepStats, ...]) -> None:
     hits, lookups, rate = _hit_rate(stats)
     print(f"{label} hit rate: {rate:.2%} ({hits:,}/{lookups:,})")
@@ -237,7 +340,10 @@ def _print_step_stats(label: str, stats: tuple[_StepStats, ...]) -> None:
         )
 
 
-def _benchmark_task(task_id: str, task_rows: pl.DataFrame) -> _TaskBenchmark:
+def _benchmark_task(
+    task: HumanEvalTask,
+    task_rows: pl.DataFrame,
+) -> _TaskBenchmark:
     sample_ids: list[str] = task_rows.get_column("sample_id").to_list()
     decoder_outputs: list[str] = task_rows.get_column(
         "decoder_output"
@@ -286,8 +392,13 @@ def _benchmark_task(task_id: str, task_rows: pl.DataFrame) -> _TaskBenchmark:
         expected=baseline_traces,
         actual=warm_traces,
     )
+    (
+        raw_candidate_keys,
+        final_candidate_keys,
+        execution_request_keys,
+    ) = _candidate_reuse_keys(baseline_traces, task)
     return _TaskBenchmark(
-        task_id=task_id,
+        task_id=task.task_id,
         rows=len(decoder_outputs),
         successful_rows=successful_rows,
         distinct_outputs=len(set(decoder_outputs)),
@@ -296,6 +407,9 @@ def _benchmark_task(task_id: str, task_rows: pl.DataFrame) -> _TaskBenchmark:
         warm_seconds=warm_seconds,
         cold_stats=cold_stats,
         warm_stats=warm_stats,
+        raw_candidate_keys=raw_candidate_keys,
+        final_candidate_keys=final_candidate_keys,
+        execution_request_keys=execution_request_keys,
     )
 
 
@@ -323,6 +437,30 @@ def _aggregate_preprocessing_success_rate(
     return successful_rows / rows
 
 
+def _aggregate_raw_candidate_hit_rate(
+    results: Sequence[_TaskBenchmark],
+) -> float:
+    return _reuse_stats(
+        key for result in results for key in result.raw_candidate_keys
+    ).hit_rate
+
+
+def _aggregate_final_candidate_hit_rate(
+    results: Sequence[_TaskBenchmark],
+) -> float:
+    return _reuse_stats(
+        key for result in results for key in result.final_candidate_keys
+    ).hit_rate
+
+
+def _aggregate_execution_request_hit_rate(
+    results: Sequence[_TaskBenchmark],
+) -> float:
+    return _reuse_stats(
+        key for result in results for key in result.execution_request_keys
+    ).hit_rate
+
+
 def _print_interval(
     label: str,
     interval: BootstrapConfidenceInterval,
@@ -340,6 +478,14 @@ def _print_interval(
         upper = f"{interval.upper:.2f}x"
     print(
         f"{label}: {estimate} ({confidence} bootstrap CI: {lower} to {upper})"
+    )
+
+
+def _print_reuse_stats(label: str, stats: _ReuseStats) -> None:
+    print(
+        f"{label}: {stats.hit_rate:.2%} "
+        f"({stats.hits:,}/{stats.occurrences:,} hits; "
+        f"{stats.unique_keys:,} unique)"
     )
 
 
@@ -363,6 +509,21 @@ def _print_single_task(result: _TaskBenchmark) -> None:
         f"({result.uncached_seconds / result.warm_seconds:.2f}x baseline)"
     )
     print("Trace equivalence: exact for cold and warm cache runs")
+    print()
+    print("Candidate reuse with an initially empty cache:")
+    _print_reuse_stats(
+        "Raw extracted-source hit rate",
+        result.raw_candidate_reuse,
+    )
+    _print_reuse_stats(
+        "Final postprocessed-source hit rate",
+        result.final_candidate_reuse,
+    )
+    _print_reuse_stats(
+        "Test-safe execution-request hit rate",
+        result.execution_request_reuse,
+    )
+    print("No candidate code was executed.")
     print()
     _print_step_stats("Cold per-step cache", result.cold_stats)
     print()
@@ -391,6 +552,23 @@ def _print_task_sample(
             f"{result.cold_seconds:9.3f}s {result.cold_speedup:8.2f}x"
         )
 
+    print()
+    print(
+        f"{'task':18} {'raw candidates':>14} {'raw hits':>10} "
+        f"{'final candidates':>16} {'final hits':>11} "
+        f"{'test requests':>13} {'test hits':>10}"
+    )
+    for result in results:
+        raw = result.raw_candidate_reuse
+        final = result.final_candidate_reuse
+        requests = result.execution_request_reuse
+        print(
+            f"{result.task_id:18} {raw.occurrences:14,d} "
+            f"{raw.hit_rate:9.2%} {final.occurrences:16,d} "
+            f"{final.hit_rate:10.2%} {requests.occurrences:13,d} "
+            f"{requests.hit_rate:9.2%}"
+        )
+
     hit_rate_interval = bootstrap_confidence_interval(
         results,
         _aggregate_cold_hit_rate,
@@ -412,6 +590,27 @@ def _print_task_sample(
         resamples=bootstrap_resamples,
         seed=seed,
     )
+    raw_candidate_interval = bootstrap_confidence_interval(
+        results,
+        _aggregate_raw_candidate_hit_rate,
+        confidence_level=confidence_level,
+        resamples=bootstrap_resamples,
+        seed=seed,
+    )
+    final_candidate_interval = bootstrap_confidence_interval(
+        results,
+        _aggregate_final_candidate_hit_rate,
+        confidence_level=confidence_level,
+        resamples=bootstrap_resamples,
+        seed=seed,
+    )
+    execution_request_interval = bootstrap_confidence_interval(
+        results,
+        _aggregate_execution_request_hit_rate,
+        confidence_level=confidence_level,
+        resamples=bootstrap_resamples,
+        seed=seed,
+    )
     print()
     _print_interval(
         "Aggregate preprocessing success rate",
@@ -428,11 +627,47 @@ def _print_task_sample(
         speedup_interval,
         percentage=False,
     )
+    _print_interval(
+        "Aggregate raw extracted-source hit rate",
+        raw_candidate_interval,
+        percentage=True,
+    )
+    _print_interval(
+        "Aggregate final postprocessed-source hit rate",
+        final_candidate_interval,
+        percentage=True,
+    )
+    _print_interval(
+        "Aggregate test-safe execution-request hit rate",
+        execution_request_interval,
+        percentage=True,
+    )
     print(
         f"Bootstrap unit: task; resamples: {bootstrap_resamples:,}; "
         f"seed: {seed}"
     )
     print("Trace equivalence: exact for every selected task")
+    print("Candidate reuse was planned without executing candidate code.")
+
+
+def _load_selected_tasks(
+    snapshot_path: Path,
+    selected_task_ids: Sequence[str],
+) -> dict[str, HumanEvalTask]:
+    selected = set(selected_task_ids)
+    rows = [
+        row
+        for row in load_humaneval_rows(snapshot_path=snapshot_path)
+        if str(row["task_id"]) in selected
+    ]
+    tasks = {task.task_id: task for task in parse_humaneval_dataset(rows)}
+    missing = selected.difference(tasks)
+    if missing:
+        raise ValueError(
+            "HumanEval snapshot is missing selected tasks: "
+            + ", ".join(sorted(missing))
+        )
+    return tasks
 
 
 def main() -> int:
@@ -475,6 +710,16 @@ def main() -> int:
         type=_parquet_path,
         default=_DEFAULT_CORPUS,
         help=f"generation corpus path (default: {_DEFAULT_CORPUS})",
+    )
+    parser.add_argument(
+        "--humaneval-snapshot",
+        type=_parquet_path,
+        default=_DEFAULT_HUMANEVAL_SNAPSHOT,
+        help=(
+            "pinned HumanEval raw-row snapshot used only to construct "
+            "test-safe cache keys "
+            f"(default: {_DEFAULT_HUMANEVAL_SNAPSHOT})"
+        ),
     )
     arguments = parser.parse_args()
     if (arguments.task_id is None) == (arguments.task_count is None):
@@ -527,6 +772,16 @@ def main() -> int:
         )
         return 1
 
+    task_load_started = perf_counter()
+    try:
+        tasks_by_id = _load_selected_tasks(
+            arguments.humaneval_snapshot,
+            selected_task_ids,
+        )
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    task_load_seconds = perf_counter() - task_load_started
+
     results: list[_TaskBenchmark] = []
     for index, task_id in enumerate(selected_task_ids, start=1):
         task_rows = selected_rows.filter(pl.col("task_id") == task_id)
@@ -535,7 +790,7 @@ def main() -> int:
             f"{task_id} ({task_rows.height:,} rows)",
             flush=True,
         )
-        results.append(_benchmark_task(task_id, task_rows))
+        results.append(_benchmark_task(tasks_by_id[task_id], task_rows))
 
     print(f"Parquet: {arguments.parquet}")
     print(
@@ -545,6 +800,10 @@ def main() -> int:
     print(
         f"Selected and filtered: {selected_rows.height:,} rows in "
         f"{filter_seconds:.6f} seconds"
+    )
+    print(
+        f"Loaded {len(tasks_by_id):,} selected HumanEval task payloads in "
+        f"{task_load_seconds:.6f} seconds"
     )
     if arguments.task_count is None:
         print(f"Task ID: {results[0].task_id}")
