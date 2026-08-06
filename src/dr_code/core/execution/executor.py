@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import math
-import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -232,15 +231,20 @@ def interpret_completed_execution(
             )
 
 
-def host_process_executor(record_root: Path) -> ProcessExecutor:
-    """The production executor: host Python, records under ``record_root``.
+def host_process_executor(
+    record_root: Path,
+    *,
+    runtime_executable: Path,
+) -> ProcessExecutor:
+    """The production executor: selected Python, records under ``record_root``.
 
-    Construction probes the host interpreter anywhere; running jobs is
-    restricted to the platforms dr-exec supports.
+    Construction probes the selected interpreter anywhere; running jobs is
+    restricted to the platforms dr-exec supports. Callers own provisioning
+    the interpreter and its required packages.
     """
 
     return ProcessExecutor(
-        runtime=IsolatedHostPythonRuntime(Path(sys.executable)),
+        runtime=IsolatedHostPythonRuntime(runtime_executable),
         run_store=DirectoryRunStore(root=record_root),
     )
 

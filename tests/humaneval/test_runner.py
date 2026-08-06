@@ -208,8 +208,9 @@ def test_evaluate_humaneval_code_reports_timeout_per_case() -> None:
 def test_run_subprocess_batch_raises_for_malformed_runner_output() -> None:
     executor = _stub_executor(
         stdout=(
+            '{"kind": "case_results", "results": '
             '[{"case_id": "case_0", "status": "passed", "message": ""}, '
-            '{"case_id": "case_1", "status": "nonsense"}]'
+            '{"case_id": "case_1", "status": "nonsense"}]}'
         ),
     )
 
@@ -225,9 +226,10 @@ def test_run_subprocess_batch_raises_for_malformed_runner_output() -> None:
     results = exc_info.value.case_results
     by_case_id = {result.case_id: result for result in results}
     assert set(by_case_id) == {"case_0", "case_1"}
-    assert by_case_id["case_0"].status is EvaluationCaseStatus.PASSED
-    assert by_case_id["case_1"].status is EvaluationCaseStatus.ERROR
-    assert "Invalid runner output" in by_case_id["case_1"].message
+    assert all(
+        result.status is EvaluationCaseStatus.ERROR for result in results
+    )
+    assert "Invalid runner output" in by_case_id["case_0"].message
 
 
 def test_evaluation_incomplete_when_runner_returns_partial_results() -> None:
@@ -295,12 +297,15 @@ def test_run_subprocess_batch_scores_wall_time_budget_as_timeout() -> None:
 @pytest.mark.parametrize(
     "runner_stdout",
     [
+        '{"kind": "case_results", "results": '
         '[{"case_id": "case_0", "status": "passed", "message": ""},'
-        ' {"case_id": "case_0", "status": "passed", "message": ""}]',
-        '[{"case_id": "case_99", "status": "passed", "message": ""}]',
+        ' {"case_id": "case_0", "status": "passed", "message": ""}]}',
+        '{"kind": "case_results", "results": '
+        '[{"case_id": "case_99", "status": "passed", "message": ""}]}',
+        '{"kind": "case_results", "results": '
         '[{"case_id": "case_0", "status": "passed", "message": ""},'
         ' {"case_id": "case_1", "status": "passed", "message": ""},'
-        ' {"case_id": "case_2", "status": "passed", "message": ""}]',
+        ' {"case_id": "case_2", "status": "passed", "message": ""}]}',
     ],
     ids=("duplicate", "unknown", "more_rows_than_cases"),
 )
@@ -383,11 +388,16 @@ def test_run_subprocess_batch_raises_for_non_list_json() -> None:
         )
 
     results = exc_info.value.case_results
-    assert "expected a JSON list" in results[0].message
+    assert "Invalid runner output" in results[0].message
 
 
-def test_run_subprocess_batch_fallback_case_id_is_harness_detail() -> None:
-    executor = _stub_executor(stdout='[{"status": "passed", "message": ""}]')
+def test_run_subprocess_batch_invalid_case_is_harness_detail() -> None:
+    executor = _stub_executor(
+        stdout=(
+            '{"kind": "case_results", "results": '
+            '[{"status": "passed", "message": ""}]}'
+        )
+    )
 
     with pytest.raises(EvaluationHarnessError) as exc_info:
         run_subprocess_batch(

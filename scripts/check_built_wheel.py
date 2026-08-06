@@ -40,7 +40,10 @@ if "def dr_exec_main" not in runner_script():
 
 driver_source = "def dr_exec_main(request, emit):\n    print('wheel-smoke')\n"
 with TemporaryDirectory(prefix="dr-code-wheel-records-") as record_root:
-    executor = host_process_executor(Path(record_root))
+    executor = host_process_executor(
+        Path(record_root),
+        runtime_executable=Path(sys.executable),
+    )
     if not isinstance(executor, ProcessExecutor):
         raise SystemExit("production executor is not a ProcessExecutor")
     if sys.platform == "darwin":

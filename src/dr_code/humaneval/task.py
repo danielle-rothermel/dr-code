@@ -5,7 +5,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -276,6 +276,37 @@ class HumanEvalRunnerCaseOutput(BaseModel):
     actual_output_repr: str = ""
     elapsed_seconds: float | None = None
     timeout_seconds: float | None = None
+
+
+class HumanEvalRunnerCaseResults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["case_results"] = "case_results"
+    results: list[HumanEvalRunnerCaseOutput]
+
+
+class HumanEvalRunnerCandidateFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["candidate_failure"] = "candidate_failure"
+    message: str
+    elapsed_seconds: float
+
+
+class HumanEvalRunnerHarnessFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["harness_failure"] = "harness_failure"
+    message: str
+    elapsed_seconds: float
+
+
+HumanEvalRunnerOutput = Annotated[
+    HumanEvalRunnerCaseResults
+    | HumanEvalRunnerCandidateFailure
+    | HumanEvalRunnerHarnessFailure,
+    Field(discriminator="kind"),
+]
 
 
 class EvaluationHarnessError(RuntimeError):

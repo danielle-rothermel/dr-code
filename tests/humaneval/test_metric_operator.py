@@ -29,7 +29,11 @@ from dr_code.metrics import (
     MetricsDefinition,
     extract_metrics,
 )
-from dr_code.metrics.records import MeasuredRecord, MetricRecord
+from dr_code.metrics.records import (
+    MeasuredRecord,
+    MetricRecord,
+    OperatorFailureRecord,
+)
 from dr_code.trace import CodeArtifact, JsonArtifact, Trace, external_trace
 
 _INPUT_RESULT_TEST = (
@@ -159,7 +163,7 @@ def _partial_pass_runner_output(
                 "timeout_seconds": None,
             }
         )
-    return json.dumps(payload)
+    return json.dumps({"kind": "case_results", "results": payload})
 
 
 def test_code_test_imports_in_clean_interpreter() -> None:
@@ -252,7 +256,7 @@ def test_code_test_kill_attributed_to_candidate(
     assert _value(record, "passed_count") == 0
 
 
-def test_code_test_nonzero_exit_attributed_to_candidate(
+def test_code_test_nonzero_runner_exit_is_operator_failure(
     task: HumanEvalTask,
     good_submission: str,
     scripted: Callable[..., FakeExecutor],
@@ -266,12 +270,12 @@ def test_code_test_nonzero_exit_attributed_to_candidate(
         ),
     )
 
-    assert isinstance(record, MeasuredRecord)
-    assert _value(record, "error_count") == _value(record, "total_cases")
-    assert _value(record, "passed_count") == 0
+    assert isinstance(record, OperatorFailureRecord)
+    assert record.failure.failure_type == "EvaluationHarnessError"
+    assert "runner subprocess exited nonzero" in record.failure.failure_message
 
 
-def test_code_test_malformed_stdout_attributed_to_candidate(
+def test_code_test_malformed_stdout_is_operator_failure(
     task: HumanEvalTask,
     good_submission: str,
     scripted: Callable[..., FakeExecutor],
@@ -287,11 +291,48 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
             executor=scripted(stdout=bad_stdout),
         )
 
-        assert isinstance(record, MeasuredRecord), bad_stdout
-        assert _value(record, "error_count") == _value(
-            record, "total_cases"
-        ), bad_stdout
-        assert _value(record, "passed_count") == 0, bad_stdout
+        assert isinstance(record, OperatorFailureRecord), bad_stdout
+        assert record.failure.failure_type == "EvaluationHarnessError"
+
+
+def test_code_test_support_initialization_failure_is_operator_failure(
+    good_submission: str,
+    local_executor: FakeExecutor,
+) -> None:
+    task = HumanEvalTask(
+        task_id="HumanEval/broken-support",
+        prompt="def add_one(x):\n",
+        canonical_solution="    return x + 1\n",
+        entry_point="add_one",
+        test=("raise RuntimeError('support broke')\n" + _INPUT_RESULT_TEST),
+    )
+
+    record = _extract_code_test(
+        _code_test_trace(good_submission, task),
+        executor=local_executor,
+    )
+
+    assert isinstance(record, OperatorFailureRecord)
+    assert record.failure.failure_type == "EvaluationHarnessError"
+    assert "RuntimeError: support broke" in record.failure.failure_message
+
+
+def test_code_test_candidate_setup_failure_remains_measured(
+    task: HumanEvalTask,
+    local_executor: FakeExecutor,
+) -> None:
+    record = _extract_code_test(
+        _code_test_trace(
+            "raise RuntimeError('candidate broke')\n"
+            "def add_one(x):\n    return x + 1\n",
+            task,
+        ),
+        executor=local_executor,
+    )
+
+    assert isinstance(record, MeasuredRecord)
+    assert _value(record, "error_count") == _value(record, "total_cases")
+    assert _value(record, "passed_count") == 0
 
 
 def test_code_test_executor_failure_still_propagates(

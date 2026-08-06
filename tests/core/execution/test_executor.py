@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -246,8 +247,11 @@ class TestOutcomeInterpretation:
 def test_host_process_executor_composes_the_production_pieces(
     tmp_path: Path,
 ) -> None:
-    executor = host_process_executor(tmp_path)
+    executor = host_process_executor(
+        tmp_path,
+        runtime_executable=Path(sys.executable),
+    )
     assert isinstance(executor, ProcessExecutor)
     assert executor.run_store.root == tmp_path
     record = executor.runtime.describe()
-    assert record.resolved_executable.exists()
+    assert record.resolved_executable == Path(sys.executable).resolve()

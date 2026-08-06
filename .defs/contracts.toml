@@ -130,12 +130,13 @@ date = "2026-08-05"
 check = "uv run pytest tests/evaluation/test_aggregation.py"
 
 [[contracts]]
-title = "HumanEval scoring separates outcomes from harness failure"
+title = "HumanEval evaluation separates outcomes from harness failure"
 statement = """
-HumanEval scoring returns a completed submission outcome for
-candidate-attributable execution results and a harness-failure result only
-when the evaluation machinery cannot establish a submission outcome. Batch
-scoring extracts every submission, plans all accepted candidates, executes the
+HumanEval scoring and code-test metrics preserve candidate-attributable
+execution results as experimental evidence. Trusted support-code
+initialization failures and malformed runner results surface as harness or
+operator failures instead of measured candidate failures. Batch scoring
+extracts every submission, plans all accepted candidates, executes the
 complete request set through one engine call, and returns results in request
 order. Single-submission scoring is the one-element batch convenience."""
 rationale = """
@@ -144,7 +145,7 @@ broken evaluation infrastructure invalidates the measurement. One complete
 execution batch preserves scoring semantics while allowing persistent caches
 to prefetch once and serve the evaluation hot path from memory."""
 date = "2026-08-05"
-check = "uv run pytest tests/humaneval/test_scoring.py"
+check = "uv run pytest tests/humaneval/test_scoring.py tests/humaneval/test_metric_operator.py"
 
 [[contracts]]
 title = "Synthetic coordinates determine generated samples"
@@ -162,7 +163,8 @@ check = "uv run pytest tests/synthetic/test_dataset_builder.py tests/synthetic/t
 title = "Execution jobs are bounded and outcome mapping is closed"
 statement = """
 Every execution job declares finite wall-clock, input, and payload-output
-budgets and a fixed environment grant. Exited, signaled, wall-time, and
+budgets and a fixed environment grant, and production executor construction
+requires an explicit Python executable. Exited, signaled, wall-time, and
 payload-output outcomes have fixed mappings; payload-owned protocol failures
 map to candidate-attributable kills; every other outcome fails closed as an
 executor failure."""

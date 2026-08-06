@@ -85,7 +85,9 @@ def test_runner_script_sends_candidate_output_to_stderr(
 
     assert "candidate diagnostic" not in completed.stdout
     assert "candidate diagnostic" in completed.stderr
-    assert [row["status"] for row in json.loads(completed.stdout)] == [
+    output = json.loads(completed.stdout)
+    assert output["kind"] == "case_results"
+    assert [row["status"] for row in output["results"]] == [
         "passed",
         "passed",
     ]
@@ -108,7 +110,39 @@ def test_runner_script_emits_only_through_its_results_handle() -> None:
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
-    assert "emit_results" in emitters
+    assert "emit_output" in emitters
+
+
+def test_runner_script_reports_support_failure_separately(
+    local_executor: FakeExecutor,
+) -> None:
+    task = _task(
+        test=(
+            "raise RuntimeError('support broke')\n"
+            "def check(candidate):\n"
+            "    inputs = [(1,)]\n"
+            "    results = [2]\n"
+            "    for inp, expected in zip(inputs, results):\n"
+            "        assertion(candidate(*inp), expected)\n"
+        )
+    )
+    request = build_humaneval_batch_request(
+        task=task,
+        candidate_code="def add_one(x):\n    return x + 1\n",
+        function_name="add_one",
+        timeout_seconds=10.0,
+    )
+
+    completed = run_python_source(
+        local_executor,
+        source=request.source,
+        input_json=request.input_json,
+        timeout_seconds=request.timeout_seconds,
+    )
+
+    output = json.loads(completed.stdout)
+    assert output["kind"] == "harness_failure"
+    assert "RuntimeError: support broke" in output["message"]
 
 
 def test_runner_script_source_is_dependency_free() -> None:
