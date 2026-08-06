@@ -12,7 +12,6 @@ from _executor_stubs import (
     scripted_executor,
 )
 from dr_exec import Executor, ExecutorFailure, FakeExecutor
-from dr_code.humaneval import metric_operator
 from dr_code.humaneval.metric_operator import CodeTest, CodeTestSettings
 from dr_code.humaneval.runner import (
     build_humaneval_batch_request,
@@ -332,6 +331,7 @@ def test_code_test_requests_are_the_canonical_batch_request(
         assert request.input_json == canonical.input_json, function_name
         assert request.source == canonical.source, function_name
         assert request.timeout_seconds == canonical.timeout_seconds
+
 
 def test_code_test_function_names_come_from_the_shared_rule(
     task: HumanEvalTask,
