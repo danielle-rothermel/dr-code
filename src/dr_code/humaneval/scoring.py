@@ -22,10 +22,7 @@ from dr_code.humaneval.profiles import (
     HumanEvalScoringProfile,
     resolve_humaneval_scoring_profile,
 )
-from dr_code.core.execution.sandbox import (
-    SandboxRunner,
-    run_python_in_sandbox,
-)
+from dr_exec import Executor
 from dr_code.humaneval.task import (
     EvaluationHarnessError,
     EvaluationCaseStatus,
@@ -86,7 +83,7 @@ def score_humaneval_submission(
     task: HumanEvalTask,
     scoring_profile_id: str = HUMANEVAL_SCORING_PROFILE_ID,
     scoring_profile_version: str = HUMANEVAL_SCORING_PROFILE_VERSION,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    executor: Executor | None = None,
 ) -> HumanEvalSubmissionScore:
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
@@ -113,7 +110,7 @@ def score_humaneval_submission(
             candidate_code=extraction.accepted_code,
             timeout_seconds=scoring_profile.timeout_seconds,
             candidate_ast=extraction.accepted_tree,
-            run_in_sandbox=run_in_sandbox,
+            executor=executor,
         )
     except EvaluationHarnessError as exc:
         return HarnessFailure(

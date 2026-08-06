@@ -9,9 +9,10 @@ from pydantic import model_validator
 
 from dr_code.humaneval import runner
 from dr_code.humaneval.profiles import DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
-from dr_code.core.execution.sandbox import (
-    SandboxCompletedProcess,
-    SandboxOutputLimitError,
+from dr_code.core.execution.executor import (
+    CompletedPythonProcess,
+    ExecutionKilledError,
+    ExecutionOutputLimitError,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
@@ -23,6 +24,7 @@ from dr_code.humaneval.task import (
 from dr_code.metrics.engine.execution import (
     ExecutionOutcome,
     ExecutionRequest,
+    is_killed_outcome,
     is_output_limit_outcome,
     is_timeout_outcome,
 )
@@ -227,10 +229,16 @@ def _results_from_outcome(
         return runner.error_results(
             task=task,
             function_name=function_name,
-            message=f"{SandboxOutputLimitError.__name__}: {outcome.stderr}",
+            message=f"{ExecutionOutputLimitError.__name__}: {outcome.stderr}",
+        )
+    if is_killed_outcome(outcome):
+        return runner.error_results(
+            task=task,
+            function_name=function_name,
+            message=f"{ExecutionKilledError.__name__}: {outcome.stderr}",
         )
 
-    completed = SandboxCompletedProcess(
+    completed = CompletedPythonProcess(
         returncode=outcome.returncode,
         stdout=outcome.stdout,
         stderr=outcome.stderr,

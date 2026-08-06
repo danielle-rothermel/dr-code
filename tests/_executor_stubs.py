@@ -1,0 +1,237 @@
+"""Shared dr-exec executor stubs for dr-code tests.
+
+Every stub is a dr-exec ``FakeExecutor`` so scripted completions still pass
+declaration validation. ``local_python_executor`` really runs the driver in
+a local subprocess through a minimal stand-in bootstrap: dr-exec's
+production engine is platform-restricted, so local runs substitute for it
+while preserving the driver contract (request on stdin, results on stdout).
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from dr_exec import (
+    AttemptId,
+    BudgetAxis,
+    BudgetExceededOutcome,
+    CancelledOutcome,
+    CompletedExecution,
+    ExecutionAttribution,
+    ExecutionId,
+    ExecutionJob,
+    ExecutionMeasurements,
+    ExecutionOutcome,
+    ExecutionResult,
+    ExitedOutcome,
+    FailureOwner,
+    FakeExecutor,
+    FakeRecordReceipt,
+    FiniteDurationLimit,
+    PayloadOutputs,
+    ProtocolFailedOutcome,
+    ProtocolFailureCode,
+    RetainedPayloadStream,
+    SignaledOutcome,
+    SpawnAbsentOutcome,
+    SpawnFailedOutcome,
+    UntrustedPythonTarget,
+)
+
+_LOCAL_BOOTSTRAP = (
+    "\n"
+    "import json as _stub_json\n"
+    "import sys as _stub_sys\n"
+    "dr_exec_main(\n"
+    "    _stub_json.loads(_stub_sys.stdin.buffer.read().decode('utf-8')),\n"
+    "    lambda _document: None,\n"
+    ")\n"
+)
+
+
+def _attribute(outcome: ExecutionOutcome) -> ExecutionAttribution:
+    """Mirror dr-exec's engine attribution for scripted completions."""
+
+    match outcome:
+        case ExitedOutcome():
+            owner = (
+                FailureOwner.NONE
+                if outcome.exit_code == 0
+                else FailureOwner.PAYLOAD
+            )
+        case SignaledOutcome() | BudgetExceededOutcome():
+            owner = FailureOwner.PAYLOAD
+        case ProtocolFailedOutcome():
+            owner = (
+                FailureOwner.EXECUTOR
+                if outcome.failure_code is ProtocolFailureCode.OVERSIZED_FRAME
+                else FailureOwner.PAYLOAD
+            )
+        case SpawnAbsentOutcome():
+            owner = FailureOwner.EXECUTOR
+        case SpawnFailedOutcome():
+            owner = FailureOwner.MACHINE
+        case CancelledOutcome():
+            owner = FailureOwner.NONE
+    return ExecutionAttribution(owner=owner)
+
+
+def _stream(data: bytes) -> RetainedPayloadStream:
+    return RetainedPayloadStream(
+        head=data,
+        tail=b"",
+        produced_bytes=len(data),
+        dropped_bytes=0,
+    )
+
+
+def completed_execution(
+    job: ExecutionJob,
+    *,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+    outcome: ExecutionOutcome | None = None,
+) -> CompletedExecution:
+    if outcome is None:
+        outcome = (
+            ExitedOutcome(exit_code=returncode)
+            if returncode >= 0
+            else SignaledOutcome(signal_number=-returncode)
+        )
+    execution_id = ExecutionId(
+        job_id=job.job_id,
+        attempt_id=AttemptId(uuid4()),
+    )
+    now = datetime.now(UTC)
+    return CompletedExecution(
+        result=ExecutionResult(
+            execution_id=execution_id,
+            outcome=outcome,
+            attribution=_attribute(outcome),
+            protocol_outputs=(),
+            payload_outputs=PayloadOutputs(
+                stdout=_stream(stdout.encode("utf-8")),
+                stderr=_stream(stderr.encode("utf-8")),
+            ),
+            measurements=ExecutionMeasurements(
+                started_at=now,
+                finished_at=now,
+                duration_ns=0,
+                teardown_duration_ns=0,
+                input_bytes=0,
+                protocol_bytes_received=0,
+            ),
+        ),
+        record_receipt=FakeRecordReceipt(execution_id=execution_id),
+    )
+
+
+def scripted_executor(
+    *,
+    stdout: str = "",
+    stderr: str = "",
+    returncode: int = 0,
+    outcome: ExecutionOutcome | None = None,
+) -> FakeExecutor:
+    """Return the same scripted completion for every job."""
+
+    def respond(job: ExecutionJob, cancellation: object) -> CompletedExecution:
+        del cancellation
+        return completed_execution(
+            job,
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+            outcome=outcome,
+        )
+
+    return FakeExecutor(responder=respond)
+
+
+def timeout_executor() -> FakeExecutor:
+    return scripted_executor(
+        outcome=BudgetExceededOutcome(axis=BudgetAxis.WALL_TIME)
+    )
+
+
+def output_limit_executor() -> FakeExecutor:
+    return scripted_executor(
+        outcome=BudgetExceededOutcome(axis=BudgetAxis.PAYLOAD_OUTPUT)
+    )
+
+
+def raising_executor(exc: BaseException) -> FakeExecutor:
+    def respond(job: ExecutionJob, cancellation: object) -> CompletedExecution:
+        del job, cancellation
+        raise exc
+
+    return FakeExecutor(responder=respond)
+
+
+def local_python_executor() -> FakeExecutor:
+    """Really run the declared driver in a local subprocess."""
+
+    def respond(job: ExecutionJob, cancellation: object) -> CompletedExecution:
+        del cancellation
+        target = job.target
+        assert isinstance(target, UntrustedPythonTarget)
+        wall_time = job.budgets.wall_time
+        timeout = (
+            wall_time.max_ns / 1e9
+            if isinstance(wall_time, FiniteDurationLimit)
+            else None
+        )
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-c",
+                    target.driver_source + _LOCAL_BOOTSTRAP,
+                ],
+                input=json.dumps(target.request.to_json_dict()),
+                capture_output=True,
+                check=False,
+                encoding="utf-8",
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return completed_execution(
+                job,
+                outcome=BudgetExceededOutcome(axis=BudgetAxis.WALL_TIME),
+            )
+        return completed_execution(
+            job,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
+
+    return FakeExecutor(responder=respond)
+
+
+class CountingExecutor:
+    """Executor wrapper recording every job it forwards."""
+
+    def __init__(self, inner: FakeExecutor) -> None:
+        self._inner = inner
+        self.calls: list[ExecutionJob] = []
+
+    def run(
+        self,
+        job: ExecutionJob,
+        /,
+        *,
+        cancellation: object = None,
+    ) -> CompletedExecution:
+        self.calls.append(job)
+        return self._inner.run(job, cancellation=None)
+
+    @property
+    def call_count(self) -> int:
+        return len(self.calls)

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from dr_code.core.execution.sandbox import (
-    SandboxCompletedProcess,
-    SandboxRunner,
-)
+from dr_exec import FakeExecutor
+
+from _executor_stubs import scripted_executor
 from dr_code.humaneval import HumanEvalTask
 
 
@@ -43,25 +42,17 @@ def _input_result_test() -> str:
     )
 
 
-def _stub_runner(
+def _stub_executor(
     *,
     stdout: str,
     stderr: str = "",
     returncode: int = 0,
-) -> SandboxRunner:
-    def run(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        return SandboxCompletedProcess(
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-        )
-
-    return run
+) -> FakeExecutor:
+    return scripted_executor(
+        stdout=stdout,
+        stderr=stderr,
+        returncode=returncode,
+    )
 
 
 _PARTIAL_RUNNER_PASSED_CASE_0 = (

@@ -7,12 +7,12 @@ from collections.abc import Callable
 
 import pytest
 
-from dr_code.core.execution.sandbox import (
-    SandboxCompletedProcess,
-    SandboxError,
-    SandboxRunner,
-    SandboxTimeoutError,
+from _executor_stubs import (
+    raising_executor,
+    scripted_executor,
 )
+from dr_exec import Executor, ExecutorFailure, FakeExecutor
+from dr_code.humaneval import metric_operator
 from dr_code.humaneval.metric_operator import CodeTest, CodeTestSettings
 from dr_code.humaneval.runner import (
     build_humaneval_batch_request,
@@ -93,12 +93,12 @@ def _code_test_definition(
 def _extract_code_test(
     trace: Trace,
     *,
-    run_in_sandbox: SandboxRunner,
+    executor: Executor,
 ) -> MetricRecord:
     records = extract_metrics(
         _code_test_definition(),
         trace,
-        run_in_sandbox=run_in_sandbox,
+        executor=executor,
     )
     assert len(records) == 1
     return records[0]
@@ -113,79 +113,27 @@ def _value(record: MetricRecord, key: str) -> object:
     return _facts(record)[key]
 
 
-def _local_runner() -> SandboxRunner:
-    def run_local_python(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        try:
-            completed = subprocess.run(
-                [sys.executable, "-I", "-c", source],
-                input=input_json,
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-                timeout=timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise SandboxTimeoutError(str(exc)) from exc
-        return SandboxCompletedProcess(
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
-
-    return run_local_python
-
-
-@pytest.fixture
-def local_runner() -> SandboxRunner:
-    return _local_runner()
-
-
-def _scripted_runner(
+def _scripted_executor(
     *,
     stdout: str = "[]",
     stderr: str = "",
     returncode: int = 0,
-) -> SandboxRunner:
-    def run(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        return SandboxCompletedProcess(
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-        )
-
-    return run
+) -> FakeExecutor:
+    return scripted_executor(
+        stdout=stdout,
+        stderr=stderr,
+        returncode=returncode,
+    )
 
 
 @pytest.fixture
-def scripted_runner() -> Callable[..., SandboxRunner]:
-    return _scripted_runner
-
-
-def _raising_runner(exc: BaseException) -> SandboxRunner:
-    def run(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        raise exc
-
-    return run
+def scripted() -> Callable[..., FakeExecutor]:
+    return _scripted_executor
 
 
 @pytest.fixture
-def raising_runner() -> Callable[[BaseException], SandboxRunner]:
-    return _raising_runner
+def raising() -> Callable[[BaseException], FakeExecutor]:
+    return raising_executor
 
 
 def _partial_pass_runner_output(
@@ -236,17 +184,17 @@ def test_code_test_imports_in_clean_interpreter() -> None:
 def test_code_test_passing_counts_match_oracle(
     task: HumanEvalTask,
     good_submission: str,
-    local_runner: SandboxRunner,
+    local_executor: FakeExecutor,
 ) -> None:
     oracle = evaluate_humaneval_code(
         task=task,
         candidate_code=good_submission,
         timeout_seconds=5.0,
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
     record = _extract_code_test(
         _code_test_trace(good_submission, task),
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
 
     assert _value(record, "total_cases") == oracle.total_cases
@@ -270,17 +218,17 @@ def test_code_test_passing_counts_match_oracle(
 def test_code_test_failing_counts_match_oracle(
     task: HumanEvalTask,
     failing_submission: str,
-    local_runner: SandboxRunner,
+    local_executor: FakeExecutor,
 ) -> None:
     oracle = evaluate_humaneval_code(
         task=task,
         candidate_code=failing_submission,
         timeout_seconds=5.0,
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
     record = _extract_code_test(
         _code_test_trace(failing_submission, task),
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
 
     assert _value(record, "passed_count") == oracle.status_counts.get(
@@ -291,22 +239,14 @@ def test_code_test_failing_counts_match_oracle(
     )
 
 
-def test_code_test_kill_returncode_attributed_to_candidate(
+def test_code_test_kill_attributed_to_candidate(
     task: HumanEvalTask,
     good_submission: str,
+    scripted: Callable[..., FakeExecutor],
 ) -> None:
-    def kill_runner(
-        *, source: str, input_json: str, timeout_seconds: float
-    ) -> SandboxCompletedProcess:
-        return SandboxCompletedProcess(
-            returncode=137,
-            stdout="",
-            stderr="killed",
-        )
-
     record = _extract_code_test(
         _code_test_trace(good_submission, task),
-        run_in_sandbox=kill_runner,
+        executor=scripted(returncode=-9, stdout="", stderr="killed"),
     )
 
     assert _value(record, "error_count") == _value(record, "total_cases")
@@ -316,11 +256,11 @@ def test_code_test_kill_returncode_attributed_to_candidate(
 def test_code_test_nonzero_exit_attributed_to_candidate(
     task: HumanEvalTask,
     good_submission: str,
-    scripted_runner: Callable[..., SandboxRunner],
+    scripted: Callable[..., FakeExecutor],
 ) -> None:
     record = _extract_code_test(
         _code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(
+        executor=scripted(
             returncode=5,
             stdout="",
             stderr="boom",
@@ -335,7 +275,7 @@ def test_code_test_nonzero_exit_attributed_to_candidate(
 def test_code_test_malformed_stdout_attributed_to_candidate(
     task: HumanEvalTask,
     good_submission: str,
-    scripted_runner: Callable[..., SandboxRunner],
+    scripted: Callable[..., FakeExecutor],
 ) -> None:
     for bad_stdout in (
         "this is not json{",
@@ -345,7 +285,7 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
     ):
         record = _extract_code_test(
             _code_test_trace(good_submission, task),
-            run_in_sandbox=scripted_runner(stdout=bad_stdout),
+            executor=scripted(stdout=bad_stdout),
         )
 
         assert isinstance(record, MeasuredRecord), bad_stdout
@@ -355,15 +295,15 @@ def test_code_test_malformed_stdout_attributed_to_candidate(
         assert _value(record, "passed_count") == 0, bad_stdout
 
 
-def test_code_test_sandbox_error_still_propagates(
+def test_code_test_executor_failure_still_propagates(
     task: HumanEvalTask,
     good_submission: str,
-    raising_runner: Callable[[BaseException], SandboxRunner],
+    raising: Callable[[BaseException], FakeExecutor],
 ) -> None:
-    with pytest.raises(SandboxError):
+    with pytest.raises(ExecutorFailure):
         _extract_code_test(
             _code_test_trace(good_submission, task),
-            run_in_sandbox=raising_runner(SandboxError("boundary broke")),
+            executor=raising(ExecutorFailure("boundary broke")),
         )
 
 
@@ -421,20 +361,20 @@ def test_code_test_function_names_come_from_the_shared_rule(
 
 def test_code_test_selection_is_the_task_selection_rule(
     task: HumanEvalTask,
-    local_runner: SandboxRunner,
+    local_executor: FakeExecutor,
 ) -> None:
     candidate = (
         "def add_one(x):\n    return x - 1\ndef decoy(x):\n    return x + 1\n"
     )
     record = _extract_code_test(
         _code_test_trace(candidate, task),
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
     oracle = evaluate_humaneval_code(
         task=task,
         candidate_code=candidate,
         timeout_seconds=5.0,
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
 
     assert _value(record, "best_function_name") == "decoy"
@@ -448,14 +388,14 @@ def test_code_test_selection_is_the_task_selection_rule(
 
 def test_code_test_best_function_is_mechanical_max_passes(
     task: HumanEvalTask,
-    local_runner: SandboxRunner,
+    local_executor: FakeExecutor,
 ) -> None:
     candidate = (
         "def add_one(x):\n    return x + 1\ndef decoy(x):\n    return x - 1\n"
     )
     record = _extract_code_test(
         _code_test_trace(candidate, task),
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
 
     assert _value(record, "best_function_name") == task.entry_point
@@ -467,7 +407,7 @@ def test_code_test_best_function_is_mechanical_max_passes(
 def test_code_test_partial_coverage_is_measured(
     task: HumanEvalTask,
     good_submission: str,
-    scripted_runner: Callable[..., SandboxRunner],
+    scripted: Callable[..., FakeExecutor],
 ) -> None:
     incomplete_output = _partial_pass_runner_output(
         passed=("case_0",),
@@ -475,7 +415,7 @@ def test_code_test_partial_coverage_is_measured(
     )
     record = _extract_code_test(
         _code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(stdout=incomplete_output),
+        executor=scripted(stdout=incomplete_output),
     )
 
     assert isinstance(record, MeasuredRecord)
@@ -487,12 +427,12 @@ def test_code_test_partial_coverage_is_measured(
 def test_code_test_complete_coverage_with_failure_is_covered(
     task: HumanEvalTask,
     good_submission: str,
-    scripted_runner: Callable[..., SandboxRunner],
+    scripted: Callable[..., FakeExecutor],
 ) -> None:
     complete_with_failure = _partial_pass_runner_output()
     record = _extract_code_test(
         _code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(stdout=complete_with_failure),
+        executor=scripted(stdout=complete_with_failure),
     )
 
     assert isinstance(record, MeasuredRecord)

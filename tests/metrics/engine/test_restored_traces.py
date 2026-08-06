@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dr_code.core.execution.sandbox import SandboxCompletedProcess
+from _executor_stubs import scripted_executor
 from dr_code.trace import (
     CodeArtifact,
     ComponentCoordinate,
@@ -88,8 +88,8 @@ def _extract(definition, trace, **kwargs):
     return extract_metrics(definition, trace, **kwargs)
 
 
-def _stub_runner(*, source, input_json, timeout_seconds):  # noqa: ANN001
-    return SandboxCompletedProcess(returncode=0, stdout="[]", stderr="")
+def _stub_executor():
+    return scripted_executor(stdout="[]")
 
 
 def test_deserialized_trace_measures_identically_to_fresh() -> None:
@@ -138,10 +138,8 @@ def test_code_test_record_equal_across_fresh_and_restored(
     restored = deserialize_trace(serialize_trace(fresh))
     definition = _code_test_definition()
     assert _answer(
-        _extract(definition, fresh, run_in_sandbox=_stub_runner)[0]
-    ) == _answer(
-        _extract(definition, restored, run_in_sandbox=_stub_runner)[0]
-    )
+        _extract(definition, fresh, executor=_stub_executor())[0]
+    ) == _answer(_extract(definition, restored, executor=_stub_executor())[0])
 
 
 def test_batch_over_identical_traces_yields_equal_record_sets(
@@ -155,7 +153,7 @@ def test_batch_over_identical_traces_yields_equal_record_sets(
     record_sets = extract_metrics_batch(
         definition,
         [fresh, restored, fresh],
-        run_in_sandbox=_stub_runner,
+        executor=_stub_executor(),
     )
     answers = [[_answer(r) for r in records] for records in record_sets]
     assert answers[0] == answers[1] == answers[2]

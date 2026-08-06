@@ -5,19 +5,23 @@ import json
 from collections.abc import Sequence
 from typing import Protocol
 
-from dr_code.core.execution.sandbox import (
-    SandboxOutputLimitError,
-    SandboxRunner,
-    SandboxTimeoutError,
+from dr_exec import Executor
+
+from dr_code.core.execution.executor import (
+    ExecutionKilledError,
+    ExecutionOutputLimitError,
+    ExecutionTimeoutError,
+    run_python_source,
 )
 from dr_code.core.models import FrozenModel
 
 _TIMEOUT_RETURNCODE = -100_000_001
 _OUTPUT_LIMIT_RETURNCODE = -100_000_002
+_KILLED_RETURNCODE = -100_000_003
 
 
 class ExecutionRequest(FrozenModel):
-    """One cache-keyed sandbox request."""
+    """One cache-keyed execution request."""
 
     source: str
     input_json: str
@@ -32,7 +36,7 @@ class ExecutionOutcome(FrozenModel):
 
 
 class ExecutionCache(Protocol):
-    """Cache keys omit the injected runner; scope caches to one runtime."""
+    """Cache keys omit the injected executor; scope caches to one runtime."""
 
     def get(self, key: str) -> ExecutionOutcome | None: ...
 
@@ -53,7 +57,7 @@ class InMemoryExecutionCache:
 def run_requests(
     requests: Sequence[ExecutionRequest],
     *,
-    run_in_sandbox: SandboxRunner,
+    executor: Executor | None,
     cache: ExecutionCache,
 ) -> dict[ExecutionRequest, ExecutionOutcome]:
     """Deduplicate requests within this call and reuse cache hits."""
@@ -69,7 +73,8 @@ def run_requests(
             outcomes[request] = cached
             continue
         try:
-            completed = run_in_sandbox(
+            completed = run_python_source(
+                executor,
                 source=request.source,
                 input_json=request.input_json,
                 timeout_seconds=request.timeout_seconds,
@@ -79,15 +84,21 @@ def run_requests(
                 stdout=completed.stdout,
                 stderr=completed.stderr,
             )
-        except SandboxTimeoutError as exc:
+        except ExecutionTimeoutError as exc:
             outcome = ExecutionOutcome(
                 returncode=_TIMEOUT_RETURNCODE,
                 stdout="",
                 stderr=str(exc),
             )
-        except SandboxOutputLimitError as exc:
+        except ExecutionOutputLimitError as exc:
             outcome = ExecutionOutcome(
                 returncode=_OUTPUT_LIMIT_RETURNCODE,
+                stdout="",
+                stderr=str(exc),
+            )
+        except ExecutionKilledError as exc:
+            outcome = ExecutionOutcome(
+                returncode=_KILLED_RETURNCODE,
                 stdout="",
                 stderr=str(exc),
             )
@@ -111,3 +122,7 @@ def is_timeout_outcome(outcome: ExecutionOutcome) -> bool:
 
 def is_output_limit_outcome(outcome: ExecutionOutcome) -> bool:
     return outcome.returncode == _OUTPUT_LIMIT_RETURNCODE
+
+
+def is_killed_outcome(outcome: ExecutionOutcome) -> bool:
+    return outcome.returncode == _KILLED_RETURNCODE

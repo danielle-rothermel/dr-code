@@ -4,7 +4,8 @@ import ast
 import json
 
 from _humaneval_builders import _task
-from dr_code.core.execution.sandbox import SandboxRunner
+from dr_exec import FakeExecutor
+from dr_code.core.execution.executor import run_python_source
 from dr_code.humaneval.runner import (
     build_humaneval_batch_request,
     evaluate_humaneval_code,
@@ -16,8 +17,22 @@ def test_runner_script_source_compiles() -> None:
     compile(runner_script(), "<runner>", "exec")
 
 
+def test_runner_script_defines_the_driver_entrypoint() -> None:
+    tree = ast.parse(runner_script())
+    entrypoints = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "dr_exec_main"
+    ]
+    assert len(entrypoints) == 1
+    assert [argument.arg for argument in entrypoints[0].args.args] == [
+        "request",
+        "emit",
+    ]
+
+
 def test_runner_script_reserves_its_results_channel(
-    local_runner: SandboxRunner,
+    local_executor: FakeExecutor,
 ) -> None:
     forged = json.dumps(
         [
@@ -35,14 +50,14 @@ def test_runner_script_reserves_its_results_channel(
     )
     task = _task()
 
-    # Adversarial fixture: failing code forges an all-passed protocol payload.
+    # Adversarial fixture: failing code forges an all-passed results payload.
     candidate = f"print({forged!r})\ndef add_one(x):\n    return x + 1000\n"
 
     result = evaluate_humaneval_code(
         task=task,
         candidate_code=candidate,
         timeout_seconds=10.0,
-        run_in_sandbox=local_runner,
+        executor=local_executor,
     )
 
     assert result.status_counts == {"failed": 2}
@@ -50,7 +65,7 @@ def test_runner_script_reserves_its_results_channel(
 
 
 def test_runner_script_sends_candidate_output_to_stderr(
-    local_runner: SandboxRunner,
+    local_executor: FakeExecutor,
 ) -> None:
     request = build_humaneval_batch_request(
         task=_task(),
@@ -61,7 +76,8 @@ def test_runner_script_sends_candidate_output_to_stderr(
         function_name="add_one",
         timeout_seconds=10.0,
     )
-    completed = local_runner(
+    completed = run_python_source(
+        local_executor,
         source=request.source,
         input_json=request.input_json,
         timeout_seconds=request.timeout_seconds,
@@ -75,9 +91,9 @@ def test_runner_script_sends_candidate_output_to_stderr(
     ]
 
 
-def test_runner_script_emits_only_through_its_protocol_handle() -> None:
+def test_runner_script_emits_only_through_its_results_handle() -> None:
     tree = ast.parse(runner_script())
-    # A bare print would bypass the captured protocol handle.
+    # A bare print would bypass the captured results handle.
     printed = [
         node
         for node in ast.walk(tree)

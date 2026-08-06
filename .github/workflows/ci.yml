@@ -56,39 +56,13 @@ jobs:
       - name: Validate .defs structure
         if: matrix.python-version == '3.13'
         run: uvx tombi@1.2.5 lint --offline .defs/terms.toml .defs/contracts.toml
-      - run: uv run pytest -m "not oci"
+      - run: uv run pytest
       - name: Build distributions
         if: matrix.python-version == '3.13'
         run: uv build
       - name: Check distribution metadata
         if: matrix.python-version == '3.13'
         run: uvx --from twine==7.0.0 twine check --strict dist/*
-
-  oci:
-    name: OCI sandbox
-    runs-on: depot-ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version-file: pyproject.toml
-          python-version: "3.13"
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
-      - run: uv sync --locked
-      - name: Preload shared immutable OCI Python sandbox image
-        run: docker pull "$DR_CODE_SANDBOX_IMAGE"
-        env:
-          DR_CODE_SANDBOX_IMAGE: python:3.13.14-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
-      - name: Run OCI sandbox tests
-        run: uv run pytest -m oci
-        env:
-          DR_CODE_RUN_SANDBOX_TESTS: "1"
-          DR_CODE_SANDBOX_IMAGE: python:3.13.14-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
 
   viewer:
     name: Viewer

@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from dr_code.core.execution.sandbox import (
-    SandboxError,
-    SandboxRunner,
-    run_python_in_sandbox,
-)
+# The metrics engine is a deliberate direct dr-exec importer: its injected
+# runner is the dr-exec executor type and its fail-closed infrastructure
+# exception is dr-exec's.
+from dr_exec import Executor, ExecutorFailure
+
 from dr_code.metrics.coordinates import (
     MetricQuestionCoordinate,
     MetricsDefinitionCoordinate,
@@ -87,13 +87,13 @@ def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
     *,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    executor: Executor | None = None,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]:
     return extract_metrics_batch(
         definition,
         (trace,),
-        run_in_sandbox=run_in_sandbox,
+        executor=executor,
         execution_cache=execution_cache,
     )[0]
 
@@ -102,7 +102,7 @@ def extract_metrics_batch(
     definition: MetricsDefinition,
     traces: Sequence[Trace],
     *,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    executor: Executor | None = None,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[tuple[MetricRecord, ...], ...]:
     question_bindings = _bind_questions(definition)
@@ -126,7 +126,7 @@ def extract_metrics_batch(
                     binding.value,
                     binding.auxiliary,
                 )
-            except (SandboxError, EngineInvariantError):
+            except (ExecutorFailure, EngineInvariantError):
                 raise
             except Exception as exc:
                 binding.planning_failure = exc
@@ -140,7 +140,7 @@ def extract_metrics_batch(
     )
     outcomes = run_requests(
         requests,
-        run_in_sandbox=run_in_sandbox,
+        executor=executor,
         cache=cache,
     )
     context = _EngineContext(views=ViewCache(), outcomes=outcomes)
@@ -256,7 +256,7 @@ def _compute_record(
         )
         facts: tuple[MetricFact, ...] = result.to_facts()
         return MeasuredRecord(identity=identity, facts=facts)
-    except (SandboxError, EngineInvariantError):
+    except (ExecutorFailure, EngineInvariantError):
         raise
     except Exception as exc:
         return _failure_record(identity, exc)

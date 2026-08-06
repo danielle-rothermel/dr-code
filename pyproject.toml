@@ -1,6 +1,6 @@
 [project]
 name = "dr-code"
-version = "0.1.2"
+version = "0.1.3"
 description = "Python code preparation and evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
 readme = "README.md"
 license = "MIT"
@@ -10,6 +10,8 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "datasets>=3.0,<4",
+    "dr-exec==0.1.4",
+    "dr-serialize==0.1.2",
     "dr-store==0.1.4",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
@@ -56,9 +58,6 @@ testpaths = ["tests"]
 # (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
 # need importlib import mode rather than sys.path insertion.
 addopts = "--import-mode=importlib"
-markers = [
-    "oci: requires the opt-in live Docker sandbox runtime and pinned image",
-]
 
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]

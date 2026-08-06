@@ -5,15 +5,13 @@ import ast
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from _executor_stubs import raising_executor
 from _humaneval_builders import (
     _PARTIAL_RUNNER_PASSED_CASE_0,
-    _stub_runner,
+    _stub_executor,
     _task,
 )
-from dr_code.core.execution.sandbox import (
-    SandboxCompletedProcess,
-    SandboxError,
-)
+from dr_exec import ExecutorFailure
 from dr_code.humaneval import EvaluationCaseStatus, HumanEvalTask
 from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
 from dr_code.humaneval.scoring import (
@@ -134,7 +132,7 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        run_in_sandbox=_stub_runner(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+        executor=_stub_executor(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
     )
 
     assert isinstance(result, CompletedScore)
@@ -149,7 +147,7 @@ def test_score_humaneval_submission_returns_harness_failure() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        run_in_sandbox=_stub_runner(stdout="not-json"),
+        executor=_stub_executor(stdout="not-json"),
     )
 
     assert isinstance(result, HarnessFailure)
@@ -176,7 +174,7 @@ def test_submission_score_variants_round_trip_with_accepted_code(
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        run_in_sandbox=_stub_runner(stdout=runner_stdout),
+        executor=_stub_executor(stdout=runner_stdout),
     )
 
     assert isinstance(result, expected_type)
@@ -233,24 +231,31 @@ def test_submission_score_rejects_invalid_discriminator(
     assert errors[0]["ctx"] == error_context
 
 
-def test_score_humaneval_submission_reports_generic_sandbox_breakage() -> None:
-    def broken_sandbox(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        raise SandboxError("sandbox runtime is unavailable")
-
+def test_score_humaneval_submission_reports_executor_breakage() -> None:
     result = score_humaneval_submission(
         raw_submission="def add_one(x):\n    return x + 1\n",
         task=_task(),
-        run_in_sandbox=broken_sandbox,
+        executor=raising_executor(
+            ExecutorFailure("the executor is unavailable")
+        ),
     )
 
     assert isinstance(result, HarnessFailure)
     assert result.kind == "harness_failure"
-    assert result.cause.exception_type == "SandboxError"
+    assert result.cause.exception_type == "ExecutorFailure"
+
+
+def test_score_humaneval_submission_without_executor_is_harness_failure() -> (
+    None
+):
+    result = score_humaneval_submission(
+        raw_submission="def add_one(x):\n    return x + 1\n",
+        task=_task(),
+    )
+
+    assert isinstance(result, HarnessFailure)
+    assert result.cause.exception_type == "ExecutorFailure"
+    assert "no executor" in result.cause.message
 
 
 def test_score_humaneval_submission_reports_empty_submission() -> None:

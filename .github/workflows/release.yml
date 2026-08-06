@@ -62,33 +62,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run ty check
-      - run: uv run pytest -m "not oci"
-
-  oci:
-    name: Validate OCI sandbox
-    needs: provenance
-    runs-on: depot-ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version-file: pyproject.toml
-          python-version: "3.13"
-          enable-cache: false
-      - run: uv sync --locked
-      - name: Preload shared immutable OCI Python sandbox image
-        run: docker pull "$DR_CODE_SANDBOX_IMAGE"
-        env:
-          DR_CODE_SANDBOX_IMAGE: python:3.13.14-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
-      - name: Run OCI sandbox tests
-        run: uv run pytest -m oci
-        env:
-          DR_CODE_RUN_SANDBOX_TESTS: "1"
-          DR_CODE_SANDBOX_IMAGE: python:3.13.14-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
+      - run: uv run pytest
 
   viewer:
     name: Validate viewer
@@ -119,7 +93,7 @@ jobs:
 
   build:
     name: Build distributions
-    needs: [validate, oci, viewer]
+    needs: [validate, viewer]
     runs-on: ubuntu-latest
     permissions:
       contents: read

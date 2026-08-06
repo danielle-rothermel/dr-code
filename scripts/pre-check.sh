@@ -54,7 +54,7 @@ run_report ".defs schema lint" "${CACHE_DIR}/defs-lint.txt" \
     uvx tombi@1.2.5 lint --offline \
         .defs/terms.toml .defs/contracts.toml || status=1
 run_report "Python tests" "${CACHE_DIR}/pytest.txt" \
-    uv run pytest -m "not oci" || status=1
+    uv run pytest || status=1
 
 if command -v corepack >/dev/null 2>&1; then
     run_report "viewer install" "${CACHE_DIR}/viewer-install.txt" \

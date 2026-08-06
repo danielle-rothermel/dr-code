@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.1.3 - 2026-08-06
+
+- Sandboxed execution is cut over to
+  [dr-exec](https://github.com/danielle-rothermel/dr-exec) 0.1.4.
+  `dr_code.core.execution.executor` builds
+  `ExecutionJob`s (an `UntrustedPythonTarget` driver plus a JSON request
+  document) under finite wall-clock, input, and payload-output budgets and a
+  fixed hermetic environment grant, and interprets dr-exec's typed outcome
+  and attribution taxonomy back into candidate-versus-harness semantics:
+  wall-clock exhaustion stays a per-case timeout, output exhaustion and
+  mid-run payload death stay candidate-attributable case errors, and
+  executor- or machine-owned outcomes stay fail-closed harness failures.
+  The injected runner seam is now the dr-exec `Executor` type
+  (`executor: Executor | None = None` on `score_humaneval_submission`,
+  `evaluate_humaneval_code`, `extract_metrics`, and
+  `extract_metrics_batch`), and the metrics engine's fail-closed
+  infrastructure exception is dr-exec's `ExecutorFailure`. The in-memory
+  per-batch `ExecutionCache` seam is unchanged; dr-exec's durable
+  `CachingExecutor` is not wired here.
+- The kill classification changed with the transport: the retired container
+  exit codes `{137, 139}` are replaced by typed classification. dr-exec
+  reports mid-run payload death as a signaled outcome or a payload-owned
+  protocol failure, and both surface as `ExecutionKilledError` (a
+  candidate-attributable error, sentinel `-100_000_003` in engine execution
+  outcomes). Persisted `ExecutionOutcome.returncode` values therefore
+  changed meaning, which invalidates any prior execution-cache contents.
+- The HumanEval runner script is now a dr-exec driver
+  (`runner_driver_script.py` defining `dr_exec_main(request, emit)`); case
+  results still travel on redirected stdout, and the protected protocol
+  channel carries no outputs yet. An authenticated result channel over the
+  protected protocol remains the fix if single-task integrity against
+  adversarial candidates becomes a requirement.
+- 2026-08-06 — OCI sandbox retirement security ledger. The retired Docker
+  sandbox test suites pinned guarantees that subprocess execution does not
+  replace: container image pinning by digest; credential, filesystem,
+  network, process, and memory isolation; container lifecycle termination;
+  runtime discovery, image inspection, runtime allowlisting, and runtime
+  environment construction. Under dr-exec, submitted programs are trusted at
+  the execution layer: the subprocess boundary retains the invoking worker's
+  permissions, external worker isolation is the deployment boundary, and
+  evaluations run only on disposable workers. `DR_CODE_SANDBOX_IMAGE`,
+  `DR_CODE_RUN_SANDBOX_TESTS`, the `oci` pytest marker, and the CI image
+  preload are removed with the sandbox.
+
 ## 0.1.2 - 2026-08-06
 
 - Pull-request CI requires every change to advance the project version by one
