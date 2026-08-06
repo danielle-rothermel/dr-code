@@ -2,10 +2,8 @@
 
 ## 0.1.6 - 2026-08-06
 
-- The cache benchmark uses the existing SQLite whole-trace preprocessing
-  cache for cold and warm measurements and verifies exact equivalence with
-  uncached traces. Candidate reuse remains a planning-only measurement that
-  does not execute candidate code.
+- The cache benchmark measures exhaustive preprocessing followed by
+  in-memory test-result cache lookup without executing generated code.
 - Verification scripts load selected nonblank HumanEval generations eagerly
   with Polars, benchmark exhaustive preprocessing and cache reuse, and report
   task-level bootstrap confidence intervals for candidate and row reuse.
