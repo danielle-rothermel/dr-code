@@ -10,6 +10,8 @@
   historical HumanEval corpus, selects a balanced directional sample,
   evaluates it only on an explicitly identified disposable worker, and
   summarizes generation- and task-level outcomes.
+- Python execution jobs accept up to 2 MiB of declared input so HumanEval
+  tasks with large serialized test batches remain evaluable.
 
 ## 0.1.6 - 2026-08-06
 
