@@ -8,6 +8,7 @@ import argparse
 import ast
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib
@@ -26,7 +27,7 @@ from matplotlib import pyplot as plt  # noqa: E402
 
 _ROOT = Path(__file__).parents[1]
 _DEFAULT_SNAPSHOT = _ROOT / "tests" / "corpus" / "humanevalplus_snapshot.json"
-_DEFAULT_OUTPUT_DIR = _ROOT / ".runs" / "humaneval-lengths"
+_DATA_ROOT = Path.home() / "drotherm" / "data" / ".codex" / "dr-code"
 _UNITS = ("characters", "bytes")
 
 
@@ -64,6 +65,16 @@ def _existing_file(value: str) -> Path:
 
 def _output_directory(value: str) -> Path:
     return Path(value).expanduser().resolve()
+
+
+def _default_output_directory() -> Path:
+    now = datetime.now().astimezone()
+    return (
+        _DATA_ROOT
+        / now.strftime("%Y-%m-%d")
+        / "figs"
+        / f"{now:%H%M}-humaneval-lengths"
+    )
 
 
 def _positive_int(value: str) -> int:
@@ -231,12 +242,12 @@ def _plot_comments_vs_code(
     plt.close(figure)
 
 
-def _print_summary(summary: pl.DataFrame, *, unit: str) -> None:
-    print(f"Summary ({unit}):")
+def _summary_lines(summary: pl.DataFrame, *, unit: str) -> list[str]:
+    lines = [f"Summary ({unit}):"]
     selected = summary.filter(pl.col("unit") == unit)
     labels = {item.key: item.label for item in _REPRESENTATIONS}
     for row in selected.iter_rows(named=True):
-        print(
+        lines.append(
             f"  {labels[str(row['representation'])]}: "
             f"min={float(row['minimum']):,.0f}, "
             f"median={float(row['median']):,.1f}, "
@@ -245,9 +256,11 @@ def _print_summary(summary: pl.DataFrame, *, unit: str) -> None:
             f"p95={float(row['p95']):,.1f}, "
             f"max={float(row['maximum']):,.0f}"
         )
+    return lines
 
 
 def main() -> int:
+    default_output_dir = _default_output_directory()
     parser = argparse.ArgumentParser(
         description=(
             "Measure and plot normalized HumanEval ground-truth source, "
@@ -263,8 +276,8 @@ def main() -> int:
     parser.add_argument(
         "--output-dir",
         type=_output_directory,
-        default=_DEFAULT_OUTPUT_DIR,
-        help=f"output directory (default: {_DEFAULT_OUTPUT_DIR})",
+        default=default_output_dir,
+        help=f"output directory (default: {default_output_dir})",
     )
     parser.add_argument(
         "--unit",
@@ -291,8 +304,12 @@ def main() -> int:
     output_dir: Path = arguments.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    measurements_path = output_dir / "humaneval_task_lengths.csv"
-    summary_path = output_dir / "humaneval_length_summary.csv"
+    measurements_path = (
+        output_dir / f"humaneval_task_lengths_{arguments.unit}.csv"
+    )
+    summary_path = (
+        output_dir / f"humaneval_length_summary_{arguments.unit}.csv"
+    )
     histograms_path = (
         output_dir / f"humaneval_length_histograms_{arguments.unit}.png"
     )
@@ -300,6 +317,7 @@ def main() -> int:
     scatter_path = (
         output_dir / f"humaneval_comments_vs_code_{arguments.unit}.png"
     )
+    log_path = output_dir / f"humaneval_length_analysis_{arguments.unit}.log"
 
     measurements.write_csv(measurements_path)
     summary.write_csv(summary_path)
@@ -316,13 +334,19 @@ def main() -> int:
         path=scatter_path,
     )
 
-    print(f"Loaded {len(tasks):,} HumanEval tasks from {arguments.snapshot}")
-    _print_summary(summary, unit=arguments.unit)
-    print(f"Wrote task measurements: {measurements_path}")
-    print(f"Wrote aggregate summary: {summary_path}")
-    print(f"Wrote histogram plot: {histograms_path}")
-    print(f"Wrote ECDF plot: {ecdf_path}")
-    print(f"Wrote scatter plot: {scatter_path}")
+    report = [
+        f"Loaded {len(tasks):,} HumanEval tasks from {arguments.snapshot}",
+        *_summary_lines(summary, unit=arguments.unit),
+        f"Wrote task measurements: {measurements_path}",
+        f"Wrote aggregate summary: {summary_path}",
+        f"Wrote histogram plot: {histograms_path}",
+        f"Wrote ECDF plot: {ecdf_path}",
+        f"Wrote scatter plot: {scatter_path}",
+        f"Wrote output log: {log_path}",
+    ]
+    output = "\n".join(report) + "\n"
+    log_path.write_text(output, encoding="utf-8")
+    print(output, end="")
     return 0
 
 
