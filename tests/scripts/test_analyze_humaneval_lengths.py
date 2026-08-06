@@ -32,7 +32,7 @@ def test_writes_length_tables_and_plots(tmp_path: Path) -> None:
     assert "Loaded 164 HumanEval tasks" in completed.stdout
     assert "Summary (bytes):" in completed.stdout
 
-    measurements = pl.read_csv(output_dir / "humaneval_task_lengths.csv")
+    measurements = pl.read_csv(output_dir / "humaneval_task_lengths_bytes.csv")
     assert measurements.height == 164
     assert measurements.get_column("task_id").n_unique() == 164
     assert {
@@ -50,7 +50,7 @@ def test_writes_length_tables_and_plots(tmp_path: Path) -> None:
         > measurements.get_column("comments_and_docstrings_characters")
     ).any()
 
-    summary = pl.read_csv(output_dir / "humaneval_length_summary.csv")
+    summary = pl.read_csv(output_dir / "humaneval_length_summary_bytes.csv")
     assert summary.height == 10
     assert set(summary.get_column("unit")) == {"characters", "bytes"}
 
@@ -60,3 +60,6 @@ def test_writes_length_tables_and_plots(tmp_path: Path) -> None:
         "humaneval_comments_vs_code_bytes.png",
     ):
         assert (output_dir / filename).stat().st_size > 0
+
+    log_path = output_dir / "humaneval_length_analysis_bytes.log"
+    assert log_path.read_text(encoding="utf-8") == completed.stdout
