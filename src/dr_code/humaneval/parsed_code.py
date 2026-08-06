@@ -5,13 +5,13 @@ import copy
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from dr_code.code_analysis import (
+from dr_code.core.source.python_analysis import (
     FunctionArgument,
     FunctionSignatureSite,
     collect_comments,
     extract_function_signatures,
 )
-from dr_code.code_transforms import (
+from dr_code.core.source.python_transforms import (
     strip_docstrings_in_tree,
 )
 

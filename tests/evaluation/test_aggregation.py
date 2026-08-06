@@ -1,11 +1,3 @@
-"""Pure aggregation: the four non-ok outcomes and every statistic.
-
-Each of ``missing``, ``not_applicable``, ``empty_denominator``, and
-``non_finite`` is constructed explicitly and asserted to be a distinct typed
-result rather than a sentinel float. Ok paths cover every statistic and both
-denominator rules, and ``aggregate`` is exercised for purity.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -50,17 +42,11 @@ def request_for(*slots: AggregationSlot, **overrides: object):
     )
 
 
-# ===========================================================================
-# The status vocabulary is closed and the results are distinct types.
-# ===========================================================================
-
-
 def test_status_vocabulary_is_closed() -> None:
     assert {member.value for member in AggregationStatus} == EXPECTED_STATUSES
 
 
 def test_each_outcome_is_a_distinct_type_not_a_sentinel_float() -> None:
-    """Only the ok result carries a value at all."""
     assert "value" in AggregationOk.model_fields
     for result in (
         AggregationMissing,
@@ -69,11 +55,6 @@ def test_each_outcome_is_a_distinct_type_not_a_sentinel_float() -> None:
         AggregationNonFinite,
     ):
         assert "value" not in result.model_fields
-
-
-# ===========================================================================
-# Outcome 1: missing — a planned slot produced no record.
-# ===========================================================================
 
 
 def test_missing_slot_produces_a_missing_result() -> None:
@@ -98,7 +79,6 @@ def test_missing_names_every_empty_slot_in_input_order() -> None:
 
 
 def test_missing_is_distinct_from_not_applicable() -> None:
-    """Nothing ran is not the same answer as the question did not apply."""
     empty = aggregate(request_for(slot(None, ordinal=0)))
     refused = aggregate(
         request_for(
@@ -112,7 +92,6 @@ def test_missing_is_distinct_from_not_applicable() -> None:
 
 
 def test_missing_takes_precedence_over_a_refusing_record() -> None:
-    """An incomplete run is reported before any policy refusal."""
     result = aggregate(
         request_for(
             slot(None, ordinal=0),
@@ -121,11 +100,6 @@ def test_missing_takes_precedence_over_a_refusing_record() -> None:
         )
     )
     assert isinstance(result, AggregationMissing)
-
-
-# ===========================================================================
-# Outcome 2: not_applicable — refused by policy.
-# ===========================================================================
 
 
 def test_not_applicable_record_refuses_under_the_fail_policy() -> None:
@@ -141,7 +115,6 @@ def test_not_applicable_record_refuses_under_the_fail_policy() -> None:
 
 
 def test_operator_failure_refuses_under_the_default_policy() -> None:
-    """Operator failures fail the aggregate unless a policy says otherwise."""
     result = aggregate(
         request_for(
             slot(measured(1), ordinal=0),
@@ -153,7 +126,6 @@ def test_operator_failure_refuses_under_the_default_policy() -> None:
 
 
 def test_not_applicable_and_operator_failure_are_separately_ruled() -> None:
-    """The two non-measured kinds are genuinely different events."""
     result = aggregate(
         request_for(
             slot(measured(4), ordinal=0),
@@ -164,14 +136,9 @@ def test_not_applicable_and_operator_failure_are_separately_ruled() -> None:
         )
     )
     assert isinstance(result, AggregationOk)
-    assert result.value == 2.0  # (4 + 0) / 2
+    assert result.value == 2.0
     assert result.counted == 2
     assert result.excluded == 1
-
-
-# ===========================================================================
-# Outcome 3: empty_denominator — every slot excluded.
-# ===========================================================================
 
 
 def test_every_slot_excluded_produces_an_empty_denominator() -> None:
@@ -187,7 +154,6 @@ def test_every_slot_excluded_produces_an_empty_denominator() -> None:
 
 
 def test_empty_denominator_is_distinct_from_a_zero_valued_mean() -> None:
-    """Dividing by nothing is not the same as a mean that happens to be 0."""
     empty = aggregate(
         request_for(
             slot(not_applicable(), ordinal=0),
@@ -206,7 +172,6 @@ def test_empty_denominator_is_distinct_from_a_zero_valued_mean() -> None:
 
 
 def test_count_of_an_all_excluded_input_is_zero_not_empty() -> None:
-    """``count`` has no denominator, so it answers zero rather than failing."""
     result = aggregate(
         request_for(
             slot(not_applicable(), ordinal=0),
@@ -218,11 +183,6 @@ def test_count_of_an_all_excluded_input_is_zero_not_empty() -> None:
     assert result.value == 0.0
     assert result.counted == 0
     assert result.excluded == 1
-
-
-# ===========================================================================
-# Outcome 4: non_finite — arithmetic completed, value is not a number.
-# ===========================================================================
 
 
 def test_overflowing_sum_produces_a_non_finite_result() -> None:
@@ -240,7 +200,6 @@ def test_overflowing_sum_produces_a_non_finite_result() -> None:
 
 
 def test_overflow_is_reported_as_a_result_not_raised() -> None:
-    """Overflow is arithmetic that produced no number, not an error path."""
     huge = 1.0e308
     result = aggregate(
         request_for(
@@ -254,12 +213,6 @@ def test_overflow_is_reported_as_a_result_not_raised() -> None:
 
 
 def test_an_int_fact_too_large_for_a_float_is_a_non_finite_result() -> None:
-    """Coercion overflow is a result too, not an escape from ``aggregate``.
-
-    ``MetricFact`` accepts an arbitrarily large ``int``, so this is
-    reachable from persisted data; coercing it must not raise past a caller
-    that is pattern-matching the result.
-    """
     result = aggregate(
         request_for(
             slot(measured(10**309), ordinal=0),
@@ -293,9 +246,35 @@ def test_an_ok_result_cannot_carry_a_non_finite_value() -> None:
         AggregationOk(value=float("inf"), counted=1, excluded=0)
 
 
-# ===========================================================================
-# Ok paths: every statistic.
-# ===========================================================================
+@pytest.mark.parametrize("field", ["counted", "excluded"])
+def test_an_ok_result_rejects_a_negative_tally(field: str) -> None:
+    payload = {"value": 1.0, "counted": 0, "excluded": 0}
+    payload[field] = -1
+
+    with pytest.raises(ValidationError) as exc_info:
+        AggregationOk.model_validate(payload)
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "greater_than_equal"
+    assert error["loc"] == (field,)
+
+
+def test_a_non_finite_result_rejects_a_negative_count() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AggregationNonFinite(counted=-1, reason="sum overflowed")
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "greater_than_equal"
+    assert error["loc"] == ("counted",)
+
+
+def test_a_non_finite_result_requires_a_reason() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AggregationNonFinite(counted=1, reason="")
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "string_too_short"
+    assert error["loc"] == ("reason",)
 
 
 def test_mean_averages_the_counted_values() -> None:
@@ -362,11 +341,6 @@ def test_boolean_facts_aggregate_as_one_and_zero() -> None:
     assert result.value == 0.5
 
 
-# ===========================================================================
-# Input/record mismatches raise rather than silently excluding a slot.
-# ===========================================================================
-
-
 def test_a_record_answering_another_question_raises() -> None:
     other = question_coordinate(on_key="somewhere_else")
     from _builders import record_identity
@@ -389,10 +363,6 @@ def test_a_non_measured_record_answering_another_question_raises(
     rule: NotApplicablePolicy,
     record_builder,
 ) -> None:
-    """Answering the wrong question is a contract violation for every record
-    type, not only measured ones. Under EXCLUDE or ZERO a non-measured record
-    would otherwise silently drop or zero-fill a slot, producing an
-    apparently valid aggregate for a metric that was never measured."""
     from _builders import record_identity
 
     other = question_coordinate(on_key="somewhere_else")
@@ -425,10 +395,6 @@ def test_a_non_numeric_fact_value_raises() -> None:
 def test_opposite_overflowing_values_report_non_finite(
     statistic: AggregationStatistic,
 ) -> None:
-    """Persisted ints too large for a float coerce to opposite infinities, and
-    ``math.fsum`` raises ValueError on that mix rather than returning a number.
-    Like any other arithmetic that completes without producing a number, it is
-    reported as a non-finite result instead of escaping the call."""
     huge = 10**400
     result = aggregate(
         request_for(
@@ -440,11 +406,6 @@ def test_opposite_overflowing_values_report_non_finite(
 
     assert isinstance(result, AggregationNonFinite)
     assert result.counted == 2
-
-
-# ===========================================================================
-# Input completeness invariants.
-# ===========================================================================
 
 
 def test_input_requires_at_least_one_slot() -> None:
@@ -464,11 +425,6 @@ def test_a_slot_defaults_to_empty_rather_than_to_a_record() -> None:
     assert AggregationSlot(candidate=candidate()).record is None
 
 
-# ===========================================================================
-# Purity.
-# ===========================================================================
-
-
 def test_aggregate_is_deterministic_over_repeated_calls() -> None:
     request = request_for(
         slot(measured(3), ordinal=0), slot(measured(4), ordinal=1)
@@ -486,7 +442,6 @@ def test_aggregate_does_not_mutate_its_input() -> None:
 
 
 def test_aggregate_needs_no_registry() -> None:
-    """Aggregation reads records; it never resolves a name."""
     from types import MappingProxyType
 
     import dr_code.metrics.registry as registry_module
@@ -500,11 +455,6 @@ def test_aggregate_needs_no_registry() -> None:
         registry_module.REGISTRY = original
     assert isinstance(result, AggregationOk)
     assert result.value == 5.0
-
-
-# ===========================================================================
-# Result serialization round-trips.
-# ===========================================================================
 
 
 @pytest.mark.parametrize(

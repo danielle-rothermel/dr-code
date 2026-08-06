@@ -1,5 +1,3 @@
-"""Wrap source in a single-backtick inline span."""
-
 from __future__ import annotations
 
 import random
@@ -11,8 +9,6 @@ from dr_code.synthetic.corruptions.base import Corruption
 
 
 class AddInlineBackticks(Corruption):
-    """Wrap the entire source in a single-backtick inline span."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_INLINE_BACKTICKS
     VERSION: ClassVar[str] = "0"
 

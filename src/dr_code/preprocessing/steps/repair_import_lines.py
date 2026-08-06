@@ -1,5 +1,3 @@
-"""Repair structurally broken import lines per candidate."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -10,12 +8,6 @@ from dr_code.preprocessing.steps.base import CandidateMapStep
 
 
 class RepairImportLines(CandidateMapStep):
-    """Repair structurally broken import lines in each candidate.
-
-    Wraps ``import_inference.repair_import_lines`` — the first constituent
-    of ``infer_necessary_imports``.
-    """
-
     NAME: ClassVar[StepName] = StepName.REPAIR_IMPORT_LINES
     VERSION: ClassVar[str] = "0"
 

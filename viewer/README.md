@@ -86,8 +86,11 @@ server-only API. They can be rendered by plain React DOM or Vite applications
 and used at a client boundary in an RSC application. While their highlighters
 load, `CodeBlock` renders its source as plain `<pre><code>` text and `CodeDiff`
 renders `newContent` the same way. The highlighted view replaces that fallback
-when loading completes. Updated props immediately restore the fallback until
-the corresponding highlighted output is ready, so stale source is never shown.
+when loading completes. Content, filenames, language, and theme changes to
+`CodeDiff` immediately restore the fallback until the corresponding highlighted
+output is ready; split/unified mode changes render immediately from the prepared
+diff. `CodeBlock` likewise restores its fallback after source, language, or
+theme changes, so stale source is never shown.
 `StatusBadge` does not load anything asynchronously. Pass the same explicit
 `theme` to each primitive when composing a light or dark surface.
 
@@ -128,14 +131,14 @@ during development without a separate viewer build.
 From `viewer/`, install dependencies and start the development server:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm --filter @dr-code/gallery dev
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @dr-code/gallery dev
 ```
 
 Build the gallery without starting a server:
 
 ```bash
-pnpm --filter @dr-code/gallery build
+corepack pnpm --filter @dr-code/gallery build
 ```
 
 ## Verification
@@ -143,10 +146,10 @@ pnpm --filter @dr-code/gallery build
 Run the complete workspace checks from `viewer/`:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm build
-pnpm test
+CI=1 corepack pnpm install --frozen-lockfile
+corepack pnpm typecheck
+corepack pnpm build
+corepack pnpm test
 ```
 
 The recursive typecheck and build commands cover both the publishable package

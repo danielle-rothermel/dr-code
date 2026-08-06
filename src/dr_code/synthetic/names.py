@@ -1,5 +1,3 @@
-"""Names and constants for synthetic corruption-corpus generation."""
-
 from __future__ import annotations
 
 from enum import StrEnum
@@ -10,8 +8,6 @@ SAMPLE_ID_SEP: Final[str] = "::"
 
 
 class CorruptionName(StrEnum):
-    """All synthetic corruption transforms."""
-
     ADD_CODE_FENCES = "add_code_fences"
     ADD_PROSE_WRAPPER = "add_prose_wrapper"
     ADD_SMART_QUOTES = "add_smart_quotes"
@@ -37,32 +33,24 @@ class CorruptionName(StrEnum):
 
 
 class TruncationMode(StrEnum):
-    """Modes for the truncate corruption."""
-
     MID_FUNCTION = "mid_function"
     MID_LINE = "mid_line"
     MID_STRING = "mid_string"
 
 
 class MarkdownWrapperMode(StrEnum):
-    """Markdown wrappers emitted by the markdown corruption."""
-
     BLOCKQUOTE = "blockquote"
     NUMBERED_LIST = "numbered_list"
     BULLET_LIST = "bullet_list"
 
 
 class ImportMangleMode(StrEnum):
-    """Ways the import-mangling corruption breaks an import line."""
-
     TRAILING_PROSE = "trailing_prose"
     UNBALANCED_PAREN = "unbalanced_paren"
     TRAILING_COMMA = "trailing_comma"
 
 
 class FenceLangTag(StrEnum):
-    """Code-fence language tags emitted by the fence corruption."""
-
     PYTHON = "python"
     PY = "py"
     PYTHON3 = "python3"

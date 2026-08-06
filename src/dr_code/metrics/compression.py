@@ -1,5 +1,3 @@
-"""Compression primitives used by the compressed-length operator."""
-
 from __future__ import annotations
 
 import gzip
@@ -9,7 +7,7 @@ from typing import Annotated, Literal, Self
 import zstandard
 from pydantic import Field, model_validator
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 
 class CompressionMethod(StrEnum):
@@ -50,8 +48,6 @@ def compressed_bytes(
     method: CompressionMethod,
     level: int,
 ) -> bytes:
-    """Compress ``value`` with an explicitly pinned codec level."""
-
     if method is CompressionMethod.GZIP:
         return gzip.compress(value, compresslevel=level)
     if method is CompressionMethod.ZSTD:

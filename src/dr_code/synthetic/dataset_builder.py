@@ -1,5 +1,3 @@
-"""Build the synthetic test corpus."""
-
 from __future__ import annotations
 
 import random
@@ -13,8 +11,8 @@ from dr_code.synthetic.corruption_recipes import (
     apply_recipe,
     recipe_coordinate,
 )
-from dr_code.code_transforms import strip_docstrings
-from dr_code.synthetic.humaneval_loader import (
+from dr_code.core.source.python_transforms import strip_docstrings
+from dr_code.humaneval.plus_dataset import (
     HumanEvalPlusTask,
     load_humaneval_plus,
 )
@@ -25,7 +23,6 @@ def build_sample(
     recipe: Recipe,
     seed: int,
 ) -> SyntheticSample:
-    """Build a single synthetic sample for one (task, recipe) pair."""
     ground_truth = strip_docstrings(task.full_source)
     coordinate = SyntheticSampleCoordinate(
         humaneval_task_id=task.task_id,
@@ -47,7 +44,6 @@ def iter_dataset(
     recipes: Iterable[Recipe] = RECIPES,
     seed: int = 0,
 ) -> Iterator[SyntheticSample]:
-    """Yield one `SyntheticSample` per (task, recipe) pair."""
     recipes_list = list(recipes)
     for task in tasks:
         for recipe in recipes_list:
@@ -58,16 +54,16 @@ def build_dataset(
     tasks: Iterable[HumanEvalPlusTask] | None = None,
     recipes: Iterable[Recipe] = RECIPES,
     seed: int = 0,
-    prefer_snapshot: bool = True,
+    *,
+    snapshot_path: Path | None = None,
 ) -> list[SyntheticSample]:
-    """Build the full dataset list (in-memory).
+    if tasks is not None and snapshot_path is not None:
+        raise ValueError("tasks and snapshot_path are mutually exclusive")
 
-    If `tasks` is None, load HumanEvalPlus through the explicit
-    `prefer_snapshot` source choice.
-    """
     if tasks is None:
         tasks_iter: Iterable[HumanEvalPlusTask] = load_humaneval_plus(
-            prefer_snapshot=prefer_snapshot
+            prefer_snapshot=snapshot_path is not None,
+            snapshot_path=snapshot_path,
         )
     else:
         tasks_iter = tasks
@@ -75,7 +71,6 @@ def build_dataset(
 
 
 def save_dataset(samples: Iterable[SyntheticSample], path: Path) -> int:
-    """Serialize samples as JSONL to `path`. Returns count written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with path.open("w", encoding="utf-8") as fh:
@@ -87,7 +82,6 @@ def save_dataset(samples: Iterable[SyntheticSample], path: Path) -> int:
 
 
 def load_dataset(path: Path) -> list[SyntheticSample]:
-    """Read a dataset JSONL artifact back into `SyntheticSample` objects."""
     samples: list[SyntheticSample] = []
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:

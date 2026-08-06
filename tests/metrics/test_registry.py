@@ -1,31 +1,15 @@
-"""Tests for the metrics operator registry.
-
-Covers the registry's coverage of ``MetricName`` and the unit declarations of
-every result model reachable from a registered operator. Both walk ``REGISTRY``
-rather than a maintained list, so registering an operator is enough to put it
-under test.
-"""
-
 from __future__ import annotations
 
 from typing import get_type_hints
 
 
 def _registered_result_classes() -> dict[str, type]:
-    """Every result model reachable from a registered operator.
-
-    Discovered from ``REGISTRY`` rather than listed, so a new operator or a new
-    result variant is covered the moment it is registered. Each operator's
-    ``compute`` return annotation names its result model, and result subclasses
-    are collected too: ``CompressedLengthWithReferenceResult`` is a subclass of
-    ``CompressedLengthResult``, not a union member, so an annotation-only walk
-    would miss the variant that actually carries the extra fields.
-    """
     from dr_code.metrics.operators.base import OperatorResult
     from dr_code.metrics.registry import REGISTRY
 
     discovered: dict[str, type] = {}
 
+    # Registered result annotations do not enumerate subclass variants.
     def collect(result_class: type) -> None:
         if not isinstance(result_class, type) or not issubclass(
             result_class, OperatorResult
@@ -47,19 +31,13 @@ def _registered_result_classes() -> dict[str, type]:
 def test_every_registered_result_declares_units_for_exactly_its_fields() -> (
     None
 ):
-    """``UNITS`` matches the field set exactly, for every reachable result.
-
-    ``to_facts`` only raises for a field it is asked to project, so a unit
-    declared for a field that no longer exists, or a field on a variant that is
-    never exercised, survives every runtime path. Comparing the two sets
-    statically is what closes that hole.
-    """
     from dr_code.metrics.units import MetricFactUnit
 
     result_classes = _registered_result_classes()
     assert result_classes, "no operator result classes were discovered"
 
     for name, result_class in result_classes.items():
+        # Static field/unit equality catches declarations runtime paths miss.
         fields = set(result_class.model_fields)
         units = set(result_class.UNITS)
         assert units - fields == set(), f"{name} declares units for no field"
@@ -69,11 +47,6 @@ def test_every_registered_result_declares_units_for_exactly_its_fields() -> (
 
 
 def test_registered_result_discovery_reaches_the_subclass_variant() -> None:
-    """The discovery walk is load-bearing, so pin what it must reach.
-
-    ``CompressedLengthWithReferenceResult`` is returned only when a reference
-    key is configured; it is reachable from the registry solely as a subclass.
-    """
     from dr_code.metrics.operators.compressed_length import (
         CompressedLengthResult,
         CompressedLengthWithReferenceResult,

@@ -1,5 +1,3 @@
-"""Base contract shared by metric operators."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -14,7 +12,7 @@ from dr_code.metrics.names import MetricName
 from dr_code.metrics.records import MetricFact
 from dr_code.metrics.settings import OperatorSettings
 from dr_code.metrics.units import MetricFactUnit
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
@@ -26,20 +24,9 @@ SettingsT = TypeVar("SettingsT", bound=OperatorSettings)
 
 
 class OperatorResult(FrozenModel):
-    """Typed operator output, projected to united facts at the boundary.
-
-    Each result class declares the unit of every field it carries in
-    ``UNITS``. Declaring the units next to the fields they describe is what
-    lets the record boundary stay mechanical: it never guesses a unit from a
-    field name, and a new field without a declared unit fails loudly here
-    rather than persisting an unlabelled number.
-    """
-
     UNITS: ClassVar[Mapping[str, MetricFactUnit]] = {}
 
     def to_facts(self) -> tuple[MetricFact, ...]:
-        """Project fields into ordered facts carrying their declared units."""
-
         facts: list[MetricFact] = []
         for name, value in self.model_dump(mode="python").items():
             unit = type(self).UNITS.get(name)
@@ -52,23 +39,15 @@ class OperatorResult(FrozenModel):
 
 
 class EngineContext(Protocol):
-    """Engine services available during phase-two computation."""
-
     views: ViewCache
 
     def outcome_for(self, request: ExecutionRequest) -> ExecutionOutcome: ...
 
 
 class MetricOperator(Generic[SettingsT]):
-    """Question implementation managed by the metrics engine."""
-
     NAME: ClassVar[MetricName]
-    # Manual component version. Bump when the operator changes computed
-    # facts, execution requests, applicability, defaults, or failure
-    # behavior; not for comments, formatting, or behavior-preserving
-    # refactors. Stays ``"0"`` while development mode
-    # (``[tool.dr-code.component-versioning]`` in ``pyproject.toml``) is
-    # enabled.
+    # In development mode, keep VERSION at "0". Afterward, bump it for fact,
+    # request, applicability, default, or failure changes.
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     ACCEPTED_INPUTS: ClassVar[frozenset[ArtifactKind]]
@@ -92,8 +71,6 @@ class MetricOperator(Generic[SettingsT]):
         return frozenset(ArtifactKind)
 
     def validate_auxiliary(self, aux: Mapping[str, Artifact]) -> None:
-        """Validate domain payloads carried by auxiliary artifacts."""
-
         _ = aux
 
     def execution_requests(
@@ -114,8 +91,6 @@ class MetricOperator(Generic[SettingsT]):
 
 
 def artifact_text(value: Artifact) -> str:
-    """Return the canonical text carried by a text-like artifact."""
-
     if isinstance(value, TextArtifact):
         return value.text
     if isinstance(value, CodeArtifact):

@@ -1,5 +1,3 @@
-"""Shared deterministic subprocess helpers."""
-
 from __future__ import annotations
 
 import os
@@ -30,8 +28,6 @@ def _bounded_environment() -> dict[str, str]:
 
 @dataclass(frozen=True, slots=True)
 class PythonModuleRunner:
-    """Run an installed module in a bounded, non-interactive interpreter."""
-
     cwd: Path
     timeout_seconds: float
 
@@ -52,18 +48,13 @@ class PythonModuleRunner:
 
 @dataclass(frozen=True, slots=True)
 class PythonScriptRunner:
-    """Run a script by path in a bounded, non-interactive interpreter.
-
-    Isolated mode strips ``PYTHONPATH`` and the cwd, so scripts living
-    under ``tests/`` are unreachable by ``-m`` and run by path instead.
-    """
-
     cwd: Path
     timeout_seconds: float
 
     def __call__(
         self, script_path: Path, *arguments: str
     ) -> subprocess.CompletedProcess[str]:
+        # Isolated mode removes test paths, so invoke scripts by path, not -m.
         return subprocess.run(
             [sys.executable, "-I", str(script_path), *arguments],
             cwd=self.cwd,

@@ -1,13 +1,3 @@
-"""Corruption registry — name-keyed lookup, mirroring ``preprocessing``.
-
-Add a corruption by:
-
-1. Implement it as a subclass of ``Corruption`` in its own file.
-2. Import and register it here in ``REGISTRY``.
-3. Add a paired entry in ``corruption_recipes.py`` if it should appear in
-   the default dataset.
-"""
-
 from collections.abc import Mapping
 from types import MappingProxyType
 

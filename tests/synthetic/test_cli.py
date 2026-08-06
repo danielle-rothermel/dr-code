@@ -1,24 +1,54 @@
-"""Functional tests for the synthetic CLI."""
-
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from dr_code.humaneval.sampling import (
+    DEFAULT_HUMANEVAL_DATASET_NAME,
+    DEFAULT_HUMANEVAL_HF_REVISION,
+    HumanEvalRawRow,
+    HumanEvalRawRowsSnapshot,
+    HumanEvalRawRowsSnapshotHeader,
+)
+from dr_code.humaneval.task import HUMANEVAL_OVERRIDE_SET
 from dr_code.synthetic.models import SyntheticSample
 
 
-#: The repository's tracked offline HumanEvalPlus snapshot, passed to the
-#: CLI so these subprocess runs never reach the network.
-SNAPSHOT_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "tests"
-    / "corpus"
-    / "humanevalplus_snapshot.json"
-)
+@pytest.fixture
+def one_row_snapshot_path(tmp_path: Path) -> Path:
+    snapshot = HumanEvalRawRowsSnapshot(
+        header=HumanEvalRawRowsSnapshotHeader(
+            schema_version=2,
+            dataset_id=DEFAULT_HUMANEVAL_DATASET_NAME,
+            hf_revision=DEFAULT_HUMANEVAL_HF_REVISION,
+            override_set=HUMANEVAL_OVERRIDE_SET,
+        ),
+        rows=(
+            HumanEvalRawRow(
+                task_id="HumanEval/0",
+                prompt="def add_one(x):\n",
+                canonical_solution="    return x + 1\n",
+                entry_point="add_one",
+                test=(
+                    "def check(candidate):\n"
+                    "    inputs = [(1,)]\n"
+                    "    results = [2]\n"
+                    "    for inp, expected in zip(inputs, results):\n"
+                    "        assertion(candidate(*inp), expected)\n"
+                ),
+            ),
+        ),
+    )
+    snapshot_path = tmp_path / "humanevalplus_snapshot.json"
+    snapshot_path.write_text(snapshot.model_dump_json(), encoding="utf-8")
+    return snapshot_path
 
 
 def test_cli_build_writes_requested_dataset(
-    tmp_path: Path, run_python_module
+    tmp_path: Path,
+    one_row_snapshot_path: Path,
+    run_python_module,
 ) -> None:
     output_path = tmp_path / "synthetic.jsonl"
 
@@ -32,7 +62,7 @@ def test_cli_build_writes_requested_dataset(
         "--seed",
         "7",
         "--snapshot",
-        str(SNAPSHOT_PATH),
+        str(one_row_snapshot_path),
         "--output",
         str(output_path),
     )
@@ -51,7 +81,9 @@ def test_cli_build_writes_requested_dataset(
 
 
 def test_cli_build_rejects_unknown_recipe(
-    tmp_path: Path, run_python_module
+    tmp_path: Path,
+    one_row_snapshot_path: Path,
+    run_python_module,
 ) -> None:
     output_path = tmp_path / "synthetic.jsonl"
 
@@ -65,7 +97,7 @@ def test_cli_build_rejects_unknown_recipe(
         "--seed",
         "7",
         "--snapshot",
-        str(SNAPSHOT_PATH),
+        str(one_row_snapshot_path),
         "--output",
         str(output_path),
     )

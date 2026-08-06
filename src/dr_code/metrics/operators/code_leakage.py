@@ -1,5 +1,3 @@
-"""Signals that prose contains Python or benchmark-specific content."""
-
 from __future__ import annotations
 
 import keyword
@@ -15,7 +13,7 @@ from dr_code.metrics.operators.base import (
 )
 from dr_code.metrics.settings import OperatorSettings
 from dr_code.metrics.units import MetricFactUnit
-from dr_code.text_analysis import (
+from dr_code.core.source.text_analysis import (
     CODE_LIKE_LINE_RE,
     FENCE_LINE_RE,
     OPERATOR_CHARS,

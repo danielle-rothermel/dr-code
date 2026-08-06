@@ -1,7 +1,5 @@
 @import "@fontsource-variable/fira-code/wght.css";
 
-/* @dr-code/viewer base styles. Consumers import this file once. */
-
 .drv-code-block pre,
 .drv-code-block code,
 .drv-code-diff {

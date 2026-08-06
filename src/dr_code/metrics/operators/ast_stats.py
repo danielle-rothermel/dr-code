@@ -1,5 +1,3 @@
-"""Python AST structure statistics."""
-
 from __future__ import annotations
 
 import ast
@@ -114,12 +112,6 @@ class AstStats(MetricOperator[OperatorSettings]):
         source = artifact_text(value)
         tree = ctx.views.parsed_module(source)
         if tree is None:
-            # CodeArtifact documents "passed a compile check upstream", so an
-            # unparseable CODE artifact is a producer contract violation, not
-            # an empty module. Raise (→ operator_failure) instead of
-            # fabricating all-zero fields that would be indistinguishable
-            # from a genuinely empty module. Parse facts remain the job of
-            # ``parse_outcome``.
             raise ValueError(
                 f"ast_stats requires parseable code: {ctx.views.parse_error(source)}"
             )

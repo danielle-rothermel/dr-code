@@ -1,5 +1,3 @@
-"""Shared, recomputable derived views for metric operators."""
-
 from __future__ import annotations
 
 import ast
@@ -13,8 +11,6 @@ class _ParseOutcome:
 
 
 class ViewCache:
-    """Cache derived views by canonical source content."""
-
     def __init__(self) -> None:
         self._parsed: dict[str, _ParseOutcome] = {}
 
@@ -33,11 +29,7 @@ class ViewCache:
         return outcome
 
     def parsed_module(self, source: str) -> ast.Module | None:
-        """Return a parsed module, or ``None`` when Python parsing fails."""
-
         return self._parse(source).module
 
     def parse_error(self, source: str) -> str | None:
-        """Return the stable parse diagnostic for ``source``, if any."""
-
         return self._parse(source).error

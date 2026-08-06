@@ -1,3 +1,8 @@
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+afterEach(cleanup);
+
 // jsdom lacks ResizeObserver, which DiffView observes for wrapping.
 class ResizeObserverStub {
   observe(): void {}

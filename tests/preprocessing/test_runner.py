@@ -1,10 +1,9 @@
-"""Binding, folding, and the persisted producer coordinate."""
-
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Never
 
 import pytest
+from pydantic import ValidationError
 
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
@@ -19,6 +18,7 @@ from dr_code.preprocessing import (
 )
 from dr_code.preprocessing.names import StepName
 from dr_code.trace import (
+    Artifact,
     CodeArtifact,
     ComponentSetting,
     InspectedCodeCandidateSetArtifact,
@@ -40,9 +40,6 @@ def _def(
     )
 
 
-# --- bind-time wiring ------------------------------------------------
-
-
 def test_bind_resolves_steps() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
@@ -62,7 +59,7 @@ def test_bind_unknown_step_raises_wiring_error() -> None:
     definition = _def(
         (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),)
     )
-    # monkeypatch the registry to simulate an unregistered name
+
     import dr_code.preprocessing.runner as runner_mod
 
     with pytest.MonkeyPatch.context() as monkeypatch:
@@ -72,7 +69,7 @@ def test_bind_unknown_step_raises_wiring_error() -> None:
 
 
 def test_step_spec_rejects_bad_settings_at_definition_boundary() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError) as exc_info:
         _def(
             (
                 StepSpec(
@@ -82,11 +79,11 @@ def test_step_spec_rejects_bad_settings_at_definition_boundary() -> None:
                 ),
             )
         )
+    error = exc_info.value.errors()[0]
+    assert (error["type"], error["loc"]) == ("int_parsing", ("tab_width",))
 
 
 def test_bind_broken_kind_chain_raises_wiring_error() -> None:
-    # normalize_line_endings (Text->Text) then strip_fences
-    # (CandidateSet->CandidateSet): Text != CandidateSet.
     definition = _def(
         (
             StepSpec(instance_name="n", step=StepName.NORMALIZE_LINE_ENDINGS),
@@ -98,8 +95,6 @@ def test_bind_broken_kind_chain_raises_wiring_error() -> None:
 
 
 def test_bind_rejects_filter_before_inspection() -> None:
-    # A filter reads inspections, so it cannot follow a bare candidate set:
-    # the kind chain is what makes "filter before inspecting" unbuildable.
     definition = _def(
         (
             StepSpec(
@@ -130,9 +125,6 @@ def test_bind_accepts_valid_kind_chain() -> None:
     assert len(bind_external_preprocessing(definition).steps) == 4
 
 
-# --- a binding runs many inputs --------------------------------------
-
-
 def test_one_binding_runs_many_inputs() -> None:
     bound = bind_external_preprocessing(
         _def((StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),))
@@ -141,7 +133,7 @@ def test_one_binding_runs_many_inputs() -> None:
     second = bound.run(TextArtifact(text="ｃｌａｓｓ"))
     assert first.value("output") == TextArtifact(text="def")
     assert second.value("output") == TextArtifact(text="class")
-    # Traces are independent; a run never mutates its binding.
+
     assert first.value("input") == TextArtifact(text="ｄｅｆ")
 
 
@@ -166,9 +158,6 @@ def test_registered_one_shot_matches_its_binding() -> None:
     )
     assert one_shot.values == bound.values
     assert one_shot.producer == bound.producer
-
-
-# --- run: basic execution -------------------------------------------
 
 
 def test_run_single_text_step() -> None:
@@ -210,8 +199,6 @@ def test_registered_bind_rejects_coordinate_impersonation() -> None:
 
 
 def test_external_binding_accepts_an_unregistered_definition() -> None:
-    # The explicit escape hatch: an unregistered definition binds, and its
-    # traces are stamped external so nothing mistakes them for registered.
     bound = bind_external_preprocessing(
         _def(
             (StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),),
@@ -271,12 +258,28 @@ def test_run_input_kind_mismatch_raises_wiring_error() -> None:
             ),
         )
     )
-    # extract_all_representations expects Text; pass a CodeArtifact.
+
     with pytest.raises(WiringError):
         run_external_preprocessing(definition, CodeArtifact(source="x = 1"))
 
 
-# --- run: Absent propagation -----------------------------------------
+def test_run_unexpected_step_exception_escapes_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bound = bind_external_preprocessing(
+        _def((StepSpec(instance_name="n", step=StepName.NORMALIZE_UNICODE),))
+    )
+    unexpected = RuntimeError("unexpected step defect")
+
+    def raise_unexpected(_value: Artifact) -> Never:
+        raise unexpected
+
+    monkeypatch.setattr(bound.steps[0].step, "apply", raise_unexpected)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        bound.run(TextArtifact(text="x"))
+
+    assert exc_info.value is unexpected
 
 
 def _short_definition() -> PreprocessingDefinition:
@@ -303,11 +306,10 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     assert guard_value.failure_code == PreprocessingFailureCode.BLANK_INPUT
     assert guard_value.cause == "input text is empty or whitespace-only"
 
-    # downstream steps inherit the same Absent, propagated_through grows
     extract_value = trace.value("e")
     assert is_absent(extract_value)
     assert extract_value.failed_step == "guard"
-    # the originating step's failure code propagates unchanged
+
     assert extract_value.failure_code == PreprocessingFailureCode.BLANK_INPUT
     assert "e" in extract_value.propagated_through
 
@@ -316,13 +318,10 @@ def test_run_failed_step_yields_absent_and_complete_trace() -> None:
     assert out.failed_step == "guard"
     assert out.propagated_through == ("e", "s")
 
-    # every instance name retained + input/output
     assert set(trace.values) == {"input", "guard", "e", "s", "output"}
 
 
 def test_failure_evidence_lands_in_the_failing_steps_facts() -> None:
-    # Evidence describes the failing step's own output, so it lives with
-    # every other step's facts; the Absent stays a bare failure record.
     trace = run_external_preprocessing(
         _short_definition(), TextArtifact(text="   ")
     )
@@ -362,9 +361,6 @@ def test_run_step_facts_merged() -> None:
     assert trace.step_facts["e"]["candidate_count"] >= 1
 
 
-# --- run: the registered definition end to end -----------------------
-
-
 def _registered_output(raw: str):
     return run_preprocessing(
         EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION, TextArtifact(text=raw)
@@ -398,8 +394,6 @@ def test_registered_definition_prose_survives_nothing() -> None:
 
 
 def test_registered_definition_keeps_salvage_as_an_extra_candidate() -> None:
-    # Trailing prose after the last return produces two survivors: the
-    # candidate as written and its truncation. Nothing is destroyed.
     out = _registered_output("def f():\n    return 1\nprint('trailing')\n")
     assert isinstance(out, InspectedCodeCandidateSetArtifact)
     sources = [item.candidate.source for item in out.candidates]
@@ -408,9 +402,6 @@ def test_registered_definition_keeps_salvage_as_an_extra_candidate() -> None:
 
 
 def test_registered_definition_deduplicates_across_representations() -> None:
-    # A bare function body is read as the raw response and as a text
-    # segment; both readings reach the same source, so one survivor
-    # carries both origins.
     out = _registered_output("def f():\n    return 1\n")
     assert isinstance(out, InspectedCodeCandidateSetArtifact)
     (only,) = out.candidates
@@ -421,15 +412,7 @@ def test_registered_definition_deduplicates_across_representations() -> None:
     assert "text_segments" in operations
 
 
-# --- persisted producer coordinate (wire-format contract) ------------
-
-# The dict below pins the exact persisted producer coordinate of the
-# registered definition: definition id, version, instance names, registered
-# component names, and every setting name and value. Setting names are
-# derived from Python field names, so a field rename silently rewrites
-# stored trace identity. A failure here means the wire format changed and
-# must be a deliberate, versioned decision — never a mechanical update.
-
+# This literal pins the persisted producer coordinate and component versions.
 _EXHAUSTIVE_PRODUCER_JSON: Final[dict[str, object]] = {
     "kind": "preprocessing",
     "definition": {

@@ -1,5 +1,3 @@
-"""Keep only candidates their stored inspection reports as compilable."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -10,13 +8,6 @@ from dr_code.trace import InspectedCodeCandidate
 
 
 class FilterCompilable(InspectedFilterStep):
-    """Drop candidates whose inspection reports they do not compile.
-
-    Reads ``inspection.compiles`` — the compile already performed when the
-    candidate was inspected — and reports the recorded error as the
-    rejection reason.
-    """
-
     NAME: ClassVar[StepName] = StepName.FILTER_COMPILABLE
     VERSION: ClassVar[str] = "0"
 

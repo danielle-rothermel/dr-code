@@ -1,18 +1,14 @@
-"""Collapse runs of three or more newlines to one blank line."""
-
 from __future__ import annotations
 
 from typing import ClassVar
 
-from dr_code.text_transforms import collapse_blank_runs
+from dr_code.core.source.text_transforms import collapse_blank_runs
 from dr_code.preprocessing.names import StepName
 from dr_code.preprocessing.steps.base import Step, StepOutput
 from dr_code.trace import Artifact, ArtifactKind, TextArtifact
 
 
 class CollapseBlankRuns(Step):
-    """Collapse runs of three or more newlines down to one blank line."""
-
     NAME: ClassVar[StepName] = StepName.COLLAPSE_BLANK_RUNS
     VERSION: ClassVar[str] = "0"
     INPUT: ClassVar[ArtifactKind] = ArtifactKind.TEXT

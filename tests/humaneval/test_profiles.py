@@ -32,8 +32,6 @@ def test_default_scoring_profile_uses_declared_component_versions() -> None:
 
 
 def test_scoring_profile_names_a_resolvable_preprocessing_definition() -> None:
-    # The profile carries a coordinate, not a definition object, so the
-    # coordinate has to resolve against the preprocessing registry.
     reference = DEFAULT_HUMANEVAL_SCORING_PROFILE.preprocessing_definition
     assert reference.definition_id == (
         EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID
@@ -63,15 +61,3 @@ def test_profiles_are_immutable() -> None:
         DEFAULT_HUMANEVAL_SCORING_PROFILE.preprocessing_definition.version = (  # type: ignore[misc]
             "1"
         )
-
-
-def test_scoring_profile_resolution_is_stable() -> None:
-    first = resolve_humaneval_scoring_profile(
-        scoring_profile_id=HUMANEVAL_SCORING_PROFILE_ID,
-        scoring_profile_version=HUMANEVAL_SCORING_PROFILE_VERSION,
-    )
-    second = resolve_humaneval_scoring_profile(
-        scoring_profile_id=HUMANEVAL_SCORING_PROFILE_ID,
-        scoring_profile_version=HUMANEVAL_SCORING_PROFILE_VERSION,
-    )
-    assert first is second

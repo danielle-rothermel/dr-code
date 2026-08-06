@@ -1,5 +1,3 @@
-"""Drop candidates that are plain literal modules."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -11,8 +9,6 @@ from dr_code.trace import InspectedCodeCandidate
 
 
 class FilterPlainLiteral(InspectedFilterStep):
-    """Drop candidates whose whole body is one bare container literal."""
-
     NAME: ClassVar[StepName] = StepName.FILTER_PLAIN_LITERAL
     VERSION: ClassVar[str] = "0"
 

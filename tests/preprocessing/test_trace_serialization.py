@@ -1,13 +1,3 @@
-"""Serialized-trace contract for traces from the registered definition.
-
-``serialize_trace`` / ``deserialize_trace`` must round-trip a preprocessing
-``Trace`` losslessly: every artifact value, every ``Absent`` with its causal
-lineage, every step fact, the producer id/version, and the artifact kinds all
-survive — including through a JSON model round-trip (the persistence path).
-Traces are produced by the real registered definition, so the producer
-identity under test is the one the resolver stamps.
-"""
-
 from __future__ import annotations
 
 from dr_code.preprocessing import (
@@ -41,7 +31,7 @@ def _assert_round_trip(trace: Trace) -> Trace:
     serialized = serialize_trace(trace)
     assert isinstance(serialized, SerializedTrace)
     restored = deserialize_trace(serialized)
-    # Values and step facts survive verbatim.
+
     assert dict(restored.values) == dict(trace.values)
     assert dict(restored.step_facts) == dict(trace.step_facts)
     assert restored.producer == trace.producer
@@ -49,8 +39,6 @@ def _assert_round_trip(trace: Trace) -> Trace:
 
 
 def _assert_json_round_trip(trace: Trace) -> Trace:
-    # The persistence path: SerializedTrace is a pydantic model, so it must
-    # survive a model_dump(mode="json") -> model_validate round-trip too.
     serialized = serialize_trace(trace)
     payload = serialized.model_dump(mode="json")
     reserialized = SerializedTrace.model_validate(payload)
@@ -58,9 +46,6 @@ def _assert_json_round_trip(trace: Trace) -> Trace:
     restored = deserialize_trace(reserialized)
     assert dict(restored.values) == dict(trace.values)
     return restored
-
-
-# --- success trace: values, kinds, facts, producer survive -----------
 
 
 def test_round_trip_preserves_inspected_output_and_facts() -> None:
@@ -72,9 +57,9 @@ def test_round_trip_preserves_inspected_output_and_facts() -> None:
     out = restored.value("output")
     assert isinstance(out, InspectedCodeCandidateSetArtifact)
     assert out == original
-    # Inspections survive alongside the sources they describe.
+
     assert all(item.inspection.compiles for item in out.candidates)
-    # Per-representation extraction counts are preserved as facts.
+
     assert (
         restored.step_facts["extract_all_representations"]
         == (trace.step_facts["extract_all_representations"])
@@ -104,7 +89,6 @@ def test_round_trip_preserves_input_artifact_kind() -> None:
 
 
 def test_round_trip_preserves_candidate_set_kind() -> None:
-    # An intermediate candidate-set value keeps its concrete artifact kind.
     trace = _trace(_FENCED)
     restored = _assert_round_trip(trace)
     extracted = restored.value("extract_all_representations")
@@ -113,15 +97,11 @@ def test_round_trip_preserves_candidate_set_kind() -> None:
 
 
 def test_round_trip_preserves_candidate_lineage() -> None:
-    # Candidate records carry lineage through the persistence boundary, and
-    # cleaning steps have extended it by the time the set reaches the last
-    # elementwise step.
     trace = _trace(_FENCED)
     restored = _assert_json_round_trip(trace)
     cleaned = restored.value("dedupe_imports")
     assert isinstance(cleaned, CodeCandidateSetArtifact)
-    # Each candidate's lineage opens with the representation that produced
-    # it and continues with every cleaning step, in application order.
+
     for candidate in cleaned.candidates:
         operations = [
             origin.operation.operation_name for origin in candidate.origins
@@ -138,8 +118,6 @@ def test_round_trip_preserves_candidate_lineage() -> None:
 
 
 def test_round_trip_preserves_merged_dedupe_lineage() -> None:
-    # A source reached by several representations carries every route it
-    # was reached by; the merged lineage survives persistence intact.
     trace = _trace(_FENCED)
     restored = _assert_json_round_trip(trace)
     merged = restored.value("dedupe_candidates")
@@ -151,12 +129,7 @@ def test_json_round_trip_is_lossless() -> None:
     _assert_json_round_trip(_trace(_FENCED))
 
 
-# --- absent trace: causal lineage and propagation survive ------------
-
-
 def test_round_trip_preserves_absent_output_and_lineage() -> None:
-    # Prose-only input recovers no candidate: the output is Absent and its
-    # failed_step / propagated_through lineage must survive serialization.
     trace = _trace("Just an explanation, no code at all.\n")
     output = trace.value("output")
     assert is_absent(output)
@@ -171,7 +144,6 @@ def test_round_trip_preserves_absent_output_and_lineage() -> None:
 
 
 def test_round_trip_preserves_the_producer_failure_code() -> None:
-    # The step's own failure code reaches the persisted Absent unchanged.
     trace = _trace("Just an explanation, no code at all.\n")
     output = trace.value("output")
     assert is_absent(output)
@@ -188,8 +160,6 @@ def test_round_trip_preserves_the_producer_failure_code() -> None:
 
 
 def test_round_trip_preserves_absent_propagation_through_steps() -> None:
-    # After the failing step, every downstream value is the same Absent with
-    # propagated_through extended — that propagation must survive too.
     trace = _trace("Just an explanation, no code at all.\n")
     restored = _assert_round_trip(trace)
     absent_values = [

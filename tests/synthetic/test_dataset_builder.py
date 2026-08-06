@@ -1,9 +1,10 @@
-"""Tests for the synthetic dataset builder."""
-
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+import dr_code.synthetic.dataset_builder as dataset_builder
 from dr_code.synthetic import (
     RECIPES,
     RECIPES_BY_NAME,
@@ -12,7 +13,7 @@ from dr_code.synthetic import (
     load_dataset,
     save_dataset,
 )
-from dr_code.synthetic.humaneval_loader import HumanEvalPlusTask
+from dr_code.humaneval.plus_dataset import HumanEvalPlusTask
 from dr_code.synthetic.corruption_recipes import recipe_coordinate
 from dr_code.synthetic.models import (
     RecipeCoordinate,
@@ -49,6 +50,75 @@ def test_dataset_size_matches_cross_product() -> None:
     assert len(samples) == len(TASKS) * len(RECIPES)
 
 
+def test_one_shot_recipe_generator_covers_full_task_cross_product() -> None:
+    samples = build_dataset(
+        tasks=TASKS,
+        recipes=(recipe for recipe in RECIPES),
+        seed=123,
+    )
+
+    assert [
+        (
+            sample.coordinate.humaneval_task_id,
+            sample.coordinate.recipe.recipe_name,
+        )
+        for sample in samples
+    ] == [(task.task_id, recipe.name) for task in TASKS for recipe in RECIPES]
+
+
+@pytest.mark.parametrize(
+    ("snapshot_path", "prefer_snapshot"),
+    [(None, False), (Path("offline-snapshot.json"), True)],
+)
+def test_build_dataset_selects_requested_task_source(
+    monkeypatch: pytest.MonkeyPatch,
+    snapshot_path: Path | None,
+    prefer_snapshot: bool,
+) -> None:
+    calls: list[tuple[bool, Path | None]] = []
+
+    def fake_load_humaneval_plus(
+        *, prefer_snapshot: bool, snapshot_path: Path | None
+    ) -> list[HumanEvalPlusTask]:
+        calls.append((prefer_snapshot, snapshot_path))
+        return []
+
+    monkeypatch.setattr(
+        dataset_builder, "load_humaneval_plus", fake_load_humaneval_plus
+    )
+
+    assert build_dataset(snapshot_path=snapshot_path) == []
+    assert calls == [(prefer_snapshot, snapshot_path)]
+
+
+def test_build_dataset_rejects_explicit_tasks_with_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def unexpected_load(*args: object, **kwargs: object) -> None:
+        pytest.fail("explicit tasks must not load another task source")
+
+    monkeypatch.setattr(
+        dataset_builder, "load_humaneval_plus", unexpected_load
+    )
+
+    with pytest.raises(ValueError):
+        build_dataset(tasks=TASKS, snapshot_path=tmp_path / "snapshot.json")
+
+
+def test_build_dataset_snapshot_path_is_keyword_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_load(*args: object, **kwargs: object) -> None:
+        pytest.fail("explicit tasks must not load another task source")
+
+    monkeypatch.setattr(
+        dataset_builder, "load_humaneval_plus", unexpected_load
+    )
+
+    with pytest.raises(TypeError):
+        build_dataset((), (), 0, Path("snapshot.json"))
+
+
 def test_dataset_jsonl_is_deterministic_for_same_seed(tmp_path: Path) -> None:
     first_path = tmp_path / "first.jsonl"
     second_path = tmp_path / "second.jsonl"
@@ -67,6 +137,15 @@ def test_same_coordinate_produces_same_generated_sample() -> None:
     assert build_sample(TASKS[0], recipe, 7) == build_sample(
         TASKS[0], recipe, 7
     )
+
+
+def test_different_seeds_produce_different_corruption_witnesses() -> None:
+    recipe = RECIPES_BY_NAME["kitchen_sink"]
+
+    first = build_sample(TASKS[0], recipe, 7)
+    second = build_sample(TASKS[0], recipe, 8)
+
+    assert first.corrupted_source != second.corrupted_source
 
 
 def test_structured_sample_coordinate_distinguishes_complete_inputs() -> None:
@@ -128,9 +207,7 @@ def test_dataset_jsonl_roundtrip_preserves_boundary_schema(
 
 
 def test_sample_id_layout_is_pinned() -> None:
-    # Contract pin: ``sample_id`` is a persisted display label. Its exact
-    # separator and field order are the stored format; changing either
-    # changes every artifact already on disk.
+    # The literal pins the persisted sample ID layout.
     coordinate = SyntheticSampleCoordinate(
         humaneval_task_id="HumanEval/0",
         generation_seed=1,
@@ -141,9 +218,7 @@ def test_sample_id_layout_is_pinned() -> None:
 
 
 def test_sample_coordinate_json_layout_is_pinned() -> None:
-    # Contract pin: the coordinate JSON is the semantic identity and the
-    # RNG seed material for ``build_sample``. Key names, key order, and
-    # setting projection are the stored format.
+    # The literal JSON pins persisted identity and RNG seed material.
     coordinate = SyntheticSampleCoordinate(
         humaneval_task_id="HumanEval/0",
         generation_seed=1,

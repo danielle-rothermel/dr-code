@@ -1,5 +1,3 @@
-"""Deduplicate import lines per candidate."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -10,12 +8,6 @@ from dr_code.preprocessing.steps.base import CandidateMapStep
 
 
 class DedupeImports(CandidateMapStep):
-    """Remove duplicate import lines from each candidate.
-
-    Wraps ``import_inference.dedupe_import_lines`` — the third constituent
-    of ``infer_necessary_imports``.
-    """
-
     NAME: ClassVar[StepName] = StepName.DEDUPE_IMPORTS
     VERSION: ClassVar[str] = "0"
 

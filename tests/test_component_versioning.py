@@ -1,5 +1,3 @@
-"""Repository contract for production semantic component versions."""
-
 from __future__ import annotations
 
 import tomllib

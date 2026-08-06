@@ -1,5 +1,3 @@
-"""Typer CLI for synthetic corruption-corpus generation."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,7 +10,7 @@ from dr_code.synthetic.corruption_recipes import (
     Recipe,
 )
 from dr_code.synthetic.dataset_builder import build_dataset, save_dataset
-from dr_code.synthetic.humaneval_loader import load_humaneval_plus
+from dr_code.humaneval.plus_dataset import load_humaneval_plus
 
 ALL_RECIPES = "all"
 
@@ -26,7 +24,7 @@ app = typer.Typer(
 
 @app.callback()
 def main() -> None:
-    """Build synthetic corruption-corpus JSONL artifacts."""
+    pass
 
 
 def _select_recipes(recipe_names: str) -> tuple[Recipe, ...]:
@@ -57,7 +55,7 @@ def _select_recipes(recipe_names: str) -> tuple[Recipe, ...]:
     return tuple(selected)
 
 
-@app.command()
+@app.command(help="Build a synthetic corruption-corpus JSONL artifact.")
 def build(
     recipes: str = typer.Option(
         ...,
@@ -96,7 +94,6 @@ def build(
         help="JSONL output path.",
     ),
 ) -> None:
-    """Build a synthetic corruption-corpus JSONL artifact."""
     selected_recipes = _select_recipes(recipes)
     selected_tasks = load_humaneval_plus(
         prefer_snapshot=snapshot is not None, snapshot_path=snapshot

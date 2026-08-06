@@ -1,26 +1,3 @@
-"""Bind-time wiring + single-fold runner over a preprocessing definition.
-
-Binding and running are separate. ``bind_preprocessing`` resolves and
-validates a definition once, returning a ``BoundPreprocessingRunner`` whose
-``run`` performs the fold for each input; a caller processing many
-responses under one definition pays resolution and validation once.
-``run_preprocessing`` is the one-shot wrapper over exactly that path.
-
-Bind-time wiring failures raise ``WiringError`` before any input is
-processed — incompatible definitions are wiring bugs, not data. Runtime
-data failures (``StepFailedError``) become ``Absent`` with the failing
-step's code and cause, and the pipeline always completes with a full trace.
-
-Binding stamps provenance on every trace the runner produces.
-``bind_preprocessing`` resolves the canonical registered definition for the
-caller's ``(definition_id, version)``, rejects a caller-built object that
-claims a registered coordinate without matching it, and stamps
-``PreprocessingTraceProducer``. ``bind_external_preprocessing`` accepts an
-unregistered definition and stamps ``ExternalPreprocessingTraceProducer``.
-Traces assembled outside the component system carry
-``ExternalTraceProducer``.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -60,7 +37,6 @@ from dr_code.preprocessing.steps.base import (
     StepFailedError,
 )
 
-#: ArtifactKind -> the concrete artifact model a TraceValue may be.
 _KIND_TYPES = {
     ArtifactKind.TEXT: TextArtifact,
     ArtifactKind.CODE: CodeArtifact,
@@ -74,8 +50,6 @@ _KIND_TYPES = {
 
 @dataclass(frozen=True, slots=True)
 class _BoundStep:
-    """A resolved step instance bound to validated settings."""
-
     instance_name: str
     step: Step
     coordinate: StepCoordinate
@@ -84,11 +58,8 @@ class _BoundStep:
 def _bind_steps(
     definition: PreprocessingDefinition,
 ) -> tuple[_BoundStep, ...]:
-    """Resolve each ``StepSpec``, validate settings, and chain kinds.
+    """Validate settings and artifact-kind wiring once at bind time."""
 
-    Any mismatch (unknown step, bad settings, incompatible INPUT/OUTPUT
-    kind chain) raises ``WiringError`` before any input is processed.
-    """
     bound: list[_BoundStep] = []
     expected_input: ArtifactKind | None = None
 
@@ -136,35 +107,15 @@ def _bind_steps(
 
 @dataclass(frozen=True, slots=True)
 class BoundPreprocessingRunner:
-    """A validated definition, ready to run over any number of inputs.
-
-    Construct one through ``bind_preprocessing`` or
-    ``bind_external_preprocessing``; both resolve the definition, wire its
-    steps, and fix the provenance every produced trace carries. Running is
-    then a pure fold with no further validation.
-    """
+    """Bound wiring reusable across inputs."""
 
     definition: PreprocessingDefinition
     steps: tuple[_BoundStep, ...]
     producer: TraceProducer
 
     def run(self, input_value: Artifact) -> Trace:
-        """Execute the bound definition as a single mechanical fold.
+        """Convert StepFailedError to Absent; propagate unexpected defects."""
 
-          value = input_value
-          for bound in self.steps:
-              value or Absent -> run step / skip-and-propagate
-              record value under bound.instance_name; merge facts
-
-        ``StepFailedError`` -> ``Absent`` (failed_step=instance_name, plus
-        the step's failure code and cause), with the failure's structured
-        evidence recorded as that step's facts — the ``Absent`` stays a
-        bare failure record and evidence lives where every other step's
-        description of its own output lives. Downstream steps record the
-        same ``Absent`` with ``propagated_through`` extended. Always
-        completes: the trace has ``input``, one value per instance name,
-        and ``output``.
-        """
         if self.steps:
             first_input_kind = self.steps[0].step.INPUT
             expected_type = _KIND_TYPES[first_input_kind]
@@ -238,7 +189,6 @@ def _bind(
 def bind_preprocessing(
     definition: PreprocessingDefinition,
 ) -> BoundPreprocessingRunner:
-    """Bind one exact registered definition, validating it once."""
     registered = resolve_preprocessing_definition(
         definition_id=definition.definition_id,
         version=definition.version,
@@ -254,13 +204,6 @@ def bind_preprocessing(
 def bind_external_preprocessing(
     definition: PreprocessingDefinition,
 ) -> BoundPreprocessingRunner:
-    """Bind an explicitly unregistered definition with external provenance.
-
-    The escape hatch for definitions that are not in the registry — a
-    one-off pipeline in a test or an experiment. The resulting traces are
-    stamped ``external_preprocessing`` so nothing downstream can mistake
-    them for output of a registered component.
-    """
     return _bind(definition, registered=False)
 
 
@@ -268,7 +211,6 @@ def run_preprocessing(
     definition: PreprocessingDefinition,
     input_value: Artifact,
 ) -> Trace:
-    """Bind one exact registered definition and run it over one input."""
     return bind_preprocessing(definition).run(input_value)
 
 
@@ -276,7 +218,6 @@ def run_external_preprocessing(
     definition: PreprocessingDefinition,
     input_value: Artifact,
 ) -> Trace:
-    """Bind an unregistered definition and run it over one input."""
     return bind_external_preprocessing(definition).run(input_value)
 
 

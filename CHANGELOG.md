@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.1.1 - 2026-08-05
+
+- The package is release-ready at version 0.1.1 with project metadata, a
+  source-only sdist, tag-validated PyPI trusted publishing, and Python 3.13 and
+  3.14 qualification.
+- `.defs/terms.toml` and `.defs/contracts.toml` are the authoritative shared
+  vocabulary and standing contracts; the GitHub Pages reference renders both
+  files directly and repository tests validate their graphs and public symbol
+  mappings.
+- Depot CI separates Python, live OCI, and viewer checks, while the installed
+  commit hook runs the same non-OCI repository pre-check with pinned uv and
+  pnpm versions.
+- Source ownership is a hard cut: `dr_code.core.models`,
+  `dr_code.core.source`, and `dr_code.core.execution` own the shared model,
+  source, and sandbox-execution foundations, with no compatibility aliases.
+- Alpha-renaming preserves callable parameter names by default, and top-level
+  import removal preserves non-import siblings on semicolon-shared single-line
+  statements.
+- `dr_code.humaneval` owns its benchmark runner, schema command, and metric
+  behavior through `runner`, `schema_cli`, and `metric_operator`.
+- `build_dataset` accepts a keyword-only `snapshot_path`; `tasks` and
+  `snapshot_path` are mutually exclusive, and omitting both loads the pinned
+  HumanEval+ network revision.
+- Sandbox execution supports Docker only and requires the digest-pinned image
+  locally; Podman is not a supported runtime.
+- Trace reads return defensive snapshots, and trace, metric, and evaluation
+  boundaries reject malformed namespaces and non-finite persisted values.
+- Tests mirror their contract owners: core and HumanEval tests sit with those
+  packages, while metrics tests are divided among engine, operator, and record
+  contracts and preprocessing step tests sit under `tests/preprocessing/steps`.
+
 ## 2026-08-05 (HumanEval evaluation contracts)
 
 - `dr_code.humaneval.batch_runner` owns the HumanEval batch protocol as one

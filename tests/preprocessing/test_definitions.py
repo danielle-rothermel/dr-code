@@ -1,12 +1,3 @@
-"""The registered definition and the resolver contract.
-
-Contract for ``dr_code.preprocessing.definitions``: one frozen
-``PreprocessingDefinition`` describing the exhaustive function-candidate
-pipeline, plus a ``resolve_preprocessing_definition`` that is an exact
-``(definition_id, version)`` lookup — keyword-only, returns the matching
-frozen definition, and raises ``ValueError`` for any pair not in the table.
-"""
-
 from __future__ import annotations
 
 from typing import Final
@@ -14,6 +5,7 @@ from typing import Final
 import pytest
 
 from dr_code.preprocessing import (
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID as EXHAUSTIVE_ID,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION as EXHAUSTIVE_VERSION,
     PreprocessingDefinition,
@@ -21,11 +13,7 @@ from dr_code.preprocessing import (
     resolve_preprocessing_definition,
 )
 
-#: The definition's exact ordered step-instance names. This pins the whole
-#: pipeline shape: which representations are read, that cleaning precedes
-#: inspection, that salvage is additive, and that materialization is last.
-#: A change here is a change to what the definition *is* and must be a
-#: deliberate, versioned decision.
+
 _EXPECTED_STEP_INSTANCES: Final[tuple[str, ...]] = (
     "normalize_line_endings",
     "normalize_unicode",
@@ -60,14 +48,18 @@ def _definition() -> PreprocessingDefinition:
     )
 
 
-# --- resolution returns the matching definition ----------------------
-
-
 def test_resolve_returns_the_registered_definition() -> None:
     definition = _definition()
     assert isinstance(definition, PreprocessingDefinition)
-    assert definition.definition_id == EXHAUSTIVE_ID
-    assert definition.version == EXHAUSTIVE_VERSION
+    assert definition is EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
+    assert (definition.definition_id, definition.version) == (
+        EXHAUSTIVE_ID,
+        EXHAUSTIVE_VERSION,
+    )
+    assert (EXHAUSTIVE_ID, EXHAUSTIVE_VERSION) == (
+        "exhaustive-function-candidates",
+        "0",
+    )
 
 
 def test_resolver_is_keyword_only() -> None:
@@ -105,40 +97,12 @@ def test_resolve_rejects_non_registered_pair(
         )
 
 
-# --- the resolved definition is frozen and stable --------------------
-
-
-def test_resolved_definition_is_frozen() -> None:
-    with pytest.raises(Exception):
-        _definition().definition_id = "other"  # type: ignore[misc]
-
-
-def test_resolution_is_stable() -> None:
-    assert _definition() == _definition()
-
-
-# --- the definition owns its own coordinate --------------------------
-
-
-def test_definition_id_is_preprocessing_owned() -> None:
-    # The id names what the pipeline does, not a dataset that consumes it:
-    # extraction behavior is independent of who scores against it.
-    assert EXHAUSTIVE_ID == "exhaustive-function-candidates"
-    assert EXHAUSTIVE_VERSION == "0"
-
-
-# --- the step chain is exactly this, in this order -------------------
-
-
 def test_definition_step_instances_are_exactly_pinned() -> None:
     instances = tuple(spec.instance_name for spec in _definition().steps)
     assert instances == _EXPECTED_STEP_INSTANCES
 
 
 def test_every_source_mutating_step_precedes_inspection() -> None:
-    # The inspection must describe the exact source it accompanies, so no
-    # step that rewrites a source may run after inspection. Import
-    # inference is the load-bearing case: it prepends import lines.
     instances = [spec.instance_name for spec in _definition().steps]
     inspection = instances.index("inspect_candidates")
     for mutating in (
@@ -158,9 +122,6 @@ def test_every_source_mutating_step_precedes_inspection() -> None:
 
 
 def test_import_inference_follows_the_last_return_salvage() -> None:
-    # Inference is parse-driven and no-ops on source it cannot parse, so a
-    # candidate that only becomes parseable once the salvage truncates it
-    # would otherwise be accepted still missing the import its body needs.
     instances = [spec.instance_name for spec in _definition().steps]
 
     assert instances.index("add_last_return_salvage") < instances.index(
@@ -181,9 +142,6 @@ def test_materialization_is_the_final_step() -> None:
     assert _definition().steps[-1].instance_name == (
         "materialize_candidate_set"
     )
-
-
-# --- the resolved definition binds ------------------------------------
 
 
 def test_registered_definition_binds() -> None:

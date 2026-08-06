@@ -1,5 +1,3 @@
-"""Functional invariants for every synthetic corruption."""
-
 from __future__ import annotations
 
 import ast
@@ -276,6 +274,28 @@ def test_rename_locals_preserves_signature_and_runtime_result() -> None:
     assert original_namespace["greet"]("Ada") == corrupted_namespace["greet"](
         "Ada"
     )
+
+
+def test_rename_locals_preserves_fresh_module_binding_runtime_result() -> None:
+    source = (
+        "_v0: int = 10\ndef run():\n    value = 3\n    return value + _v0\n"
+    )
+    corrupted = _apply(CorruptionName.RENAME_LOCALS, source)
+    original_namespace: dict[str, object] = {}
+    corrupted_namespace: dict[str, object] = {}
+
+    exec(
+        compile(source, "<rename-locals-original>", "exec"), original_namespace
+    )
+    exec(
+        compile(corrupted, "<rename-locals-corrupted>", "exec"),
+        corrupted_namespace,
+    )
+    original = original_namespace["run"]
+    transformed = corrupted_namespace["run"]
+    assert callable(original)
+    assert callable(transformed)
+    assert original() == transformed()
 
 
 def test_registry_covers_all_named_corruptions() -> None:

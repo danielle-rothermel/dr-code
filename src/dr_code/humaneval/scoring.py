@@ -1,9 +1,3 @@
-"""HumanEval submission scoring: parse, execute in the sandbox, classify.
-
-`SubmissionOutcome` is part of the score contract so consumers can persist
-why a submission scored zero without parsing error text.
-"""
-
 from __future__ import annotations
 
 from enum import StrEnum
@@ -16,8 +10,8 @@ from pydantic import (
     StrictStr,
 )
 
-from dr_code.humaneval.batch_runner import evaluate_humaneval_code
-from dr_code.humaneval.code_parsing import (
+from dr_code.humaneval.runner import evaluate_humaneval_code
+from dr_code.humaneval.acceptance import (
     CodeExtractionResult,
     extract_humaneval_code,
 )
@@ -28,7 +22,7 @@ from dr_code.humaneval.profiles import (
     HumanEvalScoringProfile,
     resolve_humaneval_scoring_profile,
 )
-from dr_code.humaneval.sandbox import (
+from dr_code.core.execution.sandbox import (
     SandboxRunner,
     run_python_in_sandbox,
 )
@@ -38,7 +32,7 @@ from dr_code.humaneval.task import (
     EvaluationTaskResult,
     HumanEvalTask,
 )
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 UNKNOWN_FAILURE_CLASS = "unknown"
 
@@ -94,7 +88,6 @@ def score_humaneval_submission(
     scoring_profile_version: str = HUMANEVAL_SCORING_PROFILE_VERSION,
     run_in_sandbox: SandboxRunner = run_python_in_sandbox,
 ) -> HumanEvalSubmissionScore:
-    """Score one submission under an exact registered scoring profile."""
     if not isinstance(raw_submission, str):
         raise TypeError("raw_submission must be str")
     scoring_profile = resolve_humaneval_scoring_profile(
@@ -162,11 +155,6 @@ def score_humaneval_submission(
 def extraction_failure_outcome(
     extraction: CodeExtractionResult,
 ) -> SubmissionOutcome:
-    """Map preprocessing's failure code onto a submission outcome.
-
-    Blank input is its own outcome: an empty response is a different
-    finding from a response that carried no recoverable code.
-    """
     if extraction.failure_code == PreprocessingFailureCode.BLANK_INPUT:
         return SubmissionOutcome.EMPTY_SUBMISSION
     return SubmissionOutcome.EXTRACTION_FAILED

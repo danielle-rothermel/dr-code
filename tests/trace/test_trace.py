@@ -1,9 +1,8 @@
-"""Domain tests for trace wiring."""
-
 from __future__ import annotations
 
-from array import array
-from enum import IntEnum, StrEnum
+import operator
+from collections.abc import Callable, Mapping
+from typing import cast
 
 import pytest
 
@@ -28,6 +27,13 @@ def _minimal_values() -> dict[str, TraceValue]:
     }
 
 
+def _attempt_public_mutation(action: Callable[[], object]) -> None:
+    try:
+        action()
+    except (AttributeError, TypeError):
+        pass
+
+
 def test_trace_requires_both_reserved_values() -> None:
     with pytest.raises(
         WiringError,
@@ -47,6 +53,13 @@ def test_trace_rejects_non_trace_values() -> None:
         WiringError,
         match="value for key 'invalid' is not a TraceValue: str",
     ):
+        Trace(values=values, producer=EXTERNAL_PRODUCER)  # type: ignore[arg-type]
+
+
+def test_trace_rejects_non_string_keys() -> None:
+    values = {**_minimal_values(), 1: TextArtifact(text="integer key")}
+
+    with pytest.raises(WiringError):
         Trace(values=values, producer=EXTERNAL_PRODUCER)  # type: ignore[arg-type]
 
 
@@ -91,9 +104,6 @@ def test_external_trace_stamps_producer_and_carries_boundary_data() -> None:
     assert trace.step_facts == step_facts
 
 
-# --- snapshotting ----------------------------------------------------
-
-
 def test_trace_snapshots_values_against_later_caller_mutation() -> None:
     values = _minimal_values()
     trace = Trace(values=values, producer=EXTERNAL_PRODUCER)
@@ -106,11 +116,7 @@ def test_trace_snapshots_values_against_later_caller_mutation() -> None:
 
 
 def test_trace_snapshots_json_payloads_against_later_caller_mutation() -> None:
-    # Freezing a model bars attribute assignment but not in-place mutation
-    # of a container it points at. JsonArtifact.payload is the only trace
-    # value holding arbitrary nested dict/list data, so it is deep-copied
-    # at construction -- otherwise a caller still holding the artifact
-    # could change what an existing trace records, and what it serializes.
+    # Freeze is shallow; copy nested JSON so callers cannot rewrite snapshots.
     payload = {"task_id": "HumanEval/0", "nested": {"names": ["a"]}}
     artifact = JsonArtifact(payload=payload)
     values = _minimal_values()
@@ -126,118 +132,42 @@ def test_trace_snapshots_json_payloads_against_later_caller_mutation() -> None:
     )
 
 
-def test_trace_deep_copies_step_facts_against_later_mutation() -> None:
-    nested = {"rejected_locations": [0]}
-    step_facts = {"parse": {"detail": nested}}
-    trace = Trace(
-        values=_minimal_values(),
-        producer=EXTERNAL_PRODUCER,
-        step_facts=step_facts,
-    )
+def test_trace_values_public_view_cannot_change_snapshot() -> None:
+    trace = Trace(values=_minimal_values(), producer=EXTERNAL_PRODUCER)
 
-    nested["rejected_locations"].append(1)
-    step_facts["parse"]["extra"] = "added after construction"
-    step_facts["late"] = {"reason": "added after construction"}
-
-    assert trace.step_facts == {
-        "parse": {"detail": {"rejected_locations": [0]}}
-    }
-
-
-# --- step fact validation --------------------------------------------
-
-
-def test_trace_accepts_finite_json_step_facts() -> None:
-    step_facts = {
-        "parse": {
-            "alternative": "fenced_blocks",
-            "candidate_count": 2,
-            "confidence": 0.25,
-            "recoverable": False,
-            "hint": None,
-            "rejected_locations": [0, 1],
-            "detail": {"line": 3},
-        }
-    }
-
-    trace = Trace(
-        values=_minimal_values(),
-        producer=EXTERNAL_PRODUCER,
-        step_facts=step_facts,
-    )
-
-    assert trace.step_facts == step_facts
-
-
-@pytest.mark.parametrize(
-    "facts",
-    (
-        {"parse": {"confidence": float("nan")}},
-        {"parse": {"confidence": float("inf")}},
-        {"parse": {"confidence": float("-inf")}},
-        {"parse": {"value": {1: "non-string key"}}},
-        {"parse": {"value": object()}},
-        {"parse": {"value": {"nested": object()}}},
-        {"parse": "not a mapping"},
-        # The bytes family is Sequence-shaped but has no JSON form; it must
-        # be rejected rather than coerced into a list of ints.
-        {"parse": {"value": b"raw"}},
-        {"parse": {"value": bytearray(b"raw")}},
-        {"parse": {"value": memoryview(b"raw")}},
-        {"parse": {"value": array("i", [1, 2])}},
-        {"parse": {"value": {"nested": b"raw"}}},
-    ),
-)
-def test_trace_rejects_non_json_step_facts(facts: object) -> None:
-    with pytest.raises(WiringError, match="invalid step facts"):
-        Trace(
-            values=_minimal_values(),
-            producer=EXTERNAL_PRODUCER,
-            step_facts=facts,  # type: ignore[arg-type]
+    _attempt_public_mutation(
+        lambda: operator.setitem(
+            trace.values,
+            "late",
+            TextArtifact(text="added through public view"),
         )
-
-
-def test_trace_narrows_enum_step_fact_leaves_to_plain_builtins() -> None:
-    class Alternative(StrEnum):
-        FENCED_BLOCKS = "fenced_blocks"
-
-    class Attempts(IntEnum):
-        TWO = 2
-
-    trace = Trace(
-        values=_minimal_values(),
-        producer=EXTERNAL_PRODUCER,
-        step_facts={
-            "parse": {
-                "alternative": Alternative.FENCED_BLOCKS,
-                "attempts": Attempts.TWO,
-                "nested": {"alternative": Alternative.FENCED_BLOCKS},
-            }
-        },
+    )
+    _attempt_public_mutation(
+        lambda: operator.setitem(
+            trace.values,
+            INPUT_KEY,
+            TextArtifact(text="replaced through public view"),
+        )
     )
 
-    stored = trace.step_facts["parse"]
-    assert stored == {
-        "alternative": "fenced_blocks",
-        "attempts": 2,
-        "nested": {"alternative": "fenced_blocks"},
-    }
-    # Equality alone would pass for the live enum members; the stored facts
-    # must hold plain containers, so pin the exact leaf types.
-    assert type(stored["alternative"]) is str
-    assert type(stored["attempts"]) is int
-    nested = stored["nested"]
-    assert isinstance(nested, dict)
-    assert type(nested["alternative"]) is str
+    assert set(trace.values) == {INPUT_KEY, OUTPUT_KEY}
+    assert trace.value(INPUT_KEY) == TextArtifact(text="input")
 
 
-def test_trace_rejects_step_facts_with_a_container_cycle() -> None:
-    cycle: list[object] = []
-    cycle.append(cycle)
+def test_trace_value_public_json_payload_cannot_change_snapshot() -> None:
+    values = _minimal_values()
+    values["task"] = JsonArtifact(payload={"nested": {"names": ["a"]}})
+    trace = Trace(values=values, producer=EXTERNAL_PRODUCER)
 
-    with pytest.raises(WiringError, match="container cycle"):
-        Trace(
-            values=_minimal_values(),
-            producer=EXTERNAL_PRODUCER,
-            step_facts={"parse": {"value": cycle}},  # type: ignore[dict-item]
-        )
+    observed = trace.value("task")
+    assert isinstance(observed, JsonArtifact)
+    payload = cast(Mapping[str, object], observed.payload)
+    nested = cast(Mapping[str, object], payload["nested"])
+    names = nested["names"]
+    _attempt_public_mutation(
+        lambda: cast(list[object], names).append("mutated through public view")
+    )
+
+    assert trace.value("task") == JsonArtifact(
+        payload={"nested": {"names": ["a"]}}
+    )

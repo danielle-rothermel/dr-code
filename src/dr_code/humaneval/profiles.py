@@ -8,7 +8,7 @@ from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
 )
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 
 HUMANEVAL_METRICS_PROFILE_ID = "humaneval-metrics"
 HUMANEVAL_METRICS_PROFILE_VERSION = "0"
@@ -18,8 +18,6 @@ DEFAULT_HUMANEVAL_TIMEOUT_SECONDS = 2.0
 
 
 class PreprocessingDefinitionReference(FrozenModel):
-    """The exact preprocessing definition a scoring profile extracts with."""
-
     definition_id: StrictStr
     version: StrictStr
 
@@ -33,8 +31,6 @@ class HumanEvalScoringProfile(FrozenModel):
 
 
 class HumanEvalMetricsProfile(FrozenModel):
-    """Registered score aggregation behavior."""
-
     profile_id: StrictStr
     version: StrictStr
     passed_score: StrictFloat

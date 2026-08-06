@@ -1,6 +1,8 @@
-"""Persistence-boundary tests for complete traces."""
-
 from __future__ import annotations
+
+import operator
+from collections.abc import Callable, Mapping
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
@@ -16,6 +18,7 @@ from dr_code.trace import (
     CodeCandidate,
     CodeCandidateSetArtifact,
     ComponentCoordinate,
+    ExternalPreprocessingTraceProducer,
     ExtractionOperation,
     InspectedCodeCandidate,
     InspectedCodeCandidateSetArtifact,
@@ -41,6 +44,13 @@ def _candidate(source: str, *, location: int) -> CodeCandidate:
             ),
         ),
     )
+
+
+def _attempt_public_mutation(action: Callable[[], object]) -> None:
+    try:
+        action()
+    except (AttributeError, TypeError):
+        pass
 
 
 def _full_trace() -> Trace:
@@ -129,9 +139,33 @@ def test_json_round_trip_preserves_full_trace_union() -> None:
     }
 
 
+def test_external_preprocessing_producer_survives_full_trace_round_trip() -> (
+    None
+):
+    registered_trace = _full_trace()
+    registered_producer = registered_trace.producer
+    assert isinstance(registered_producer, PreprocessingTraceProducer)
+    producer = ExternalPreprocessingTraceProducer(
+        definition=registered_producer.definition
+    )
+    trace = Trace(
+        values=registered_trace.values,
+        producer=producer,
+        step_facts=registered_trace.step_facts,
+    )
+
+    restored = deserialize_trace(
+        SerializedTrace.model_validate_json(
+            serialize_trace(trace).model_dump_json()
+        )
+    )
+
+    assert restored == trace
+    assert restored.producer == producer
+
+
 def test_schema_version_is_pinned_to_three() -> None:
-    # The persisted schema version is stored identity: pin the literal so a
-    # shape change without a version bump fails here.
+    # Version 3 pins this persisted shape; shape changes require a bump.
     assert TRACE_SCHEMA_VERSION == 3
     assert (
         serialize_trace(_full_trace()).model_dump(mode="json")[
@@ -171,9 +205,53 @@ def test_json_step_facts_survive_the_persistence_round_trip() -> None:
     }
 
 
+def test_serialization_is_stable_across_public_mutation_attempts() -> None:
+    trace = _full_trace()
+    before = serialize_trace(trace).model_dump(mode="json")
+
+    payload_artifact = trace.values["payload"]
+    assert isinstance(payload_artifact, JsonArtifact)
+    payload = cast(Mapping[str, object], payload_artifact.payload)
+    detail = cast(Mapping[str, object], trace.step_facts["parse"]["detail"])
+    _attempt_public_mutation(
+        lambda: operator.setitem(payload, "task", "mutated")
+    )
+    _attempt_public_mutation(lambda: operator.setitem(detail, "line", 99))
+    _attempt_public_mutation(
+        lambda: operator.setitem(
+            trace.values,
+            "late",
+            TextArtifact(text="added through public view"),
+        )
+    )
+
+    assert serialize_trace(trace).model_dump(mode="json") == before
+
+
 def test_serialized_trace_rejects_non_finite_step_fact_floats() -> None:
     payload = serialize_trace(_full_trace()).model_dump(mode="python")
     payload["step_facts"]["parse"]["confidence"] = float("inf")
 
     with pytest.raises(ValidationError):
         SerializedTrace.model_validate(payload)
+
+
+def test_serialized_trace_rejects_nested_non_finite_json_artifact_float() -> (
+    None
+):
+    payload = serialize_trace(_full_trace()).model_dump(mode="python")
+    payload["values"]["payload"]["payload"] = {"nested": [float("nan")]}
+
+    with pytest.raises(ValidationError) as exc_info:
+        SerializedTrace.model_validate(payload)
+
+    error = next(
+        error
+        for error in exc_info.value.errors(include_url=False)
+        if error["type"] == "value_error"
+    )
+    assert error["loc"][:2] == ("values", "payload")
+    assert error["loc"][-2:] == ("json", "payload")
+    assert str(error["ctx"]["error"]) == (
+        "JSON artifact payload must contain only finite floats"
+    )

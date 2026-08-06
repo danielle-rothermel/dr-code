@@ -31,11 +31,12 @@ export function CodeBlock({
   useEffect(() => {
     let active = true;
     void getHighlighter().then((loaded) => {
+      if (!active) return;
       const html = loaded.codeToHtml(code, {
         lang,
         theme: SHIKI_THEMES[theme],
       });
-      if (active) setHighlighted({ code, lang, theme, html });
+      setHighlighted({ code, lang, theme, html });
     });
     return () => {
       active = false;

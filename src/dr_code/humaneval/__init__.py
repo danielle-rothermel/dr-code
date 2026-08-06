@@ -1,10 +1,14 @@
-from dr_code.humaneval.code_parsing import (
+from dr_code.humaneval.acceptance import (
     CodeExtractionResult,
     accept_first_surviving,
     extract_humaneval_code,
     humaneval_runner,
 )
 from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
+from dr_code.humaneval.plus_dataset import (
+    HumanEvalPlusTask,
+    load_humaneval_plus,
+)
 from dr_code.humaneval.profiles import (
     DEFAULT_HUMANEVAL_SCORING_PROFILE,
     DEFAULT_HUMANEVAL_TIMEOUT_SECONDS,
@@ -63,6 +67,7 @@ __all__ = (
     "HumanEvalMetricsProfile",
     "HumanEvalOverrideEntry",
     "HumanEvalOverrideSetCoordinate",
+    "HumanEvalPlusTask",
     "HumanEvalSubmissionScore",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
@@ -73,6 +78,7 @@ __all__ = (
     "extract_humaneval_code",
     "humaneval_runner",
     "load_humaneval_rows",
+    "load_humaneval_plus",
     "parse_humaneval_dataset",
     "resolve_humaneval_scoring_profile",
     "sample_humaneval_tasks",

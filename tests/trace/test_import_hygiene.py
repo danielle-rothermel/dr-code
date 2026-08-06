@@ -1,30 +1,17 @@
-"""Architecture boundary tests for the trace package."""
-
 from __future__ import annotations
 
 import ast
 import json
+import sysconfig
 from importlib.util import resolve_name
 from pathlib import Path
 
 IMPORT_PROBE = Path(__file__).parent / "_import_probe.py"
 DR_CODE_PACKAGE = Path(__file__).parents[2] / "src" / "dr_code"
 TRACE_PACKAGE = DR_CODE_PACKAGE / "trace"
-#: The only dr_code roots the trace package may load at runtime.
-APPROVED_DR_CODE_ROOTS = frozenset({"dr_code.base", "dr_code.trace"})
-SIBLING_SYSTEMS = frozenset(
-    {
-        child.name
-        for child in DR_CODE_PACKAGE.iterdir()
-        if child.is_dir()
-        and child.name not in {"__pycache__", TRACE_PACKAGE.name}
-    }
-    | {
-        child.stem
-        for child in DR_CODE_PACKAGE.glob("*.py")
-        if child.stem not in {"__init__", "base"}
-    }
-)
+
+# Runtime imports are limited to these approved dr_code roots.
+APPROVED_DR_CODE_ROOTS = frozenset({"dr_code.core.models", "dr_code.trace"})
 
 
 def _import_targets(source_path: Path) -> set[str]:
@@ -48,18 +35,22 @@ def _import_targets(source_path: Path) -> set[str]:
     return targets
 
 
-def test_trace_source_does_not_import_sibling_systems() -> None:
-    forbidden_prefixes = tuple(
-        f"dr_code.{system}" for system in sorted(SIBLING_SYSTEMS)
+def _is_approved_dr_code_target(target: str) -> bool:
+    return any(
+        target == root
+        or target.startswith(f"{root}.")
+        or root.startswith(f"{target}.")
+        for root in APPROVED_DR_CODE_ROOTS
     )
+
+
+def test_trace_source_imports_only_approved_boundaries() -> None:
     violations = {
         source_path.relative_to(DR_CODE_PACKAGE): sorted(
             target
             for target in _import_targets(source_path)
-            if any(
-                target == prefix or target.startswith(f"{prefix}.")
-                for prefix in forbidden_prefixes
-            )
+            if target.startswith("dr_code")
+            and not _is_approved_dr_code_target(target)
         )
         for source_path in sorted(TRACE_PACKAGE.rglob("*.py"))
     }
@@ -72,14 +63,10 @@ def test_trace_source_does_not_import_sibling_systems() -> None:
 
 
 def _loaded_siblings(report: dict[str, list[str]]) -> list[str]:
-    """Loaded dr_code modules outside the approved roots."""
     return [
         name
         for name in report["loaded_dr_code_modules"]
-        if not any(
-            name == root or name.startswith(f"{root}.")
-            for root in APPROVED_DR_CODE_ROOTS
-        )
+        if not _is_approved_dr_code_target(name)
     ]
 
 
@@ -103,13 +90,21 @@ def test_trace_runtime_import_loads_only_approved_boundaries(
 def test_trace_runtime_probe_reports_injected_boundary_crossings(
     run_python_script,
 ) -> None:
+    nested_third_party = (
+        Path(sysconfig.get_path("stdlib"))
+        / "site-packages"
+        / "unexpected_file_dependency"
+        / "__init__.py"
+    )
     result = run_python_script(
         IMPORT_PROBE,
-        "dr_code.code_analysis",
+        "dr_code.core.source.python_analysis",
         "unexpected_dependency",
+        f"unexpected_file_dependency={nested_third_party}",
     )
 
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
-    assert _loaded_siblings(report) == ["dr_code.code_analysis"]
+    assert _loaded_siblings(report) == ["dr_code.core.source.python_analysis"]
     assert "unexpected_dependency" in report["third_party_roots"]
+    assert "unexpected_file_dependency" in report["third_party_roots"]

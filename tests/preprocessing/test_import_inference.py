@@ -4,7 +4,7 @@ import warnings
 
 import pytest
 
-from dr_code.humaneval.code_parsing import extract_humaneval_code
+from dr_code.humaneval.acceptance import extract_humaneval_code
 from dr_code.preprocessing.import_inference import (
     infer_necessary_imports,
     repair_import_lines,
@@ -105,8 +105,6 @@ def test_infer_necessary_imports_skips_except_binding() -> None:
 
 
 def test_infer_necessary_imports_still_injects_free_name() -> None:
-    # A genuinely free mapped name is still injected — the fix is
-    # conservative about bound names, not about all names.
     source = "def solve(x):\n    return np.array(x)\n"
     result = infer_necessary_imports(source)
     assert result.startswith("import numpy as np\n")
@@ -216,7 +214,6 @@ def test_speculative_repair_parse_does_not_leak_syntax_warnings() -> None:
 
 
 def test_future_import_candidate_survives_extraction() -> None:
-    """A ``from __future__`` candidate compiles, so it is accepted."""
     source = (
         "```python\n"
         "from __future__ import annotations\n\n"

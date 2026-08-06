@@ -1,0 +1,141 @@
+# Binding contracts for dr-code. Statements are present-tense standing rules;
+# rationale records why each rule exists.
+
+[[contracts]]
+title = "Development components use the initial version"
+statement = """
+While development mode is enabled, every registered preprocessing step,
+metric operator, preprocessing definition, HumanEval profile and override
+set, synthetic corruption, and synthetic recipe uses the configured initial
+version."""
+rationale = """
+Component coordinates already persist. Independently chosen pre-experiment
+versions would imply compatibility distinctions that the repository does not
+yet support."""
+date = "2026-08-05"
+check = "uv run pytest tests/test_component_versioning.py"
+
+[[contracts]]
+title = "Core depends on no functional package"
+statement = """
+dr_code.core owns shared models, source operations, and execution mechanisms
+and imports no functional package."""
+rationale = """
+Benchmark and measurement policy depend on reusable infrastructure; allowing
+that dependency to reverse would make shared mechanisms domain-specific."""
+date = "2026-08-05"
+check = "uv run pytest tests/core/test_package_layout.py"
+
+[[contracts]]
+title = "Traces are complete defensive snapshots"
+statement = """
+Every trace contains input and output, accepts only typed artifacts or
+explicit absences, records a validated producer, and returns projections that
+cannot mutate its stored snapshot."""
+rationale = """
+Missing wiring must remain distinguishable from failed computation, and
+caller mutation must not rewrite evidence after capture."""
+date = "2026-08-05"
+check = "uv run pytest tests/trace/test_trace.py tests/trace/test_facts.py"
+
+[[contracts]]
+title = "Persisted observations are self-describing"
+statement = """
+Serialized traces and metric records carry fixed schema versions and their
+resolved producer, definition, component, question, and settings identity;
+restoration does not consult current component registries."""
+rationale = """
+Recorded evidence must remain interpretable after registries or accepted
+settings change. Resolving persisted identity through live registries would
+make history depend on current code."""
+date = "2026-08-05"
+check = "uv run pytest tests/trace/test_serialization.py tests/metrics/records/test_record_wire_format.py"
+
+[[contracts]]
+title = "Preprocessing validates composition before execution"
+statement = """
+Binding validates step identity, settings, instance-name uniqueness, and
+artifact-kind wiring before any input runs; declared step failures produce
+explicit absences in a complete trace, while unexpected exceptions escape
+unchanged."""
+rationale = """
+Configuration defects are wiring errors, expected candidate failures are
+evidence, and infrastructure defects must not be mislabeled as candidate
+outcomes."""
+date = "2026-08-05"
+check = "uv run pytest tests/preprocessing/test_definition.py tests/preprocessing/test_runner.py tests/preprocessing/steps/test_conformance.py"
+
+[[contracts]]
+title = "Metric outcomes are explicit records"
+statement = """
+Metric extraction returns one discriminated record per declared question: a
+measured record with non-empty unique finite facts, a not-applicable record
+carrying the causal absence, or an operator-failure record carrying failure
+type and message."""
+rationale = """
+Zero, inapplicability, and computation failure have different meanings and
+cannot share a sentinel without corrupting downstream interpretation."""
+date = "2026-08-05"
+check = "uv run pytest tests/metrics/test_definition.py tests/metrics/records tests/metrics/engine"
+
+[[contracts]]
+title = "Evaluation plans are internally complete"
+statement = """
+An evaluation plan nests its complete preprocessing and metrics definitions,
+covers exactly its selected tasks with its repeat plan, and aggregates only a
+question declared by its metrics definition."""
+rationale = """
+A persisted plan remains interpretable as one coherent declaration rather
+than a set of references resolved against mutable registries."""
+date = "2026-08-05"
+check = "uv run pytest tests/evaluation/test_plan.py tests/evaluation/test_wire_format.py"
+
+[[contracts]]
+title = "Aggregation is deterministic over explicit slots"
+statement = """
+Aggregation is registry-free and deterministic over its explicit input slots
+and reports missing input, policy refusal, empty denominator, and non-finite
+computation as distinct typed results."""
+rationale = """
+Exceptional outcomes are evaluation data, not ambiguous numbers or incidental
+exceptions."""
+date = "2026-08-05"
+check = "uv run pytest tests/evaluation/test_aggregation.py"
+
+[[contracts]]
+title = "HumanEval scoring separates outcomes from harness failure"
+statement = """
+HumanEval scoring returns a completed submission outcome for
+candidate-attributable execution results and a harness-failure result only
+when the evaluation machinery cannot establish a submission outcome."""
+rationale = """
+Incorrect or resource-exhausting candidate code is experimental evidence;
+broken evaluation infrastructure invalidates the measurement."""
+date = "2026-08-05"
+check = "uv run pytest tests/humaneval/test_scoring.py"
+
+[[contracts]]
+title = "Synthetic coordinates determine generated samples"
+statement = """
+A synthetic sample is deterministic for the same HumanEval task, registered
+recipe coordinate, and generation seed, and an altered or unregistered recipe
+cannot impersonate that coordinate."""
+rationale = """
+Datasets must be reproducible from their recorded identities rather than
+ambient registry state."""
+date = "2026-08-05"
+check = "uv run pytest tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
+
+[[contracts]]
+title = "Sandbox execution is pinned, bounded, and cleanup-confirmed"
+statement = """
+The concrete Python sandbox uses a locally available digest-pinned image,
+disables networking, runs read-only and unprivileged with explicit process,
+CPU, memory, file, input, output, and timeout bounds, and treats unconfirmed
+termination as failure."""
+rationale = """
+Evaluating model-produced source is an adversarial boundary. A mutable tag,
+implicit pull, unbounded output, or assumed cleanup would make results and
+host safety depend on mutable external state."""
+date = "2026-08-05"
+check = "uv run pytest tests/core/execution/test_sandbox.py"

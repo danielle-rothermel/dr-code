@@ -1,15 +1,14 @@
-"""Producer provenance contracts."""
-
 from __future__ import annotations
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from dr_code.base import FrozenModel
+from dr_code.core.models import FrozenModel
 from dr_code.trace import (
     ComponentCoordinate,
     ComponentSetting,
     EXTERNAL_PRODUCER,
+    ExternalPreprocessingTraceProducer,
     ExternalTraceProducer,
     PreprocessingDefinitionCoordinate,
     PreprocessingTraceProducer,
@@ -63,6 +62,24 @@ def test_trace_producer_carries_declared_manual_version() -> None:
     }
 
 
+def test_external_preprocessing_producer_round_trips_through_type_adapter() -> (
+    None
+):
+    producer = ExternalPreprocessingTraceProducer(
+        definition=PreprocessingDefinitionCoordinate(
+            definition_id="external-preprocessing-definition",
+            version="external-version",
+            steps=(),
+        )
+    )
+    adapter = TypeAdapter(TraceProducer)
+
+    restored = adapter.validate_json(adapter.dump_json(producer))
+
+    assert restored == producer
+    assert isinstance(restored, ExternalPreprocessingTraceProducer)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -78,7 +95,22 @@ def test_trace_producer_rejects_incomplete_or_mixed_variants(
         TypeAdapter(TraceProducer).validate_python(payload)
 
 
-# --- settings projection: tuple support and rejected shapes ----------
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_component_setting_rejects_non_finite_float(value: float) -> None:
+    with pytest.raises(ValidationError):
+        ComponentSetting(name="threshold", value=value)
+
+
+def test_component_setting_finite_float_round_trips_through_json() -> None:
+    setting = ComponentSetting(name="threshold", value=0.5)
+
+    assert ComponentSetting.model_validate_json(setting.model_dump_json()) == (
+        setting
+    )
 
 
 def test_coordinate_settings_rejects_non_string_tuple() -> None:

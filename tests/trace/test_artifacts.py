@@ -1,5 +1,3 @@
-"""Boundary tests for trace artifacts and causal absence."""
-
 from __future__ import annotations
 
 import ast
@@ -7,9 +5,8 @@ import ast
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from dr_code.code_analysis import validate_python_source_with_ast
+from dr_code.core.source.python_analysis import validate_python_source_with_ast
 from dr_code.trace import (
-    Absent,
     Artifact,
     CandidateInspection,
     CandidateOrigin,
@@ -21,7 +18,6 @@ from dr_code.trace import (
     InspectedCodeCandidateSetArtifact,
     JsonArtifact,
     TextArtifact,
-    is_absent,
     parsed_module,
 )
 
@@ -38,8 +34,7 @@ def _candidate(source: str, *, location: int = 0) -> CodeCandidate:
     )
 
 
-#: The exact persisted wire shape of one candidate record, pinned as a
-#: literal so a field rename cannot silently change stored identity.
+# Literal payloads pin persisted artifact keys and candidate identity.
 _CANDIDATE_PAYLOAD = {
     "source": "first",
     "origins": [
@@ -142,6 +137,25 @@ def test_artifact_union_rejects_unknown_contract_fields(
         TypeAdapter(Artifact).validate_python(payload)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_json_artifact_rejects_nested_non_finite_floats(
+    value: float,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        JsonArtifact(payload={"outer": [{"value": value}]})
+
+    error = exc_info.value.errors(include_url=False)[0]
+    assert error["type"] == "value_error"
+    assert error["loc"] == ("payload",)
+    assert str(error["ctx"]["error"]) == (
+        "JSON artifact payload must contain only finite floats"
+    )
+
+
 @pytest.mark.parametrize("artifact", ARTIFACTS)
 def test_artifacts_are_immutable(artifact: Artifact) -> None:
     with pytest.raises(ValidationError):
@@ -165,7 +179,7 @@ def test_candidate_extended_appends_origin_and_keeps_prior_lineage() -> None:
 
     assert extended.source == "x = 2\n"
     assert extended.origins == (*origins_before, origin)
-    # The original record is untouched: lineage is appended, never replaced.
+
     assert candidate.origins == origins_before
     assert candidate.source == "x = 1\n"
 
@@ -188,9 +202,6 @@ def test_candidate_inspection_records_structure_without_verdicts() -> None:
 
 
 def test_candidate_origin_rejects_negative_input_location() -> None:
-    # An ordinal position in an operation's input is never negative, and
-    # the bound is enforced on load so externally supplied traces cannot
-    # carry lineage that names an impossible position.
     with pytest.raises(ValidationError):
         CandidateOrigin(
             operation=ExtractionOperation(operation_name="strip_fences"),
@@ -235,8 +246,6 @@ def test_candidate_inspection_rejects_impossible_structural_facts(
     fields: dict[str, object],
     reason: str,
 ) -> None:
-    # Producers never emit these combinations; the validator makes the
-    # same guarantee hold for inspections revalidated from stored traces.
     with pytest.raises(ValidationError):
         CandidateInspection(**fields)  # type: ignore[arg-type]
 
@@ -252,10 +261,6 @@ def test_candidate_inspection_rejects_impossible_structural_facts(
     ),
 )
 def test_source_validation_only_yields_valid_inspections(source: str) -> None:
-    # The invariants the validator enforces are the ones the upstream
-    # source validation already satisfies, across parsing and
-    # non-parsing sources, so enforcement rejects no reachable producer
-    # output.
     validation = validate_python_source_with_ast(source).validation
 
     inspection = CandidateInspection(
@@ -268,53 +273,6 @@ def test_source_validation_only_yields_valid_inspections(source: str) -> None:
     assert inspection.parses == (inspection.parse_error is None)
     assert inspection.compiles == (inspection.compile_error is None)
     assert not (inspection.compiles and not inspection.parses)
-
-
-def test_absent_preserves_causal_lineage() -> None:
-    absent = Absent(
-        failed_step="parse",
-        failure_code="no_candidate_survived_filtering",
-        cause="syntax error",
-        propagated_through=("score", "aggregate"),
-    )
-
-    assert absent.model_dump(mode="json") == {
-        "kind": "absent",
-        "failed_step": "parse",
-        "failure_code": "no_candidate_survived_filtering",
-        "cause": "syntax error",
-        "propagated_through": ["score", "aggregate"],
-    }
-    with pytest.raises(ValidationError):
-        absent.cause = "other"  # type: ignore[misc]
-
-
-def test_absent_requires_a_failure_code() -> None:
-    with pytest.raises(ValidationError):
-        Absent(failed_step="parse", cause="syntax error")  # type: ignore[call-arg]
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    (
-        (
-            Absent(
-                failed_step="parse",
-                failure_code="parse_failed",
-                cause="syntax error",
-            ),
-            True,
-        ),
-        (TextArtifact(text="present"), False),
-        ("not a trace value", False),
-        (None, False),
-    ),
-)
-def test_is_absent_distinguishes_causal_absence(
-    value: object,
-    expected: bool,
-) -> None:
-    assert is_absent(value) is expected
 
 
 def test_parsed_module_returns_source_ast() -> None:

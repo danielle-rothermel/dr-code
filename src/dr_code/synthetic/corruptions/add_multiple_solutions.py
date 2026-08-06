@@ -1,5 +1,3 @@
-"""Wrap source twice in code fences to simulate "Option A / Option B"."""
-
 from __future__ import annotations
 
 import random
@@ -8,17 +6,10 @@ from typing import ClassVar
 from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import CorruptionName
 from dr_code.synthetic.corruptions.base import Corruption
-from dr_code.text_transforms import wrap_code_fence
+from dr_code.core.source.text_transforms import wrap_code_fence
 
 
 class AddMultipleSolutions(Corruption):
-    """Emit a "Option 1 / Option 2" message with two fenced blocks.
-
-    The first block is the real source. The second block is a trivial
-    placeholder that raises ``NotImplementedError``, so the corrupted text
-    carries two fenced candidates instead of one.
-    """
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_MULTIPLE_SOLUTIONS
     VERSION: ClassVar[str] = "0"
 

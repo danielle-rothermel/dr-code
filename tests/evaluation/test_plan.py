@@ -1,11 +1,3 @@
-"""Evaluation procedures, aggregation policies, and whole plans.
-
-Covers the procedure's resolved (rather than projected) definitions, the
-closed policy vocabularies, the plan's agreement between task set and repeat
-plan, its internal-consistency check on the aggregated question, and
-serialization round-trips.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -51,11 +43,6 @@ def evaluation_plan(**overrides: object) -> EvaluationPlan:
     )
 
 
-# ===========================================================================
-# Closed vocabularies.
-# ===========================================================================
-
-
 def test_statistic_vocabulary_is_closed() -> None:
     assert {
         member.value for member in AggregationStatistic
@@ -68,13 +55,7 @@ def test_not_applicable_policy_vocabulary_is_closed() -> None:
     } == EXPECTED_NOT_APPLICABLE_POLICIES
 
 
-# ===========================================================================
-# EvaluationProcedure: resolved definitions, not coordinates.
-# ===========================================================================
-
-
 def test_procedure_nests_whole_resolved_definitions() -> None:
-    """A procedure is executable: it carries definitions, not addresses."""
     built = procedure()
     assert built.preprocessing == preprocessing_definition()
     assert built.metrics == metrics_definition()
@@ -84,7 +65,6 @@ def test_procedure_nests_whole_resolved_definitions() -> None:
 def test_procedure_rejects_a_definition_coordinate_in_place_of_a_definition() -> (
     None
 ):
-    """Coordinates lack ``steps`` specs, so they fail the procedure model."""
     with pytest.raises(ValidationError):
         EvaluationProcedure(
             preprocessing={
@@ -94,11 +74,6 @@ def test_procedure_rejects_a_definition_coordinate_in_place_of_a_definition() ->
             },
             metrics=metrics_definition(),
         )
-
-
-# ===========================================================================
-# AggregationPolicy: the minimal surface.
-# ===========================================================================
 
 
 def test_policy_defaults_exclude_not_applicable_and_fail_on_error() -> None:
@@ -114,14 +89,11 @@ def test_policy_rejects_an_empty_fact_name() -> None:
 
 @pytest.mark.parametrize("name", ("x.unit", "char_count.unit"))
 def test_policy_rejects_a_dotted_fact_name(name: str) -> None:
-    # No metric fact can carry a dotted name, so such a policy could only
-    # ever address a fact that cannot exist.
     with pytest.raises(ValidationError, match="must not contain"):
         policy(fact=name)
 
 
 def test_policy_fields_are_exactly_the_minimal_surface() -> None:
-    """No templating, no free-form knobs: the surface stays closed."""
     assert set(AggregationPolicy.model_fields) == {
         "question",
         "fact",
@@ -134,11 +106,6 @@ def test_policy_fields_are_exactly_the_minimal_surface() -> None:
 def test_policy_rejects_an_unknown_knob() -> None:
     with pytest.raises(ValidationError):
         policy(threshold=0.5)
-
-
-# ===========================================================================
-# EvaluationPlan: agreement between its parts.
-# ===========================================================================
 
 
 def test_plan_accepts_a_repeat_plan_covering_the_selection() -> None:
@@ -183,12 +150,6 @@ def test_plan_accepts_aggregating_any_declared_question() -> None:
 
 
 def test_plan_consistency_check_compares_against_its_own_definition() -> None:
-    """The check reads the plan's nested definition, not a registry.
-
-    Two plans whose procedures declare different questions accept and reject
-    the same aggregation policy, which is only possible if the comparison is
-    against each plan's own nested definition.
-    """
     declared = policy(question=question_coordinate(on_key="output"))
     assert evaluation_plan(aggregation=declared).aggregation == declared
 
@@ -206,12 +167,6 @@ def test_plan_consistency_check_compares_against_its_own_definition() -> None:
 
 
 def test_plan_load_resolves_definitions_through_the_registry() -> None:
-    """A procedure is executable, so loading one is registry-coupled.
-
-    This is the deliberate asymmetry with archived coordinates: a plan
-    declares work about to run, so a definition it names must resolve now.
-    Pinned as a test because it is a design decision, not an accident.
-    """
     from types import MappingProxyType
 
     import dr_code.metrics.registry as registry_module
@@ -224,11 +179,6 @@ def test_plan_load_resolves_definitions_through_the_registry() -> None:
             EvaluationPlan.model_validate_json(payload)
     finally:
         registry_module.REGISTRY = original
-
-
-# ===========================================================================
-# Serialization round-trips.
-# ===========================================================================
 
 
 @pytest.mark.parametrize(

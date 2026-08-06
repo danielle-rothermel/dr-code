@@ -1,5 +1,3 @@
-"""Inject prose-y comments throughout the source."""
-
 from __future__ import annotations
 
 import random
@@ -19,8 +17,6 @@ _COMMENTS: Final[tuple[str, ...]] = (
 
 
 class AddCommentsNoise(Corruption):
-    """Inject prose comments without changing the parsed program."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_COMMENTS_NOISE
     VERSION: ClassVar[str] = "0"
 

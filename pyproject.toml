@@ -1,8 +1,9 @@
 [project]
 name = "dr-code"
-version = "0.1.0"
+version = "0.1.1"
 description = "Producer-blind Python code evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
 ]
@@ -14,6 +15,12 @@ dependencies = [
     "zstandard>=0.25.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/danielle-rothermel/dr-code"
+Issues = "https://github.com/danielle-rothermel/dr-code/issues"
+Documentation = "https://danielle-rothermel.github.io/dr-code/"
+Changelog = "https://github.com/danielle-rothermel/dr-code/blob/main/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -21,19 +28,23 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dr_code"]
 
+[tool.hatch.build.targets.sdist]
+only-include = ["src"]
+
 [dependency-groups]
 dev = [
+    "pre-commit>=4.6.0",
     "pytest>=9.1.1",
     "ruff>=0.15.18",
     "ty>=0.0.51",
 ]
 
-# Development mode: every component is pinned at initial-version while
-# semantics are in flux. This marker is read only by repository contract
-# tests (tests/test_component_versioning.py); production code never imports
-# or branches on it, and it never appears in persisted artifacts. Development
-# mode ends at the first tagged release, at which point this table is removed
-# and real per-component versioning begins.
+[tool.uv]
+required-version = "==0.11.25"
+
+# Development mode pins every component to initial-version. Only repository
+# contract tests read this marker; runtime code does not, and persisted
+# artifacts do not record it.
 [tool.dr-code.component-versioning]
 development-mode = true
 initial-version = "0"
@@ -44,6 +55,10 @@ testpaths = ["tests"]
 # (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
 # need importlib import mode rather than sys.path insertion.
 addopts = "--import-mode=importlib"
+markers = [
+    "oci: requires the opt-in live Docker sandbox runtime and pinned image",
+]
+
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]
 line-length = 79

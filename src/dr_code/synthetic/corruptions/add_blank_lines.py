@@ -1,5 +1,3 @@
-"""Insert extra blank lines throughout the source."""
-
 from __future__ import annotations
 
 import random
@@ -9,13 +7,10 @@ from dr_code.synthetic.models import CorruptedSample
 from dr_code.synthetic.names import CorruptionName
 from dr_code.synthetic.corruptions.base import Corruption
 
-#: Probability that each line gets a blank inserted after it.
 _INSERT_PROB: Final[float] = 0.25
 
 
 class AddBlankLines(Corruption):
-    """Sprinkle extra blank lines between lines."""
-
     NAME: ClassVar[CorruptionName] = CorruptionName.ADD_BLANK_LINES
     VERSION: ClassVar[str] = "0"
 
