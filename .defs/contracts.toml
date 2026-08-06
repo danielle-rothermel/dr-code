@@ -134,10 +134,15 @@ title = "HumanEval scoring separates outcomes from harness failure"
 statement = """
 HumanEval scoring returns a completed submission outcome for
 candidate-attributable execution results and a harness-failure result only
-when the evaluation machinery cannot establish a submission outcome."""
+when the evaluation machinery cannot establish a submission outcome. Batch
+scoring extracts every submission, plans all accepted candidates, executes the
+complete request set through one engine call, and returns results in request
+order. Single-submission scoring is the one-element batch convenience."""
 rationale = """
 Incorrect or resource-exhausting candidate code is experimental evidence;
-broken evaluation infrastructure invalidates the measurement."""
+broken evaluation infrastructure invalidates the measurement. One complete
+execution batch preserves scoring semantics while allowing persistent caches
+to prefetch once and serve the evaluation hot path from memory."""
 date = "2026-08-05"
 check = "uv run pytest tests/humaneval/test_scoring.py"
 
@@ -198,3 +203,31 @@ Producer coordinates distinguish declared component versions and settings,
 not ambient runtime or dependency bytes. Reusing an entry after an unrecorded
 behavior change would make the result depend on stale state."""
 date = "2026-08-05"
+
+[[contracts]]
+title = "Execution cache persistence is scoped and checkpointed"
+statement = """
+A persistent execution cache bulk-loads each planned request key at most once
+through a batch read that returns an explicit hit or miss for every distinct
+key, then serves point reads and writes from memory. Persistent keys include the
+opaque request key, the full digest of a mandatory caller-owned runtime
+identity, and the versioned execution-cache namespace. Strictly invalid records
+are observable misses. One background writer keeps at most one atomic batch of
+schema-qualified records in flight, coalesces later outcomes, retains failed
+batches for a later checkpoint, and attempts a final checkpoint during normal
+close. Persistent failures never fail evaluation. The caller uses persistent
+reuse only for workloads whose outcomes it treats as stable within the runtime
+scope and coordinates one active writer for that scope; concurrent writers are
+unsupported because the cache does not reconcile a different first-writer
+winner."""
+rationale = """
+Bulk boundaries keep storage latency off the execution hot path, runtime scope
+prevents reuse across ambient behavior changes absent from the request, strict
+restoration prevents malformed data from becoming evidence, and retryable
+checkpoint state preserves best-effort durability without coupling evaluation
+success to cache availability. Arbitrary candidate code can depend on time,
+randomness, environment, or contention, so stable-outcome selection and
+single-writer coordination remain explicit caller policy rather than an
+unsupported storage guarantee."""
+date = "2026-08-06"
+check = "uv run pytest tests/caching/test_execution_cache.py"

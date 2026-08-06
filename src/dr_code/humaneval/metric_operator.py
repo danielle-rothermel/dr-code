@@ -43,8 +43,6 @@ from dr_code.trace import (
     JsonArtifact,
 )
 
-_COMPUTATION_ID = "humaneval-runner@0"
-
 
 class CodeTestSettings(OperatorSettings):
     task_key: str = "task"
@@ -208,7 +206,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
             source=request.source,
             input_json=request.input_json,
             timeout_seconds=request.timeout_seconds,
-            computation_id=_COMPUTATION_ID,
+            computation_id=runner.HUMANEVAL_RUNNER_COMPUTATION_ID,
         )
 
 

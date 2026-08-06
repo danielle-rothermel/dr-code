@@ -25,6 +25,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "HumanEvalOverrideSetCoordinate",
     "HumanEvalPlusTask",
     "HumanEvalSubmissionScore",
+    "HumanEvalSubmissionRequest",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
     "PreprocessingDefinitionReference",
@@ -40,6 +41,7 @@ EXPECTED_HUMANEVAL_PUBLIC_API = {
     "sample_humaneval_tasks",
     "sample_humaneval_tasks_from_rows",
     "score_humaneval_submission",
+    "score_humaneval_submissions_batch",
 }
 
 

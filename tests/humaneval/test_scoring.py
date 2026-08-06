@@ -1,26 +1,36 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Sequence
 
 import pytest
+from dr_exec import Executor, ExecutorFailure
 from pydantic import TypeAdapter, ValidationError
 
+import dr_code.humaneval.scoring as scoring_module
 from _executor_stubs import raising_executor
 from _humaneval_builders import (
     _PARTIAL_RUNNER_PASSED_CASE_0,
     _stub_executor,
     _task,
 )
-from dr_exec import ExecutorFailure
 from dr_code.humaneval import EvaluationCaseStatus, HumanEvalTask
 from dr_code.humaneval.parsed_tests import HumanEvalTestCaseKind
 from dr_code.humaneval.scoring import (
     CompletedScore,
     HarnessFailure,
+    HumanEvalSubmissionRequest,
     HumanEvalSubmissionScore,
     SubmissionOutcome,
     evaluation_outcome,
     score_humaneval_submission,
+    score_humaneval_submissions_batch,
+)
+from dr_code.metrics.engine.execution import (
+    ExecutionCache,
+    ExecutionOutcome,
+    ExecutionRequest,
+    InMemoryExecutionCache,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
@@ -141,6 +151,108 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     assert result.evaluation is not None
     assert result.evaluation.failures == []
     assert result.evaluation.coverage_complete is False
+
+
+def test_batch_scorer_runs_all_planned_requests_in_one_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_run_requests = scoring_module.run_requests
+    calls: list[tuple[ExecutionRequest, ...]] = []
+    cache = InMemoryExecutionCache()
+
+    def recording_run_requests(
+        requests: Sequence[ExecutionRequest],
+        *,
+        executor: Executor | None,
+        cache: ExecutionCache,
+    ) -> dict[ExecutionRequest, ExecutionOutcome]:
+        calls.append(tuple(requests))
+        assert cache is expected_cache
+        return original_run_requests(
+            requests,
+            executor=executor,
+            cache=cache,
+        )
+
+    expected_cache = cache
+    monkeypatch.setattr(
+        scoring_module,
+        "run_requests",
+        recording_run_requests,
+    )
+    raw_submissions = (
+        " \n\t ",
+        "def add_one(x):\n    return x + 1\n",
+        "def candidate(x):\n    return x + 1\n",
+    )
+
+    results = score_humaneval_submissions_batch(
+        tuple(
+            HumanEvalSubmissionRequest(
+                raw_submission=raw_submission,
+                task=_task(),
+            )
+            for raw_submission in raw_submissions
+        ),
+        executor=_stub_executor(stdout=_PARTIAL_RUNNER_PASSED_CASE_0),
+        execution_cache=cache,
+    )
+
+    assert len(calls) == 1
+    assert len(calls[0]) == 2
+    assert tuple(result.raw_submission for result in results) == (
+        raw_submissions
+    )
+    assert all(isinstance(result, CompletedScore) for result in results)
+    assert results[0].outcome is SubmissionOutcome.EMPTY_SUBMISSION
+
+
+def test_batch_scorer_calls_execution_planning_once_for_empty_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[ExecutionRequest, ...]] = []
+
+    def recording_run_requests(
+        requests: Sequence[ExecutionRequest],
+        *,
+        executor: Executor | None,
+        cache: ExecutionCache,
+    ) -> dict[ExecutionRequest, ExecutionOutcome]:
+        del executor, cache
+        calls.append(tuple(requests))
+        return {}
+
+    monkeypatch.setattr(
+        scoring_module,
+        "run_requests",
+        recording_run_requests,
+    )
+
+    assert score_humaneval_submissions_batch(()) == ()
+    assert calls == [()]
+
+
+def test_batch_scorer_preserves_unplanned_results_on_executor_failure() -> (
+    None
+):
+    results = score_humaneval_submissions_batch(
+        (
+            HumanEvalSubmissionRequest(
+                raw_submission=" \n\t ",
+                task=_task(),
+            ),
+            HumanEvalSubmissionRequest(
+                raw_submission="def add_one(x):\n    return x + 1\n",
+                task=_task(),
+            ),
+        ),
+        executor=raising_executor(ExecutorFailure("executor unavailable")),
+    )
+
+    assert isinstance(results[0], CompletedScore)
+    assert results[0].outcome is SubmissionOutcome.EMPTY_SUBMISSION
+    assert isinstance(results[1], HarnessFailure)
+    assert results[1].cause.exception_type == "ExecutorFailure"
 
 
 def test_score_humaneval_submission_returns_harness_failure() -> None:
