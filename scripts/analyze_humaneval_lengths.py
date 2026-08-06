@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import argparse
 import ast
+import random
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import matplotlib
 import polars as pl
@@ -23,6 +25,7 @@ from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
 from dr_code.humaneval.sampling import load_humaneval_rows
 
 matplotlib.use("Agg")
+from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib import pyplot as plt  # noqa: E402
 
 _ROOT = Path(__file__).parents[1]
@@ -233,10 +236,125 @@ def _plot_comments_vs_code(
     ).to_list()
     figure, axis = plt.subplots(figsize=(7, 6))
     axis.scatter(code, comments, alpha=0.7, color="#3b528b")
+    lower = min(*code, *comments)
+    upper = max(*code, *comments)
+    padding = (upper - lower) * 0.03
+    axis.plot(
+        [lower, upper],
+        [lower, upper],
+        linestyle="--",
+        linewidth=1.5,
+        color="#555555",
+        label="x = y",
+    )
     axis.set_title("HumanEval comments versus normalized code length")
     axis.set_xlabel(f"Code without comments or docstrings ({unit})")
     axis.set_ylabel(f"Comments and docstrings ({unit})")
+    axis.set_xlim(lower - padding, upper + padding)
+    axis.set_ylim(lower - padding, upper + padding)
+    axis.set_aspect("equal", adjustable="box")
     axis.grid(alpha=0.25)
+    axis.legend()
+    figure.tight_layout()
+    figure.savefig(path, dpi=160, bbox_inches="tight")
+    plt.close(figure)
+
+
+def _plot_violins(
+    measurements: pl.DataFrame,
+    *,
+    unit: str,
+    path: Path,
+) -> None:
+    values_by_representation: list[list[int]] = [
+        measurements.get_column(f"{representation.key}_{unit}").to_list()
+        for representation in _PLOTTED_REPRESENTATIONS
+    ]
+    positions = list(range(1, len(values_by_representation) + 1))
+    colors = ("#31688e", "#35b779")
+    figure, axis = plt.subplots(figsize=(10, 7))
+    violins = axis.violinplot(
+        values_by_representation,
+        positions=positions,
+        widths=0.75,
+        showextrema=False,
+    )
+    bodies = cast(Sequence[PolyCollection], violins["bodies"])
+    for body, color in zip(bodies, colors, strict=True):
+        body.set_facecolor(color)
+        body.set_edgecolor(color)
+        body.set_alpha(0.45)
+
+    jitter = random.Random(0)
+    for position, values, color in zip(
+        positions,
+        values_by_representation,
+        colors,
+        strict=True,
+    ):
+        x_values = [position + jitter.uniform(-0.11, 0.11) for _ in values]
+        mean = sum(values) / len(values)
+        median = _linear_quantile(values, 0.5)
+        p90 = _linear_quantile(values, 0.9)
+        axis.scatter(
+            x_values,
+            values,
+            s=15,
+            alpha=0.1,
+            color=color,
+            edgecolors="none",
+        )
+        axis.scatter(
+            [position],
+            [mean],
+            marker="D",
+            s=35,
+            color="#222222",
+            zorder=3,
+            label="Mean" if position == positions[0] else None,
+        )
+        axis.scatter(
+            [position],
+            [median],
+            marker="_",
+            s=300,
+            linewidths=2,
+            color="#222222",
+            zorder=3,
+            label="Median" if position == positions[0] else None,
+        )
+        axis.scatter(
+            [position],
+            [p90],
+            marker="^",
+            s=35,
+            color="#222222",
+            zorder=3,
+            label="P90" if position == positions[0] else None,
+        )
+        axis.text(
+            position,
+            0.98,
+            f"mean={mean:,.1f}\nmedian={median:,.1f}\np90={p90:,.1f}",
+            transform=axis.get_xaxis_transform(),
+            horizontalalignment="center",
+            verticalalignment="top",
+            bbox={
+                "boxstyle": "round,pad=0.3",
+                "facecolor": "white",
+                "edgecolor": color,
+                "alpha": 0.85,
+            },
+        )
+
+    axis.set_title("HumanEval normalized ground-truth length distributions")
+    axis.set_ylabel(unit.capitalize())
+    axis.set_xticks(
+        positions,
+        [representation.label for representation in _PLOTTED_REPRESENTATIONS],
+    )
+    axis.grid(axis="y", alpha=0.25)
+    axis.legend()
     figure.tight_layout()
     figure.savefig(path, dpi=160, bbox_inches="tight")
     plt.close(figure)
@@ -317,6 +435,7 @@ def main() -> int:
     scatter_path = (
         output_dir / f"humaneval_comments_vs_code_{arguments.unit}.png"
     )
+    violin_path = output_dir / f"humaneval_length_violin_{arguments.unit}.png"
     log_path = output_dir / f"humaneval_length_analysis_{arguments.unit}.log"
 
     measurements.write_csv(measurements_path)
@@ -333,6 +452,7 @@ def main() -> int:
         unit=arguments.unit,
         path=scatter_path,
     )
+    _plot_violins(measurements, unit=arguments.unit, path=violin_path)
 
     report = [
         f"Loaded {len(tasks):,} HumanEval tasks from {arguments.snapshot}",
@@ -342,6 +462,7 @@ def main() -> int:
         f"Wrote histogram plot: {histograms_path}",
         f"Wrote ECDF plot: {ecdf_path}",
         f"Wrote scatter plot: {scatter_path}",
+        f"Wrote violin plot: {violin_path}",
         f"Wrote output log: {log_path}",
     ]
     output = "\n".join(report) + "\n"
