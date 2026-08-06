@@ -33,8 +33,8 @@
   protected protocol remains the fix if single-task integrity against
   adversarial candidates becomes a requirement.
 - 2026-08-06 — OCI sandbox retirement security ledger. The retired Docker
-  sandbox test suites pinned guarantees that subprocess execution does not
-  replace: container image pinning by digest; credential, filesystem,
+  sandbox and its test suites provided guarantees that subprocess execution
+  does not replace: container image pinning by digest; credential, filesystem,
   network, process, and memory isolation; container lifecycle termination;
   runtime discovery, image inspection, runtime allowlisting, and runtime
   environment construction. Under dr-exec, submitted programs are trusted at
