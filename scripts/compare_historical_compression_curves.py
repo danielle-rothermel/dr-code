@@ -767,14 +767,6 @@ def _plot_curves(
         title_fontsize=9,
         frameon=True,
     )
-    figure.text(
-        0.5,
-        0.02,
-        _CAVEAT,
-        ha="center",
-        fontsize=9,
-        color="#444444",
-    )
     if synthetic:
         figure.text(
             0.5,
