@@ -615,7 +615,9 @@ def _plot_compression_ratio_ecdfs(
     axes[1].legend()
     axes[0].set_ylim(0, 1.01)
 
-    figure.suptitle("HumanEval GT code: compression algorithms versus levels")
+    figure.suptitle(
+        "HumanEval GT code ECDFs: compression algorithms versus levels"
+    )
     figure.tight_layout()
     figure.savefig(path, dpi=160, bbox_inches="tight")
     plt.close(figure)
