@@ -296,11 +296,13 @@ def _plot_violins(
         mean = sum(values) / len(values)
         median = _linear_quantile(values, 0.5)
         p90 = _linear_quantile(values, 0.9)
+        minimum = min(values)
+        maximum = max(values)
         axis.scatter(
             x_values,
             values,
             s=15,
-            alpha=0.1,
+            alpha=0.18,
             color=color,
             edgecolors="none",
         )
@@ -335,7 +337,11 @@ def _plot_violins(
         axis.text(
             position,
             0.98,
-            f"mean={mean:,.1f}\nmedian={median:,.1f}\np90={p90:,.1f}",
+            f"min={minimum:,}\n"
+            f"mean={mean:,.1f}\n"
+            f"median={median:,.1f}\n"
+            f"p90={p90:,.1f}\n"
+            f"max={maximum:,}",
             transform=axis.get_xaxis_transform(),
             horizontalalignment="center",
             verticalalignment="top",
