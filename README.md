@@ -19,8 +19,9 @@ viewer, organized into these functional areas:
 - **[Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing)**
   turns raw model responses into inspected Python candidates through declared,
   ordered preprocessing operations.
-- **[Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)**
-  memoizes preprocessing traces through a caller-supplied record cache.
+- **[Caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)**
+  memoizes preprocessing traces and checkpoints reusable execution outcomes
+  through caller-supplied record stores.
 - **[Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)**
   preserves intermediate artifacts, structured facts, failure reasons, and
   semantic provenance so results remain explainable and serializable.
@@ -119,6 +120,50 @@ from dr_store import SqliteRecordCache
 with SqliteRecordCache("traces.sqlite3") as cache:
     trace = run_preprocessing_cached(text, runner, cache)
 ```
+
+### Checkpointed execution caching
+
+`CheckpointedExecutionCache` bulk-prefetches planned execution outcomes, then
+serves every point lookup and update from memory. New outcomes are checkpointed
+by entry count or an explicit task boundary through one background writer;
+normal close drains a final batch. Persistent read, validation, and write
+failures are logged and degrade to cache misses or retained dirty entries rather
+than failing evaluation.
+
+Persistent keys combine the opaque execution-request key with the full digest
+of a mandatory, caller-owned runtime identity. The identity must cover the
+runtime, harness, dependency environment, and any other ambient behavior not
+already represented by the request. The executor object itself is not part of
+the persisted key.
+
+```python
+from dr_code.caching import CheckpointedExecutionCache
+from dr_serialize import IdentityDocument
+
+runtime_identity = IdentityDocument(
+    schema="example/python-runtime",
+    schema_version=1,
+    payload={"python": "3.13.2", "environment": "experiment-image@sha256:..."},
+)
+
+with CheckpointedExecutionCache(
+    batch_record_store,
+    runtime_identity=runtime_identity,
+    checkpoint_entry_count=1_000,
+) as cache:
+    cache.prefetch(planned_request_keys)
+    ...
+    cache.checkpoint()
+```
+
+The injected store must provide `get_many(keys, *, schema=...)`, returning each
+distinct key as a verified hit or explicit `None` miss, and atomic
+`put_many(entries)`, where every entry carries its schema and record. Point-only
+record stores are not adapted because per-entry persistence would violate the
+bulk-I/O contract. Callers use persistent reuse only for workloads whose
+outcomes they treat as stable within the runtime scope and coordinate one active
+writer for that scope. Concurrent writers are unsupported because this cache
+does not reconcile a different first-writer winner after a checkpoint.
 
 ### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
 

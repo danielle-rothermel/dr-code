@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pytest
 from pydantic import ValidationError
 
@@ -116,6 +118,19 @@ def test_in_memory_cache_put_overwrites() -> None:
     assert cache.get("k") == second
 
 
+def test_in_memory_cache_prefetch_is_a_no_op() -> None:
+    from dr_code.metrics.engine.execution import InMemoryExecutionCache
+
+    cache = InMemoryExecutionCache()
+    outcome = _outcome()
+    cache.put("present", outcome)
+
+    cache.prefetch(("present", "missing"))
+
+    assert cache.get("present") == outcome
+    assert cache.get("missing") is None
+
+
 def test_run_requests_dedupes_identical_requests() -> None:
     executor = _counting_stub()
     requests = [_request(), _request(), _request()]
@@ -144,16 +159,129 @@ def test_run_requests_does_not_alias_distinct_requests(
     first: object,
     second: object,
 ) -> None:
+    from dr_code.metrics.engine.execution import execution_request_cache_key
+
     executor = _counting_stub()
     requests = [
         _request(**{field: first}),
         _request(**{field: second}),
     ]
 
+    assert execution_request_cache_key(
+        requests[0]
+    ) != execution_request_cache_key(requests[1])
+
     outcomes = _run(requests, executor=executor)
 
     assert executor.call_count == 2
     assert set(outcomes) == set(requests)
+
+
+def test_execution_request_cache_key_uses_compact_versioned_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from dr_code.metrics.engine import execution
+
+    source = "source-marker-" * 100
+    input_json = "input-marker-" * 100
+    request = _request(source=source, input_json=input_json)
+    hashed_values: list[bytes] = []
+    real_sha256 = execution.hashlib.sha256
+
+    def recording_sha256(value: bytes = b""):
+        hashed_values.append(value)
+        return real_sha256(value)
+
+    monkeypatch.setattr(execution.hashlib, "sha256", recording_sha256)
+
+    key = execution.execution_request_cache_key(request)
+
+    expected_payload = json.dumps(
+        {
+            "version": 1,
+            "source_sha256": real_sha256(source.encode()).hexdigest(),
+            "input_json_sha256": real_sha256(input_json.encode()).hexdigest(),
+            "timeout_seconds": request.timeout_seconds,
+            "computation_id": request.computation_id,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    assert hashed_values == [
+        source.encode(),
+        input_json.encode(),
+        expected_payload,
+    ]
+    assert key == real_sha256(expected_payload).hexdigest()
+
+
+def test_run_requests_prefetches_deduplicated_keys_before_gets() -> None:
+    from dr_code.metrics.engine.execution import (
+        ExecutionOutcome,
+        execution_request_cache_key,
+    )
+
+    class RecordingCache:
+        def __init__(self) -> None:
+            self.events: list[tuple[str, object]] = []
+
+        def prefetch(self, keys: Sequence[str]) -> None:
+            self.events.append(("prefetch", tuple(keys)))
+
+        def get(self, key: str) -> ExecutionOutcome | None:
+            self.events.append(("get", key))
+            return None
+
+        def put(self, key: str, outcome: ExecutionOutcome) -> None:
+            self.events.append(("put", key))
+
+    first = _request()
+    second = _request(computation_id="second-runner")
+    cache = RecordingCache()
+
+    _run([first, first, second], cache=cache)
+
+    expected_keys = tuple(
+        execution_request_cache_key(request) for request in (first, second)
+    )
+    assert cache.events[0] == ("prefetch", expected_keys)
+    assert [event for event in cache.events if event[0] == "get"] == [
+        ("get", key) for key in expected_keys
+    ]
+    assert sum(event[0] == "prefetch" for event in cache.events) == 1
+
+
+def test_run_requests_memoizes_repeated_text_digests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.metrics.engine import execution
+
+    source = "def dr_exec_main(request, emit):\n" + "    pass\n" * 1_000
+    input_json = '{"items":[' + ",".join("0" for _ in range(1_000)) + "]}"
+    hashed_values: list[bytes] = []
+    real_sha256 = execution.hashlib.sha256
+
+    def recording_sha256(value: bytes = b""):
+        hashed_values.append(value)
+        return real_sha256(value)
+
+    monkeypatch.setattr(execution.hashlib, "sha256", recording_sha256)
+
+    _run(
+        [
+            _request(source=source, input_json=input_json),
+            _request(
+                source=source,
+                input_json=input_json,
+                computation_id="second-runner",
+            ),
+        ]
+    )
+
+    assert hashed_values.count(source.encode("utf-8")) == 1
+    assert hashed_values.count(input_json.encode("utf-8")) == 1
 
 
 def test_run_requests_serves_cache_hits_without_reexecuting() -> None:

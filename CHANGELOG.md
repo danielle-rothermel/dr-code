@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 - 2026-08-06
+
+- Execution requests use compact versioned cache keys and batch-prefetch
+  planned keys before evaluation. The checkpointed execution cache serves its
+  hot path from memory, persists outcomes through dr-store batch operations on
+  a background writer, and exposes cache activity statistics.
+- dr-exec and dr-store are upgraded to 0.1.5 for batch cache persistence.
+
 ## 0.1.3 - 2026-08-06
 
 - Publication checks install the built wheel into an isolated environment and
