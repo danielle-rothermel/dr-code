@@ -11,6 +11,12 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MODULE_TIMEOUT_SECONDS = 30.0
 
+# Shared plain-module test helpers (e.g. _executor_stubs) live beside this
+# conftest; importlib import mode does not put the tests root on sys.path.
+_TESTS_ROOT = str(Path(__file__).resolve().parent)
+if _TESTS_ROOT not in sys.path:
+    sys.path.insert(0, _TESTS_ROOT)
+
 
 def _bounded_environment() -> dict[str, str]:
     environment = os.environ.copy()

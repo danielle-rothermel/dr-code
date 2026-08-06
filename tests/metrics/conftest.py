@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 from collections.abc import Callable, Mapping
 
 import pytest
 
-from dr_code.core.execution.sandbox import (
-    SandboxCompletedProcess,
-    SandboxRunner,
-    SandboxTimeoutError,
+from _executor_stubs import (
+    CountingExecutor,
+    local_python_executor,
+    raising_executor,
 )
+from dr_exec import FakeExecutor
 from dr_code.humaneval.task import (
     HumanEvalTask,
 )
@@ -101,79 +100,16 @@ def code_test_trace() -> Callable[..., Trace]:
     return _code_test_trace
 
 
-def _local_runner() -> SandboxRunner:
-    def run_local_python(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        try:
-            completed = subprocess.run(
-                [sys.executable, "-I", "-c", source],
-                input=input_json,
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-                timeout=timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise SandboxTimeoutError(str(exc)) from exc
-        return SandboxCompletedProcess(
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
-
-    return run_local_python
-
-
-class CountingRunner:
-    def __init__(self, inner: SandboxRunner) -> None:
-        self._inner = inner
-        self.calls: list[tuple[str, str, float]] = []
-
-    def __call__(
-        self,
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        self.calls.append((source, input_json, timeout_seconds))
-        return self._inner(
-            source=source,
-            input_json=input_json,
-            timeout_seconds=timeout_seconds,
-        )
-
-    @property
-    def call_count(self) -> int:
-        return len(self.calls)
-
-
-def _raising_runner(exc: BaseException) -> SandboxRunner:
-    def run(
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess:
-        raise exc
-
-    return run
+@pytest.fixture
+def local_executor() -> FakeExecutor:
+    return local_python_executor()
 
 
 @pytest.fixture
-def local_runner() -> SandboxRunner:
-    return _local_runner()
+def counting_executor() -> CountingExecutor:
+    return CountingExecutor(local_python_executor())
 
 
 @pytest.fixture
-def counting_runner(local_runner: SandboxRunner) -> CountingRunner:
-    return CountingRunner(local_runner)
-
-
-@pytest.fixture
-def raising_runner() -> Callable[[BaseException], SandboxRunner]:
-    return _raising_runner
+def raising() -> Callable[[BaseException], FakeExecutor]:
+    return raising_executor

@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.1.3 - 2026-08-06
+
+- Publication checks install the built wheel into an isolated environment and
+  exercise its public modules, packaged HumanEval driver, version metadata, and
+  production-executor construction before upload; supported Darwin runs also
+  execute a real `ProcessExecutor` job. Hatchling is pinned exactly, the PyPI
+  environment admits release tags only, and the local pre-check refuses a stale
+  lockfile without allowing later commands to rewrite it.
+- Sandboxed execution is cut over to
+  [dr-exec](https://github.com/danielle-rothermel/dr-exec) 0.1.4.
+  The execution adapter uses
+  [dr-serialize](https://github.com/danielle-rothermel/dr-serialize) 0.1.2
+  directly to build the versioned request identity document.
+  `dr_code.core.execution.executor` builds
+  `ExecutionJob`s (an `UntrustedPythonTarget` driver plus a JSON request
+  document) under finite wall-clock, input, and payload-output budgets and a
+  fixed environment grant. Exited, signaled, wall-time, and payload-output
+  outcomes have fixed mappings; payload-owned protocol failures map to
+  candidate-attributable kills; every other outcome fails closed as an
+  executor failure. Non-standard JSON constants, JSON numbers that cannot be
+  represented finitely, and timeouts too large to represent in nanoseconds
+  fail at declaration as `DeclarationError`.
+  The injected runner seam is now the dr-exec `Executor` type
+  (`executor: Executor | None = None` on `score_humaneval_submission`,
+  `evaluate_humaneval_code`, `extract_metrics`, and
+  `extract_metrics_batch`), and dr-exec's `ExecutorFailure` joins the metrics
+  engine's internal invariant error as a fail-closed infrastructure exception.
+  The in-memory per-batch `ExecutionCache` seam is unchanged; dr-exec's
+  durable `CachingExecutor` is not wired here.
+- The kill classification changed with the transport: the retired container
+  exit codes `{137, 139}` are replaced by typed classification. dr-exec
+  reports mid-run payload death as a signaled outcome or a payload-owned
+  protocol failure, and both surface as `ExecutionKilledError` (a
+  candidate-attributable error, sentinel `-100_000_003` in engine execution
+  outcomes). Persisted `ExecutionOutcome.returncode` values therefore
+  changed meaning, which invalidates any prior execution-cache contents.
+- The HumanEval runner script is now a dr-exec driver
+  (`runner_driver_script.py` defining `dr_exec_main(request, emit)`); case
+  results still travel on redirected stdout, and the protected protocol
+  channel carries no outputs yet. An authenticated result channel over the
+  protected protocol remains the fix if single-task integrity against
+  adversarial candidates becomes a requirement.
+- 2026-08-06 — OCI sandbox retirement security ledger. The retired Docker
+  sandbox and its test suites provided guarantees that subprocess execution
+  does not replace: container image pinning by digest; credential, filesystem,
+  network, process, and memory isolation; container lifecycle termination;
+  runtime discovery, image inspection, runtime allowlisting, and runtime
+  environment construction. Under dr-exec, submitted programs are not
+  contained by the subprocess boundary: they retain the invoking worker's
+  permissions, external worker isolation is the deployment boundary, and
+  evaluations run only on disposable workers. `DR_CODE_SANDBOX_IMAGE`,
+  `DR_CODE_RUN_SANDBOX_TESTS`, the `oci` pytest marker, and the dedicated CI
+  and release OCI jobs are removed with the sandbox.
+
 ## 0.1.2 - 2026-08-06
 
 - Pull-request CI requires every change to advance the project version by one

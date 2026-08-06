@@ -9,18 +9,19 @@ from importlib.resources import files
 
 from pydantic import TypeAdapter, ValidationError
 
+from dr_exec import Executor
+
 from dr_code.humaneval.parsed_tests import (
     ParsedTests,
     SingleCaseCheck,
     TestCase,
 )
-from dr_code.core.execution.sandbox import (
-    CANDIDATE_KILL_RETURNCODES,
-    SandboxCompletedProcess,
-    SandboxOutputLimitError,
-    SandboxRunner,
-    SandboxTimeoutError,
-    run_python_in_sandbox,
+from dr_code.core.execution.executor import (
+    CompletedPythonProcess,
+    ExecutionKilledError,
+    ExecutionOutputLimitError,
+    ExecutionTimeoutError,
+    run_python_source,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
@@ -46,7 +47,7 @@ def evaluate_humaneval_code(
     candidate_code: str,
     timeout_seconds: float,
     candidate_ast: ast.Module | None = None,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    executor: Executor | None = None,
 ) -> EvaluationTaskResult:
     parsed_tests = require_parsed_tests(task)
     function_names = top_level_function_names(
@@ -66,7 +67,7 @@ def evaluate_humaneval_code(
                     timeout_seconds=timeout_seconds,
                     checks=checks,
                     runner_source=runner_source,
-                    run_in_sandbox=run_in_sandbox,
+                    executor=executor,
                 )
             )
         except EvaluationHarnessError as exc:
@@ -113,7 +114,7 @@ def run_subprocess_batch(
     timeout_seconds: float,
     checks: list[SingleCaseCheck] | None = None,
     runner_source: str | None = None,
-    run_in_sandbox: SandboxRunner = run_python_in_sandbox,
+    executor: Executor | None = None,
 ) -> list[EvaluationCaseResult]:
     request = build_humaneval_batch_request(
         task=task,
@@ -125,18 +126,19 @@ def run_subprocess_batch(
     )
     started_at = time.perf_counter()
     try:
-        completed = run_in_sandbox(
+        completed = run_python_source(
+            executor,
             source=request.source,
             input_json=request.input_json,
             timeout_seconds=request.timeout_seconds,
         )
-    except SandboxTimeoutError:
+    except ExecutionTimeoutError:
         return timeout_results(
             task=task,
             function_name=function_name,
             timeout_seconds=request.timeout_seconds,
         )
-    except SandboxOutputLimitError as exc:
+    except (ExecutionKilledError, ExecutionOutputLimitError) as exc:
         return error_results(
             task=task,
             function_name=function_name,
@@ -199,26 +201,18 @@ def interpret_subprocess_batch_result(
     *,
     task: HumanEvalTask,
     function_name: str,
-    completed: SandboxCompletedProcess,
+    completed: CompletedPythonProcess,
     elapsed_seconds: float,
 ) -> list[EvaluationCaseResult]:
-    """Allow partial output, but require known and unique returned case IDs."""
+    """Allow partial output, but require known and unique returned case IDs.
+
+    Candidate-attributable kills never reach this interpretation: they
+    surface as typed `ExecutionKilledError` classifications before a
+    completed process exists. A nonzero exit that completes the protected
+    protocol is runner breakage, not candidate evidence.
+    """
 
     parsed_tests = require_parsed_tests(task)
-    if completed.returncode in CANDIDATE_KILL_RETURNCODES:
-        message = (
-            f"sandbox killed candidate execution (exit {completed.returncode}"
-            ": memory limit, CPU limit, or interpreter crash)"
-        )
-        detail = completed.stderr.strip()
-        if detail:
-            message = f"{message}: {detail}"
-        return error_results(
-            task=task,
-            function_name=function_name,
-            message=message,
-            elapsed_seconds=elapsed_seconds,
-        )
     if completed.returncode != 0:
         message = completed.stderr.strip() or completed.stdout.strip()
         case_results = error_results(
@@ -425,6 +419,6 @@ def runner_script() -> str:
     # Redirected stdout prevents accidental collisions, not result forgery.
     return (
         files("dr_code.humaneval")
-        .joinpath("sandbox_runner_script.py")
+        .joinpath("runner_driver_script.py")
         .read_text(encoding="utf-8")
     )

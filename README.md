@@ -6,7 +6,10 @@
 [terms source](https://github.com/danielle-rothermel/dr-code/blob/main/.defs/terms.toml) ·
 [contracts source](https://github.com/danielle-rothermel/dr-code/blob/main/.defs/contracts.toml)
 
-**Personally owned dependencies:** [dr-store](https://github.com/danielle-rothermel/dr-store).
+**Personally owned dependencies:**
+[dr-exec](https://github.com/danielle-rothermel/dr-exec),
+[dr-serialize](https://github.com/danielle-rothermel/dr-serialize), and
+[dr-store](https://github.com/danielle-rothermel/dr-store).
 
 **dr-code prepares, evaluates, analyzes, and visualizes Python code produced by
 language models.**
@@ -27,7 +30,8 @@ viewer, organized into these functional areas:
   reduces complete measurement slots into typed aggregation outcomes.
 - **[HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)**
   loads and samples benchmark tasks, extracts candidate solutions, runs them
-  in an isolated Python sandbox, and reports structured outcomes.
+  through a [dr-exec](https://github.com/danielle-rothermel/dr-exec)
+  executor, and reports structured outcomes.
 - **[Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)**
   applies deterministic corruption recipes to known solutions for
   preprocessing and robustness experiments.
@@ -40,7 +44,7 @@ viewer, organized into these functional areas:
   - **[Source](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/source)**
     provides shared Python source inspection and transformation.
   - **[Execution](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/execution)**
-    provides the shared isolated-execution boundary.
+    provides the shared dr-exec execution boundary.
 
 ## Functional areas
 
@@ -187,7 +191,7 @@ def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
     *,
-    run_in_sandbox: SandboxRunner = ...,
+    executor: Executor | None = None,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]: ...
 ```
@@ -225,7 +229,7 @@ def aggregate(request: AggregationInput) -> AggregationResult: ...
 
 ### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
 
-HumanEval owns the benchmark-specific task, extraction, sandbox protocol, and
+HumanEval owns the benchmark-specific task, extraction, runner protocol, and
 scoring policy. Scoring returns a discriminated result so a completed scoring
 outcome cannot be confused with harness failure.
 
@@ -262,7 +266,7 @@ def score_humaneval_submission(
     task: HumanEvalTask,
     scoring_profile_id: str = ...,
     scoring_profile_version: str = ...,
-    run_in_sandbox: SandboxRunner = ...,
+    executor: Executor | None = None,
 ) -> HumanEvalSubmissionScore: ...
 ```
 
@@ -345,18 +349,34 @@ contains the shared model, source, and execution foundations used across the
 functional packages. It owns reusable mechanisms, while benchmark decisions
 and measurement policy remain in their functional packages.
 
+Candidate code executes through a pinned
+[dr-exec](https://github.com/danielle-rothermel/dr-exec) executor:
+`dr_code.core.execution` builds `ExecutionJob`s (an `UntrustedPythonTarget`
+driver plus a JSON request) under finite wall-clock, input, and
+payload-output budgets, and interprets dr-exec's typed outcome and
+attribution taxonomy back into candidate-versus-harness semantics. Submitted
+programs are not contained by that process boundary: they retain the invoking
+worker's permissions, external worker isolation is the deployment boundary,
+and evaluations run only on disposable workers.
+
 ```python
 class FrozenModel(BaseModel): ...
 
 
-class SandboxRunner(Protocol):
-    def __call__(
-        self,
-        *,
-        source: str,
-        input_json: str,
-        timeout_seconds: float,
-    ) -> SandboxCompletedProcess: ...
+@dataclass(frozen=True, slots=True)
+class CompletedPythonProcess:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def run_python_source(
+    executor: Executor | None,
+    *,
+    source: str,
+    input_json: str,
+    timeout_seconds: float,
+) -> CompletedPythonProcess: ...
 ```
 
 ## Development
@@ -373,21 +393,18 @@ Ruff formatting and lint, ty, `.defs`, the local Python suite, and the viewer.
 Run `scripts/pre-check.sh --fix` explicitly when you want Ruff and ty to modify
 the working tree.
 
-The canonical local Python test run is serial and excludes the live Docker
-probes:
+The canonical local Python test run is serial:
 
 ```console
-uv run pytest -m "not oci"
+uv run pytest
 ```
 
 For faster local feedback, run the same suite with an ephemeral xdist install;
 CI remains serial so its ordering and resource use stay reproducible:
 
 ```console
-uv run --with pytest-xdist pytest -n 4 -m "not oci"
+uv run --with pytest-xdist pytest -n 4
 ```
 
-Tests marked `oci` require Docker and the digest-pinned sandbox image. They
-skip locally unless `DR_CODE_RUN_SANDBOX_TESTS=1`; CI runs them separately.
 The [viewer verification guide](viewer/README.md#verification) documents its
 independent typecheck, build, and test commands.

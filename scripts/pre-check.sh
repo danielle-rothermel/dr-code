@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "${repo_root}"
+export UV_LOCKED=1
 
 CACHE_DIR=".cache/pre-check"
 mkdir -p "${CACHE_DIR}"
@@ -25,6 +26,9 @@ run_viewer() {
     )
 }
 
+run_report "locked environment" "${CACHE_DIR}/uv-sync.txt" \
+    uv sync --locked
+
 case "${1:-}" in
     "") ;;
     --fix)
@@ -42,8 +46,6 @@ esac
 printf 'Running final checks...\n'
 status=0
 
-run_report "locked environment" "${CACHE_DIR}/uv-sync.txt" \
-    uv sync --locked || status=1
 run_report "ruff format" "${CACHE_DIR}/ruff-format.txt" \
     uv run ruff format --check . || status=1
 run_report "ruff check" "${CACHE_DIR}/ruff-check.txt" \
@@ -54,7 +56,7 @@ run_report ".defs schema lint" "${CACHE_DIR}/defs-lint.txt" \
     uvx tombi@1.2.5 lint --offline \
         .defs/terms.toml .defs/contracts.toml || status=1
 run_report "Python tests" "${CACHE_DIR}/pytest.txt" \
-    uv run pytest -m "not oci" || status=1
+    uv run pytest || status=1
 
 if command -v corepack >/dev/null 2>&1; then
     run_report "viewer install" "${CACHE_DIR}/viewer-install.txt" \

@@ -3,12 +3,14 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from dr_code.core.execution.sandbox import (
-    SandboxCompletedProcess,
-    SandboxError,
-    SandboxOutputLimitError,
-    SandboxTimeoutError,
+from _executor_stubs import (
+    CountingExecutor,
+    output_limit_executor,
+    raising_executor,
+    scripted_executor,
+    timeout_executor,
 )
+from dr_exec import ExecutorFailure
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 
 from ._helpers import _definition, _extract, _extract_batch, _facts, _q
@@ -16,7 +18,7 @@ from ._helpers import _definition, _extract, _extract_batch, _facts, _q
 
 def _request(
     *,
-    source: str = "print('hi')",
+    source: str = "def dr_exec_main(request, emit):\n    pass\n",
     input_json: str = "{}",
     timeout_seconds: float = 1.0,
     computation_id: str = "humaneval-runner@0",
@@ -44,19 +46,11 @@ def _outcome(
     )
 
 
-class _CountingRunner:
-    def __init__(self, stdout: str = "[]") -> None:
-        self.calls = 0
-        self._stdout = stdout
-
-    def __call__(self, *, source, input_json, timeout_seconds):  # noqa: ANN001
-        self.calls += 1
-        return SandboxCompletedProcess(
-            returncode=0, stdout=self._stdout, stderr=""
-        )
+def _counting_stub(stdout: str = "[]") -> CountingExecutor:
+    return CountingExecutor(scripted_executor(stdout=stdout))
 
 
-def _run(requests, *, runner=None, cache=None):
+def _run(requests, *, executor=None, cache=None):
     from dr_code.metrics.engine.execution import (
         InMemoryExecutionCache,
         run_requests,
@@ -64,12 +58,12 @@ def _run(requests, *, runner=None, cache=None):
 
     return run_requests(
         requests,
-        run_in_sandbox=runner or _CountingRunner(),
+        executor=executor if executor is not None else _counting_stub(),
         cache=cache or InMemoryExecutionCache(),
     )
 
 
-def test_execution_outcome_holds_sandbox_completed_process_fields() -> None:
+def test_execution_outcome_holds_completed_process_fields() -> None:
     outcome = _outcome(returncode=0, stdout="[{}]", stderr="warn")
     assert outcome.returncode == 0
     assert outcome.stdout == "[{}]"
@@ -123,10 +117,10 @@ def test_in_memory_cache_put_overwrites() -> None:
 
 
 def test_run_requests_dedupes_identical_requests() -> None:
-    runner = _CountingRunner()
+    executor = _counting_stub()
     requests = [_request(), _request(), _request()]
-    outcomes = _run(requests, runner=runner)
-    assert runner.calls == 1
+    outcomes = _run(requests, executor=executor)
+    assert executor.call_count == 1
 
     assert len(outcomes) == 1
     assert set(outcomes) == {requests[0]}
@@ -135,7 +129,11 @@ def test_run_requests_dedupes_identical_requests() -> None:
 @pytest.mark.parametrize(
     ("field", "first", "second"),
     [
-        ("source", "a", "b"),
+        (
+            "source",
+            "def dr_exec_main(request, emit):\n    pass\n",
+            "def dr_exec_main(request, emit):\n    return\n",
+        ),
         ("input_json", "{}", '{"x":1}'),
         ("timeout_seconds", 1.0, 2.0),
         ("computation_id", "runner-a", "runner-b"),
@@ -146,15 +144,15 @@ def test_run_requests_does_not_alias_distinct_requests(
     first: object,
     second: object,
 ) -> None:
-    runner = _CountingRunner()
+    executor = _counting_stub()
     requests = [
         _request(**{field: first}),
         _request(**{field: second}),
     ]
 
-    outcomes = _run(requests, runner=runner)
+    outcomes = _run(requests, executor=executor)
 
-    assert runner.calls == 2
+    assert executor.call_count == 2
     assert set(outcomes) == set(requests)
 
 
@@ -163,13 +161,41 @@ def test_run_requests_serves_cache_hits_without_reexecuting() -> None:
 
     request = _request()
     cache = InMemoryExecutionCache()
-    runner = _CountingRunner()
-    first = _run([request], runner=runner, cache=cache)
-    second = _run([request], runner=runner, cache=cache)
+    executor = _counting_stub()
+    first = _run([request], executor=executor, cache=cache)
+    second = _run([request], executor=executor, cache=cache)
 
-    assert runner.calls == 1
+    assert executor.call_count == 1
     assert second == first
     assert second[request] == _outcome()
+
+
+def test_run_requests_cache_hits_need_no_executor() -> None:
+    from dr_code.metrics.engine.execution import (
+        InMemoryExecutionCache,
+        run_requests,
+    )
+
+    request = _request()
+    cache = InMemoryExecutionCache()
+    _run([request], cache=cache)
+
+    outcomes = run_requests([request], executor=None, cache=cache)
+    assert outcomes[request] == _outcome()
+
+
+def test_run_requests_without_executor_fails_closed() -> None:
+    from dr_code.metrics.engine.execution import (
+        InMemoryExecutionCache,
+        run_requests,
+    )
+
+    with pytest.raises(ExecutorFailure, match="no executor"):
+        run_requests(
+            [_request()],
+            executor=None,
+            cache=InMemoryExecutionCache(),
+        )
 
 
 def test_run_requests_empty_input_returns_empty_dict() -> None:
@@ -179,26 +205,45 @@ def test_run_requests_empty_input_returns_empty_dict() -> None:
 def test_run_requests_runner_error_propagates_and_is_not_cached() -> None:
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
-    def raising(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        raise RuntimeError("runner exploded")
-
     cache = InMemoryExecutionCache()
     request = _request()
     with pytest.raises(RuntimeError):
-        _run([request], runner=raising, cache=cache)
+        _run(
+            [request],
+            executor=raising_executor(RuntimeError("runner exploded")),
+            cache=cache,
+        )
 
-    runner = _CountingRunner()
-    outcomes = _run([request], runner=runner, cache=cache)
-    assert runner.calls == 1
+    executor = _counting_stub()
+    outcomes = _run([request], executor=executor, cache=cache)
+    assert executor.call_count == 1
     assert outcomes[request] == _outcome()
 
 
-def test_run_requests_sandbox_error_propagates() -> None:
-    def infra(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        raise SandboxError("infra failed")
+def test_run_requests_executor_failure_propagates() -> None:
+    with pytest.raises(ExecutorFailure):
+        _run(
+            [_request()],
+            executor=raising_executor(ExecutorFailure("infra failed")),
+        )
 
-    with pytest.raises(SandboxError):
-        _run([_request()], runner=infra)
+
+def test_run_requests_caches_timeout_outcome() -> None:
+    from dr_code.metrics.engine.execution import (
+        InMemoryExecutionCache,
+        is_timeout_outcome,
+    )
+
+    request = _request()
+    cache = InMemoryExecutionCache()
+    executor = CountingExecutor(timeout_executor())
+
+    first = _run([request], executor=executor, cache=cache)
+    second = _run([request], executor=executor, cache=cache)
+
+    assert executor.call_count == 1
+    assert second == first
+    assert is_timeout_outcome(second[request])
 
 
 def test_run_requests_caches_output_limit_outcome() -> None:
@@ -207,28 +252,43 @@ def test_run_requests_caches_output_limit_outcome() -> None:
         is_output_limit_outcome,
     )
 
-    calls = 0
-
-    def output_limited(*, source, input_json, timeout_seconds):  # noqa: ANN001
-        nonlocal calls
-        calls += 1
-        raise SandboxOutputLimitError("output limit reached")
-
     request = _request()
     cache = InMemoryExecutionCache()
+    executor = CountingExecutor(output_limit_executor())
 
-    first = _run([request], runner=output_limited, cache=cache)
-    second = _run([request], runner=output_limited, cache=cache)
+    first = _run([request], executor=executor, cache=cache)
+    second = _run([request], executor=executor, cache=cache)
 
-    assert calls == 1
+    assert executor.call_count == 1
     assert second == first
     assert is_output_limit_outcome(second[request])
     assert second[request].stdout == ""
 
 
-def test_planning_sandbox_error_propagates_before_execution(
+def test_run_requests_caches_killed_outcome() -> None:
+    from dr_code.metrics.engine.execution import (
+        InMemoryExecutionCache,
+        is_killed_outcome,
+    )
+
+    request = _request()
+    cache = InMemoryExecutionCache()
+    executor = CountingExecutor(
+        scripted_executor(returncode=-9, stderr="killed")
+    )
+
+    first = _run([request], executor=executor, cache=cache)
+    second = _run([request], executor=executor, cache=cache)
+
+    assert executor.call_count == 1
+    assert second == first
+    assert is_killed_outcome(second[request])
+    assert "killed" in second[request].stderr
+
+
+def test_planning_executor_failure_propagates_before_execution(
     monkeypatch: pytest.MonkeyPatch,
-    counting_runner,
+    counting_executor,
 ) -> None:
     from dr_code.metrics import MetricName
     from dr_code.metrics.registry import REGISTRY
@@ -239,36 +299,36 @@ def test_planning_sandbox_error_propagates_before_execution(
     operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
 
     def fail_planning(self, value, aux):  # noqa: ANN001
-        raise SandboxError("planning infrastructure failed")
+        raise ExecutorFailure("planning infrastructure failed")
 
     monkeypatch.setattr(operator_cls, "execution_requests", fail_planning)
 
-    with pytest.raises(SandboxError):
+    with pytest.raises(ExecutorFailure):
         _extract(
             _definition([_q("text_stats")]),
             trace,
-            run_in_sandbox=counting_runner,
+            executor=counting_executor,
         )
-    assert counting_runner.call_count == 0
+    assert counting_executor.call_count == 0
 
 
-def test_infrastructure_sandbox_error_raises(
-    task, code_test_trace, raising_runner
+def test_infrastructure_executor_failure_raises(
+    task, code_test_trace, raising
 ) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
-    with pytest.raises(SandboxError):
+    with pytest.raises(ExecutorFailure):
         _extract(
             definition,
             trace,
-            run_in_sandbox=raising_runner(SandboxError("infra broke")),
+            executor=raising(ExecutorFailure("infra broke")),
         )
 
 
 def test_missing_execution_outcome_raises_engine_invariant_error(
     task,
-    local_runner,
+    local_executor,
     code_test_trace,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -284,11 +344,11 @@ def test_missing_execution_outcome_raises_engine_invariant_error(
 
     monkeypatch.setattr(CodeTest, "execution_requests", no_requests)
     with pytest.raises(EngineInvariantError):
-        _extract(definition, trace, run_in_sandbox=local_runner)
+        _extract(definition, trace, executor=local_executor)
 
 
-def test_sandbox_timeout_is_candidate_data_not_infrastructure(
-    task, code_test_trace, raising_runner
+def test_wall_time_budget_is_candidate_data_not_infrastructure(
+    task, code_test_trace
 ) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
@@ -298,7 +358,7 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(
     record = _extract(
         definition,
         trace,
-        run_in_sandbox=raising_runner(SandboxTimeoutError("timed out")),
+        executor=timeout_executor(),
     )[0]
     assert record.status.value == "measured"
     facts = _facts(record)
@@ -306,29 +366,29 @@ def test_sandbox_timeout_is_candidate_data_not_infrastructure(
 
 
 def test_batch_dedupes_identical_code_test_executions(
-    task, counting_runner, code_test_trace
+    task, counting_executor, code_test_trace
 ) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition([_q("code_test", on="input")])
     _extract_batch(
-        definition, [trace, trace, trace], run_in_sandbox=counting_runner
+        definition, [trace, trace, trace], executor=counting_executor
     )
-    assert counting_runner.call_count == 1
+    assert counting_executor.call_count == 1
 
 
 def test_distinct_submissions_execute_separately(
-    task, counting_runner, code_test_trace
+    task, counting_executor, code_test_trace
 ) -> None:
     good = code_test_trace("def add_one(x):\n    return x + 1\n", task)
     bad = code_test_trace("def add_one(x):\n    return x - 1\n", task)
     definition = _definition([_q("code_test", on="input")])
-    _extract_batch(definition, [good, bad], run_in_sandbox=counting_runner)
-    assert counting_runner.call_count == 2
+    _extract_batch(definition, [good, bad], executor=counting_executor)
+    assert counting_executor.call_count == 2
 
 
 def test_batch_returns_one_record_tuple_per_trace(
-    task, local_runner, code_test_trace
+    task, local_executor, code_test_trace
 ) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
@@ -336,7 +396,7 @@ def test_batch_returns_one_record_tuple_per_trace(
         [_q("code_test", on="input", timeout_seconds=5.0)]
     )
     results = _extract_batch(
-        definition, [trace, trace], run_in_sandbox=local_runner
+        definition, [trace, trace], executor=local_executor
     )
     assert isinstance(results, tuple)
     assert len(results) == 2
@@ -345,8 +405,8 @@ def test_batch_returns_one_record_tuple_per_trace(
         assert len(per_trace) == 1
 
 
-def test_prepopulated_execution_cache_skips_the_runner(
-    task, counting_runner, code_test_trace
+def test_prepopulated_execution_cache_skips_the_executor(
+    task, counting_executor, code_test_trace
 ) -> None:
     from dr_code.metrics.engine.execution import InMemoryExecutionCache
 
@@ -358,22 +418,22 @@ def test_prepopulated_execution_cache_skips_the_runner(
     _extract(
         definition,
         trace,
-        run_in_sandbox=counting_runner,
+        executor=counting_executor,
         execution_cache=cache,
     )
-    assert counting_runner.call_count == 1
+    assert counting_executor.call_count == 1
 
-    counting_runner.calls.clear()
+    counting_executor.calls.clear()
     _extract(
         definition,
         trace,
-        run_in_sandbox=counting_runner,
+        executor=counting_executor,
         execution_cache=cache,
     )
-    assert counting_runner.call_count == 0
+    assert counting_executor.call_count == 0
 
 
-def test_pure_operators_never_call_the_runner(counting_runner) -> None:
+def test_pure_operators_never_call_the_executor(counting_executor) -> None:
     text = "def f(x):\n    return x\n"
     trace = external_trace(
         {
@@ -384,17 +444,30 @@ def test_pure_operators_never_call_the_runner(counting_runner) -> None:
     definition = _definition(
         [_q("text_stats", on="input"), _q("ast_stats", on="input")]
     )
-    _extract_batch(definition, [trace, trace], run_in_sandbox=counting_runner)
-    assert counting_runner.call_count == 0
+    _extract_batch(definition, [trace, trace], executor=counting_executor)
+    assert counting_executor.call_count == 0
+
+
+def test_pure_operators_need_no_executor() -> None:
+    text = "def f(x):\n    return x\n"
+    trace = external_trace(
+        {
+            "input": CodeArtifact(source=text),
+            "output": CodeArtifact(source=text),
+        }
+    )
+    definition = _definition([_q("text_stats", on="input")])
+    records = _extract(definition, trace)
+    assert records[0].status.value == "measured"
 
 
 def test_code_test_record_values_exclude_timing(
-    task, local_runner, code_test_trace
+    task, local_executor, code_test_trace
 ) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = code_test_trace(candidate, task)
     definition = _definition(
         [_q("code_test", on="input", timeout_seconds=2.0)]
     )
-    record = _extract(definition, trace, run_in_sandbox=local_runner)[0]
+    record = _extract(definition, trace, executor=local_executor)[0]
     assert "elapsed_seconds" not in _facts(record)

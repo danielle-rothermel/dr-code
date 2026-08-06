@@ -14,18 +14,18 @@ from ._helpers import _definition, _extract, _extract_batch, _q
 
 
 def test_missing_on_key_is_a_wiring_error_before_any_work(
-    counting_runner,
+    counting_executor,
 ) -> None:
     trace = external_trace(
         {"input": TextArtifact(text="hi"), "output": TextArtifact(text="hi")}
     )
     definition = _definition([_q("text_stats", on="nonexistent")])
     with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
-    assert counting_runner.call_count == 0
+        _extract(definition, trace, executor=counting_executor)
+    assert counting_executor.call_count == 0
 
 
-def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
+def test_wrong_artifact_kind_is_a_wiring_error(counting_executor) -> None:
     trace = external_trace(
         {
             "input": TextArtifact(text="not code"),
@@ -34,11 +34,11 @@ def test_wrong_artifact_kind_is_a_wiring_error(counting_runner) -> None:
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
-    assert counting_runner.call_count == 0
+        _extract(definition, trace, executor=counting_executor)
+    assert counting_executor.call_count == 0
 
 
-def test_missing_auxiliary_key_is_a_wiring_error(counting_runner) -> None:
+def test_missing_auxiliary_key_is_a_wiring_error(counting_executor) -> None:
     candidate = "def add_one(x):\n    return x + 1\n"
     trace = external_trace(
         {
@@ -48,11 +48,11 @@ def test_missing_auxiliary_key_is_a_wiring_error(counting_runner) -> None:
     )
     definition = _definition([_q("code_test", on="input")])
     with pytest.raises(WiringError):
-        _extract(definition, trace, run_in_sandbox=counting_runner)
-    assert counting_runner.call_count == 0
+        _extract(definition, trace, executor=counting_executor)
+    assert counting_executor.call_count == 0
 
 
-def test_batch_wiring_error_runs_no_sandbox_work(counting_runner) -> None:
+def test_batch_wiring_error_runs_no_execution_work(counting_executor) -> None:
     bad = external_trace(
         {
             "input": TextArtifact(text="not code"),
@@ -61,8 +61,8 @@ def test_batch_wiring_error_runs_no_sandbox_work(counting_runner) -> None:
     )
     definition = _definition([_q("ast_stats", on="input")])
     with pytest.raises(WiringError):
-        _extract_batch(definition, [bad, bad], run_in_sandbox=counting_runner)
-    assert counting_runner.call_count == 0
+        _extract_batch(definition, [bad, bad], executor=counting_executor)
+    assert counting_executor.call_count == 0
 
 
 def test_absent_on_key_yields_not_applicable_with_cause() -> None:

@@ -139,7 +139,8 @@ part_of = ["evaluation procedure"]
 [[terms]]
 name = "metric fact"
 definition = """
-A named finite measured value with an explicit unit."""
+A named measured or observed value with an explicit unit; floating-point
+values must be finite."""
 exported_symbols = [
   "dr_code.metrics.MetricFact",
   "dr_code.metrics.MetricFactUnit",
@@ -239,14 +240,17 @@ exported_symbols = [
 ]
 
 [[terms]]
-name = "sandbox runner"
+name = "execution runner"
 definition = """
-A capability that evaluates Python source with JSON input under a finite
-timeout and returns process status and captured output."""
+A capability that evaluates a Python driver against a JSON request under
+finite wall-clock, input, and output budgets, then classifies completion as
+candidate behavior or execution-infrastructure failure."""
 exported_symbols = [
-  "dr_code.core.execution.sandbox.SandboxRunner",
-  "dr_code.core.execution.sandbox.SandboxCompletedProcess",
-  "dr_code.core.execution.sandbox.run_python_in_sandbox",
+  "dr_code.core.execution.executor.CompletedPythonProcess",
+  "dr_code.core.execution.executor.build_python_execution_job",
+  "dr_code.core.execution.executor.run_python_source",
+  "dr_code.core.execution.executor.interpret_completed_execution",
+  "dr_code.core.execution.executor.host_process_executor",
 ]
 
 [[terms]]
