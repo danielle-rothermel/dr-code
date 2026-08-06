@@ -139,7 +139,8 @@ part_of = ["evaluation procedure"]
 [[terms]]
 name = "metric fact"
 definition = """
-A named finite measured value with an explicit unit."""
+A named measured or observed value with an explicit unit; floating-point
+values must be finite."""
 exported_symbols = [
   "dr_code.metrics.MetricFact",
   "dr_code.metrics.MetricFactUnit",
@@ -241,10 +242,9 @@ exported_symbols = [
 [[terms]]
 name = "execution runner"
 definition = """
-A capability that evaluates an untrusted Python driver against a JSON
-request through a dr-exec executor under finite wall-clock, input, and
-output budgets, and interprets the typed completion back into
-candidate-attributable classifications or a normal completed process."""
+A capability that evaluates a Python driver against a JSON request under
+finite wall-clock, input, and output budgets, then classifies completion as
+candidate behavior or execution-infrastructure failure."""
 exported_symbols = [
   "dr_code.core.execution.executor.CompletedPythonProcess",
   "dr_code.core.execution.executor.build_python_execution_job",

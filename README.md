@@ -355,9 +355,9 @@ Candidate code executes through a pinned
 driver plus a JSON request) under finite wall-clock, input, and
 payload-output budgets, and interprets dr-exec's typed outcome and
 attribution taxonomy back into candidate-versus-harness semantics. Submitted
-programs are trusted at the execution layer: the subprocess boundary retains
-the invoking worker's permissions, external worker isolation is the
-deployment boundary, and evaluations run only on disposable workers.
+programs are not contained by that process boundary: they retain the invoking
+worker's permissions, external worker isolation is the deployment boundary,
+and evaluations run only on disposable workers.
 
 ```python
 class FrozenModel(BaseModel): ...

@@ -151,18 +151,18 @@ date = "2026-08-05"
 check = "uv run pytest tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
 
 [[contracts]]
-title = "Execution jobs are bounded and outcomes map to their owners"
+title = "Execution jobs are bounded and outcome mapping is closed"
 statement = """
 Every execution job declares finite wall-clock, input, and payload-output
-budgets and a fixed hermetic environment grant; payload-owned dr-exec
-outcomes surface as candidate-attributable classifications or a completed
-process, while executor- and machine-owned outcomes surface only as
-fail-closed executor failures."""
+budgets and a fixed environment grant. Exited, signaled, wall-time, and
+payload-output outcomes have fixed mappings; payload-owned protocol failures
+map to candidate-attributable kills; every other outcome fails closed as an
+executor failure."""
 rationale = """
 Evaluating model-produced source remains an adversarial boundary. Under
 dr-exec the subprocess retains the invoking worker's permissions and worker
-isolation is the deployment boundary, so bounded budgets and strict outcome
-attribution are what keep candidate evidence separate from broken
+isolation is the deployment boundary, so bounded budgets and one closed
+mapping are what keep candidate evidence separate from broken
 infrastructure."""
 date = "2026-08-06"
 check = "uv run pytest tests/core/execution/test_executor.py"

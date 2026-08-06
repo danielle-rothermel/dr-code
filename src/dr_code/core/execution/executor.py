@@ -4,17 +4,14 @@ dr-code declares one execution shape: an untrusted Python driver evaluated
 against a JSON request under finite wall-clock, input, and payload-output
 budgets. Jobs run through any dr-exec ``Executor``; dr-exec's typed outcome
 and attribution taxonomy is interpreted back into this repository's
-candidate-versus-harness semantics:
+candidate-versus-harness semantics. Exited, signaled, wall-time, and
+payload-output outcomes have fixed mappings; payload-owned protocol failures
+are candidate-attributable kills; every other outcome fails closed as
+dr-exec's ``ExecutorFailure``.
 
-- payload-owned outcomes surface as candidate-attributable classifications
-  (`ExecutionTimeoutError`, `ExecutionOutputLimitError`,
-  `ExecutionKilledError`) or as a normal `CompletedPythonProcess`;
-- executor- or machine-owned outcomes raise dr-exec's `ExecutorFailure`,
-  which callers treat as fail-closed harness breakage.
-
-Under subprocess execution, submitted programs are trusted at the execution
-layer: the process boundary retains the invoking worker's permissions, and
-worker isolation is the deployment boundary.
+Under subprocess execution, submitted programs are not contained: the process
+boundary retains the invoking worker's permissions, and worker isolation is
+the deployment boundary.
 """
 
 from __future__ import annotations
@@ -64,7 +61,7 @@ MAX_EXECUTION_INPUT_BYTES: Final[int] = 1_048_576
 MAX_EXECUTION_STREAM_BYTES: Final[int] = 1_048_576
 _NANOSECONDS_PER_SECOND: Final[int] = 1_000_000_000
 # The child inherits nothing from the operator environment; hashing stays
-# deterministic and bytecode caches stay off, matching the retired sandbox.
+# deterministic and bytecode caches stay off.
 _EXECUTION_ENVIRONMENT: Final[dict[str, str]] = {
     "PYTHONDONTWRITEBYTECODE": "1",
     "PYTHONHASHSEED": "0",

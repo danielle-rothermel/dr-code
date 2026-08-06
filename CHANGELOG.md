@@ -4,21 +4,23 @@
 
 - Sandboxed execution is cut over to
   [dr-exec](https://github.com/danielle-rothermel/dr-exec) 0.1.4.
+  The execution adapter uses
+  [dr-serialize](https://github.com/danielle-rothermel/dr-serialize) 0.1.2
+  directly to build the versioned request identity document.
   `dr_code.core.execution.executor` builds
   `ExecutionJob`s (an `UntrustedPythonTarget` driver plus a JSON request
   document) under finite wall-clock, input, and payload-output budgets and a
-  fixed hermetic environment grant, and interprets dr-exec's typed outcome
-  and attribution taxonomy back into candidate-versus-harness semantics:
-  wall-clock exhaustion stays a per-case timeout, output exhaustion and
-  mid-run payload death stay candidate-attributable case errors, and
-  executor- or machine-owned outcomes stay fail-closed harness failures.
+  fixed environment grant. Exited, signaled, wall-time, and payload-output
+  outcomes have fixed mappings; payload-owned protocol failures map to
+  candidate-attributable kills; every other outcome fails closed as an
+  executor failure.
   The injected runner seam is now the dr-exec `Executor` type
   (`executor: Executor | None = None` on `score_humaneval_submission`,
   `evaluate_humaneval_code`, `extract_metrics`, and
-  `extract_metrics_batch`), and the metrics engine's fail-closed
-  infrastructure exception is dr-exec's `ExecutorFailure`. The in-memory
-  per-batch `ExecutionCache` seam is unchanged; dr-exec's durable
-  `CachingExecutor` is not wired here.
+  `extract_metrics_batch`), and dr-exec's `ExecutorFailure` joins the metrics
+  engine's internal invariant error as a fail-closed infrastructure exception.
+  The in-memory per-batch `ExecutionCache` seam is unchanged; dr-exec's
+  durable `CachingExecutor` is not wired here.
 - The kill classification changed with the transport: the retired container
   exit codes `{137, 139}` are replaced by typed classification. dr-exec
   reports mid-run payload death as a signaled outcome or a payload-owned
@@ -37,12 +39,12 @@
   does not replace: container image pinning by digest; credential, filesystem,
   network, process, and memory isolation; container lifecycle termination;
   runtime discovery, image inspection, runtime allowlisting, and runtime
-  environment construction. Under dr-exec, submitted programs are trusted at
-  the execution layer: the subprocess boundary retains the invoking worker's
+  environment construction. Under dr-exec, submitted programs are not
+  contained by the subprocess boundary: they retain the invoking worker's
   permissions, external worker isolation is the deployment boundary, and
   evaluations run only on disposable workers. `DR_CODE_SANDBOX_IMAGE`,
-  `DR_CODE_RUN_SANDBOX_TESTS`, the `oci` pytest marker, and the CI image
-  preload are removed with the sandbox.
+  `DR_CODE_RUN_SANDBOX_TESTS`, the `oci` pytest marker, and the dedicated CI
+  and release OCI jobs are removed with the sandbox.
 
 ## 0.1.2 - 2026-08-06
 
