@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- `dr_code.caching` adds opt-in memoization of preprocessing traces.
+  `run_preprocessing_cached` keys raw input text, the bound runner's resolved
+  producer coordinate, and the trace schema version through dr-store's
+  `derive_cache_key`, stores serialized traces in a `RecordCache`, and returns
+  a trace equal to the one a fresh run produces.
+  `open_sqlite_record_cache` composes a SQLite-backed cache at a
+  caller-supplied path. No existing call site consults a cache.
+- dr-store is a dependency, pinned to the unreleased commit that introduces its
+  record-cache primitive.
+- The `code_test` operator reuses the engine's parsed module for its
+  top-level-function selection and keeps the validated HumanEval task per exact
+  payload for the life of a binding, so a batch over one task no longer
+  reparses it per trace. The recompute-and-reject task validator is unchanged.
+
 ## 0.1.1 - 2026-08-05
 
 - The package is release-ready at version 0.1.1 with project metadata, a

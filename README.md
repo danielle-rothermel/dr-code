@@ -323,6 +323,28 @@ class SandboxRunner(Protocol):
     ) -> SandboxCompletedProcess: ...
 ```
 
+[`dr_code.caching`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
+memoizes preprocessing traces over a [dr-store](https://github.com/danielle-rothermel/dr-store)
+record cache. It is opt-in: nothing in the packages above consults a cache, and
+a hit returns the trace a fresh run produces.
+
+```python
+def preprocessing_trace_cache_key(
+    text: str,
+    runner: BoundPreprocessingRunner,
+) -> str: ...
+
+
+def run_preprocessing_cached(
+    text: str,
+    runner: BoundPreprocessingRunner,
+    cache: RecordCache,
+) -> Trace: ...
+
+
+def open_sqlite_record_cache(path: str | Path) -> RecordCache: ...
+```
+
 ## Development
 
 Install the locked development environment and commit hook once per clone:

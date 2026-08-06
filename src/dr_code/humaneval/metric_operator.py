@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping
 from typing import Self
@@ -87,6 +88,13 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     INPUT = ArtifactKind.CODE
     Settings = CodeTestSettings
 
+    def __init__(self, settings: CodeTestSettings) -> None:
+        super().__init__(settings)
+        # One binding measures a whole batch against the same task payload,
+        # and validation reparses the task, so keep the validated result per
+        # exact payload for the life of the binding.
+        self._validated_tasks: dict[str, HumanEvalTask] = {}
+
     def auxiliary_keys(self) -> tuple[str, ...]:
         return (self.settings.task_key,)
 
@@ -125,7 +133,11 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> CodeTestResult:
         source = _code_source(value)
         task = self._task(aux)
-        function_names = runner.top_level_function_names(source)
+        # The engine already parses this source for its other questions.
+        function_names = runner.top_level_function_names(
+            source,
+            parsed_module=ctx.views.parsed_module(source),
+        )
         case_results: list[EvaluationCaseResult] = []
         for function_name in function_names:
             request = self._request(
@@ -168,7 +180,15 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         artifact = aux[self.settings.task_key]
         if not isinstance(artifact, JsonArtifact):
             raise TypeError("code_test task must be a JSON artifact")
-        return _validate_task_payload(artifact)
+        payload_key = json.dumps(
+            artifact.payload, sort_keys=True, separators=(",", ":")
+        )
+        cached = self._validated_tasks.get(payload_key)
+        if cached is not None:
+            return cached
+        task = _validate_task_payload(artifact)
+        self._validated_tasks[payload_key] = task
+        return task
 
     def _request(
         self,

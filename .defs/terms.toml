@@ -106,6 +106,18 @@ exported_symbols = [
 ]
 
 [[terms]]
+name = "preprocessing trace cache"
+definition = """
+An opt-in memoization of preprocessing traces keyed by raw input text and the
+producing runner's resolved coordinate. It changes cost, never results, and
+no existing call site consults it."""
+exported_symbols = [
+  "dr_code.caching.run_preprocessing_cached",
+  "dr_code.caching.preprocessing_trace_cache_key",
+  "dr_code.caching.open_sqlite_record_cache",
+]
+
+[[terms]]
 name = "metric question"
 definition = """
 A request for one named metric on one trace key under resolved settings."""

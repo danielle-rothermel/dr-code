@@ -283,6 +283,7 @@ version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "datasets" },
+    { name = "dr-store" },
     { name = "pydantic" },
     { name = "typer" },
     { name = "zstandard" },
@@ -299,6 +300,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", specifier = ">=3.0,<4" },
+    { name = "dr-store", git = "https://github.com/danielle-rothermel/dr-store?rev=8656db5e5428c6ce637cd5b223bac8b4396604f3" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "typer", specifier = ">=0.26.7" },
     { name = "zstandard", specifier = ">=0.25.0" },
@@ -310,6 +312,26 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.15.18" },
     { name = "ty", specifier = ">=0.0.51" },
+]
+
+[[package]]
+name = "dr-serialize"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/2a/25dd5859ddfd78ee604a59c6ab81a0601669506a6af6ea871fc4438955bc/dr_serialize-0.1.2.tar.gz", hash = "sha256:02662cbb9ad3f1262a81bc14a2f3254f925f880333da69eac6dbda2226d1c51f", size = 17868, upload-time = "2026-08-05T22:00:48.099Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/b7/511d474c07440ff8de4c78aa637a461746c5a5dca9e539fca06b2d015722/dr_serialize-0.1.2-py3-none-any.whl", hash = "sha256:785015ceb779906bd03965fd541d1733772b45fefbd2d5473304b7f5db60ce5d", size = 27564, upload-time = "2026-08-05T22:00:46.732Z" },
+]
+
+[[package]]
+name = "dr-store"
+version = "0.1.2"
+source = { git = "https://github.com/danielle-rothermel/dr-store?rev=8656db5e5428c6ce637cd5b223bac8b4396604f3#8656db5e5428c6ce637cd5b223bac8b4396604f3" }
+dependencies = [
+    { name = "dr-serialize" },
 ]
 
 [[package]]

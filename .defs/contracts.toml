@@ -139,3 +139,17 @@ implicit pull, unbounded output, or assumed cleanup would make results and
 host safety depend on mutable external state."""
 date = "2026-08-05"
 check = "uv run pytest tests/core/execution/test_sandbox.py"
+
+[[contracts]]
+title = "Cached preprocessing traces replace recomputation only"
+statement = """
+A preprocessing trace cache entry is keyed by the raw input text, the
+producing runner's resolved coordinate, and the trace schema version, and a
+hit returns a trace equal to the one a fresh run produces. Caching is opt-in:
+no existing call site consults a cache."""
+rationale = """
+Memoization is a cost decision. A cached trace that differed from a fresh one,
+or a coordinate change that reused an entry, would make recorded evidence
+depend on whether a run happened to be cached."""
+date = "2026-08-06"
+check = "uv run pytest tests/caching/test_trace_cache.py"
