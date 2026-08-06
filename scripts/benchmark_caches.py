@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -266,11 +267,12 @@ def _reuse_stats(keys: Iterable[str]) -> _ReuseStats:
 
 
 def _execution_request_key(request: ExecutionRequest) -> str:
-    return json.dumps(
+    payload = json.dumps(
         request.model_dump(mode="json"),
         sort_keys=True,
         separators=(",", ":"),
-    )
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _summarize_row_cache(
@@ -644,6 +646,10 @@ def _print_single_task(result: _TaskBenchmark) -> None:
         f"{result.rows:,}/{result.rows:,} requests served without "
         "preprocessing"
     )
+    print(
+        "Timing caveat: uncached and cold runs share process-global parser "
+        "state; treat speedups as exploratory."
+    )
     print()
     print("Testing-cache estimates with an initially empty cache:")
     _print_row_cache_summary(result.row_cache)
@@ -819,6 +825,10 @@ def _print_task_sample(
     print(
         "Warm cache verification: all selected requests served without "
         "preprocessing"
+    )
+    print(
+        "Timing caveat: uncached and cold runs share process-global parser "
+        "state; treat speedups as exploratory."
     )
     print("Candidate reuse was planned without executing candidate code.")
 
