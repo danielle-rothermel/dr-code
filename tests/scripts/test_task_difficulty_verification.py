@@ -7,6 +7,7 @@ from pathlib import Path
 from types import ModuleType
 
 import polars as pl
+import pytest
 
 from _executor_stubs import local_python_executor
 
@@ -158,6 +159,10 @@ def test_preprocessing_retains_compilable_function_candidates(
         for candidate in eligible.item(0, "code_candidates")
     )
     assert summary.item(0, "eligible_rows") == 1
+    assert (
+        eligible.item(0, "preprocessing_definition_id")
+        == "exhaustive-function-candidates"
+    )
 
 
 def test_sampling_selects_one_stable_row_per_cell() -> None:
@@ -220,6 +225,36 @@ def test_selected_ground_truth_candidate_passes_full_metric() -> None:
 
     assert results.item(0, "metric_status") == "measured"
     assert results.item(0, "candidate_passed") is True
+    assert results.item(0, "metrics_definition_id") == (
+        "directional-humaneval-task-difficulty"
+    )
+
+
+def test_evaluation_checkpoint_must_match_exact_candidates(
+    tmp_path: Path,
+) -> None:
+    task_rows = pl.DataFrame(
+        [
+            {
+                "sample_id": "sample",
+                "candidate_count": 1,
+                "code_candidates": ["def f():\n    return 1\n"],
+            }
+        ]
+    )
+    part_path = tmp_path / "part.parquet"
+    pl.DataFrame(
+        [
+            {
+                "sample_id": "sample",
+                "candidate_index": 0,
+                "candidate_source": "def f():\n    return 2\n",
+            }
+        ]
+    ).write_parquet(part_path)
+
+    with pytest.raises(RuntimeError, match="does not match current sample"):
+        _EVALUATE._validate_existing_part(part_path, task_rows)  # noqa: SLF001
 
 
 def test_summary_uses_complete_generations_as_the_task_denominator() -> None:

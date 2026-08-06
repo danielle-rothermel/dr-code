@@ -16,6 +16,8 @@ from dr_store import SqliteRecordCache
 from dr_code.caching import run_preprocessing_cached
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
+    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
     bind_preprocessing,
 )
 from dr_code.trace import (
@@ -213,12 +215,27 @@ def attach_preprocessing_results(
         .with_columns(
             (pl.col("eligible_rows") / pl.col("nonblank_rows")).alias(
                 "preprocessing_success_rate"
-            )
+            ),
+            pl.lit(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID).alias(
+                "preprocessing_definition_id"
+            ),
+            pl.lit(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION).alias(
+                "preprocessing_definition_version"
+            ),
         )
         .sort(["task_id", "generation_mode", "budget_mode", "model_key"])
     )
-    eligible = measured.filter(pl.col("preprocessing_succeeded")).drop(
-        "preprocessing_succeeded"
+    eligible = (
+        measured.filter(pl.col("preprocessing_succeeded"))
+        .drop("preprocessing_succeeded")
+        .with_columns(
+            pl.lit(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID).alias(
+                "preprocessing_definition_id"
+            ),
+            pl.lit(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION).alias(
+                "preprocessing_definition_version"
+            ),
+        )
     )
     return eligible, summary
 

@@ -16,10 +16,12 @@ from dr_exec import Executor
 from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
 from dr_code.humaneval.metric_operator import CodeTestSettings
 from dr_code.humaneval.sampling import load_humaneval_rows
+from dr_code.core.execution.executor import host_process_executor
 from dr_code.metrics import (
     MeasuredRecord,
     MetricName,
     MetricQuestion,
+    MetricRecord,
     MetricsDefinition,
     OperatorFailureRecord,
     extract_metrics_batch,
@@ -29,6 +31,7 @@ from dr_code.trace import CodeArtifact, JsonArtifact, external_trace
 from workflow_settings import (
     EVALUATION_LOG,
     EVALUATION_PARTS,
+    EXECUTION_RECORDS,
     HUMANEVAL_SNAPSHOT,
     SELECTED_SAMPLE,
     prepare_run_directory,
@@ -84,7 +87,19 @@ def _load_tasks(
     return tasks
 
 
-def _metric_values(record: object) -> dict[str, object]:
+def _metric_values(record: MetricRecord) -> dict[str, object]:
+    metric_identity = record.identity
+    identity_values = {
+        "metric_schema_version": record.schema_version,
+        "metric_name": str(metric_identity.question.metric),
+        "metric_version": metric_identity.metric_version,
+        "metrics_definition_id": (
+            metric_identity.metrics_definition.definition_id
+        ),
+        "metrics_definition_version": (
+            metric_identity.metrics_definition.version
+        ),
+    }
     if isinstance(record, MeasuredRecord):
         facts = {fact.name: fact.value for fact in record.facts}
         total_cases = facts["total_cases"]
@@ -99,6 +114,7 @@ def _metric_values(record: object) -> dict[str, object]:
         ):
             raise TypeError("code-test metric returned invalid fact types")
         return {
+            **identity_values,
             "metric_status": "measured",
             **facts,
             "candidate_passed": (
@@ -109,12 +125,14 @@ def _metric_values(record: object) -> dict[str, object]:
         }
     if isinstance(record, OperatorFailureRecord):
         return {
+            **identity_values,
             "metric_status": "operator_failure",
             "candidate_passed": None,
             "failure_type": record.failure.failure_type,
             "failure_message": record.failure.failure_message,
         }
     return {
+        **identity_values,
         "metric_status": "not_applicable",
         "candidate_passed": None,
         "failure_type": None,
@@ -187,9 +205,20 @@ def _part_path(task_id: str) -> Path:
 def _validate_existing_part(path: Path, task_rows: pl.DataFrame) -> None:
     existing = pl.read_parquet(path)
     expected_rows = int(task_rows.get_column("candidate_count").sum())
-    expected_samples = set(task_rows.get_column("sample_id").to_list())
-    actual_samples = set(existing.get_column("sample_id").to_list())
-    if existing.height != expected_rows or actual_samples != expected_samples:
+    expected_candidates = sorted(
+        (str(row["sample_id"]), index, source)
+        for row in task_rows.iter_rows(named=True)
+        for index, source in enumerate(row["code_candidates"])
+    )
+    actual_candidates = sorted(
+        existing.select(
+            ["sample_id", "candidate_index", "candidate_source"]
+        ).iter_rows()
+    )
+    if (
+        existing.height != expected_rows
+        or actual_candidates != expected_candidates
+    ):
         raise RuntimeError(
             f"existing evaluation part does not match current sample: {path}"
         )
@@ -204,7 +233,9 @@ def main() -> int:
 
     prepare_run_directory()
     EVALUATION_PARTS.mkdir(parents=True, exist_ok=True)
+    EXECUTION_RECORDS.mkdir(parents=True, exist_ok=True)
     logger = _configure_logging(EVALUATION_LOG)
+    executor = host_process_executor(EXECUTION_RECORDS)
     selected = pl.read_parquet(SELECTED_SAMPLE)
     task_ids: list[str] = (
         selected.get_column("task_id").unique().sort().to_list()
@@ -238,7 +269,11 @@ def main() -> int:
             task_rows.height,
             task_rows.get_column("candidate_count").sum(),
         )
-        results = evaluate_task_rows(task_rows, tasks[task_id])
+        results = evaluate_task_rows(
+            task_rows,
+            tasks[task_id],
+            executor=executor,
+        )
         temporary_path = part_path.with_suffix(".tmp.parquet")
         results.write_parquet(temporary_path)
         temporary_path.replace(part_path)
