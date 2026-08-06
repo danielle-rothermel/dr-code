@@ -16,7 +16,7 @@ def test_reports_candidate_and_execution_request_reuse(
     pl.DataFrame(
         {
             "sample_id": ["sample-1", "sample-2"],
-            "task_id": ["HumanEval/0", "HumanEval/0"],
+            "task_id": ["HumanEval/148", "HumanEval/148"],
             "decoder_output": [source, source],
         }
     ).write_parquet(parquet)
@@ -25,7 +25,7 @@ def test_reports_candidate_and_execution_request_reuse(
         [
             sys.executable,
             str(root / "scripts" / "benchmark_step_cache.py"),
-            "HumanEval/0",
+            "HumanEval/148",
             "--parquet",
             str(parquet),
             "--humaneval-snapshot",
