@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5 - 2026-08-06
+
+- The cache benchmark uses the existing SQLite whole-trace preprocessing
+  cache for cold and warm measurements and verifies exact equivalence with
+  uncached traces. Candidate reuse remains a planning-only measurement that
+  does not execute candidate code.
+
 ## 0.1.4 - 2026-08-06
 
 - Verification scripts load selected nonblank HumanEval generations eagerly
