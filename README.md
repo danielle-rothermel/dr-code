@@ -160,10 +160,10 @@ The injected store must provide `get_many(keys, *, schema=...)`, returning each
 distinct key as a verified hit or explicit `None` miss, and atomic
 `put_many(entries)`, where every entry carries its schema and record. Point-only
 record stores are not adapted because per-entry persistence would violate the
-bulk-I/O contract. An execution key must be deterministic within its
-caller-owned runtime scope, so concurrent processes treat dr-store's
-first-writer winner as an equivalent outcome; this cache does not read a
-conflicting winner record back after a checkpoint.
+bulk-I/O contract. Callers use persistent reuse only for workloads whose
+outcomes they treat as stable within the runtime scope and coordinate one active
+writer for that scope. Concurrent writers are unsupported because this cache
+does not reconcile a different first-writer winner after a checkpoint.
 
 ### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
 

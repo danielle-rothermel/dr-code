@@ -51,7 +51,9 @@ class CheckpointedExecutionCache:
 
     The runtime identity is caller-owned because it covers behavior outside
     the request itself, including the Python runtime, harness, and dependency
-    environment. The injected executor is deliberately not persisted.
+    environment. The injected executor is deliberately not persisted. Callers
+    restrict reuse to stable workloads and coordinate one writer per scope;
+    conflicting first-writer winners are not reconciled.
     """
 
     def __init__(

@@ -37,10 +37,14 @@ and returns the stored first-writer winner for each key.
 - Checkpoints are triggered by explicit task boundaries or a configured number
   of new outcomes, not elapsed time. Normal close drains a final checkpoint.
 - Persistent-cache read and write failures are observable but do not fail an
-  evaluation. A failed write remains eligible for a later checkpoint. Process
-  termination may lose dirty or in-flight entries.
+  evaluation. A failed write remains eligible for a later checkpoint while the
+  cache remains open. Process termination may lose dirty or in-flight entries.
 - Runtime identity is mandatory for persistent reuse. The injected executor
   itself is not serialized into the key.
+- The caller restricts persistent reuse to workloads whose outcomes it treats
+  as stable within that runtime scope and coordinates one active writer for the
+  scope. Concurrent writers are unsupported because conflicting winners are
+  not reconciled.
 
 The checkpoint scheduler, execution schemas, identity inputs, and outcome
 validation belong to `dr-code`; `dr-store` remains domain-agnostic.
