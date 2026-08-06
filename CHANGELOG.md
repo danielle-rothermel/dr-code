@@ -1,23 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 - 2026-08-05
 
 - `dr_code.caching` adds opt-in memoization of preprocessing traces.
   `run_preprocessing_cached` keys raw input text, the bound runner's resolved
   producer coordinate, and the trace schema version through dr-store's
-  `derive_cache_key`, stores serialized traces in a `RecordCache`, and returns
-  a trace equal to the one a fresh run produces. Cache failures and entries
-  whose producer or input does not match the request are logged and treated as
-  misses.
+  `derive_cache_key`, stores a serialized trace in a `RecordCache`, and returns
+  either a matching hit or the fresh trace. Cache failures, invalid records,
+  and entries whose producer or input does not match the request are logged
+  and treated as misses.
   `open_sqlite_record_cache` composes a SQLite-backed cache at a
   caller-supplied path. No existing call site consults a cache.
 - dr-store 0.1.3 supplies the record-cache primitive.
-- The `code_test` operator reuses the engine's parsed module for its
-  top-level-function selection and keeps the validated HumanEval task per exact
-  payload for the life of a binding, so a batch over one task no longer
-  reparses it per trace. The recompute-and-reject task validator is unchanged.
-- `docs/plans/dr-exec-caching-executor.md` plans a dr-exec `CachingExecutor`
-  for after dr-code's execution path migrates to dr-exec.
+- The `code_test` operator uses the metrics engine's shared parsed-module view
+  during result computation and keeps the validated HumanEval task per exact
+  payload for the life of a binding. The recompute-and-reject task validator is
+  unchanged.
 
 ## 0.1.1 - 2026-08-05
 

@@ -6,7 +6,7 @@
 [terms source](https://github.com/danielle-rothermel/dr-code/blob/main/.defs/terms.toml) ·
 [contracts source](https://github.com/danielle-rothermel/dr-code/blob/main/.defs/contracts.toml)
 
-**Personally owned dependencies:** none.
+**Personally owned dependencies:** [dr-store](https://github.com/danielle-rothermel/dr-store).
 
 **dr-code prepares, evaluates, analyzes, and visualizes Python code produced by
 language models.**
@@ -39,6 +39,8 @@ viewer, organized into these functional areas:
     provides shared Python source inspection and transformation.
   - **[Execution](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/execution)**
     provides the shared isolated-execution boundary.
+  - **[Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)**
+    memoizes preprocessing traces through a caller-supplied record cache.
 
 ## Functional areas
 
@@ -323,11 +325,12 @@ class SandboxRunner(Protocol):
     ) -> SandboxCompletedProcess: ...
 ```
 
-[`dr_code.caching`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
-memoizes preprocessing traces over a [dr-store](https://github.com/danielle-rothermel/dr-store)
-record cache. It is opt-in: nothing in the packages above consults a cache, and
-a hit returns the trace a fresh run produces. Invalid entries and cache
-failures are logged and fall through to uncached execution.
+### [Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
+
+`dr_code.caching` provides opt-in preprocessing trace memoization over a
+[dr-store](https://github.com/danielle-rothermel/dr-store) record cache. It
+accepts only validated entries whose input and producer match the request;
+other cache outcomes fall through to fresh preprocessing.
 
 While development mode keeps component versions at `"0"`, discard persistent
 caches after preprocessing source, Python runtime, or dependency changes. Once
@@ -346,8 +349,9 @@ def run_preprocessing_cached(
     runner: BoundPreprocessingRunner,
     cache: RecordCache,
 ) -> Trace: ...
+```
 
-
+```python
 def open_sqlite_record_cache(path: str | Path) -> RecordCache: ...
 ```
 
