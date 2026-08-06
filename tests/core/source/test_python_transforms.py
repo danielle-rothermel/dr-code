@@ -111,21 +111,31 @@ def test_strip_type_annotations_in_tree_can_keep_selected_sites() -> None:
     assert "y = 2" in out
 
 
-def test_alpha_rename_locals_renames_params_and_locals_by_default() -> None:
+def test_alpha_rename_locals_can_rename_params() -> None:
     out = alpha_rename_locals(
-        "def f(count):\n    total = count + 1\n    return total\n"
+        "def f(count):\n    total = count + 1\n    return total\n",
+        rename_params=True,
     )
     assert "def f(_v0):" in out
     assert "_v1 = _v0 + 1" in out
 
 
-def test_alpha_rename_locals_can_preserve_params() -> None:
-    out = alpha_rename_locals(
-        "def f(count):\n    total = count + 1\n    return total\n",
-        rename_params=False,
-    )
-    assert "def f(count):" in out
-    assert "_v0 = count + 1" in out
+def test_alpha_rename_locals_preserves_keyword_params_by_default() -> None:
+    source = "def f(*, count):\n    total = count + 1\n    return total\n"
+    transformed = alpha_rename_locals(source)
+    namespace: dict[str, object] = {}
+    transformed_namespace: dict[str, object] = {}
+
+    exec(source, namespace)
+    exec(transformed, transformed_namespace)
+
+    assert "def f(*, count):" in transformed
+    assert "_v0 = count + 1" in transformed
+    function = namespace["f"]
+    transformed_function = transformed_namespace["f"]
+    assert callable(function)
+    assert callable(transformed_function)
+    assert function(count=2) == transformed_function(count=2) == 3
 
 
 def test_alpha_rename_locals_preserves_nested_scope_semantics() -> None:
@@ -246,7 +256,7 @@ def test_alpha_rename_locals_can_rename_method_parameter_used_by_super() -> (
         "    return Inner().inherited_marker()\n"
     )
 
-    transformed = alpha_rename_locals(source)
+    transformed = alpha_rename_locals(source, rename_params=True)
 
     assert _run_entrypoint(source) == _run_entrypoint(transformed)
     assert "def inherited_marker(_v" in transformed
@@ -440,6 +450,9 @@ def test_alpha_rename_locals_in_tree_matches_source_transform() -> None:
 
     alpha_rename_locals_in_tree(tree)
 
+    assert ast.unparse(tree) == (
+        "def f(count):\n    _v0 = count + 1\n    return _v0"
+    )
     assert ast.unparse(tree) == alpha_rename_locals(source)
 
 
@@ -459,6 +472,25 @@ def test_remove_top_level_imports_deletes_only_import_lines() -> None:
 def test_remove_top_level_imports_no_imports_is_identity() -> None:
     source = "x = 1\n"
     assert remove_top_level_imports(source) == source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os; sibling = 1\n",
+        "sibling = 1; import os\n",
+    ],
+)
+def test_remove_top_level_imports_preserves_same_line_sibling(
+    source: str,
+) -> None:
+    transformed = remove_top_level_imports(source)
+    namespace: dict[str, object] = {}
+
+    exec(transformed, namespace)
+
+    assert transformed == "sibling = 1\n"
+    assert namespace["sibling"] == 1
 
 
 def test_dedupe_imports_keeps_first_occurrence_and_trailing_newline() -> None:

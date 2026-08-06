@@ -517,7 +517,7 @@ class _LexicalLocalRenamer(ast.NodeTransformer):
 def alpha_rename_locals_in_tree(
     tree: ast.Module,
     *,
-    rename_params: bool = True,
+    rename_params: bool = False,
 ) -> ast.Module:
     reserved = _identifier_names(tree)
     _LexicalLocalRenamer(
@@ -527,24 +527,74 @@ def alpha_rename_locals_in_tree(
     return tree
 
 
-def alpha_rename_locals(source: str, *, rename_params: bool = True) -> str:
+def alpha_rename_locals(source: str, *, rename_params: bool = False) -> str:
     tree = ast.parse(source)
     alpha_rename_locals_in_tree(tree, rename_params=rename_params)
     ast.fix_missing_locations(tree)
     return ast.unparse(tree)
 
 
+def _character_column(line: str, byte_column: int) -> int:
+    return len(line.encode("utf-8")[:byte_column].decode("utf-8"))
+
+
+def _remove_inline_import(line: str, statement: ast.stmt) -> str:
+    end_col_offset = statement.end_col_offset
+    if end_col_offset is None:
+        raise ValueError("statement has no end position")
+    start = _character_column(line, statement.col_offset)
+    end = _character_column(line, end_col_offset)
+
+    suffix = line[end:]
+    suffix_without_space = suffix.lstrip(" \t")
+    if suffix_without_space.startswith(";"):
+        through_semicolon = len(suffix) - len(suffix_without_space) + 1
+        trailing = suffix[through_semicolon:]
+        through_space = len(trailing) - len(trailing.lstrip(" \t"))
+        end += through_semicolon + through_space
+        return line[:start] + line[end:]
+
+    prefix = line[:start]
+    prefix_without_space = prefix.rstrip(" \t")
+    if prefix_without_space.endswith(";"):
+        start = len(prefix_without_space) - 1
+    return line[:start] + line[end:]
+
+
 def remove_top_level_imports(source: str) -> str:
-    import_linenos = top_level_import_linenos(ast.parse(source))
-    if not import_linenos:
+    tree = ast.parse(source)
+    imports = [
+        statement
+        for statement in tree.body
+        if isinstance(statement, ast.Import | ast.ImportFrom)
+    ]
+    if not imports:
         return source
-    return "".join(
-        line
-        for lineno, line in enumerate(
-            source.splitlines(keepends=True), start=1
-        )
-        if lineno not in import_linenos
-    )
+    non_import_linenos = {
+        statement.lineno
+        for statement in tree.body
+        if not isinstance(statement, ast.Import | ast.ImportFrom)
+    }
+    inline_imports: dict[int, list[ast.stmt]] = {}
+    for statement in imports:
+        if (
+            statement.end_lineno == statement.lineno
+            and statement.lineno in non_import_linenos
+        ):
+            inline_imports.setdefault(statement.lineno, []).append(statement)
+
+    removed_linenos = top_level_import_linenos(tree) - inline_imports.keys()
+    output: list[str] = []
+    for lineno, line in enumerate(source.splitlines(keepends=True), start=1):
+        for statement in sorted(
+            inline_imports.get(lineno, ()),
+            key=lambda item: item.col_offset,
+            reverse=True,
+        ):
+            line = _remove_inline_import(line, statement)
+        if lineno not in removed_linenos:
+            output.append(line)
+    return "".join(output)
 
 
 def dedupe_imports(source: str) -> str:

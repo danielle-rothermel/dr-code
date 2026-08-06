@@ -15,6 +15,9 @@
 - Source ownership is a hard cut: `dr_code.core.models`,
   `dr_code.core.source`, and `dr_code.core.execution` own the shared model,
   source, and sandbox-execution foundations, with no compatibility aliases.
+- Alpha-renaming preserves callable parameter names by default, and top-level
+  import removal preserves non-import siblings on semicolon-shared single-line
+  statements.
 - `dr_code.humaneval` owns its benchmark runner, schema command, and metric
   behavior through `runner`, `schema_cli`, and `metric_operator`.
 - `build_dataset` accepts a keyword-only `snapshot_path`; `tasks` and
