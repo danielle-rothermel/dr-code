@@ -28,6 +28,10 @@ Run the numbered scripts in order.
    sample. `--workers` controls concurrent task workers and
    `--timeout-seconds` bounds each candidate batch. The final log line reports
    both end-to-end and evaluation-only seconds per selected generation.
+   Before spawning workers, the evaluator raises its own soft open-file limit
+   to a worker-scaled minimum when the process hard limit permits it. If that
+   is impossible, it exits before evaluation with the required `ulimit`
+   command.
    Historical model output executes with the worker's permissions. Do not run
    this stage on a workstation containing credentials or valuable data.
    Each workers/timeout combination writes to its own experiment directory,

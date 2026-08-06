@@ -278,6 +278,71 @@ def test_evaluation_paths_are_scoped_to_effective_settings() -> None:
     assert different_timeout.root != first.root
 
 
+def test_evaluator_raises_low_open_file_soft_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = [256, 65_536]
+    updates: list[tuple[int, int]] = []
+
+    def getrlimit(_resource: int) -> tuple[int, int]:
+        return (current[0], current[1])
+
+    def setrlimit(_resource: int, limits: tuple[int, int]) -> None:
+        updates.append(limits)
+        current[:] = limits
+
+    monkeypatch.setattr(_EVALUATE.resource, "getrlimit", getrlimit)
+    monkeypatch.setattr(_EVALUATE.resource, "setrlimit", setrlimit)
+
+    effective = _EVALUATE._ensure_open_file_limit(  # noqa: SLF001
+        32,
+        logging.getLogger("test_open_file_limit"),
+    )
+
+    assert effective == 4096
+    assert updates == [(4096, 65_536)]
+
+
+def test_evaluator_preserves_sufficient_open_file_soft_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        _EVALUATE.resource,
+        "getrlimit",
+        lambda _resource: (8192, 65_536),
+    )
+    updates: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        _EVALUATE.resource,
+        "setrlimit",
+        lambda _resource, limits: updates.append(limits),
+    )
+
+    effective = _EVALUATE._ensure_open_file_limit(  # noqa: SLF001
+        32,
+        logging.getLogger("test_open_file_limit"),
+    )
+
+    assert effective == 8192
+    assert updates == []
+
+
+def test_evaluator_fails_before_execution_when_hard_limit_is_too_low(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        _EVALUATE.resource,
+        "getrlimit",
+        lambda _resource: (256, 1024),
+    )
+
+    with pytest.raises(SystemExit, match=r"ulimit -n 4096"):
+        _EVALUATE._ensure_open_file_limit(  # noqa: SLF001
+            32,
+            logging.getLogger("test_open_file_limit"),
+        )
+
+
 def test_metrics_definition_uses_requested_timeout() -> None:
     definition = _EVALUATE._metrics_definition(45.5)  # noqa: SLF001
 

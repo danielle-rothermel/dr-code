@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import resource
 from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -50,6 +51,8 @@ _DERIVED_TASK_FIELDS = frozenset(
     {"parsed", "parsed_tests", *HumanEvalTask.model_computed_fields}
 )
 _RUNTIME_ENVIRONMENT_VARIABLE = "DR_CODE_EVALUATION_PYTHON"
+_MINIMUM_OPEN_FILE_LIMIT = 4096
+_OPEN_FILES_PER_WORKER = 64
 _RUNTIME_PROBE_SOURCE = """\
 import json
 import platform
@@ -111,6 +114,51 @@ def _configure_logging(path: Path) -> logging.Logger:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     return logger
+
+
+def _ensure_open_file_limit(
+    worker_count: int,
+    logger: logging.Logger,
+) -> int:
+    required = max(
+        _MINIMUM_OPEN_FILE_LIMIT,
+        worker_count * _OPEN_FILES_PER_WORKER,
+    )
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft >= required:
+        logger.info(
+            "Open-file limit is sufficient: soft=%d required=%d",
+            soft,
+            required,
+        )
+        return soft
+    if hard != resource.RLIM_INFINITY and hard < required:
+        raise SystemExit(
+            f"open-file soft limit {soft} is below the required {required}, "
+            f"and the hard limit {hard} prevents raising it; run "
+            f"`ulimit -n {required}` in the launching shell"
+        )
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (required, hard))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(
+            f"could not raise the open-file soft limit from {soft} to "
+            f"{required}; run `ulimit -n {required}` in the launching shell: "
+            f"{exc}"
+        ) from exc
+    effective, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if effective < required:
+        raise SystemExit(
+            f"open-file soft limit remained {effective}, below the required "
+            f"{required}; run `ulimit -n {required}` in the launching shell"
+        )
+    logger.info(
+        "Raised open-file soft limit from %d to %d for %d workers",
+        soft,
+        effective,
+        worker_count,
+    )
+    return effective
 
 
 def _load_tasks(
@@ -481,6 +529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         evaluation_settings.timeout_seconds,
         paths.root,
     )
+    _ensure_open_file_limit(evaluation_settings.worker_count, logger)
     runtime_executable = _runtime_executable_from_environment()
     selected = pl.read_parquet(SELECTED_SAMPLE)
     task_ids: list[str] = (

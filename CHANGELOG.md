@@ -15,6 +15,9 @@
 - Directional HumanEval evaluation accepts task-worker and candidate-timeout
   flags, isolates resumable artifacts by the effective settings, and reports
   end-to-end and evaluation-only time per selected generation.
+- The directional evaluator raises a low per-process open-file soft limit to a
+  worker-scaled minimum before parallel execution, or fails early with an
+  actionable shell command when the hard limit prevents it.
 - Python execution retains up to 512 MiB from each payload output stream while
   diagnosing the historical HumanEval corpus.
 
