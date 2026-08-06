@@ -54,6 +54,14 @@ class _ComparisonMetric:
     reference_label: str
 
 
+@dataclass(frozen=True, slots=True)
+class _EffectCurve:
+    label: str
+    values: tuple[float, ...]
+    color: str
+    line_style: str
+
+
 _REPRESENTATIONS = (
     _Representation(
         "code_without_comments",
@@ -81,6 +89,12 @@ _COMPARISON_METRICS = (
         reference_label="No size change",
     ),
 )
+
+_ALGORITHM_COLORS = {
+    CompressionMethod.GZIP: "#7B3294",
+    CompressionMethod.ZSTD: "#008837",
+}
+_LEVEL_LINE_STYLES = ("-", "--", ":", "-.")
 
 type _CompressionConfig = GzipConfig | ZstdConfig
 
@@ -408,6 +422,203 @@ def _compression_colors(
         _compression_label(config): matplotlib.colors.to_hex(color)
         for config, color in zip(configs, color_values, strict=True)
     }
+
+
+def _configs_by_method(
+    configs: Sequence[_CompressionConfig],
+) -> dict[CompressionMethod, list[_CompressionConfig]]:
+    grouped: dict[CompressionMethod, list[_CompressionConfig]] = {}
+    for config in configs:
+        grouped.setdefault(config.method, []).append(config)
+    for method_configs in grouped.values():
+        method_configs.sort(key=lambda config: config.level)
+    return grouped
+
+
+def _ecdf(values: Sequence[float]) -> tuple[list[float], list[float]]:
+    ordered = sorted(values)
+    if not ordered:
+        raise ValueError("at least one value is required")
+    x_values = [ordered[0], *ordered]
+    y_values = [
+        0.0,
+        *[index / len(ordered) for index in range(1, len(ordered) + 1)],
+    ]
+    return x_values, y_values
+
+
+def _paired_ratio_differences(
+    measurements: pl.DataFrame,
+    candidate: _CompressionConfig,
+    baseline: _CompressionConfig,
+) -> tuple[float, ...]:
+    code = _REPRESENTATIONS[0]
+    candidate_rows = _representation_measurements(
+        measurements, code, candidate
+    ).select(
+        "task_id",
+        pl.col("compression_ratio").alias("candidate_ratio"),
+    )
+    baseline_rows = _representation_measurements(
+        measurements, code, baseline
+    ).select(
+        "task_id",
+        pl.col("compression_ratio").alias("baseline_ratio"),
+    )
+    paired = candidate_rows.join(
+        baseline_rows,
+        on="task_id",
+        how="inner",
+        validate="1:1",
+    ).with_columns(
+        (pl.col("candidate_ratio") - pl.col("baseline_ratio")).alias(
+            "ratio_difference"
+        )
+    )
+    if (
+        paired.height != candidate_rows.height
+        or paired.height != baseline_rows.height
+    ):
+        raise ValueError(
+            "compression configurations do not cover the same tasks"
+        )
+    return tuple(paired.get_column("ratio_difference").to_list())
+
+
+def _paired_effect_curves(
+    measurements: pl.DataFrame,
+    configs: Sequence[_CompressionConfig],
+) -> list[_EffectCurve]:
+    grouped = _configs_by_method(configs)
+    curves: list[_EffectCurve] = []
+    for method in (CompressionMethod.GZIP, CompressionMethod.ZSTD):
+        method_configs = grouped.get(method, [])
+        if len(method_configs) < 2:
+            continue
+        baseline = method_configs[0]
+        candidate = method_configs[-1]
+        curves.append(
+            _EffectCurve(
+                label=(
+                    f"{_compression_label(candidate)} − "
+                    f"{_compression_label(baseline)}"
+                ),
+                values=_paired_ratio_differences(
+                    measurements, candidate, baseline
+                ),
+                color=_ALGORITHM_COLORS[method],
+                line_style="--",
+            )
+        )
+
+    gzip_configs = grouped.get(CompressionMethod.GZIP, [])
+    zstd_configs = grouped.get(CompressionMethod.ZSTD, [])
+    if gzip_configs and zstd_configs:
+        algorithm_pairs = (
+            (zstd_configs[0], gzip_configs[0], "#2166AC"),
+            (zstd_configs[-1], gzip_configs[-1], "#B2182B"),
+        )
+        seen: set[tuple[str, str]] = set()
+        for candidate, baseline, color in algorithm_pairs:
+            identity = (
+                _compression_label(candidate),
+                _compression_label(baseline),
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            curves.append(
+                _EffectCurve(
+                    label=f"{identity[0]} − {identity[1]}",
+                    values=_paired_ratio_differences(
+                        measurements, candidate, baseline
+                    ),
+                    color=color,
+                    line_style="-",
+                )
+            )
+    return curves
+
+
+def _plot_compression_ratio_ecdfs(
+    measurements: pl.DataFrame,
+    configs: Sequence[_CompressionConfig],
+    *,
+    path: Path,
+) -> None:
+    figure, axes = plt.subplots(
+        1,
+        2,
+        figsize=(16, 6.5),
+        sharey=True,
+    )
+    grouped = _configs_by_method(configs)
+    for method in (CompressionMethod.GZIP, CompressionMethod.ZSTD):
+        method_configs = grouped.get(method, [])
+        for index, config in enumerate(method_configs):
+            selected = _representation_measurements(
+                measurements,
+                _REPRESENTATIONS[0],
+                config,
+            )
+            ratios: list[float] = selected.get_column(
+                "compression_ratio"
+            ).to_list()
+            x_values, y_values = _ecdf(ratios)
+            axes[0].step(
+                x_values,
+                y_values,
+                where="post",
+                color=_ALGORITHM_COLORS[method],
+                linestyle=_LEVEL_LINE_STYLES[index % len(_LEVEL_LINE_STYLES)],
+                linewidth=2.2,
+                label=_compression_label(config),
+            )
+    axes[0].axvline(
+        1.0,
+        linestyle=":",
+        linewidth=1.4,
+        color="#555555",
+        label="No size change",
+    )
+    axes[0].set_title("Per-task compression-ratio distributions")
+    axes[0].set_xlabel("Compression ratio (lower is better)")
+    axes[0].set_ylabel("Fraction of tasks at or below x")
+    axes[0].grid(alpha=0.25)
+    axes[0].legend()
+
+    effect_curves = _paired_effect_curves(measurements, configs)
+    for curve in effect_curves:
+        x_values, y_values = _ecdf(curve.values)
+        axes[1].step(
+            x_values,
+            y_values,
+            where="post",
+            color=curve.color,
+            linestyle=curve.line_style,
+            linewidth=2.2,
+            label=curve.label,
+        )
+    axes[1].axvline(
+        0.0,
+        linestyle=":",
+        linewidth=1.4,
+        color="#555555",
+        label="No difference",
+    )
+    axes[1].set_title("Paired per-task effects")
+    axes[1].set_xlabel(
+        "Compression-ratio difference (first setting − second setting)\n"
+        "Negative means the first setting is better"
+    )
+    axes[1].grid(alpha=0.25)
+    axes[1].legend()
+    axes[0].set_ylim(0, 1.01)
+
+    figure.suptitle("HumanEval GT code: compression algorithms versus levels")
+    figure.tight_layout()
+    figure.savefig(path, dpi=160, bbox_inches="tight")
+    plt.close(figure)
 
 
 def _faceted_figure(count: int) -> tuple[Figure, list[Axes]]:
@@ -841,6 +1052,10 @@ def main() -> int:
         output_dir
         / f"humaneval_comments_docstrings_compression_bytes_{slug}.png"
     )
+    ecdf_plot_path = (
+        output_dir
+        / f"humaneval_code_compression_ratio_ecdf_comparison_{slug}.png"
+    )
     log_path = output_dir / f"humaneval_compression_analysis_bytes_{slug}.log"
 
     measurements.write_csv(measurements_path)
@@ -874,6 +1089,14 @@ def main() -> int:
             configuration_slug=slug,
         ),
     ]
+    _plot_compression_ratio_ecdfs(
+        measurements,
+        configs,
+        path=ecdf_plot_path,
+    )
+    comparison_plots.append(
+        ("algorithm/level compression-ratio ECDF comparison", ecdf_plot_path)
+    )
 
     report = [
         f"Loaded {len(tasks):,} HumanEval tasks from {arguments.snapshot}",
