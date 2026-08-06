@@ -2,13 +2,15 @@
 
 ## 0.1.6 - 2026-08-06
 
-- The cache benchmark measures exhaustive preprocessing followed by
-  in-memory test-result cache lookup without executing generated code.
-- Verification scripts load selected nonblank HumanEval generations eagerly
-  with Polars, benchmark exhaustive preprocessing and cache reuse, and report
-  task-level bootstrap confidence intervals for candidate and row reuse.
-- HumanEval generation-length analysis produces versioned summary data and
-  plots for comparing output distributions.
+- A task-sampled HumanEval analysis runs exhaustive preprocessing without
+  caching or candidate evaluation and reports per-task outcomes, failure
+  codes, throughput, and a task-level bootstrap confidence interval for the
+  aggregate success rate.
+- HumanEval generation-length and gzip/zstd compression analyses produce
+  reproducible tables, plots, and logs, including an exact historical
+  compression reconstruction and current-results comparison.
+- Compression utilities support Python minification, trained zstd
+  dictionaries, and compact zstd frames.
 
 ## 0.1.5 - 2026-08-06
 

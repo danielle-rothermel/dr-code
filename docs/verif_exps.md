@@ -2,28 +2,31 @@
 
 ## Goal
 
-Run a fast, bounded characterization of the current preprocessing pipeline on real HumanEval generations before committing resources to full experiments.
+Estimate how often the current preprocessing pipeline succeeds on real
+HumanEval generations before committing resources to full experiments.
 
 ## Scope
 
 - Exercise preprocessing only; do not run candidate testing or HumanEval evaluation.
-- Select one HumanEval task ID from `generation-corpus.parquet`.
+- Analyze one HumanEval task or a deterministic random sample of tasks from
+  `generation-corpus.parquet`.
 - Exclude null and whitespace-only `decoder_output` values.
-- Preserve each remaining generation's `sample_id` and metadata for inspection and comparison.
+- Run exhaustive preprocessing directly, without a trace cache or candidate
+  evaluation.
 
 ## Preprocessing validation
 
-- Confirm the pipeline produces the expected traces, extracted candidates, diagnostics, and failure classifications.
-- Inspect malformed outputs, unexpected classifications, missing provenance, and awkward operational behavior.
-
-## Cache validation
-
-- Run the exact input slice once with a cold cache and again with a warm cache.
-- Confirm the warm run uses cached preprocessing results and produces identical outputs.
-- Measure elapsed-time savings and avoided preprocessing work; timing alone is not evidence of a cache hit.
+- Report each task's nonblank-row denominator, successful rows, failure-code
+  counts, elapsed time, and throughput.
+- For a task sample, report the row-weighted aggregate success rate with a
+  deterministic percentile bootstrap confidence interval that resamples
+  tasks.
 
 ## Success criterion
 
-The current preprocessing path can be run, inspected, repeated, and measured on real data with enough confidence to identify necessary changes before broader experiments.
+The current preprocessing path can be run and measured on a reproducible task
+sample with explicit success denominators and uncertainty estimates.
 
-This single-task run is a workflow smoke test, not evidence that preprocessing handles the full corpus correctly.
+Single-task results remain a workflow smoke test. Sampled estimates describe
+the selected corpus and task-sampling procedure; they do not prove universal
+preprocessing success.
