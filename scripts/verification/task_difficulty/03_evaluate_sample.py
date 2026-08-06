@@ -7,8 +7,11 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
+from typing import Callable, Iterator
 
 import polars as pl
 from dr_exec import Executor
@@ -31,6 +34,7 @@ from dr_code.trace import CodeArtifact, JsonArtifact, external_trace
 from workflow_settings import (
     EVALUATION_LOG,
     EVALUATION_PARTS,
+    EVALUATION_WORKERS,
     EXECUTION_RECORDS,
     HUMANEVAL_SNAPSHOT,
     SELECTED_SAMPLE,
@@ -51,6 +55,21 @@ _METRICS = MetricsDefinition(
         ),
     ),
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _TaskJob:
+    task_id: str
+    task_rows: pl.DataFrame
+    task: HumanEvalTask
+
+
+@dataclass(frozen=True, slots=True)
+class _TaskCompletion:
+    task_id: str
+    generation_count: int
+    candidate_count: int
+    elapsed_seconds: float
 
 
 def _configure_logging(path: Path) -> logging.Logger:
@@ -224,6 +243,47 @@ def _validate_existing_part(path: Path, task_rows: pl.DataFrame) -> None:
         )
 
 
+def _run_task_job(job: _TaskJob) -> _TaskCompletion:
+    started = perf_counter()
+    record_directory = EXECUTION_RECORDS / job.task_id.replace("/", "_")
+    record_directory.mkdir(parents=True, exist_ok=True)
+    executor = host_process_executor(record_directory)
+    results = evaluate_task_rows(
+        job.task_rows,
+        job.task,
+        executor=executor,
+    )
+    part_path = _part_path(job.task_id)
+    temporary_path = part_path.with_suffix(".tmp.parquet")
+    results.write_parquet(temporary_path)
+    temporary_path.replace(part_path)
+    return _TaskCompletion(
+        task_id=job.task_id,
+        generation_count=job.task_rows.height,
+        candidate_count=int(job.task_rows.get_column("candidate_count").sum()),
+        elapsed_seconds=perf_counter() - started,
+    )
+
+
+def _completed_jobs(
+    jobs: Sequence[_TaskJob],
+    *,
+    worker_count: int,
+    run_job: Callable[[_TaskJob], _TaskCompletion] = _run_task_job,
+) -> Iterator[tuple[_TaskJob, Future[_TaskCompletion]]]:
+    if worker_count < 1:
+        raise ValueError("worker_count must be positive")
+    if not jobs:
+        return
+    with ThreadPoolExecutor(
+        max_workers=min(worker_count, len(jobs)),
+        thread_name_prefix="humaneval-task",
+    ) as pool:
+        futures = {pool.submit(run_job, job): job for job in jobs}
+        for future in as_completed(futures):
+            yield futures[future], future
+
+
 def main() -> int:
     if os.environ.get("DR_CODE_DISPOSABLE_WORKER") != "1":
         raise SystemExit(
@@ -235,7 +295,6 @@ def main() -> int:
     EVALUATION_PARTS.mkdir(parents=True, exist_ok=True)
     EXECUTION_RECORDS.mkdir(parents=True, exist_ok=True)
     logger = _configure_logging(EVALUATION_LOG)
-    executor = host_process_executor(EXECUTION_RECORDS)
     selected = pl.read_parquet(SELECTED_SAMPLE)
     task_ids: list[str] = (
         selected.get_column("task_id").unique().sort().to_list()
@@ -247,40 +306,57 @@ def main() -> int:
         len(task_ids),
     )
 
-    for index, task_id in enumerate(task_ids, start=1):
+    jobs: list[_TaskJob] = []
+    for task_id in task_ids:
         task_rows = selected.filter(pl.col("task_id") == task_id)
         part_path = _part_path(task_id)
         if part_path.exists():
             _validate_existing_part(part_path, task_rows)
-            logger.info(
-                "Skipping completed task %d/%d: %s",
-                index,
-                len(task_ids),
-                task_id,
-            )
+            logger.info("Skipping completed task: %s", task_id)
             continue
+        jobs.append(
+            _TaskJob(
+                task_id=task_id,
+                task_rows=task_rows,
+                task=tasks[task_id],
+            )
+        )
 
-        started = perf_counter()
+    logger.info(
+        "Starting %d pending tasks with %d concurrent workers",
+        len(jobs),
+        min(EVALUATION_WORKERS, len(jobs)),
+    )
+    failures: list[tuple[str, str, str]] = []
+    completed = 0
+    for job, future in _completed_jobs(
+        jobs,
+        worker_count=EVALUATION_WORKERS,
+    ):
+        try:
+            result = future.result()
+        except Exception as exc:
+            failures.append((job.task_id, type(exc).__name__, str(exc)))
+            logger.exception("Task failed: %s", job.task_id)
+            continue
+        completed += 1
         logger.info(
-            "Evaluating task %d/%d: %s (%d generations, %d candidates)",
-            index,
-            len(task_ids),
-            task_id,
-            task_rows.height,
-            task_rows.get_column("candidate_count").sum(),
+            "Completed task %d/%d: %s (%d generations, %d candidates, %.1f seconds)",
+            completed,
+            len(jobs),
+            result.task_id,
+            result.generation_count,
+            result.candidate_count,
+            result.elapsed_seconds,
         )
-        results = evaluate_task_rows(
-            task_rows,
-            tasks[task_id],
-            executor=executor,
+    if failures:
+        details = "; ".join(
+            f"{task_id}: {failure_type}: {message}"
+            for task_id, failure_type, message in failures
         )
-        temporary_path = part_path.with_suffix(".tmp.parquet")
-        results.write_parquet(temporary_path)
-        temporary_path.replace(part_path)
-        logger.info(
-            "Completed %s in %.1f seconds",
-            task_id,
-            perf_counter() - started,
+        raise RuntimeError(
+            f"{len(failures)} task evaluations failed after other tasks "
+            f"continued: {details}"
         )
     return 0
 

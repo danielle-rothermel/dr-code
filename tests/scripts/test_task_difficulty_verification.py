@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType
 
@@ -233,6 +234,47 @@ def test_selected_ground_truth_candidate_passes_full_metric() -> None:
     assert results.item(0, "metrics_definition_id") == (
         "directional-humaneval-task-difficulty"
     )
+
+
+def test_task_jobs_run_concurrently_without_timing_as_evidence() -> None:
+    task = _EVALUATE._load_tasks(  # noqa: SLF001
+        _SETTINGS.HUMANEVAL_SNAPSHOT,
+        ["HumanEval/0"],
+    )["HumanEval/0"]
+    jobs = [
+        _EVALUATE._TaskJob(  # noqa: SLF001
+            task_id=f"HumanEval/{index}",
+            task_rows=pl.DataFrame(),
+            task=task,
+        )
+        for index in range(3)
+    ]
+    barrier = threading.Barrier(len(jobs))
+
+    def run_job(job):  # noqa: ANN001, ANN202
+        barrier.wait(timeout=5)
+        return _EVALUATE._TaskCompletion(  # noqa: SLF001
+            task_id=job.task_id,
+            generation_count=0,
+            candidate_count=0,
+            elapsed_seconds=0.0,
+        )
+
+    completions = [
+        future.result()
+        for _, future in _EVALUATE._completed_jobs(  # noqa: SLF001
+            jobs,
+            worker_count=3,
+            run_job=run_job,
+        )
+    ]
+
+    assert {completion.task_id for completion in completions} == {
+        "HumanEval/0",
+        "HumanEval/1",
+        "HumanEval/2",
+    }
+    assert _SETTINGS.EVALUATION_WORKERS == 16
 
 
 def test_evaluation_checkpoint_must_match_exact_candidates(

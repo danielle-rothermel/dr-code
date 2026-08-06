@@ -39,6 +39,7 @@ TASK_RESULTS: Final = RUN_DIRECTORY / "task_results.parquet"
 
 SOURCE_KIND: Final = "legacy_dbos_generation_attempt"
 SAMPLING_SEED: Final = 42
+EVALUATION_WORKERS: Final = 16
 SETTINGS: Final = (
     ("direct", "no_budget"),
     ("enc_dec", "no_budget"),

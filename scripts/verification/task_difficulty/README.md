@@ -13,8 +13,9 @@ Run the numbered scripts in order.
    model in the fixed model roster.
 3. On a disposable worker only, run
    `DR_CODE_DISPOSABLE_WORKER=1 uv run python scripts/verification/task_difficulty/03_evaluate_sample.py`.
-   Historical model output executes with the worker's permissions. Do not run
-   this stage on a workstation containing credentials or valuable data.
+   The evaluation uses 16 concurrent task workers. Historical model output
+   executes with the worker's permissions. Do not run this stage on a
+   workstation containing credentials or valuable data.
 4. `uv run python scripts/verification/task_difficulty/04_summarize_results.py`
    combines completed task parts and reports generation- and task-level
    success rates.
