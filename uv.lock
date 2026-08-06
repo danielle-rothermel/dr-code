@@ -352,6 +352,7 @@ dependencies = [
     { name = "dr-store" },
     { name = "polars" },
     { name = "pydantic" },
+    { name = "python-minifier" },
     { name = "typer" },
     { name = "zstandard" },
 ]
@@ -373,6 +374,7 @@ requires-dist = [
     { name = "dr-store", specifier = "==0.1.4" },
     { name = "polars", specifier = ">=1.43.2" },
     { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "python-minifier", specifier = "==3.2.0" },
     { name = "typer", specifier = ">=0.26.7" },
     { name = "zstandard", specifier = ">=0.25.0" },
 ]
@@ -1367,6 +1369,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/04/b7/1581a8103855c43567776aa34135e5ec3c597346c23bfd10c7eb5e0b10a4/python_discovery-1.5.1.tar.gz", hash = "sha256:e2ea8b884cd1701f386eda8cf327b87743f1dc21b7f784470799537d95635384", size = 77200, upload-time = "2026-07-31T22:06:02.48Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/07/a89b539750a159d5101c4eb9fc84e2961f65cefbd5e0b7440b284471c0b0/python_discovery-1.5.1-py3-none-any.whl", hash = "sha256:ac07f44cade589d954e9d6a1e1468539fdddd2cf676beb51da73e0f156b7c932", size = 35752, upload-time = "2026-07-31T22:06:01.116Z" },
+]
+
+[[package]]
+name = "python-minifier"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/65/984ccfc140c6a9364331fe8cbeccc4138bd4083b165c7685998c07586f84/python_minifier-3.2.0.tar.gz", hash = "sha256:d39d4aa9655206870b89b41099a84725e1845319aa5a8bea6a1046b5644cd413", size = 85512, upload-time = "2025-12-31T19:50:01.173Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/05/c26bcd42c9134b4d3919ddbabf8de323004e89355c1b0ce87d1be65fdd1d/python_minifier-3.2.0-py3-none-any.whl", hash = "sha256:b8486b1dc15980d1d833f72a8a8696616a611f1a10fb72aaf96e2de891beb4c2", size = 62345, upload-time = "2025-12-31T19:49:59.639Z" },
 ]
 
 [[package]]
