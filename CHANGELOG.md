@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.6 - 2026-08-06
+
+- A task-sampled HumanEval analysis runs exhaustive preprocessing without
+  caching or candidate evaluation and reports per-task outcomes, failure
+  codes, throughput, and a task-level bootstrap confidence interval for the
+  aggregate success rate.
+- HumanEval generation-length and gzip/zstd compression analyses produce
+  reproducible tables, plots, and logs, including an exact historical
+  compression reconstruction and current-results comparison.
+- Compression utilities support Python minification, trained zstd
+  dictionaries, and compact zstd frames.
+
 ## 0.1.5 - 2026-08-06
 
 - HumanEval execution uses an explicitly selected Python runtime and declares
