@@ -6,6 +6,9 @@
   planned keys before evaluation. The checkpointed execution cache serves its
   hot path from memory, persists outcomes through dr-store batch operations on
   a background writer, and exposes cache activity statistics.
+- HumanEval submission scoring accepts an ordered public batch, plans every
+  extracted candidate before one execution-engine call, and keeps the existing
+  single-submission scorer as a one-element convenience.
 - dr-exec and dr-store are upgraded to 0.1.5 for batch cache persistence.
 
 ## 0.1.3 - 2026-08-06

@@ -31,6 +31,9 @@ and returns the stored first-writer winner for each key.
 - The metrics engine supplies all planned keys to the cache before point
   lookups. A persistent implementation bulk-loads only previously unseen keys;
   all subsequent `get` and `put` operations use memory.
+- `score_humaneval_submissions_batch` extracts and plans every submission before
+  one `run_requests` call, so one cache prefetch covers the complete scoring
+  batch. The single-submission scorer delegates to that batch boundary.
 - Newly computed outcomes remain dirty until a checkpoint snapshots them for
   one background writer thread. Only one checkpoint is in flight, and later
   writes are coalesced into the next batch.

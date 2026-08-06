@@ -305,6 +305,22 @@ HumanEvalSubmissionScore = Annotated[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class HumanEvalSubmissionRequest:
+    raw_submission: str
+    task: HumanEvalTask
+    scoring_profile_id: str = ...
+    scoring_profile_version: str = ...
+
+
+def score_humaneval_submissions_batch(
+    requests: Sequence[HumanEvalSubmissionRequest],
+    *,
+    executor: Executor | None = None,
+    execution_cache: ExecutionCache | None = None,
+) -> tuple[HumanEvalSubmissionScore, ...]: ...
+
+
 def score_humaneval_submission(
     *,
     raw_submission: str,
@@ -312,6 +328,7 @@ def score_humaneval_submission(
     scoring_profile_id: str = ...,
     scoring_profile_version: str = ...,
     executor: Executor | None = None,
+    execution_cache: ExecutionCache | None = None,
 ) -> HumanEvalSubmissionScore: ...
 ```
 

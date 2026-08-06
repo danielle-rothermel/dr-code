@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from functools import cache
 from importlib.resources import files
+from typing import Final
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -32,6 +33,8 @@ from dr_code.humaneval.task import (
     HumanEvalRunnerPayload,
     HumanEvalTask,
 )
+
+HUMANEVAL_RUNNER_COMPUTATION_ID: Final = "humaneval-runner@0"
 
 
 @dataclass(frozen=True, slots=True)

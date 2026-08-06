@@ -244,10 +244,12 @@ A discriminated result that separates a completed submission outcome from
 evaluation-harness failure."""
 exported_symbols = [
   "dr_code.humaneval.HumanEvalSubmissionScore",
+  "dr_code.humaneval.HumanEvalSubmissionRequest",
   "dr_code.humaneval.CompletedScore",
   "dr_code.humaneval.HarnessFailure",
   "dr_code.humaneval.SubmissionOutcome",
   "dr_code.humaneval.score_humaneval_submission",
+  "dr_code.humaneval.score_humaneval_submissions_batch",
 ]
 
 [[terms]]

@@ -134,10 +134,15 @@ title = "HumanEval scoring separates outcomes from harness failure"
 statement = """
 HumanEval scoring returns a completed submission outcome for
 candidate-attributable execution results and a harness-failure result only
-when the evaluation machinery cannot establish a submission outcome."""
+when the evaluation machinery cannot establish a submission outcome. Batch
+scoring extracts every submission, plans all accepted candidates, executes the
+complete request set through one engine call, and returns results in request
+order. Single-submission scoring is the one-element batch convenience."""
 rationale = """
 Incorrect or resource-exhausting candidate code is experimental evidence;
-broken evaluation infrastructure invalidates the measurement."""
+broken evaluation infrastructure invalidates the measurement. One complete
+execution batch preserves scoring semantics while allowing persistent caches
+to prefetch once and serve the evaluation hot path from memory."""
 date = "2026-08-05"
 check = "uv run pytest tests/humaneval/test_scoring.py"
 

@@ -30,9 +30,11 @@ from dr_code.humaneval.scoring import (
     CompletedScore,
     HarnessFailure,
     HarnessFailureCause,
+    HumanEvalSubmissionRequest,
     HumanEvalSubmissionScore,
     SubmissionOutcome,
     score_humaneval_submission,
+    score_humaneval_submissions_batch,
 )
 from dr_code.humaneval.task import (
     EvaluationCaseStatus,
@@ -69,6 +71,7 @@ __all__ = (
     "HumanEvalOverrideSetCoordinate",
     "HumanEvalPlusTask",
     "HumanEvalSubmissionScore",
+    "HumanEvalSubmissionRequest",
     "HumanEvalTask",
     "HumanEvalTestCaseKind",
     "PreprocessingDefinitionReference",
@@ -84,4 +87,5 @@ __all__ = (
     "sample_humaneval_tasks",
     "sample_humaneval_tasks_from_rows",
     "score_humaneval_submission",
+    "score_humaneval_submissions_batch",
 )
