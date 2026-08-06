@@ -333,7 +333,6 @@ def test_code_test_requests_are_the_canonical_batch_request(
         assert request.source == canonical.source, function_name
         assert request.timeout_seconds == canonical.timeout_seconds
 
-
 def test_code_test_function_names_come_from_the_shared_rule(
     task: HumanEvalTask,
 ) -> None:
