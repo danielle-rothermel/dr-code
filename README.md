@@ -330,7 +330,8 @@ class SandboxRunner(Protocol):
 `dr_code.caching` provides opt-in preprocessing trace memoization over a
 [dr-store](https://github.com/danielle-rothermel/dr-store) record cache. It
 accepts only validated entries whose input and producer match the request;
-other cache outcomes fall through to fresh preprocessing.
+other cache outcomes fall through to fresh preprocessing. dr-store's managed
+`SqliteRecordCache` supplies the persistent lifecycle.
 
 While development mode keeps component versions at `"0"`, discard persistent
 caches after preprocessing source, Python runtime, or dependency changes. Once
@@ -352,7 +353,10 @@ def run_preprocessing_cached(
 ```
 
 ```python
-def open_sqlite_record_cache(path: str | Path) -> RecordCache: ...
+from dr_store import SqliteRecordCache
+
+with SqliteRecordCache("traces.sqlite3") as cache:
+    trace = run_preprocessing_cached(text, runner, cache)
 ```
 
 ## Development

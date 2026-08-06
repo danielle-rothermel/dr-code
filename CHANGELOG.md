@@ -15,9 +15,9 @@
   either a matching hit or the fresh trace. Cache failures, invalid records,
   and entries whose producer or input does not match the request are logged
   and treated as misses.
-  `open_sqlite_record_cache` composes a SQLite-backed cache at a
-  caller-supplied path. No existing call site consults a cache.
-- dr-store 0.1.3 supplies the record-cache primitive.
+  No existing call site consults a cache.
+- dr-store 0.1.4 supplies the record-cache primitive and the managed
+  `SqliteRecordCache` persistent lifecycle.
 - The `code_test` operator uses the metrics engine's shared parsed-module view
   during result computation and keeps the validated HumanEval task per exact
   payload for the life of a binding. The recompute-and-reject task validator is

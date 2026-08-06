@@ -4,10 +4,15 @@ import logging
 from pathlib import Path
 
 import pytest
-from dr_store import CacheHit, MemoryBackend, ObjectStore, RecordCache
+from dr_store import (
+    CacheHit,
+    MemoryBackend,
+    ObjectStore,
+    RecordCache,
+    SqliteRecordCache,
+)
 
 from dr_code.caching import (
-    open_sqlite_record_cache,
     preprocessing_trace_cache_key,
     run_preprocessing_cached,
 )
@@ -262,14 +267,12 @@ def test_sqlite_cache_serves_a_hit_from_a_reopened_database(
 ) -> None:
     database = tmp_path / "traces.sqlite3"
     writer = _bound()
-    fresh = run_preprocessing_cached(
-        _FENCED, writer, open_sqlite_record_cache(database)
-    )
+    with SqliteRecordCache(database) as cache:
+        fresh = run_preprocessing_cached(_FENCED, writer, cache)
 
     reader = _bound()
-    hit = run_preprocessing_cached(
-        _FENCED, reader, open_sqlite_record_cache(database)
-    )
+    with SqliteRecordCache(database) as cache:
+        hit = run_preprocessing_cached(_FENCED, reader, cache)
 
     assert writer.runs == 1
     assert reader.runs == 0

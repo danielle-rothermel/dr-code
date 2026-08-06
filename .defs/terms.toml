@@ -113,7 +113,6 @@ input and resolved producer coordinate."""
 exported_symbols = [
   "dr_code.caching.run_preprocessing_cached",
   "dr_code.caching.preprocessing_trace_cache_key",
-  "dr_code.caching.open_sqlite_record_cache",
 ]
 
 [[terms]]
