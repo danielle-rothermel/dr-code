@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from threading import Condition, Thread
 from typing import Final, Protocol
 
-from dr_serialize import IdentityDocument, Jsonable, identity_document_hash
-from dr_store import CacheHit, ObjectReference, derive_cache_key
+from dr_serialize import IdentityDocument, identity_document_hash
+from dr_store import CacheEntry, CacheHit, ObjectReference, derive_cache_key
 
 from dr_code.metrics.engine.execution import ExecutionOutcome
 
@@ -21,16 +21,14 @@ class BatchRecordStore(Protocol):
 
     def get_many(
         self,
-        keys: Sequence[str],
+        keys: Iterable[str],
         *,
         schema: str,
-    ) -> dict[str, CacheHit]: ...
+    ) -> dict[str, CacheHit | None]: ...
 
     def put_many(
         self,
-        entries: Mapping[str, Jsonable],
-        *,
-        schema: str,
+        entries: Mapping[str, CacheEntry],
     ) -> dict[str, ObjectReference]: ...
 
 
@@ -266,13 +264,13 @@ class CheckpointedExecutionCache:
     ) -> bool:
         try:
             entries = {
-                self._persistent_key(key): outcome.model_dump(mode="json")
+                self._persistent_key(key): CacheEntry(
+                    schema=_EXECUTION_OUTCOME_SCHEMA,
+                    record=outcome.model_dump(mode="json"),
+                )
                 for key, outcome in batch.items()
             }
-            self._store.put_many(
-                entries,
-                schema=_EXECUTION_OUTCOME_SCHEMA,
-            )
+            self._store.put_many(entries)
         except Exception:
             _LOGGER.warning(
                 "execution cache checkpoint failed; retaining entries",

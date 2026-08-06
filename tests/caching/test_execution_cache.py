@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from threading import Event, Lock
 
 import pytest
 from dr_serialize import IdentityDocument, Jsonable
-from dr_store import CacheHit, ObjectReference
+from dr_store import CacheEntry, CacheHit, ObjectReference
 
 from dr_code.caching import CheckpointedExecutionCache
 from dr_code.metrics.engine.execution import ExecutionOutcome
@@ -28,9 +28,10 @@ def _outcome(stdout: str = "ok") -> ExecutionOutcome:
 
 class _BatchStore:
     def __init__(self) -> None:
-        self.records: dict[str, Jsonable] = {}
+        self.records: dict[str, tuple[str, Jsonable]] = {}
         self.get_many_calls: list[tuple[tuple[str, ...], str]] = []
-        self.put_many_calls: list[tuple[dict[str, Jsonable], str]] = []
+        self.get_many_results: list[dict[str, CacheHit | None]] = []
+        self.put_many_calls: list[dict[str, tuple[str, Jsonable]]] = []
         self.fail_reads = 0
         self.fail_writes = 0
         self._write_gates: list[tuple[Event, Event]] = []
@@ -52,31 +53,38 @@ class _BatchStore:
 
     def get_many(
         self,
-        keys: Sequence[str],
+        keys: Iterable[str],
         *,
         schema: str,
-    ) -> dict[str, CacheHit]:
-        requested = tuple(keys)
+    ) -> dict[str, CacheHit | None]:
+        requested = tuple(dict.fromkeys(keys))
         self.get_many_calls.append((requested, schema))
         if self.fail_reads:
             self.fail_reads -= 1
             raise OSError("read unavailable")
-        return {
-            key: CacheHit(record=self.records[key])
+        results = {
+            key: (
+                CacheHit(record=stored[1])
+                if (stored := self.records.get(key)) is not None
+                and stored[0] == schema
+                else None
+            )
             for key in requested
-            if key in self.records
         }
+        self.get_many_results.append(results)
+        return results
 
     def put_many(
         self,
-        entries: Mapping[str, Jsonable],
-        *,
-        schema: str,
+        entries: Mapping[str, CacheEntry],
     ) -> dict[str, ObjectReference]:
         with self._lock:
             call_index = len(self.put_many_calls)
-            copied = dict(entries)
-            self.put_many_calls.append((copied, schema))
+            copied = {
+                key: (entry.schema, entry.record)
+                for key, entry in entries.items()
+            }
+            self.put_many_calls.append(copied)
             while len(self._write_finished) <= call_index:
                 self._write_finished.append(Event())
             finished = self._write_finished[call_index]
@@ -95,11 +103,12 @@ class _BatchStore:
                 self.fail_writes -= 1
                 raise OSError("write unavailable")
             references: dict[str, ObjectReference] = {}
-            for key, record in copied.items():
-                self.records.setdefault(key, record)
+            for key, entry in copied.items():
+                self.records.setdefault(key, entry)
+                stored_schema, stored_record = self.records[key]
                 references[key] = ObjectReference.for_record(
-                    schema,
-                    self.records[key],
+                    stored_schema,
+                    stored_record,
                 )
             return references
         finally:
@@ -152,6 +161,8 @@ def test_hot_get_and_put_do_not_read_persistence() -> None:
     cache = _cache(store)
     cache.prefetch(("request",))
 
+    persistent_key = store.get_many_calls[0][0][0]
+    assert store.get_many_results == [{persistent_key: None}]
     assert cache.get("request") is None
     cache.put("request", _outcome())
     assert cache.get("request") == _outcome()
@@ -216,7 +227,7 @@ def test_writes_coalesce_while_one_checkpoint_is_blocked() -> None:
     assert store.write_finished(1).wait(timeout=_WATCHDOG_SECONDS)
     cache.close()
 
-    assert [len(entries) for entries, _ in store.put_many_calls] == [1, 2]
+    assert [len(entries) for entries in store.put_many_calls] == [1, 2]
     assert cache.stats().checkpoint_batches == 2
     assert cache.stats().checkpoint_entries == 3
 
@@ -270,12 +281,16 @@ def test_malformed_persisted_outcome_is_an_observable_miss(
     seed = _cache(store)
     seed.prefetch(("request",))
     persistent_key = store.get_many_calls[0][0][0]
+    schema = store.get_many_calls[0][1]
     seed.close()
-    store.records[persistent_key] = {
-        "returncode": "0",
-        "stdout": "not strict",
-        "stderr": "",
-    }
+    store.records[persistent_key] = (
+        schema,
+        {
+            "returncode": "0",
+            "stdout": "not strict",
+            "stderr": "",
+        },
+    )
 
     cache = _cache(store)
     with caplog.at_level(logging.WARNING):

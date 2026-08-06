@@ -118,9 +118,9 @@ exported_symbols = [
 [[terms]]
 name = "checkpointed execution cache"
 definition = """
-An execution-outcome memoization layer that bulk-loads planned requests into
-memory and periodically persists newly computed outcomes in atomic batches
-scoped to a declared runtime identity."""
+An execution-outcome memoization layer that bulk-loads planned requests as
+explicit hits or misses and periodically persists newly computed outcomes as
+schema-qualified atomic batches scoped to a declared runtime identity."""
 exported_symbols = [
   "dr_code.caching.CheckpointedExecutionCache",
   "dr_code.caching.ExecutionCacheStats",

@@ -10,17 +10,19 @@ operations in addition to its point API:
 
 ```python
 def get_many(
-    keys: Sequence[str], *, schema: str
-) -> dict[str, CacheHit]: ...
+    keys: Iterable[str], *, schema: str
+) -> dict[str, CacheHit | None]: ...
 
 def put_many(
-    entries: Mapping[str, Jsonable], *, schema: str
+    entries: Mapping[str, CacheEntry],
 ) -> dict[str, ObjectReference]: ...
 ```
 
-`get_many` returns only verified hits. `put_many` validates and prepares the
-complete batch before mutation, commits its object rows and bindings in one
-transaction, and returns the stored first-writer winner for each key.
+`get_many` returns every distinct requested key, using `None` for a miss and a
+verified `CacheHit` otherwise. Each `CacheEntry` passed to `put_many` carries
+its own `schema` and `record`. The write validates and prepares the complete
+batch before mutation, commits its object rows and bindings in one transaction,
+and returns the stored first-writer winner for each key.
 
 ## Execution-cache behavior
 

@@ -156,13 +156,14 @@ with CheckpointedExecutionCache(
     cache.checkpoint()
 ```
 
-The injected store must provide atomic `get_many(keys, *, schema=...)` and
-`put_many(entries, *, schema=...)` operations. Point-only record stores are not
-adapted because per-entry persistence would violate the bulk-I/O contract. An
-execution key must be deterministic within its caller-owned runtime scope, so
-concurrent processes treat dr-store's first-writer winner as an equivalent
-outcome; this cache does not read a conflicting winner record back after a
-checkpoint.
+The injected store must provide `get_many(keys, *, schema=...)`, returning each
+distinct key as a verified hit or explicit `None` miss, and atomic
+`put_many(entries)`, where every entry carries its schema and record. Point-only
+record stores are not adapted because per-entry persistence would violate the
+bulk-I/O contract. An execution key must be deterministic within its
+caller-owned runtime scope, so concurrent processes treat dr-store's
+first-writer winner as an equivalent outcome; this cache does not read a
+conflicting winner record back after a checkpoint.
 
 ### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
 
