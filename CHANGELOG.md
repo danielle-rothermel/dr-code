@@ -8,6 +8,11 @@
   failures from candidate setup failures and case outcomes. Metrics report
   harness failures as operator failures while retaining candidate-attributable
   errors as measured evidence.
+- Verification scripts load selected nonblank HumanEval generations eagerly
+  with Polars, benchmark exhaustive preprocessing and cache reuse, and report
+  task-level bootstrap confidence intervals for candidate and row reuse.
+- HumanEval generation-length analysis produces versioned summary data and
+  plots for comparing output distributions.
 
 ## 0.1.4 - 2026-08-06
 
