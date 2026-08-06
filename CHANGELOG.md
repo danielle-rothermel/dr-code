@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.5 - 2026-08-06
+
+- HumanEval execution uses an explicitly selected Python runtime and declares
+  NumPy as a direct dependency of its bundled HumanEval+ test harness.
+- The HumanEval runner distinguishes trusted support-code initialization
+  failures from candidate setup failures and case outcomes. Metrics report
+  harness failures as operator failures while retaining candidate-attributable
+  errors as measured evidence.
+
 ## 0.1.4 - 2026-08-06
 
 - Execution requests use compact versioned cache keys and batch-prefetch

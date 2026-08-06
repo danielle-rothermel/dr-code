@@ -279,13 +279,14 @@ wheels = [
 
 [[package]]
 name = "dr-code"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "dr-exec" },
     { name = "dr-serialize" },
     { name = "dr-store" },
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "typer" },
     { name = "zstandard" },
@@ -305,6 +306,7 @@ requires-dist = [
     { name = "dr-exec", specifier = "==0.1.5" },
     { name = "dr-serialize", specifier = "==0.1.2" },
     { name = "dr-store", specifier = "==0.1.5" },
+    { name = "numpy", specifier = ">=2.1,<3" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "typer", specifier = ">=0.26.7" },
     { name = "zstandard", specifier = ">=0.25.0" },

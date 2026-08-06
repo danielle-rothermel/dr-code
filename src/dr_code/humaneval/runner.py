@@ -29,7 +29,10 @@ from dr_code.humaneval.task import (
     EvaluationCaseStatus,
     EvaluationHarnessError,
     EvaluationTaskResult,
-    HumanEvalRunnerCaseOutput,
+    HumanEvalRunnerCandidateFailure,
+    HumanEvalRunnerCaseResults,
+    HumanEvalRunnerHarnessFailure,
+    HumanEvalRunnerOutput,
     HumanEvalRunnerPayload,
     HumanEvalTask,
 )
@@ -225,7 +228,8 @@ def interpret_subprocess_batch_result(
             elapsed_seconds=elapsed_seconds,
         )
         raise EvaluationHarnessError(
-            "runner subprocess exited nonzero",
+            "runner subprocess exited nonzero"
+            + (f": {message}" if message else ""),
             case_results=case_results,
         )
     try:
@@ -238,67 +242,51 @@ def interpret_subprocess_batch_result(
             elapsed_seconds=elapsed_seconds,
         )
         raise EvaluationHarnessError(
-            "runner output was not valid JSON",
+            f"runner output was not valid JSON: {exc}",
             case_results=case_results,
             cause=exc,
         ) from exc
-    if not isinstance(raw_results, list):
+    adapter = TypeAdapter(HumanEvalRunnerOutput)
+    try:
+        runner_output = adapter.validate_python(raw_results)
+    except ValidationError as exc:
         case_results = error_results(
             task=task,
             function_name=function_name,
-            message=(
-                "Invalid runner output: expected a JSON list of case results"
-            ),
+            message=f"Invalid runner output: {exc}",
             elapsed_seconds=elapsed_seconds,
         )
         raise EvaluationHarnessError(
-            "runner output had invalid shape",
+            f"runner output failed validation: {exc}",
+            case_results=case_results,
+            cause=exc,
+        ) from exc
+
+    if isinstance(runner_output, HumanEvalRunnerHarnessFailure):
+        case_results = error_results(
+            task=task,
+            function_name=function_name,
+            message=runner_output.message,
+            elapsed_seconds=runner_output.elapsed_seconds,
+        )
+        raise EvaluationHarnessError(
+            "runner support-code initialization failed: "
+            + runner_output.message,
             case_results=case_results,
         )
+    if isinstance(runner_output, HumanEvalRunnerCandidateFailure):
+        return error_results(
+            task=task,
+            function_name=function_name,
+            message=runner_output.message,
+            elapsed_seconds=runner_output.elapsed_seconds,
+        )
+    assert isinstance(runner_output, HumanEvalRunnerCaseResults)
 
-    adapter = TypeAdapter(HumanEvalRunnerCaseOutput)
     expected_case_ids = {case.case_id for case in parsed_tests.cases}
     seen_case_ids: set[str] = set()
     results: list[EvaluationCaseResult] = []
-    for item in raw_results:
-        try:
-            runner_result = adapter.validate_python(item)
-        except ValidationError as exc:
-            case_id = (
-                str(item["case_id"])
-                if isinstance(item, dict) and "case_id" in item
-                else f"case_{len(results)}"
-            )
-            metadata: dict[str, str] = {}
-            for case in parsed_tests.cases:
-                if case.case_id == case_id:
-                    metadata = case_metadata(parsed_tests, case)
-                    break
-            results.append(
-                EvaluationCaseResult(
-                    task_id=task.task_id,
-                    case_id=case_id,
-                    function_name=function_name,
-                    status=EvaluationCaseStatus.ERROR,
-                    message=f"Invalid runner output: {exc}",
-                    test_type=parsed_tests.test_type,
-                    input_repr=metadata.get("input_repr", ""),
-                    expected_output_repr=metadata.get(
-                        "expected_output_repr",
-                        "",
-                    ),
-                    actual_output_repr=metadata.get(
-                        "actual_output_repr",
-                        "",
-                    ),
-                    elapsed_seconds=elapsed_seconds,
-                )
-            )
-            raise EvaluationHarnessError(
-                "runner output case failed validation",
-                case_results=results,
-                cause=exc,
-            ) from exc
+    for runner_result in runner_output.results:
         if (
             runner_result.case_id not in expected_case_ids
             or runner_result.case_id in seen_case_ids

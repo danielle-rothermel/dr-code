@@ -56,5 +56,6 @@ def _stub_executor(
 
 
 _PARTIAL_RUNNER_PASSED_CASE_0 = (
-    '[{"case_id": "case_0", "status": "passed", "message": ""}]'
+    '{"kind": "case_results", "results": '
+    '[{"case_id": "case_0", "status": "passed", "message": ""}]}'
 )

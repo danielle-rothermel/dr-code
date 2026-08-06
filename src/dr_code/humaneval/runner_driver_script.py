@@ -27,14 +27,18 @@ def dr_exec_main(request, emit):
         else:
             assert actual == expected
 
-    def emit_results(results):
-        results_stream.write(json.dumps(results))
+    def emit_output(output):
+        results_stream.write(json.dumps(output))
         results_stream.write("\n")
         results_stream.flush()
 
-    def build_namespace():
+    def build_support_namespace():
         namespace = {"assertion": assertion}
         exec(payload["support_code"], namespace)
+        return namespace
+
+    def build_candidate_namespace():
+        namespace = build_support_namespace()
         exec(payload["candidate_code"], namespace)
         return namespace
 
@@ -45,7 +49,7 @@ def dr_exec_main(request, emit):
             "actual_output_repr": "",
         }
         try:
-            detail_namespace = build_namespace()
+            detail_namespace = build_candidate_namespace()
             detail_candidate = detail_namespace[payload["function_name"]]
         except BaseException:
             metadata["actual_output_repr"] = clip(
@@ -85,28 +89,30 @@ def dr_exec_main(request, emit):
 
         return metadata
 
+    setup_started_at = time.perf_counter()
     try:
-        namespace = build_namespace()
+        namespace = build_support_namespace()
+    except BaseException:
+        emit_output(
+            {
+                "kind": "harness_failure",
+                "message": clip(traceback.format_exc(limit=4)),
+                "elapsed_seconds": time.perf_counter() - setup_started_at,
+            }
+        )
+        return
+
+    try:
+        exec(payload["candidate_code"], namespace)
         candidate = namespace[payload["function_name"]]
     except BaseException:
-        message = clip(traceback.format_exc(limit=4))
-        results = []
-        for check in payload["checks"]:
-            results.append(
-                {
-                    "case_id": check["case_id"],
-                    "status": "error",
-                    "message": message,
-                    "input_repr": check.get("input_repr", ""),
-                    "expected_output_repr": check.get(
-                        "expected_output_repr",
-                        "",
-                    ),
-                    "actual_output_repr": message,
-                    "elapsed_seconds": 0.0,
-                }
-            )
-        emit_results(results)
+        emit_output(
+            {
+                "kind": "candidate_failure",
+                "message": clip(traceback.format_exc(limit=4)),
+                "elapsed_seconds": time.perf_counter() - setup_started_at,
+            }
+        )
         return
 
     results = []
@@ -156,4 +162,4 @@ def dr_exec_main(request, emit):
                     "elapsed_seconds": time.perf_counter() - started_at,
                 }
             )
-    emit_results(results)
+    emit_output({"kind": "case_results", "results": results})

@@ -17,7 +17,6 @@ from dr_code.core.execution.executor import (
 from dr_code.humaneval.task import (
     EvaluationCaseResult,
     EvaluationCaseStatus,
-    EvaluationHarnessError,
     EvaluationTaskResult,
     HumanEvalTask,
 )
@@ -241,19 +240,12 @@ def _results_from_outcome(
         stdout=outcome.stdout,
         stderr=outcome.stderr,
     )
-    try:
-        return runner.interpret_subprocess_batch_result(
-            task=task,
-            function_name=function_name,
-            completed=completed,
-            elapsed_seconds=0.0,
-        )
-    except EvaluationHarnessError as exc:
-        return runner.error_results(
-            task=task,
-            function_name=function_name,
-            message=str(exc),
-        )
+    return runner.interpret_subprocess_batch_result(
+        task=task,
+        function_name=function_name,
+        completed=completed,
+        elapsed_seconds=0.0,
+    )
 
 
 def _validate_task_payload(artifact: JsonArtifact) -> HumanEvalTask:
