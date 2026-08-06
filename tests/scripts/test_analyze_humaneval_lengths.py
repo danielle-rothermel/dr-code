@@ -58,6 +58,7 @@ def test_writes_length_tables_and_plots(tmp_path: Path) -> None:
         "humaneval_length_histograms_bytes.png",
         "humaneval_length_ecdf_bytes.png",
         "humaneval_comments_vs_code_bytes.png",
+        "humaneval_length_violin_bytes.png",
     ):
         assert (output_dir / filename).stat().st_size > 0
 
