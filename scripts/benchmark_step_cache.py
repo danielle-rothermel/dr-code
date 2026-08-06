@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import sys
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import fmean, median
 from time import perf_counter
 
 import polars as pl
@@ -99,19 +102,111 @@ class _ReuseStats:
 
 
 @dataclass(frozen=True, slots=True)
+class _RowCacheResult:
+    failure_code: str | None
+    candidate_count: int
+    candidate_hits: int
+
+    def __post_init__(self) -> None:
+        if self.failure_code is not None:
+            if self.candidate_count != 0 or self.candidate_hits != 0:
+                raise ValueError("failed rows cannot contain candidates")
+            return
+        if self.candidate_count < 1:
+            raise ValueError("successful rows must contain a candidate")
+        if not 0 <= self.candidate_hits <= self.candidate_count:
+            raise ValueError("candidate hits must not exceed candidates")
+
+    @property
+    def succeeded(self) -> bool:
+        return self.failure_code is None
+
+    @property
+    def uncached_candidates(self) -> int:
+        return self.candidate_count - self.candidate_hits
+
+
+@dataclass(frozen=True, slots=True)
+class _UncachedCandidateDistribution:
+    total: int
+    mean: float
+    median: float
+    p95: int
+
+
+@dataclass(frozen=True, slots=True)
+class _RowCacheSummary:
+    rows: int
+    failed_rows: int
+    successful_rows: int
+    zero_hit_rows: int
+    partial_hit_rows: int
+    fully_cached_rows: int
+    candidate_count: int
+    candidate_hits: int
+    uncached_candidates: tuple[int, ...]
+    failure_codes: tuple[tuple[str, int], ...]
+
+    @property
+    def candidate_hit_rate(self) -> float:
+        return (
+            self.candidate_hits / self.candidate_count
+            if self.candidate_count
+            else 0.0
+        )
+
+    @property
+    def overall_full_skip_rate(self) -> float:
+        return self.fully_cached_rows / self.rows if self.rows else 0.0
+
+    @property
+    def conditional_full_skip_rate(self) -> float:
+        return (
+            self.fully_cached_rows / self.successful_rows
+            if self.successful_rows
+            else 0.0
+        )
+
+    @property
+    def uncached_candidate_distribution(
+        self,
+    ) -> _UncachedCandidateDistribution:
+        values = sorted(self.uncached_candidates)
+        if not values:
+            return _UncachedCandidateDistribution(
+                total=0,
+                mean=0.0,
+                median=0.0,
+                p95=0,
+            )
+        p95_index = math.ceil(0.95 * len(values)) - 1
+        return _UncachedCandidateDistribution(
+            total=sum(values),
+            mean=fmean(values),
+            median=median(values),
+            p95=values[p95_index],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateMeasurements:
+    raw_source_keys: tuple[str, ...]
+    final_source_keys: tuple[str, ...]
+    execution_request_keys: tuple[str, ...]
+    row_cache: _RowCacheSummary
+
+
+@dataclass(frozen=True, slots=True)
 class _TaskBenchmark:
     task_id: str
     rows: int
-    successful_rows: int
     distinct_outputs: int
     uncached_seconds: float
     cold_seconds: float
     warm_seconds: float
     cold_stats: tuple[_StepStats, ...]
     warm_stats: tuple[_StepStats, ...]
-    raw_candidate_keys: tuple[str, ...]
-    final_candidate_keys: tuple[str, ...]
-    execution_request_keys: tuple[str, ...]
+    candidates: _CandidateMeasurements
 
     @property
     def cold_speedup(self) -> float:
@@ -119,19 +214,23 @@ class _TaskBenchmark:
 
     @property
     def success_rate(self) -> float:
-        return self.successful_rows / self.rows
+        return self.row_cache.successful_rows / self.rows
+
+    @property
+    def row_cache(self) -> _RowCacheSummary:
+        return self.candidates.row_cache
 
     @property
     def raw_candidate_reuse(self) -> _ReuseStats:
-        return _reuse_stats(self.raw_candidate_keys)
+        return _reuse_stats(self.candidates.raw_source_keys)
 
     @property
     def final_candidate_reuse(self) -> _ReuseStats:
-        return _reuse_stats(self.final_candidate_keys)
+        return _reuse_stats(self.candidates.final_source_keys)
 
     @property
     def execution_request_reuse(self) -> _ReuseStats:
-        return _reuse_stats(self.execution_request_keys)
+        return _reuse_stats(self.candidates.execution_request_keys)
 
 
 class _InMemoryStepCacheRunner:
@@ -286,13 +385,45 @@ def _execution_request_key(request: ExecutionRequest) -> str:
     )
 
 
-def _candidate_reuse_keys(
+def _summarize_row_cache(
+    rows: Sequence[_RowCacheResult],
+) -> _RowCacheSummary:
+    failures = Counter(
+        row.failure_code for row in rows if row.failure_code is not None
+    )
+    uncached_candidates = tuple(
+        row.uncached_candidates for row in rows if row.succeeded
+    )
+    return _RowCacheSummary(
+        rows=len(rows),
+        failed_rows=sum(not row.succeeded for row in rows),
+        successful_rows=sum(row.succeeded for row in rows),
+        zero_hit_rows=sum(
+            row.succeeded and row.candidate_hits == 0 for row in rows
+        ),
+        partial_hit_rows=sum(
+            0 < row.candidate_hits < row.candidate_count for row in rows
+        ),
+        fully_cached_rows=sum(
+            row.succeeded and row.candidate_hits == row.candidate_count
+            for row in rows
+        ),
+        candidate_count=sum(row.candidate_count for row in rows),
+        candidate_hits=sum(row.candidate_hits for row in rows),
+        uncached_candidates=uncached_candidates,
+        failure_codes=tuple(sorted(failures.items())),
+    )
+
+
+def _candidate_measurements(
     traces: Sequence[Trace],
     task: HumanEvalTask,
-) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-    raw_candidate_keys: list[str] = []
-    final_candidate_keys: list[str] = []
+) -> _CandidateMeasurements:
+    raw_source_keys: list[str] = []
+    final_source_keys: list[str] = []
     execution_request_keys: list[str] = []
+    row_results: list[_RowCacheResult] = []
+    cached_request_keys: set[str] = set()
     code_test = CodeTest(CodeTestSettings())
     task_artifact = JsonArtifact(
         payload=task.model_dump(
@@ -304,31 +435,65 @@ def _candidate_reuse_keys(
     for trace in traces:
         raw_candidates = trace.value(_RAW_CANDIDATE_KEY)
         if isinstance(raw_candidates, CodeCandidateSetArtifact):
-            raw_candidate_keys.extend(
+            raw_source_keys.extend(
                 candidate.source for candidate in raw_candidates.candidates
             )
 
         final_candidates = trace.value(OUTPUT_KEY)
-        if not isinstance(
-            final_candidates,
-            InspectedCodeCandidateSetArtifact,
-        ):
+        if isinstance(final_candidates, Absent):
+            row_results.append(
+                _RowCacheResult(
+                    failure_code=final_candidates.failure_code,
+                    candidate_count=0,
+                    candidate_hits=0,
+                )
+            )
             continue
+        if not isinstance(final_candidates, InspectedCodeCandidateSetArtifact):
+            raise TypeError(
+                "preprocessing output must be inspected candidates or absent"
+            )
+
+        row_request_keys: list[str] = []
+        candidate_hits = 0
+        # Compare the whole row with cache state from earlier rows. Updating
+        # afterward prevents work found inside this row from making the row
+        # appear fully skippable.
         for inspected_candidate in final_candidates.candidates:
             source = inspected_candidate.candidate.source
-            final_candidate_keys.append(source)
+            final_source_keys.append(source)
             requests = code_test.execution_requests(
                 CodeArtifact(source=source),
                 {code_test.settings.task_key: task_artifact},
             )
-            execution_request_keys.extend(
+            candidate_request_keys = tuple(
                 _execution_request_key(request) for request in requests
             )
+            if not candidate_request_keys:
+                raise RuntimeError(
+                    "final candidate produced no execution requests"
+                )
+            if all(
+                key in cached_request_keys for key in candidate_request_keys
+            ):
+                candidate_hits += 1
+            row_request_keys.extend(candidate_request_keys)
 
-    return (
-        tuple(raw_candidate_keys),
-        tuple(final_candidate_keys),
-        tuple(execution_request_keys),
+        row_results.append(
+            _RowCacheResult(
+                failure_code=None,
+                candidate_count=len(final_candidates.candidates),
+                candidate_hits=candidate_hits,
+            )
+        )
+        execution_request_keys.extend(row_request_keys)
+        cached_request_keys.update(row_request_keys)
+
+    return _CandidateMeasurements(
+        raw_source_keys=tuple(raw_source_keys),
+        final_source_keys=tuple(final_source_keys),
+        execution_request_keys=tuple(execution_request_keys),
+        row_cache=_summarize_row_cache(row_results),
     )
 
 
@@ -366,11 +531,6 @@ def _benchmark_task(
         for text in decoder_outputs
     ]
     baseline_seconds = perf_counter() - baseline_started
-    successful_rows = sum(
-        isinstance(trace.value(OUTPUT_KEY), InspectedCodeCandidateSetArtifact)
-        for trace in baseline_traces
-    )
-
     cached_runner = _InMemoryStepCacheRunner(
         bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
     )
@@ -400,24 +560,17 @@ def _benchmark_task(
         expected=baseline_traces,
         actual=warm_traces,
     )
-    (
-        raw_candidate_keys,
-        final_candidate_keys,
-        execution_request_keys,
-    ) = _candidate_reuse_keys(baseline_traces, task)
+    candidates = _candidate_measurements(baseline_traces, task)
     return _TaskBenchmark(
         task_id=task.task_id,
         rows=len(decoder_outputs),
-        successful_rows=successful_rows,
         distinct_outputs=len(set(decoder_outputs)),
         uncached_seconds=baseline_seconds,
         cold_seconds=cold_seconds,
         warm_seconds=warm_seconds,
         cold_stats=cold_stats,
         warm_stats=warm_stats,
-        raw_candidate_keys=raw_candidate_keys,
-        final_candidate_keys=final_candidate_keys,
-        execution_request_keys=execution_request_keys,
+        candidates=candidates,
     )
 
 
@@ -440,33 +593,72 @@ def _aggregate_cold_speedup(results: Sequence[_TaskBenchmark]) -> float:
 def _aggregate_preprocessing_success_rate(
     results: Sequence[_TaskBenchmark],
 ) -> float:
-    successful_rows = sum(result.successful_rows for result in results)
+    successful_rows = sum(
+        result.row_cache.successful_rows for result in results
+    )
     rows = sum(result.rows for result in results)
     return successful_rows / rows
 
 
-def _aggregate_raw_candidate_hit_rate(
+def _aggregate_testable_candidate_hit_rate(
     results: Sequence[_TaskBenchmark],
 ) -> float:
-    return _reuse_stats(
-        key for result in results for key in result.raw_candidate_keys
-    ).hit_rate
+    candidate_hits = sum(result.row_cache.candidate_hits for result in results)
+    candidate_count = sum(
+        result.row_cache.candidate_count for result in results
+    )
+    return candidate_hits / candidate_count if candidate_count else 0.0
 
 
-def _aggregate_final_candidate_hit_rate(
+def _aggregate_overall_full_skip_rate(
     results: Sequence[_TaskBenchmark],
 ) -> float:
-    return _reuse_stats(
-        key for result in results for key in result.final_candidate_keys
-    ).hit_rate
+    fully_cached_rows = sum(
+        result.row_cache.fully_cached_rows for result in results
+    )
+    rows = sum(result.rows for result in results)
+    return fully_cached_rows / rows if rows else 0.0
 
 
-def _aggregate_execution_request_hit_rate(
+def _aggregate_conditional_full_skip_rate(
     results: Sequence[_TaskBenchmark],
 ) -> float:
-    return _reuse_stats(
-        key for result in results for key in result.execution_request_keys
-    ).hit_rate
+    fully_cached_rows = sum(
+        result.row_cache.fully_cached_rows for result in results
+    )
+    successful_rows = sum(
+        result.row_cache.successful_rows for result in results
+    )
+    return fully_cached_rows / successful_rows if successful_rows else 0.0
+
+
+def _combined_row_cache(
+    results: Sequence[_TaskBenchmark],
+) -> _RowCacheSummary:
+    summaries = tuple(result.row_cache for result in results)
+    failure_codes: Counter[str] = Counter()
+    for summary in summaries:
+        failure_codes.update(dict(summary.failure_codes))
+    return _RowCacheSummary(
+        rows=sum(summary.rows for summary in summaries),
+        failed_rows=sum(summary.failed_rows for summary in summaries),
+        successful_rows=sum(summary.successful_rows for summary in summaries),
+        zero_hit_rows=sum(summary.zero_hit_rows for summary in summaries),
+        partial_hit_rows=sum(
+            summary.partial_hit_rows for summary in summaries
+        ),
+        fully_cached_rows=sum(
+            summary.fully_cached_rows for summary in summaries
+        ),
+        candidate_count=sum(summary.candidate_count for summary in summaries),
+        candidate_hits=sum(summary.candidate_hits for summary in summaries),
+        uncached_candidates=tuple(
+            value
+            for summary in summaries
+            for value in summary.uncached_candidates
+        ),
+        failure_codes=tuple(sorted(failure_codes.items())),
+    )
 
 
 def _print_interval(
@@ -497,12 +689,57 @@ def _print_reuse_stats(label: str, stats: _ReuseStats) -> None:
     )
 
 
+def _print_row_cache_summary(summary: _RowCacheSummary) -> None:
+    rows = summary.rows
+    successful_rows = summary.successful_rows
+    print(
+        "Testable candidate cache hit rate: "
+        f"{summary.candidate_hit_rate:.2%} "
+        f"({summary.candidate_hits:,}/{summary.candidate_count:,})"
+    )
+    print(
+        "Overall full-test skip rate: "
+        f"{summary.overall_full_skip_rate:.2%} "
+        f"({summary.fully_cached_rows:,}/{rows:,} nonblank rows)"
+    )
+    print(
+        "Conditional full-test skip rate: "
+        f"{summary.conditional_full_skip_rate:.2%} "
+        f"({summary.fully_cached_rows:,}/{successful_rows:,} "
+        "successful rows)"
+    )
+    print("Row outcomes:")
+    for label, count in (
+        ("preprocessing failed", summary.failed_rows),
+        ("successful, zero cache hits", summary.zero_hit_rows),
+        ("successful, partial cache hits", summary.partial_hit_rows),
+        ("successful, fully cached", summary.fully_cached_rows),
+    ):
+        rate = count / rows if rows else 0.0
+        print(f"  {label}: {count:,} ({rate:.2%})")
+
+    distribution = summary.uncached_candidate_distribution
+    print(
+        "Uncached candidates per successful row: "
+        f"total={distribution.total:,}, mean={distribution.mean:.2f}, "
+        f"median={distribution.median:.2f}, p95={distribution.p95:,}"
+    )
+    print("Preprocessing failure codes:")
+    if not summary.failure_codes:
+        print("  none")
+    else:
+        for failure_code, count in summary.failure_codes:
+            rate = count / summary.failed_rows
+            print(f"  {failure_code}: {count:,} ({rate:.2%} of failures)")
+
+
 def _print_single_task(result: _TaskBenchmark) -> None:
     print(f"Filtered rows: {result.rows:,}")
     print(f"Distinct decoder outputs: {result.distinct_outputs:,}")
     print(
         f"Preprocessing success: {result.success_rate:.2%} "
-        f"({result.successful_rows:,}/{result.rows:,} nonblank samples)"
+        f"({result.row_cache.successful_rows:,}/{result.rows:,} "
+        "nonblank samples)"
     )
     print(
         f"Uncached baseline: {result.uncached_seconds:.6f} seconds "
@@ -518,17 +755,20 @@ def _print_single_task(result: _TaskBenchmark) -> None:
     )
     print("Trace equivalence: exact for cold and warm cache runs")
     print()
-    print("Candidate reuse with an initially empty cache:")
+    print("Testing-cache estimates with an initially empty cache:")
+    _print_row_cache_summary(result.row_cache)
+    print()
+    print("Secondary source and execution-request reuse:")
     _print_reuse_stats(
         "Raw extracted-source hit rate",
         result.raw_candidate_reuse,
     )
     _print_reuse_stats(
-        "Final postprocessed-source hit rate",
+        "Final postprocessed source-only hit rate",
         result.final_candidate_reuse,
     )
     _print_reuse_stats(
-        "Test-safe execution-request hit rate",
+        "Execution-request hit rate",
         result.execution_request_reuse,
     )
     print("No candidate code was executed.")
@@ -554,7 +794,8 @@ def _print_task_sample(
         _, _, hit_rate = _hit_rate(result.cold_stats)
         print(
             f"{result.task_id:18} {result.rows:8,d} "
-            f"{result.successful_rows:8,d} {result.success_rate:12.2%} "
+            f"{result.row_cache.successful_rows:8,d} "
+            f"{result.success_rate:12.2%} "
             f"{result.distinct_outputs:9,d} {hit_rate:9.2%} "
             f"{result.uncached_seconds:9.3f}s "
             f"{result.cold_seconds:9.3f}s {result.cold_speedup:8.2f}x"
@@ -562,20 +803,49 @@ def _print_task_sample(
 
     print()
     print(
-        f"{'task':18} {'raw candidates':>14} {'raw hits':>10} "
-        f"{'final candidates':>16} {'final hits':>11} "
-        f"{'test requests':>13} {'test hits':>10}"
+        f"{'task':18} {'candidates':>11} {'candidate hits':>15} "
+        f"{'failed':>8} {'zero':>8} {'partial':>8} {'full':>8} "
+        f"{'full skip':>10}"
     )
     for result in results:
-        raw = result.raw_candidate_reuse
-        final = result.final_candidate_reuse
-        requests = result.execution_request_reuse
+        summary = result.row_cache
         print(
-            f"{result.task_id:18} {raw.occurrences:14,d} "
-            f"{raw.hit_rate:9.2%} {final.occurrences:16,d} "
-            f"{final.hit_rate:10.2%} {requests.occurrences:13,d} "
-            f"{requests.hit_rate:9.2%}"
+            f"{result.task_id:18} {summary.candidate_count:11,d} "
+            f"{summary.candidate_hit_rate:14.2%} "
+            f"{summary.failed_rows:8,d} {summary.zero_hit_rows:8,d} "
+            f"{summary.partial_hit_rows:8,d} "
+            f"{summary.fully_cached_rows:8,d} "
+            f"{summary.overall_full_skip_rate:9.2%}"
         )
+
+    print()
+    _print_row_cache_summary(_combined_row_cache(results))
+    print()
+    print("Secondary aggregate source and execution-request reuse:")
+    _print_reuse_stats(
+        "Aggregate raw extracted-source hit rate",
+        _reuse_stats(
+            key
+            for result in results
+            for key in result.candidates.raw_source_keys
+        ),
+    )
+    _print_reuse_stats(
+        "Aggregate final postprocessed source-only hit rate",
+        _reuse_stats(
+            key
+            for result in results
+            for key in result.candidates.final_source_keys
+        ),
+    )
+    _print_reuse_stats(
+        "Aggregate execution-request hit rate",
+        _reuse_stats(
+            key
+            for result in results
+            for key in result.candidates.execution_request_keys
+        ),
+    )
 
     hit_rate_interval = bootstrap_confidence_interval(
         results,
@@ -598,23 +868,23 @@ def _print_task_sample(
         resamples=bootstrap_resamples,
         seed=seed,
     )
-    raw_candidate_interval = bootstrap_confidence_interval(
+    testable_candidate_interval = bootstrap_confidence_interval(
         results,
-        _aggregate_raw_candidate_hit_rate,
+        _aggregate_testable_candidate_hit_rate,
         confidence_level=confidence_level,
         resamples=bootstrap_resamples,
         seed=seed,
     )
-    final_candidate_interval = bootstrap_confidence_interval(
+    overall_full_skip_interval = bootstrap_confidence_interval(
         results,
-        _aggregate_final_candidate_hit_rate,
+        _aggregate_overall_full_skip_rate,
         confidence_level=confidence_level,
         resamples=bootstrap_resamples,
         seed=seed,
     )
-    execution_request_interval = bootstrap_confidence_interval(
+    conditional_full_skip_interval = bootstrap_confidence_interval(
         results,
-        _aggregate_execution_request_hit_rate,
+        _aggregate_conditional_full_skip_rate,
         confidence_level=confidence_level,
         resamples=bootstrap_resamples,
         seed=seed,
@@ -636,18 +906,18 @@ def _print_task_sample(
         percentage=False,
     )
     _print_interval(
-        "Aggregate raw extracted-source hit rate",
-        raw_candidate_interval,
+        "Aggregate testable candidate cache hit rate",
+        testable_candidate_interval,
         percentage=True,
     )
     _print_interval(
-        "Aggregate final postprocessed-source hit rate",
-        final_candidate_interval,
+        "Aggregate overall full-test skip rate",
+        overall_full_skip_interval,
         percentage=True,
     )
     _print_interval(
-        "Aggregate test-safe execution-request hit rate",
-        execution_request_interval,
+        "Aggregate conditional full-test skip rate",
+        conditional_full_skip_interval,
         percentage=True,
     )
     print(
