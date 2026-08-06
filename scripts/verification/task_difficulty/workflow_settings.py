@@ -24,18 +24,25 @@ RUN_DIRECTORY: Final = (
     / "2026-08-06"
     / "task-difficulty-directional"
 )
+EVALUATION_RUN_DIRECTORY: Final = RUN_DIRECTORY / "explicit-runtime"
 
 ELIGIBLE_CORPUS: Final = RUN_DIRECTORY / "eligible_generations.parquet"
 PREPROCESSING_SUMMARY: Final = RUN_DIRECTORY / "preprocessing_summary.parquet"
 PREPROCESSING_CACHE: Final = RUN_DIRECTORY / "preprocessing_cache.sqlite3"
 SELECTED_SAMPLE: Final = RUN_DIRECTORY / "selected_sample.parquet"
 SAMPLING_COVERAGE: Final = RUN_DIRECTORY / "sampling_coverage.parquet"
-EVALUATION_PARTS: Final = RUN_DIRECTORY / "evaluation_parts"
-EXECUTION_RECORDS: Final = RUN_DIRECTORY / "execution_records"
-CANDIDATE_RESULTS: Final = RUN_DIRECTORY / "candidate_results.parquet"
-GENERATION_RESULTS: Final = RUN_DIRECTORY / "generation_results.parquet"
-TASK_SETTING_RESULTS: Final = RUN_DIRECTORY / "task_setting_results.parquet"
-TASK_RESULTS: Final = RUN_DIRECTORY / "task_results.parquet"
+EVALUATION_PARTS: Final = EVALUATION_RUN_DIRECTORY / "evaluation_parts"
+EXECUTION_RECORDS: Final = EVALUATION_RUN_DIRECTORY / "execution_records"
+CANDIDATE_RESULTS: Final = (
+    EVALUATION_RUN_DIRECTORY / "candidate_results.parquet"
+)
+GENERATION_RESULTS: Final = (
+    EVALUATION_RUN_DIRECTORY / "generation_results.parquet"
+)
+TASK_SETTING_RESULTS: Final = (
+    EVALUATION_RUN_DIRECTORY / "task_setting_results.parquet"
+)
+TASK_RESULTS: Final = EVALUATION_RUN_DIRECTORY / "task_results.parquet"
 
 SOURCE_KIND: Final = "legacy_dbos_generation_attempt"
 SAMPLING_SEED: Final = 42
@@ -53,9 +60,10 @@ MODEL_ROSTER: Final = (
 
 PREPROCESS_LOG: Final = RUN_DIRECTORY / "01_preprocess.log"
 SAMPLING_LOG: Final = RUN_DIRECTORY / "02_sample.log"
-EVALUATION_LOG: Final = RUN_DIRECTORY / "03_evaluate.log"
-SUMMARY_LOG: Final = RUN_DIRECTORY / "04_summarize.log"
+EVALUATION_LOG: Final = EVALUATION_RUN_DIRECTORY / "03_evaluate.log"
+SUMMARY_LOG: Final = EVALUATION_RUN_DIRECTORY / "04_summarize.log"
 
 
 def prepare_run_directory() -> None:
     RUN_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    EVALUATION_RUN_DIRECTORY.mkdir(parents=True, exist_ok=True)

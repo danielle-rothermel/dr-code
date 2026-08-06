@@ -246,6 +246,8 @@ def test_task_jobs_run_concurrently_without_timing_as_evidence() -> None:
             task_id=f"HumanEval/{index}",
             task_rows=pl.DataFrame(),
             task=task,
+            runtime_executable=Path("/runtime/python"),
+            runtime_identity="runtime-a",
         )
         for index in range(3)
     ]
@@ -296,12 +298,66 @@ def test_evaluation_checkpoint_must_match_exact_candidates(
                 "sample_id": "sample",
                 "candidate_index": 0,
                 "candidate_source": "def f():\n    return 2\n",
+                "runtime_identity": "runtime-a",
             }
         ]
     ).write_parquet(part_path)
 
-    with pytest.raises(RuntimeError, match="does not match current sample"):
-        _EVALUATE._validate_existing_part(part_path, task_rows)  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="current sample and runtime"):
+        _EVALUATE._validate_existing_part(  # noqa: SLF001
+            part_path,
+            task_rows,
+            "runtime-a",
+        )
+
+
+def test_evaluation_checkpoint_must_match_runtime(tmp_path: Path) -> None:
+    source = "def f():\n    return 1\n"
+    task_rows = pl.DataFrame(
+        [
+            {
+                "sample_id": "sample",
+                "candidate_count": 1,
+                "code_candidates": [source],
+            }
+        ]
+    )
+    part_path = tmp_path / "part.parquet"
+    pl.DataFrame(
+        [
+            {
+                "sample_id": "sample",
+                "candidate_index": 0,
+                "candidate_source": source,
+                "runtime_identity": "runtime-a",
+            }
+        ]
+    ).write_parquet(part_path)
+
+    with pytest.raises(RuntimeError, match="current sample and runtime"):
+        _EVALUATE._validate_existing_part(  # noqa: SLF001
+            part_path,
+            task_rows,
+            "runtime-b",
+        )
+
+
+def test_task_evaluation_rejects_operator_failures() -> None:
+    results = pl.DataFrame(
+        [
+            {
+                "metric_status": "operator_failure",
+                "failure_type": "EvaluationHarnessError",
+                "failure_message": "support dependency unavailable",
+            }
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="harness/operator failures"):
+        _EVALUATE._require_measured_results(  # noqa: SLF001
+            results,
+            "HumanEval/0",
+        )
 
 
 def test_summary_uses_complete_generations_as_the_task_denominator() -> None:
