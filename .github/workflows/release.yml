@@ -12,8 +12,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  provenance:
+    name: Verify release provenance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify tagged commit is on main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tagged_commit="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"
+          if ! git merge-base --is-ancestor "${tagged_commit}" origin/main; then
+            echo "Tag ${GITHUB_REF_NAME} does not point to a commit on main" >&2
+            exit 1
+          fi
+      - name: Verify tag matches pyproject version
+        run: |
+          version="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          expected="v${version}"
+          if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
+            echo "Pushed tag '${GITHUB_REF_NAME}' does not match pyproject version (expected '${expected}')" >&2
+            exit 1
+          fi
+
   validate:
     name: Validate Python ${{ matrix.python-version }}
+    needs: provenance
     runs-on: depot-ubuntu-24.04
     permissions:
       contents: read
@@ -38,6 +66,7 @@ jobs:
 
   oci:
     name: Validate OCI sandbox
+    needs: provenance
     runs-on: depot-ubuntu-24.04
     permissions:
       contents: read
@@ -63,6 +92,7 @@ jobs:
 
   viewer:
     name: Validate viewer
+    needs: provenance
     runs-on: depot-ubuntu-24.04
     permissions:
       contents: read
@@ -97,14 +127,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Verify tag matches pyproject version
-        run: |
-          version="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
-          expected="v${version}"
-          if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
-            echo "Pushed tag '${GITHUB_REF_NAME}' does not match pyproject version (expected '${expected}')" >&2
-            exit 1
-          fi
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version-file: pyproject.toml

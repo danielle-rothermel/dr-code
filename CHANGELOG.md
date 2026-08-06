@@ -2,6 +2,12 @@
 
 ## 0.1.2 - 2026-08-05
 
+- Pull-request CI requires every change to advance the project version by one
+  patch, keep the root lockfile version synchronized, and carry the matching
+  dated changelog entry.
+- Tagged releases verify the tagged commit belongs to `main` before validation,
+  build, or PyPI publication; protected `v*` tags restrict release-tag creation
+  and prohibit tag updates and deletion.
 - `dr_code.caching` adds opt-in memoization of preprocessing traces.
   `run_preprocessing_cached` keys raw input text, the bound runner's resolved
   producer coordinate, and the trace schema version through dr-store's
