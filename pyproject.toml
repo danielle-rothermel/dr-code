@@ -13,6 +13,7 @@ dependencies = [
     "dr-exec==0.1.4",
     "dr-serialize==0.1.2",
     "dr-store==0.1.4",
+    "polars>=1.43.2",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
     "zstandard>=0.25.0",
