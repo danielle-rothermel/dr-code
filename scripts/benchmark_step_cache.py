@@ -29,6 +29,7 @@ from dr_code.trace import (
     OUTPUT_KEY,
     Absent,
     Artifact,
+    InspectedCodeCandidateSetArtifact,
     JsonFactValue,
     TextArtifact,
     Trace,
@@ -71,6 +72,7 @@ class _StepStats:
 class _TaskBenchmark:
     task_id: str
     rows: int
+    successful_rows: int
     distinct_outputs: int
     uncached_seconds: float
     cold_seconds: float
@@ -81,6 +83,10 @@ class _TaskBenchmark:
     @property
     def cold_speedup(self) -> float:
         return self.uncached_seconds / self.cold_seconds
+
+    @property
+    def success_rate(self) -> float:
+        return self.successful_rows / self.rows
 
 
 class _InMemoryStepCacheRunner:
@@ -246,6 +252,10 @@ def _benchmark_task(task_id: str, task_rows: pl.DataFrame) -> _TaskBenchmark:
         for text in decoder_outputs
     ]
     baseline_seconds = perf_counter() - baseline_started
+    successful_rows = sum(
+        isinstance(trace.value(OUTPUT_KEY), InspectedCodeCandidateSetArtifact)
+        for trace in baseline_traces
+    )
 
     cached_runner = _InMemoryStepCacheRunner(
         bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
@@ -279,6 +289,7 @@ def _benchmark_task(task_id: str, task_rows: pl.DataFrame) -> _TaskBenchmark:
     return _TaskBenchmark(
         task_id=task_id,
         rows=len(decoder_outputs),
+        successful_rows=successful_rows,
         distinct_outputs=len(set(decoder_outputs)),
         uncached_seconds=baseline_seconds,
         cold_seconds=cold_seconds,
@@ -304,6 +315,14 @@ def _aggregate_cold_speedup(results: Sequence[_TaskBenchmark]) -> float:
     return uncached_seconds / cold_seconds
 
 
+def _aggregate_preprocessing_success_rate(
+    results: Sequence[_TaskBenchmark],
+) -> float:
+    successful_rows = sum(result.successful_rows for result in results)
+    rows = sum(result.rows for result in results)
+    return successful_rows / rows
+
+
 def _print_interval(
     label: str,
     interval: BootstrapConfidenceInterval,
@@ -327,6 +346,10 @@ def _print_interval(
 def _print_single_task(result: _TaskBenchmark) -> None:
     print(f"Filtered rows: {result.rows:,}")
     print(f"Distinct decoder outputs: {result.distinct_outputs:,}")
+    print(
+        f"Preprocessing success: {result.success_rate:.2%} "
+        f"({result.successful_rows:,}/{result.rows:,} nonblank samples)"
+    )
     print(
         f"Uncached baseline: {result.uncached_seconds:.6f} seconds "
         f"({result.rows / result.uncached_seconds:,.2f} traces/second)"
@@ -354,13 +377,15 @@ def _print_task_sample(
     seed: int,
 ) -> None:
     print(
-        f"{'task':18} {'rows':>8} {'distinct':>9} {'hit rate':>10} "
+        f"{'task':18} {'rows':>8} {'success':>8} {'success rate':>13} "
+        f"{'distinct':>9} {'hit rate':>10} "
         f"{'uncached':>10} {'cold':>10} {'speedup':>9}"
     )
     for result in results:
         _, _, hit_rate = _hit_rate(result.cold_stats)
         print(
             f"{result.task_id:18} {result.rows:8,d} "
+            f"{result.successful_rows:8,d} {result.success_rate:12.2%} "
             f"{result.distinct_outputs:9,d} {hit_rate:9.2%} "
             f"{result.uncached_seconds:9.3f}s "
             f"{result.cold_seconds:9.3f}s {result.cold_speedup:8.2f}x"
@@ -380,7 +405,19 @@ def _print_task_sample(
         resamples=bootstrap_resamples,
         seed=seed,
     )
+    success_rate_interval = bootstrap_confidence_interval(
+        results,
+        _aggregate_preprocessing_success_rate,
+        confidence_level=confidence_level,
+        resamples=bootstrap_resamples,
+        seed=seed,
+    )
     print()
+    _print_interval(
+        "Aggregate preprocessing success rate",
+        success_rate_interval,
+        percentage=True,
+    )
     _print_interval(
         "Aggregate cold-cache hit rate",
         hit_rate_interval,
