@@ -6,6 +6,10 @@
   ClassEval, BigCodeBench Lite Pro, and NL Latents archived model activity into
   five validated Parquet grains with atomic publication and content-addressed
   task material.
+- A fixed, staged verification workflow builds a preprocessing-eligible
+  historical HumanEval corpus, selects a balanced directional sample,
+  evaluates it only on an explicitly identified disposable worker, and
+  summarizes generation- and task-level outcomes.
 
 ## 0.1.6 - 2026-08-06
 
