@@ -6,19 +6,16 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from pathlib import Path
 
 import polars as pl
 
 from workflow_settings import (
-    CANDIDATE_RESULTS,
-    EVALUATION_PARTS,
-    GENERATION_RESULTS,
     PREPROCESSING_SUMMARY,
     SELECTED_SAMPLE,
-    SUMMARY_LOG,
-    TASK_RESULTS,
-    TASK_SETTING_RESULTS,
+    evaluation_paths,
+    parse_evaluation_args,
     prepare_run_directory,
 )
 
@@ -167,12 +164,15 @@ def summarize_results(
     return generations, task_settings, tasks
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    settings = parse_evaluation_args(__doc__, argv)
+    paths = evaluation_paths(settings)
     prepare_run_directory()
-    logger = _configure_logging(SUMMARY_LOG)
-    part_paths = sorted(EVALUATION_PARTS.glob("*.parquet"))
+    paths.root.mkdir(parents=True, exist_ok=True)
+    logger = _configure_logging(paths.summary_log)
+    part_paths = sorted(paths.parts.glob("*.parquet"))
     if not part_paths:
-        raise SystemExit(f"no evaluation parts found in {EVALUATION_PARTS}")
+        raise SystemExit(f"no evaluation parts found in {paths.parts}")
     candidate_results = pl.concat(
         [pl.read_parquet(path) for path in part_paths],
         how="diagonal_relaxed",
@@ -185,10 +185,10 @@ def main() -> int:
         preprocessing_summary,
     )
 
-    candidate_results.write_parquet(CANDIDATE_RESULTS)
-    generations.write_parquet(GENERATION_RESULTS)
-    task_settings.write_parquet(TASK_SETTING_RESULTS)
-    tasks.write_parquet(TASK_RESULTS)
+    candidate_results.write_parquet(paths.candidate_results)
+    generations.write_parquet(paths.generation_results)
+    task_settings.write_parquet(paths.task_setting_results)
+    tasks.write_parquet(paths.task_results)
     complete_count = generations.get_column("evaluation_complete").sum()
     logger.info(
         "Summarized %d candidate results and %d/%d complete generations",
@@ -199,7 +199,7 @@ def main() -> int:
     logger.info("Task summaries available for %d tasks", tasks.height)
     logger.info("Lowest observed task success rates:\n%s", tasks.head(10))
     logger.info("Highest observed task success rates:\n%s", tasks.tail(10))
-    logger.info("Wrote task results to %s", TASK_RESULTS)
+    logger.info("Wrote task results to %s", paths.task_results)
     return 0
 
 

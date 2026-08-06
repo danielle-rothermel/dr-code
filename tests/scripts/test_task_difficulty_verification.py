@@ -35,6 +35,17 @@ _SUMMARIZE = _load_script("04_summarize_results.py")
 _SETTINGS = _load_script("workflow_settings.py")
 
 
+def _evaluation_settings(
+    *,
+    worker_count: int = 16,
+    timeout_seconds: float = 120.0,
+):
+    return _SETTINGS.EvaluationSettings(
+        worker_count=worker_count,
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def test_workflow_logging_uses_supported_percent_placeholders() -> None:
     for path in _SCRIPT_DIRECTORY.glob("*.py"):
         assert "%," not in path.read_text()
@@ -236,6 +247,43 @@ def test_selected_ground_truth_candidate_passes_full_metric() -> None:
     )
 
 
+def test_evaluation_cli_overrides_workers_and_timeout() -> None:
+    settings = _SETTINGS.parse_evaluation_args(
+        "test parser", ["--workers", "24", "--timeout-seconds", "45.5"]
+    )
+
+    assert settings == _evaluation_settings(
+        worker_count=24,
+        timeout_seconds=45.5,
+    )
+
+
+def test_evaluation_paths_are_scoped_to_effective_settings() -> None:
+    first = _SETTINGS.evaluation_paths(
+        _evaluation_settings(worker_count=16, timeout_seconds=120.0)
+    )
+    same = _SETTINGS.evaluation_paths(
+        _evaluation_settings(worker_count=16, timeout_seconds=120)
+    )
+    different_workers = _SETTINGS.evaluation_paths(
+        _evaluation_settings(worker_count=8, timeout_seconds=120.0)
+    )
+    different_timeout = _SETTINGS.evaluation_paths(
+        _evaluation_settings(worker_count=16, timeout_seconds=30.0)
+    )
+
+    assert first == same
+    assert first.root.name == "workers-16_timeout-120"
+    assert different_workers.root != first.root
+    assert different_timeout.root != first.root
+
+
+def test_metrics_definition_uses_requested_timeout() -> None:
+    definition = _EVALUATE._metrics_definition(45.5)  # noqa: SLF001
+
+    assert definition.questions[0].settings.timeout_seconds == 45.5
+
+
 def test_task_jobs_run_concurrently_without_timing_as_evidence() -> None:
     task = _EVALUATE._load_tasks(  # noqa: SLF001
         _SETTINGS.HUMANEVAL_SNAPSHOT,
@@ -248,6 +296,10 @@ def test_task_jobs_run_concurrently_without_timing_as_evidence() -> None:
             task=task,
             runtime_executable=Path("/runtime/python"),
             runtime_identity="runtime-a",
+            evaluation_settings=_evaluation_settings(),
+            evaluation_paths=_SETTINGS.evaluation_paths(
+                _evaluation_settings()
+            ),
         )
         for index in range(3)
     ]
@@ -303,11 +355,12 @@ def test_evaluation_checkpoint_must_match_exact_candidates(
         ]
     ).write_parquet(part_path)
 
-    with pytest.raises(RuntimeError, match="current sample and runtime"):
+    with pytest.raises(RuntimeError, match="current sample, runtime"):
         _EVALUATE._validate_existing_part(  # noqa: SLF001
             part_path,
             task_rows,
             "runtime-a",
+            _evaluation_settings(),
         )
 
 
@@ -334,11 +387,54 @@ def test_evaluation_checkpoint_must_match_runtime(tmp_path: Path) -> None:
         ]
     ).write_parquet(part_path)
 
-    with pytest.raises(RuntimeError, match="current sample and runtime"):
+    with pytest.raises(RuntimeError, match="current sample, runtime"):
         _EVALUATE._validate_existing_part(  # noqa: SLF001
             part_path,
             task_rows,
             "runtime-b",
+            _evaluation_settings(),
+        )
+
+
+def test_evaluation_checkpoint_must_match_evaluation_settings(
+    tmp_path: Path,
+) -> None:
+    source = "def f():\n    return 1\n"
+    task_rows = pl.DataFrame(
+        [
+            {
+                "sample_id": "sample",
+                "candidate_count": 1,
+                "code_candidates": [source],
+            }
+        ]
+    )
+    part_path = tmp_path / "part.parquet"
+    pl.DataFrame(
+        [
+            {
+                "sample_id": "sample",
+                "candidate_index": 0,
+                "candidate_source": source,
+                "runtime_identity": "runtime-a",
+                "evaluation_worker_count": 16,
+                "evaluation_timeout_seconds": 120.0,
+            }
+        ]
+    ).write_parquet(part_path)
+    _EVALUATE._validate_existing_part(  # noqa: SLF001
+        part_path,
+        task_rows,
+        "runtime-a",
+        _evaluation_settings(),
+    )
+
+    with pytest.raises(RuntimeError, match="evaluation settings"):
+        _EVALUATE._validate_existing_part(  # noqa: SLF001
+            part_path,
+            task_rows,
+            "runtime-a",
+            _evaluation_settings(worker_count=8),
         )
 
 

@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import os
 from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -36,28 +36,18 @@ from dr_code.metrics import (
 from dr_code.trace import CodeArtifact, JsonArtifact, external_trace
 
 from workflow_settings import (
-    EVALUATION_LOG,
-    EVALUATION_PARTS,
-    EVALUATION_WORKERS,
-    EXECUTION_RECORDS,
+    EVALUATION_TIMEOUT_SECONDS,
+    EvaluationPaths,
+    EvaluationSettings,
     HUMANEVAL_SNAPSHOT,
     SELECTED_SAMPLE,
+    evaluation_paths,
+    parse_evaluation_args,
     prepare_run_directory,
 )
 
 _DERIVED_TASK_FIELDS = frozenset(
     {"parsed", "parsed_tests", *HumanEvalTask.model_computed_fields}
-)
-_METRICS = MetricsDefinition(
-    definition_id="directional-humaneval-task-difficulty",
-    version="0",
-    questions=(
-        MetricQuestion(
-            metric=MetricName.CODE_TEST,
-            on="output",
-            settings=CodeTestSettings(),
-        ),
-    ),
 )
 _RUNTIME_ENVIRONMENT_VARIABLE = "DR_CODE_EVALUATION_PYTHON"
 _RUNTIME_PROBE_SOURCE = """\
@@ -83,6 +73,8 @@ class _TaskJob:
     task: HumanEvalTask
     runtime_executable: Path
     runtime_identity: str
+    evaluation_settings: EvaluationSettings
+    evaluation_paths: EvaluationPaths
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +83,20 @@ class _TaskCompletion:
     generation_count: int
     candidate_count: int
     elapsed_seconds: float
+
+
+def _metrics_definition(timeout_seconds: float) -> MetricsDefinition:
+    return MetricsDefinition(
+        definition_id="directional-humaneval-task-difficulty",
+        version="0",
+        questions=(
+            MetricQuestion(
+                metric=MetricName.CODE_TEST,
+                on="output",
+                settings=CodeTestSettings(timeout_seconds=timeout_seconds),
+            ),
+        ),
+    )
 
 
 def _configure_logging(path: Path) -> logging.Logger:
@@ -184,6 +190,7 @@ def evaluate_task_rows(
     task_rows: pl.DataFrame,
     task: HumanEvalTask,
     *,
+    timeout_seconds: float = EVALUATION_TIMEOUT_SECONDS,
     executor: Executor | None = None,
 ) -> pl.DataFrame:
     task_artifact = JsonArtifact(
@@ -226,7 +233,7 @@ def evaluate_task_rows(
             )
 
     record_batches = extract_metrics_batch(
-        _METRICS,
+        _metrics_definition(timeout_seconds),
         traces,
         executor=executor,
     )
@@ -238,14 +245,15 @@ def evaluate_task_rows(
     return pl.DataFrame(records, infer_schema_length=None)
 
 
-def _part_path(task_id: str) -> Path:
-    return EVALUATION_PARTS / f"{task_id.replace('/', '_')}.parquet"
+def _part_path(parts_directory: Path, task_id: str) -> Path:
+    return parts_directory / f"{task_id.replace('/', '_')}.parquet"
 
 
 def _validate_existing_part(
     path: Path,
     task_rows: pl.DataFrame,
     runtime_identity: str,
+    evaluation_settings: EvaluationSettings,
 ) -> None:
     existing = pl.read_parquet(path)
     expected_rows = int(task_rows.get_column("candidate_count").sum())
@@ -264,14 +272,35 @@ def _validate_existing_part(
         if "runtime_identity" in existing.columns
         else []
     )
+    settings = (
+        existing.select(
+            ["evaluation_worker_count", "evaluation_timeout_seconds"]
+        )
+        .unique()
+        .to_dicts()
+        if {
+            "evaluation_worker_count",
+            "evaluation_timeout_seconds",
+        }.issubset(existing.columns)
+        else []
+    )
+    expected_settings = [
+        {
+            "evaluation_worker_count": evaluation_settings.worker_count,
+            "evaluation_timeout_seconds": (
+                evaluation_settings.timeout_seconds
+            ),
+        }
+    ]
     if (
         existing.height != expected_rows
         or actual_candidates != expected_candidates
         or identities != [runtime_identity]
+        or settings != expected_settings
     ):
         raise RuntimeError(
-            "existing evaluation part does not match the current sample and "
-            f"runtime: {path}"
+            "existing evaluation part does not match the current sample, "
+            f"runtime, and evaluation settings: {path}"
         )
 
 
@@ -337,8 +366,10 @@ def _runtime_identity(executor: ProcessExecutor) -> str:
 def _preflight_runtime(
     runtime_executable: Path,
     task: HumanEvalTask,
+    evaluation_settings: EvaluationSettings,
+    paths: EvaluationPaths,
 ) -> str:
-    record_directory = EXECUTION_RECORDS / "preflight"
+    record_directory = paths.execution_records / "preflight"
     record_directory.mkdir(parents=True, exist_ok=True)
     executor = host_process_executor(
         record_directory,
@@ -358,7 +389,12 @@ def _preflight_runtime(
             }
         ]
     )
-    results = evaluate_task_rows(selected, task, executor=executor)
+    results = evaluate_task_rows(
+        selected,
+        task,
+        timeout_seconds=evaluation_settings.timeout_seconds,
+        executor=executor,
+    )
     _require_measured_results(results, "runtime preflight")
     if results.item(0, "candidate_passed") is not True:
         raise RuntimeError(
@@ -369,7 +405,9 @@ def _preflight_runtime(
 
 def _run_task_job(job: _TaskJob) -> _TaskCompletion:
     started = perf_counter()
-    record_directory = EXECUTION_RECORDS / job.task_id.replace("/", "_")
+    record_directory = job.evaluation_paths.execution_records / (
+        job.task_id.replace("/", "_")
+    )
     record_directory.mkdir(parents=True, exist_ok=True)
     executor = host_process_executor(
         record_directory,
@@ -378,13 +416,20 @@ def _run_task_job(job: _TaskJob) -> _TaskCompletion:
     results = evaluate_task_rows(
         job.task_rows,
         job.task,
+        timeout_seconds=job.evaluation_settings.timeout_seconds,
         executor=executor,
     )
     _require_measured_results(results, job.task_id)
     results = results.with_columns(
-        pl.lit(job.runtime_identity).alias("runtime_identity")
+        pl.lit(job.runtime_identity).alias("runtime_identity"),
+        pl.lit(job.evaluation_settings.worker_count).alias(
+            "evaluation_worker_count"
+        ),
+        pl.lit(job.evaluation_settings.timeout_seconds).alias(
+            "evaluation_timeout_seconds"
+        ),
     )
-    part_path = _part_path(job.task_id)
+    part_path = _part_path(job.evaluation_paths.parts, job.task_id)
     temporary_path = part_path.with_suffix(".tmp.parquet")
     results.write_parquet(temporary_path)
     temporary_path.replace(part_path)
@@ -415,7 +460,10 @@ def _completed_jobs(
             yield futures[future], future
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    run_started = perf_counter()
+    evaluation_settings = parse_evaluation_args(__doc__, argv)
+    paths = evaluation_paths(evaluation_settings)
     if os.environ.get("DR_CODE_DISPOSABLE_WORKER") != "1":
         raise SystemExit(
             "refusing to execute historical model output: run this stage "
@@ -423,9 +471,16 @@ def main() -> int:
         )
 
     prepare_run_directory()
-    EVALUATION_PARTS.mkdir(parents=True, exist_ok=True)
-    EXECUTION_RECORDS.mkdir(parents=True, exist_ok=True)
-    logger = _configure_logging(EVALUATION_LOG)
+    paths.parts.mkdir(parents=True, exist_ok=True)
+    paths.execution_records.mkdir(parents=True, exist_ok=True)
+    logger = _configure_logging(paths.evaluation_log)
+    logger.info(
+        "Evaluation configuration: workers=%d timeout_seconds=%g "
+        "run_directory=%s",
+        evaluation_settings.worker_count,
+        evaluation_settings.timeout_seconds,
+        paths.root,
+    )
     runtime_executable = _runtime_executable_from_environment()
     selected = pl.read_parquet(SELECTED_SAMPLE)
     task_ids: list[str] = (
@@ -440,6 +495,8 @@ def main() -> int:
     runtime_identity = _preflight_runtime(
         runtime_executable,
         preflight_task,
+        evaluation_settings,
+        paths,
     )
     logger.info(
         "Validated evaluation runtime %s: %s",
@@ -455,12 +512,13 @@ def main() -> int:
     jobs: list[_TaskJob] = []
     for task_id in task_ids:
         task_rows = selected.filter(pl.col("task_id") == task_id)
-        part_path = _part_path(task_id)
+        part_path = _part_path(paths.parts, task_id)
         if part_path.exists():
             _validate_existing_part(
                 part_path,
                 task_rows,
                 runtime_identity,
+                evaluation_settings,
             )
             logger.info("Skipping completed task: %s", task_id)
             continue
@@ -471,19 +529,25 @@ def main() -> int:
                 task=tasks[task_id],
                 runtime_executable=runtime_executable,
                 runtime_identity=runtime_identity,
+                evaluation_settings=evaluation_settings,
+                evaluation_paths=paths,
             )
         )
 
+    active_worker_count = min(evaluation_settings.worker_count, len(jobs))
     logger.info(
         "Starting %d pending tasks with %d concurrent workers",
         len(jobs),
-        min(EVALUATION_WORKERS, len(jobs)),
+        active_worker_count,
     )
     failures: list[tuple[str, str, str]] = []
     completed = 0
+    evaluated_sample_count = 0
+    evaluated_candidate_count = 0
+    evaluation_started = perf_counter()
     for job, future in _completed_jobs(
         jobs,
-        worker_count=EVALUATION_WORKERS,
+        worker_count=evaluation_settings.worker_count,
     ):
         try:
             result = future.result()
@@ -492,6 +556,8 @@ def main() -> int:
             logger.exception("Task failed: %s", job.task_id)
             continue
         completed += 1
+        evaluated_sample_count += result.generation_count
+        evaluated_candidate_count += result.candidate_count
         logger.info(
             "Completed task %d/%d: %s (%d generations, %d candidates, %.1f seconds)",
             completed,
@@ -501,6 +567,33 @@ def main() -> int:
             result.candidate_count,
             result.elapsed_seconds,
         )
+    evaluation_elapsed_seconds = perf_counter() - evaluation_started
+    total_elapsed_seconds = perf_counter() - run_started
+    total_seconds_per_sample = (
+        f"{total_elapsed_seconds / evaluated_sample_count:.6f}"
+        if evaluated_sample_count
+        else "n/a"
+    )
+    evaluation_seconds_per_sample = (
+        f"{evaluation_elapsed_seconds / evaluated_sample_count:.6f}"
+        if evaluated_sample_count
+        else "n/a"
+    )
+    logger.info(
+        "Evaluation timing: total_seconds=%.3f evaluation_seconds=%.3f "
+        "evaluated_samples=%d evaluated_candidates=%d "
+        "total_seconds_per_sample=%s evaluation_seconds_per_sample=%s "
+        "configured_workers=%d active_workers=%d timeout_seconds=%g",
+        total_elapsed_seconds,
+        evaluation_elapsed_seconds,
+        evaluated_sample_count,
+        evaluated_candidate_count,
+        total_seconds_per_sample,
+        evaluation_seconds_per_sample,
+        evaluation_settings.worker_count,
+        active_worker_count,
+        evaluation_settings.timeout_seconds,
+    )
     if failures:
         details = "; ".join(
             f"{task_id}: {failure_type}: {message}"
