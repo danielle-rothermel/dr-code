@@ -7,7 +7,7 @@ from pathlib import Path
 import polars as pl
 
 
-def test_reports_existing_preprocessing_cache_and_candidate_reuse(
+def test_reports_preprocessing_and_test_cache_lookup(
     tmp_path: Path,
 ) -> None:
     root = Path(__file__).parents[2]
@@ -53,17 +53,9 @@ def other(value):
         text=True,
     )
 
-    assert "Cold SQLite whole-trace cache" in completed.stdout
-    assert "Warm SQLite whole-trace cache" in completed.stdout
-    assert (
-        "Trace equivalence: exact for cold and warm whole-trace cache runs"
-        in completed.stdout
-    )
-    assert (
-        "Warm cache verification: 4/4 requests served without preprocessing"
-        in completed.stdout
-    )
-    assert "treat speedups as exploratory" in completed.stdout
+    assert "Full preprocessing:" in completed.stdout
+    assert "Test-cache planning and lookup:" in completed.stdout
+    assert "Preprocessing plus test-cache lookup:" in completed.stdout
     assert "Raw extracted-source hit rate" in completed.stdout
     assert (
         "Testable candidate cache hit rate: 50.00% (2/4)" in completed.stdout
@@ -92,7 +84,10 @@ def other(value):
         "Final postprocessed source-only hit rate: 50.00% "
         "(2/4 hits; 2 unique)" in completed.stdout
     )
-    assert "No candidate code was executed." in completed.stdout
+    assert (
+        "No preprocessing trace cache or candidate execution was used."
+        in completed.stdout
+    )
 
 
 def test_bootstraps_source_and_test_safe_reuse_across_tasks(
@@ -134,14 +129,7 @@ def test_bootstraps_source_and_test_safe_reuse_across_tasks(
         "Aggregate final postprocessed source-only hit rate: 75.00%"
         in completed.stdout
     )
-    assert (
-        "Aggregate uncached-to-cold whole-trace-cache speedup"
-        in completed.stdout
-    )
-    assert (
-        "Aggregate uncached-to-warm whole-trace-cache speedup"
-        in completed.stdout
-    )
+    assert "Aggregate preprocessing-plus-test-cache factor" in completed.stdout
     assert (
         "Aggregate testable candidate cache hit rate: 50.00%"
         in completed.stdout
@@ -152,11 +140,6 @@ def test_bootstraps_source_and_test_safe_reuse_across_tasks(
     )
     assert "Aggregate execution-request hit rate: 50.00%" in completed.stdout
     assert (
-        "Candidate reuse was planned without executing candidate code."
-        in completed.stdout
+        "Test-cache lookup used exact execution-request keys without "
+        "executing candidate code." in completed.stdout
     )
-    assert (
-        "Warm cache verification: all selected requests served without "
-        "preprocessing" in completed.stdout
-    )
-    assert "treat speedups as exploratory" in completed.stdout
