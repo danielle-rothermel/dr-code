@@ -24,6 +24,7 @@ from dr_code.metrics.compression import zstd_compressed_bytes
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
 
 _DATA_ROOT = Path.home() / "drotherm" / "data" / ".codex" / "dr-code"
 _DEFAULT_OLD_RESULTS = (
@@ -615,17 +616,11 @@ def _plot_curves(
     curves: pl.DataFrame,
     gt_references: pl.DataFrame,
     *,
-    historical_model: str,
-    current_model: str,
     synthetic: bool,
     path: Path,
 ) -> None:
     figure, axes = plt.subplots(1, 2, figsize=(16, 7.5), sharey=True)
     run_colors = {"historical": "#777777", "current": "#0072B2"}
-    run_labels = {
-        "historical": f"Historical: {_display_model(historical_model)}",
-        "current": f"Current: {_display_model(current_model)}",
-    }
     for axis, method in zip(axes, _PANEL_METHODS, strict=True):
         panel = curves.filter(pl.col("panel_method") == method)
         for run in ("historical", "current"):
@@ -654,7 +649,6 @@ def _plot_curves(
                 marker="o",
                 markersize=5,
                 markerfacecolor="white",
-                label=f"{run_labels[run]} — raw",
             )
             axis.plot(
                 compressed_ratios,
@@ -664,7 +658,6 @@ def _plot_curves(
                 linewidth=2.0,
                 marker="o",
                 markersize=5,
-                label=f"{run_labels[run]} — compressed",
             )
             for raw_ratio, compressed_ratio, pass_rate in zip(
                 raw_ratios,
@@ -703,7 +696,6 @@ def _plot_curves(
         axis.set_title(_PANEL_TITLES[method])
         axis.set_xlabel("Mean description bytes / raw GT-code bytes")
         axis.grid(alpha=0.25)
-        axis.legend(fontsize=7, loc="lower right")
     axes[0].set_ylabel("Mean test pass fraction")
     axes[0].set_ylim(0, 1.14)
     figure.text(
@@ -721,9 +713,66 @@ def _plot_curves(
         fontsize=9,
         color="#444444",
     )
+    figure.legend(
+        handles=[
+            Line2D(
+                [],
+                [],
+                color=run_colors["historical"],
+                marker="o",
+                linewidth=2,
+                label="Old",
+            ),
+            Line2D(
+                [],
+                [],
+                color=run_colors["current"],
+                marker="o",
+                linewidth=2,
+                label="Improved",
+            ),
+        ],
+        title="Experiment",
+        loc="lower center",
+        bbox_to_anchor=(0.32, 0.065),
+        ncol=2,
+        fontsize=8,
+        title_fontsize=9,
+        frameon=True,
+    )
+    figure.legend(
+        handles=[
+            Line2D(
+                [],
+                [],
+                color="#333333",
+                linestyle=":",
+                marker="o",
+                markerfacecolor="white",
+                linewidth=1.7,
+                label="Without lossless compression",
+            ),
+            Line2D(
+                [],
+                [],
+                color="#333333",
+                linestyle="-",
+                marker="o",
+                linewidth=2,
+                label="With lossless compression",
+            ),
+        ],
+        title="Generated description",
+        loc="lower center",
+        bbox_to_anchor=(0.68, 0.065),
+        ncol=2,
+        fontsize=8,
+        title_fontsize=9,
+        frameon=True,
+    )
     figure.text(
         0.5,
-        0.035,
+        0.02,
         f"* {_CAVEAT}",
         ha="center",
         fontsize=9,
@@ -741,7 +790,7 @@ def _plot_curves(
             alpha=0.14,
             rotation=18,
         )
-    figure.tight_layout(rect=(0, 0.07, 1, 0.90))
+    figure.tight_layout(rect=(0, 0.18, 1, 0.90))
     figure.savefig(path, dpi=180)
     plt.close(figure)
 
@@ -911,8 +960,6 @@ def main() -> int:
     _plot_curves(
         curves,
         gt_references,
-        historical_model=arguments.historical_model,
-        current_model=new_model,
         synthetic=arguments.synthetic,
         path=plot_path,
     )
