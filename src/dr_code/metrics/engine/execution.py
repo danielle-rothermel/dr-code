@@ -18,6 +18,7 @@ from dr_code.core.models import FrozenModel
 _TIMEOUT_RETURNCODE = -100_000_001
 _OUTPUT_LIMIT_RETURNCODE = -100_000_002
 _KILLED_RETURNCODE = -100_000_003
+_EXECUTION_REQUEST_CACHE_KEY_VERSION = 1
 
 
 class ExecutionRequest(FrozenModel):
@@ -36,7 +37,9 @@ class ExecutionOutcome(FrozenModel):
 
 
 class ExecutionCache(Protocol):
-    """Cache keys omit the injected executor; scope caches to one runtime."""
+    """Cache opaque request keys; persistent adapters own scope identity."""
+
+    def prefetch(self, keys: Sequence[str]) -> None: ...
 
     def get(self, key: str) -> ExecutionOutcome | None: ...
 
@@ -46,6 +49,9 @@ class ExecutionCache(Protocol):
 class InMemoryExecutionCache:
     def __init__(self) -> None:
         self._outcomes: dict[str, ExecutionOutcome] = {}
+
+    def prefetch(self, keys: Sequence[str]) -> None:
+        pass
 
     def get(self, key: str) -> ExecutionOutcome | None:
         return self._outcomes.get(key)
@@ -64,9 +70,12 @@ def run_requests(
 
     outcomes: dict[ExecutionRequest, ExecutionOutcome] = {}
     unique_requests: dict[str, ExecutionRequest] = {}
+    text_digests: dict[str, str] = {}
     for request in requests:
-        unique_requests.setdefault(_request_cache_key(request), request)
+        key = _execution_request_cache_key(request, text_digests)
+        unique_requests.setdefault(key, request)
 
+    cache.prefetch(tuple(unique_requests))
     for key, request in unique_requests.items():
         cached = cache.get(key)
         if cached is not None:
@@ -107,13 +116,38 @@ def run_requests(
     return outcomes
 
 
-def _request_cache_key(request: ExecutionRequest) -> str:
+def execution_request_cache_key(request: ExecutionRequest) -> str:
+    """Return the versioned request key, excluding persistent cache scope."""
+
+    return _execution_request_cache_key(request, {})
+
+
+def _execution_request_cache_key(
+    request: ExecutionRequest,
+    text_digests: dict[str, str],
+) -> str:
     payload = json.dumps(
-        request.model_dump(mode="json"),
+        {
+            "version": _EXECUTION_REQUEST_CACHE_KEY_VERSION,
+            "source_sha256": _text_digest(request.source, text_digests),
+            "input_json_sha256": _text_digest(
+                request.input_json, text_digests
+            ),
+            "timeout_seconds": request.timeout_seconds,
+            "computation_id": request.computation_id,
+        },
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _text_digest(value: str, text_digests: dict[str, str]) -> str:
+    digest = text_digests.get(value)
+    if digest is None:
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        text_digests[value] = digest
+    return digest
 
 
 def is_timeout_outcome(outcome: ExecutionOutcome) -> bool:
