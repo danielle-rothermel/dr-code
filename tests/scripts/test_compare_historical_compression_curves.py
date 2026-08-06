@@ -134,29 +134,37 @@ def _write_current_results(path: Path, model: str) -> None:
     for task_index in range(4):
         task_id = f"CurrentEval/{task_index}"
         entry_point = f"solve_{task_index}"
+        operations = "".join(
+            f"    total += {offset}\n" for offset in range(1, task_index + 2)
+        )
         gt_code = (
             f"def {entry_point}(value: int) -> int:\n"
-            f'    """Return the result for task {task_index}."""\n'
-            f"    return value + {task_index}\n"
+            "    total = value\n"
+            f"{operations}"
+            "    return total\n"
         )
-        for budget_index, budget in enumerate((32, 64)):
+        for ratio_index, budget_ratio in enumerate((0.25, 0.5)):
+            max_budget = round(budget_ratio * len(gt_code))
             for repeat_index in range(2):
+                description_source = (
+                    f"Task {task_index} adds a stable integer offset. " * 20
+                )
+                overage = 2 if task_index == 0 and repeat_index == 1 else 0
                 rows.append(
                     {
                         "model_config_label": model,
-                        "budget": budget,
+                        "budget_ratio": budget_ratio,
+                        "max_budget": max_budget,
                         "task_id": task_id,
                         "sample_id": f"sample/{task_id}",
                         "repeat_index": repeat_index,
-                        "generated_description": (
-                            f"Task {task_index} adds a stable integer offset. "
-                            * (budget_index + 2)
-                        ),
+                        "generated_description": description_source[
+                            : max_budget + overage
+                        ],
                         "test_pass_fraction": (
-                            0.6 + budget_index * 0.2 + task_index * 0.01
+                            0.6 + ratio_index * 0.2 + task_index * 0.01
                         ),
-                        "gt_code": gt_code,
-                        "entry_point": entry_point,
+                        "gt_code_without_comments": gt_code,
                     }
                 )
     pl.DataFrame(rows).write_parquet(path)
@@ -231,11 +239,29 @@ def test_compares_historical_and_current_parquet_results(
         "task_count"
     ).unique().to_list() == [4]
     assert curves.get_column("missing_row_count").eq(0).all()
+    assert set(curves.get_column("treatment_kind")) == {
+        "fixed_budget",
+        "target_budget_ratio",
+    }
+    current_curves = curves.filter(pl.col("run") == "current")
+    assert set(current_curves.get_column("target_budget_ratio")) == {
+        0.25,
+        0.5,
+    }
+    assert current_curves.get_column("fixed_budget").is_null().all()
+    assert (
+        current_curves.get_column("min_max_budget")
+        < current_curves.get_column("max_max_budget")
+    ).all()
+    assert current_curves.get_column("over_budget_row_count").eq(1).all()
 
     references = pl.read_csv(
-        output_dir / "historical_current_gt_references.csv"
+        output_dir / "fixed_gt_compression_references.csv"
     )
-    assert references.height == 2 * 6
+    assert references.height == 6
+    assert references.get_column("reference_source").unique().to_list() == [
+        "historical HumanEval artifact"
+    ]
     assert (
         output_dir / "historical_current_compression_comparison.png"
     ).stat().st_size > 0
@@ -246,6 +272,8 @@ def test_compares_historical_and_current_parquet_results(
     )
     assert metadata["synthetic_new_data"] is False
     assert metadata["descriptive_comparison_only"] is True
+    assert metadata["schema_version"] == 2
+    assert metadata["gt_compression_references"]["fixed"] is True
     assert (
         output_dir / "historical_current_compression_comparison.log"
     ).read_text(encoding="utf-8") == completed.stdout
@@ -275,19 +303,84 @@ def test_synthetic_mode_writes_watermarked_input(tmp_path: Path) -> None:
     synthetic = pl.read_parquet(output_dir / "synthetic_new_results.parquet")
     assert synthetic.columns == [
         "model_config_label",
-        "budget",
+        "budget_ratio",
+        "max_budget",
         "task_id",
         "sample_id",
         "repeat_index",
         "generated_description",
         "test_pass_fraction",
-        "gt_code",
-        "entry_point",
+        "gt_code_without_comments",
     ]
     assert synthetic.height == 12 * 6 * 2
+    assert synthetic.get_column("budget_ratio").n_unique() == 6
+    assert (
+        synthetic.group_by("budget_ratio")
+        .agg(pl.col("max_budget").n_unique().alias("budget_count"))
+        .get_column("budget_count")
+        .gt(1)
+        .all()
+    )
+    for row in synthetic.iter_rows(named=True):
+        assert row["max_budget"] == round(
+            row["budget_ratio"] * len(row["gt_code_without_comments"])
+        )
+    assert synthetic.select(
+        (
+            pl.col("generated_description").str.len_chars()
+            > pl.col("max_budget")
+        ).any()
+    ).item()
     metadata = json.loads(
         (
             output_dir / "historical_current_compression_metadata.json"
         ).read_text(encoding="utf-8")
     )
     assert metadata["synthetic_new_data"] is True
+
+
+def test_rejects_incorrect_per_sample_character_budget(
+    tmp_path: Path,
+) -> None:
+    old_results = tmp_path / "old.parquet"
+    new_results = tmp_path / "new.parquet"
+    dictionary_dir = tmp_path / "dictionaries"
+    output_dir = tmp_path / "comparison"
+    _write_historical_results(old_results, "historical-model")
+    _write_current_results(new_results, "current-model")
+    _write_dictionary_bundle(dictionary_dir)
+    current = pl.read_parquet(new_results)
+    current = (
+        current.with_row_index()
+        .with_columns(
+            pl.when(pl.col("index") == 0)
+            .then(pl.col("max_budget") + 1)
+            .otherwise(pl.col("max_budget"))
+            .alias("max_budget")
+        )
+        .drop("index")
+    )
+    current.write_parquet(new_results)
+
+    completed = subprocess.run(
+        [
+            *_command(
+                old_results=old_results,
+                dictionary_dir=dictionary_dir,
+                output_dir=output_dir,
+            ),
+            "--new-results",
+            str(new_results),
+            "--new-model",
+            "current-model",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert (
+        "max_budget must equal round(budget_ratio * "
+        "len(gt_code_without_comments))" in completed.stderr
+    )

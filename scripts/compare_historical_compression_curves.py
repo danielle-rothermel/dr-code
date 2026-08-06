@@ -19,10 +19,7 @@ import polars as pl
 from pydantic import Field
 
 from dr_code.core.models import FrozenModel
-from dr_code.metrics.compression import (
-    minify_python_source,
-    zstd_compressed_bytes,
-)
+from dr_code.metrics.compression import zstd_compressed_bytes
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
@@ -75,14 +72,14 @@ _GT_Y_POSITIONS = {
 }
 _NEW_REQUIRED_COLUMNS = (
     "model_config_label",
-    "budget",
+    "budget_ratio",
+    "max_budget",
     "task_id",
     "sample_id",
     "repeat_index",
     "generated_description",
     "test_pass_fraction",
-    "gt_code",
-    "entry_point",
+    "gt_code_without_comments",
 )
 _CAVEAT = (
     "Descriptive historical comparison: task set, provider date, and "
@@ -209,14 +206,14 @@ def _validate_new_results(frame: pl.DataFrame) -> pl.DataFrame:
     _require_columns(frame, _NEW_REQUIRED_COLUMNS, label="new results")
     selected = frame.select(
         pl.col("model_config_label").cast(pl.String),
-        pl.col("budget").cast(pl.Int64, strict=True),
+        pl.col("budget_ratio").cast(pl.Float64, strict=True),
+        pl.col("max_budget").cast(pl.Int64, strict=True),
         pl.col("task_id").cast(pl.String),
         pl.col("sample_id").cast(pl.String),
         pl.col("repeat_index").cast(pl.Int64, strict=True),
         pl.col("generated_description").cast(pl.String),
         pl.col("test_pass_fraction").cast(pl.Float64, strict=True),
-        pl.col("gt_code").cast(pl.String),
-        pl.col("entry_point").cast(pl.String),
+        pl.col("gt_code_without_comments").cast(pl.String),
     )
     if selected.null_count().to_numpy().sum() != 0:
         raise ValueError("new results must not contain null values")
@@ -228,20 +225,24 @@ def _validate_new_results(frame: pl.DataFrame) -> pl.DataFrame:
         raise ValueError(
             "test_pass_fraction must be finite and between 0 and 1"
         )
-    if selected.filter(pl.col("budget") <= 0).height:
-        raise ValueError("budget must be positive")
+    invalid_budget_ratio = selected.filter(
+        ~pl.col("budget_ratio").is_finite() | (pl.col("budget_ratio") <= 0)
+    )
+    if invalid_budget_ratio.height:
+        raise ValueError("budget_ratio must be finite and positive")
+    if selected.filter(pl.col("max_budget") < 0).height:
+        raise ValueError("max_budget must be non-negative")
     if selected.filter(
         (pl.col("task_id").str.len_chars() == 0)
         | (pl.col("sample_id").str.len_chars() == 0)
-        | (pl.col("gt_code").str.len_chars() == 0)
-        | (pl.col("entry_point").str.len_chars() == 0)
+        | (pl.col("gt_code_without_comments").str.len_chars() == 0)
     ).height:
         raise ValueError(
-            "task_id, sample_id, gt_code, and entry_point must be non-empty"
+            "task_id, sample_id, and gt_code_without_comments must be non-empty"
         )
     identity = [
         "model_config_label",
-        "budget",
+        "budget_ratio",
         "task_id",
         "sample_id",
         "repeat_index",
@@ -251,15 +252,27 @@ def _validate_new_results(frame: pl.DataFrame) -> pl.DataFrame:
     conflicting_tasks = (
         selected.group_by("task_id")
         .agg(
-            pl.col("gt_code").n_unique().alias("gt_code_count"),
-            pl.col("entry_point").n_unique().alias("entry_point_count"),
+            pl.col("gt_code_without_comments")
+            .n_unique()
+            .alias("gt_code_count"),
         )
-        .filter(
-            (pl.col("gt_code_count") != 1) | (pl.col("entry_point_count") != 1)
-        )
+        .filter(pl.col("gt_code_count") != 1)
     )
     if conflicting_tasks.height:
-        raise ValueError("each task_id must have one GT code and entry point")
+        raise ValueError("each task_id must have one GT code")
+    for raw_row in selected.iter_rows(named=True):
+        row = cast(Mapping[str, object], raw_row)
+        expected = round(
+            float(cast(float, row["budget_ratio"]))
+            * len(str(row["gt_code_without_comments"]))
+        )
+        actual = int(cast(int, row["max_budget"]))
+        if actual != expected:
+            raise ValueError(
+                "max_budget must equal round(budget_ratio * "
+                "len(gt_code_without_comments)); "
+                f"task {row['task_id']!r} has {actual}, expected {expected}"
+            )
     return selected
 
 
@@ -281,42 +294,53 @@ def _select_new_model(
 
 
 def _synthetic_new_results() -> pl.DataFrame:
-    budgets = (32, 64, 128, 256, 512, 1024)
+    budget_ratios = (0.125, 0.25, 0.5, 1.0, 2.0, 4.0)
     rows: list[dict[str, str | int | float]] = []
     for task_index in range(12):
         task_id = f"SyntheticEval/{task_index}"
         entry_point = f"solve_{task_index}"
+        operations = "".join(
+            f"    total += {offset}\n"
+            for offset in range(1, 2 + task_index % 6)
+        )
         gt_code = (
             f"def {entry_point}(value: int) -> int:\n"
-            f'    """Return value adjusted for task {task_index}."""\n'
-            f"    return value + {task_index}\n"
+            "    total = value\n"
+            f"{operations}"
+            "    return total\n"
         )
-        for budget_index, budget in enumerate(budgets):
+        for ratio_index, budget_ratio in enumerate(budget_ratios):
+            max_budget = round(budget_ratio * len(gt_code))
             for repeat_index in range(2):
                 description_source = (
                     f"Task {task_index} transforms an integer by adding a "
                     f"fixed offset. The implementation should preserve the "
                     f"public function name {entry_point}. "
                 ) * 20
-                description = description_source[:budget]
+                synthetic_overage = (
+                    3 if repeat_index == 1 and task_index % 5 == 0 else 0
+                )
+                description = description_source[
+                    : max_budget + synthetic_overage
+                ]
                 pass_rate = min(
                     1.0,
                     0.35
-                    + budget_index * 0.11
+                    + ratio_index * 0.11
                     + (task_index % 3) * 0.015
                     + repeat_index * 0.01,
                 )
                 rows.append(
                     {
                         "model_config_label": _SYNTHETIC_MODEL,
-                        "budget": budget,
+                        "budget_ratio": budget_ratio,
+                        "max_budget": max_budget,
                         "task_id": task_id,
                         "sample_id": f"synthetic/{task_id}",
                         "repeat_index": repeat_index,
                         "generated_description": description,
                         "test_pass_fraction": pass_rate,
-                        "gt_code": gt_code,
-                        "entry_point": entry_point,
+                        "gt_code_without_comments": gt_code,
                     }
                 )
     return pl.DataFrame(rows)
@@ -406,6 +430,16 @@ def _historical_curve_rows(
                 pl.lit("historical").alias("run"),
                 pl.lit(model).alias("model_config_label"),
                 pl.lit(method).alias("panel_method"),
+                pl.lit("fixed_budget").alias("treatment_kind"),
+                pl.col("budget").cast(pl.Float64).alias("treatment_value"),
+                pl.col("budget").cast(pl.String).alias("treatment_label"),
+                pl.col("budget").alias("fixed_budget"),
+                pl.lit(None, dtype=pl.Float64).alias("target_budget_ratio"),
+                pl.lit(None, dtype=pl.Int64).alias("min_max_budget"),
+                pl.lit(None, dtype=pl.Float64).alias("mean_max_budget"),
+                pl.lit(None, dtype=pl.Int64).alias("max_max_budget"),
+                pl.lit(None, dtype=pl.Int64).alias("over_budget_row_count"),
+                pl.lit(None, dtype=pl.Float64).alias("over_budget_rate"),
             )
         )
     return _add_coverage(pl.concat(frames), expected_repeats=expected_repeats)
@@ -422,7 +456,7 @@ def _new_curve_rows(
     for raw_row in new.iter_rows(named=True):
         row = cast(Mapping[str, object], raw_row)
         description = str(row["generated_description"])
-        gt_code = str(row["gt_code"])
+        gt_code = str(row["gt_code_without_comments"])
         raw_description = description.encode("utf-8")
         gt_raw_size = len(gt_code.encode("utf-8"))
         if gt_raw_size == 0:
@@ -440,7 +474,16 @@ def _new_curve_rows(
             scored_rows.append(
                 {
                     "model_config_label": model,
-                    "budget": int(cast(int, row["budget"])),
+                    "target_budget_ratio": float(
+                        cast(float, row["budget_ratio"])
+                    ),
+                    "treatment_label": (
+                        f"{float(cast(float, row['budget_ratio'])):g}×"
+                    ),
+                    "max_budget": int(cast(int, row["max_budget"])),
+                    "over_budget": int(
+                        len(description) > int(cast(int, row["max_budget"]))
+                    ),
                     "task_id": str(row["task_id"]),
                     "panel_method": method,
                     "raw_ratio": len(raw_description) / gt_raw_size,
@@ -453,10 +496,17 @@ def _new_curve_rows(
             )
     scored = pl.DataFrame(scored_rows)
     aggregated = (
-        scored.group_by("panel_method", "budget")
+        scored.group_by(
+            "panel_method", "target_budget_ratio", "treatment_label"
+        )
         .agg(
             pl.col("task_id").n_unique().alias("task_count"),
             pl.len().alias("row_count"),
+            pl.col("max_budget").min().alias("min_max_budget"),
+            pl.col("max_budget").mean().alias("mean_max_budget"),
+            pl.col("max_budget").max().alias("max_max_budget"),
+            pl.col("over_budget").sum().alias("over_budget_row_count"),
+            pl.col("over_budget").mean().alias("over_budget_rate"),
             pl.col("raw_ratio").mean(),
             pl.col("compressed_ratio").mean(),
             pl.col("pass_rate").mean(),
@@ -464,6 +514,9 @@ def _new_curve_rows(
         .with_columns(
             pl.lit("current").alias("run"),
             pl.lit(model).alias("model_config_label"),
+            pl.lit("target_budget_ratio").alias("treatment_kind"),
+            pl.col("target_budget_ratio").alias("treatment_value"),
+            pl.lit(None, dtype=pl.Int64).alias("fixed_budget"),
         )
     )
     return _add_coverage(aggregated, expected_repeats=expected_repeats)
@@ -490,16 +543,25 @@ def _add_coverage(
             "run",
             "model_config_label",
             "panel_method",
-            "budget",
+            "treatment_kind",
+            "treatment_value",
+            "treatment_label",
+            "fixed_budget",
+            "target_budget_ratio",
             "task_count",
             "row_count",
             "expected_row_count",
             "missing_row_count",
+            "min_max_budget",
+            "mean_max_budget",
+            "max_max_budget",
+            "over_budget_row_count",
+            "over_budget_rate",
             "raw_ratio",
             "compressed_ratio",
             "pass_rate",
         )
-        .sort("run", "panel_method", "budget")
+        .sort("run", "panel_method", "treatment_value")
     )
 
 
@@ -537,76 +599,14 @@ def _historical_gt_references(old: pl.DataFrame) -> pl.DataFrame:
             pl.col("task_id").n_unique().alias("task_count"),
             pl.col("mean_ratio_to_gt_raw_bytes").mean(),
         )
-        .with_columns(pl.lit("historical").alias("run"))
+        .with_columns(
+            pl.lit("historical HumanEval artifact").alias("reference_source")
+        )
         .select(
-            "run",
+            "reference_source",
             "compression_method",
             "task_count",
             "mean_ratio_to_gt_raw_bytes",
-        )
-    )
-
-
-def _new_gt_references(
-    new: pl.DataFrame,
-    bundle: _DictionaryBundle,
-) -> pl.DataFrame:
-    tasks = new.select("task_id", "gt_code", "entry_point").unique()
-    rows: list[dict[str, str | int | float]] = []
-    for raw_row in tasks.iter_rows(named=True):
-        row = cast(Mapping[str, object], raw_row)
-        source = str(row["gt_code"])
-        entry_point = str(row["entry_point"])
-        raw = source.encode("utf-8")
-        minified = minify_python_source(
-            source,
-            public_names=(entry_point,),
-        ).encode("utf-8")
-        sizes = {
-            "raw_utf8": len(raw),
-            "zstd22": len(
-                zstd_compressed_bytes(
-                    raw, level=_ZSTD_LEVEL, compact_frame=True
-                )
-            ),
-            "zstd_dict22_4k": len(
-                zstd_compressed_bytes(
-                    raw,
-                    level=_ZSTD_LEVEL,
-                    dictionary=bundle.code,
-                    compact_frame=True,
-                )
-            ),
-            "minify_raw": len(minified),
-            "minify_zstd22": len(
-                zstd_compressed_bytes(
-                    minified, level=_ZSTD_LEVEL, compact_frame=True
-                )
-            ),
-            "minify_zstd_dict22_4k": len(
-                zstd_compressed_bytes(
-                    minified,
-                    level=_ZSTD_LEVEL,
-                    dictionary=bundle.minified_code,
-                    compact_frame=True,
-                )
-            ),
-        }
-        for method, size in sizes.items():
-            rows.append(
-                {
-                    "run": "current",
-                    "task_id": str(row["task_id"]),
-                    "compression_method": method,
-                    "ratio": size / len(raw),
-                }
-            )
-    return (
-        pl.DataFrame(rows)
-        .group_by("run", "compression_method")
-        .agg(
-            pl.col("task_id").n_unique().alias("task_count"),
-            pl.col("ratio").mean().alias("mean_ratio_to_gt_raw_bytes"),
         )
     )
 
@@ -629,8 +629,12 @@ def _plot_curves(
     for axis, method in zip(axes, _PANEL_METHODS, strict=True):
         panel = curves.filter(pl.col("panel_method") == method)
         for run in ("historical", "current"):
-            selected = panel.filter(pl.col("run") == run).sort("budget")
-            budgets: list[int] = selected.get_column("budget").to_list()
+            selected = panel.filter(pl.col("run") == run).sort(
+                "treatment_value"
+            )
+            treatment_labels: list[str] = selected.get_column(
+                "treatment_label"
+            ).to_list()
             raw_ratios: list[float] = selected.get_column(
                 "raw_ratio"
             ).to_list()
@@ -680,14 +684,14 @@ def _plot_curves(
                     },
                 )
             if run == "current":
-                for budget, x_value, y_value in zip(
-                    budgets,
+                for treatment_label, x_value, y_value in zip(
+                    treatment_labels,
                     compressed_ratios,
                     pass_rates,
                     strict=True,
                 ):
                     axis.annotate(
-                        str(budget),
+                        treatment_label,
                         (x_value, y_value),
                         xytext=(4, 4),
                         textcoords="offset points",
@@ -712,7 +716,7 @@ def _plot_curves(
     figure.text(
         0.5,
         0.94,
-        "GT-code stars: hollow = historical, filled = current; arrows show change",
+        "GT-code stars are fixed references; current labels are target character-budget ratios",
         ha="center",
         fontsize=9,
         color="#444444",
@@ -748,35 +752,12 @@ def _plot_gt_references(axis: Axes, references: pl.DataFrame) -> None:
     )
     for method, color in zip(_GT_METHODS, colors, strict=True):
         method_rows = references.filter(pl.col("compression_method") == method)
-        historical = method_rows.filter(pl.col("run") == "historical")
-        current = method_rows.filter(pl.col("run") == "current")
-        if historical.is_empty() or current.is_empty():
+        if method_rows.is_empty():
             continue
-        historical_x = float(historical.item(0, "mean_ratio_to_gt_raw_bytes"))
-        current_x = float(current.item(0, "mean_ratio_to_gt_raw_bytes"))
+        x_value = float(method_rows.item(0, "mean_ratio_to_gt_raw_bytes"))
         y_position = _GT_Y_POSITIONS[method]
-        axis.annotate(
-            "",
-            xy=(current_x, y_position),
-            xytext=(historical_x, y_position),
-            arrowprops={
-                "arrowstyle": "->",
-                "color": color,
-                "alpha": 0.45,
-                "linewidth": 1.0,
-            },
-        )
         axis.scatter(
-            [historical_x],
-            [y_position],
-            marker="*",
-            s=100,
-            facecolors="none",
-            edgecolors=[color],
-            linewidths=1.2,
-        )
-        axis.scatter(
-            [current_x],
+            [x_value],
             [y_position],
             marker="*",
             s=100,
@@ -786,7 +767,7 @@ def _plot_gt_references(axis: Axes, references: pl.DataFrame) -> None:
         )
         axis.annotate(
             _GT_LABELS[method],
-            (current_x, y_position),
+            (x_value, y_position),
             xytext=(0, 8),
             textcoords="offset points",
             ha="center",
@@ -799,22 +780,37 @@ def _display_model(value: str) -> str:
     return value.replace("\n", " ").removesuffix(" v1")
 
 
+def _treatment_summary(row: Mapping[str, object]) -> str:
+    if row["treatment_kind"] == "fixed_budget":
+        return f"fixed_budget={int(cast(int, row['fixed_budget']))}"
+    return (
+        f"target_ratio={float(cast(float, row['target_budget_ratio'])):g}×, "
+        f"max_budget={int(cast(int, row['min_max_budget']))}-"
+        f"{int(cast(int, row['max_max_budget']))} chars "
+        f"(mean={float(cast(float, row['mean_max_budget'])):.1f}), "
+        f"over_budget={int(cast(int, row['over_budget_row_count']))}/"
+        f"{int(cast(int, row['row_count']))}"
+    )
+
+
 def _summary_lines(curves: pl.DataFrame) -> list[str]:
     lines: list[str] = []
     for run in ("historical", "current"):
         run_rows = curves.filter(pl.col("run") == run)
         model = str(run_rows.item(0, "model_config_label"))
         lines.append(f"{run.title()} model: {_display_model(model)}")
-        for row in run_rows.sort("panel_method", "budget").iter_rows(
-            named=True
-        ):
+        for raw_row in run_rows.sort(
+            "panel_method", "treatment_value"
+        ).iter_rows(named=True):
+            row = cast(Mapping[str, object], raw_row)
             lines.append(
-                f"  {row['panel_method']} budget={int(row['budget'])}: "
-                f"raw={float(row['raw_ratio']):.6f}, "
-                f"compressed={float(row['compressed_ratio']):.6f}, "
-                f"pass={float(row['pass_rate']):.6f}, "
-                f"coverage={int(row['row_count'])}/"
-                f"{int(row['expected_row_count'])}"
+                f"  {row['panel_method']} {_treatment_summary(row)}: "
+                f"raw={float(cast(float, row['raw_ratio'])):.6f}, "
+                f"compressed="
+                f"{float(cast(float, row['compressed_ratio'])):.6f}, "
+                f"pass={float(cast(float, row['pass_rate'])):.6f}, "
+                f"coverage={int(cast(int, row['row_count']))}/"
+                f"{int(cast(int, row['expected_row_count']))}"
             )
     return lines
 
@@ -901,17 +897,12 @@ def main() -> int:
         expected_repeats=arguments.new_expected_repeats,
     )
     curves = pl.concat([historical_curves, current_curves]).sort(
-        "run", "panel_method", "budget"
+        "run", "panel_method", "treatment_value"
     )
-    gt_references = pl.concat(
-        [
-            _historical_gt_references(old),
-            _new_gt_references(new, bundle),
-        ]
-    ).sort("run", "compression_method")
+    gt_references = _historical_gt_references(old).sort("compression_method")
 
     curves_path = output_dir / "historical_current_compression_curves.csv"
-    references_path = output_dir / "historical_current_gt_references.csv"
+    references_path = output_dir / "fixed_gt_compression_references.csv"
     plot_path = output_dir / "historical_current_compression_comparison.png"
     metadata_path = output_dir / "historical_current_compression_metadata.json"
     log_path = output_dir / "historical_current_compression_comparison.log"
@@ -926,7 +917,7 @@ def main() -> int:
         path=plot_path,
     )
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": datetime.now().astimezone().isoformat(),
         "descriptive_comparison_only": True,
         "caveat": _CAVEAT,
@@ -948,6 +939,22 @@ def main() -> int:
         "new_model": new_model,
         "historical_expected_repeats": arguments.historical_expected_repeats,
         "new_expected_repeats": arguments.new_expected_repeats,
+        "current_treatment": {
+            "kind": "target_character_budget_ratio",
+            "derivation": (
+                "max_budget = round(budget_ratio * "
+                "len(gt_code_without_comments))"
+            ),
+            "grouping": "budget_ratio",
+            "plot_coordinate": (
+                "observed mean description bytes / raw GT-code bytes"
+            ),
+        },
+        "gt_compression_references": {
+            "fixed": True,
+            "source": "historical HumanEval artifact",
+            "current_run_recomputed": False,
+        },
         "aggregation": (
             "Mean per observed generation row after pairing raw and selected "
             "compression rows; compressed bytes use min(raw, compressed)."
@@ -968,7 +975,7 @@ def main() -> int:
         *_summary_lines(curves),
         f"Caveat: {_CAVEAT}",
         f"Wrote plotted curve points: {curves_path}",
-        f"Wrote GT reference points: {references_path}",
+        f"Wrote fixed GT reference points: {references_path}",
         f"Wrote comparison plot: {plot_path}",
         f"Wrote metadata: {metadata_path}",
         f"Wrote output log: {log_path}",
