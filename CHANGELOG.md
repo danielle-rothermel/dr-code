@@ -19,7 +19,9 @@
   fixed environment grant. Exited, signaled, wall-time, and payload-output
   outcomes have fixed mappings; payload-owned protocol failures map to
   candidate-attributable kills; every other outcome fails closed as an
-  executor failure.
+  executor failure. Non-standard JSON constants, JSON numbers that cannot be
+  represented finitely, and timeouts too large to represent in nanoseconds
+  fail at declaration as `DeclarationError`.
   The injected runner seam is now the dr-exec `Executor` type
   (`executor: Executor | None = None` on `score_humaneval_submission`,
   `evaluate_humaneval_code`, `extract_metrics`, and

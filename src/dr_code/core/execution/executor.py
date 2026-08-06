@@ -22,7 +22,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, Never
 
 from dr_serialize import build_identity_document
 
@@ -92,6 +92,17 @@ class CompletedPythonProcess:
     stderr: str
 
 
+def _reject_json_constant(constant: str) -> Never:
+    raise ValueError(f"invalid JSON constant: {constant}")
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError(f"non-finite JSON number: {value}")
+    return parsed
+
+
 def build_python_execution_job(
     *,
     driver_source: str,
@@ -101,11 +112,20 @@ def build_python_execution_job(
     if timeout_seconds <= 0 or not math.isfinite(timeout_seconds):
         raise DeclarationError("execution timeout must be finite and positive")
     try:
-        payload = json.loads(input_json)
+        payload = json.loads(
+            input_json,
+            parse_constant=_reject_json_constant,
+            parse_float=_parse_finite_json_float,
+        )
     except ValueError as exc:
         raise DeclarationError(
             "execution input must be strict JSON text"
         ) from exc
+    timeout_nanoseconds = timeout_seconds * _NANOSECONDS_PER_SECOND
+    if not math.isfinite(timeout_nanoseconds):
+        raise DeclarationError(
+            "execution timeout is too large to represent in nanoseconds"
+        )
     return ExecutionJob(
         job_id=JobId(uuid.uuid4()),
         target=UntrustedPythonTarget(
@@ -120,7 +140,7 @@ def build_python_execution_job(
         env=EnvGrant.fixed(_EXECUTION_ENVIRONMENT),
         budgets=Budgets(
             wall_time=FiniteDurationLimit(
-                max_ns=math.ceil(timeout_seconds * _NANOSECONDS_PER_SECOND)
+                max_ns=math.ceil(timeout_nanoseconds)
             ),
             input_bytes=FiniteByteLimit(max_bytes=MAX_EXECUTION_INPUT_BYTES),
             payload_output=FiniteOutput(

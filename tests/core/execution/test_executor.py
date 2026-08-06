@@ -112,9 +112,29 @@ class TestJobDeclaration:
         with pytest.raises(DeclarationError, match="finite and positive"):
             _job(timeout_seconds=timeout)
 
+    def test_timeout_too_large_for_nanoseconds_is_a_declaration_error(
+        self,
+    ) -> None:
+        with pytest.raises(DeclarationError) as exc_info:
+            _job(timeout_seconds=1e308)
+        assert str(exc_info.value) == (
+            "execution timeout is too large to represent in nanoseconds"
+        )
+
     def test_non_json_input_is_a_declaration_error(self) -> None:
         with pytest.raises(DeclarationError, match="strict JSON"):
             _job(input_json="not json")
+
+    @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+    def test_nonfinite_json_constant_is_a_declaration_error(
+        self, constant: str
+    ) -> None:
+        with pytest.raises(DeclarationError, match="strict JSON"):
+            _job(input_json=f'{{"value": {constant}}}')
+
+    def test_overflowing_json_float_is_a_declaration_error(self) -> None:
+        with pytest.raises(DeclarationError, match="strict JSON"):
+            _job(input_json='{"value": 1e400}')
 
     def test_oversized_input_fails_before_any_response(self) -> None:
         oversized = json.dumps({"data": "x" * MAX_EXECUTION_INPUT_BYTES})
