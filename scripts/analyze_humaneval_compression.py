@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -29,17 +30,28 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 
 _ROOT = Path(__file__).parents[1]
 _DEFAULT_SNAPSHOT = _ROOT / "tests" / "corpus" / "humanevalplus_snapshot.json"
 _DATA_ROOT = Path.home() / "drotherm" / "data" / ".codex" / "dr-code"
 _DEFAULT_COMPRESSIONS = "gzip:6,gzip:9,zstd:3,zstd:9"
+_DEFAULT_ORDERING = "zstd:3"
 
 
 @dataclass(frozen=True, slots=True)
 class _Representation:
     key: str
     label: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ComparisonMetric:
+    key: str
+    label: str
+    filename_slug: str
+    reference_value: float
+    reference_label: str
 
 
 _REPRESENTATIONS = (
@@ -50,6 +62,23 @@ _REPRESENTATIONS = (
     _Representation(
         "comments_and_docstrings",
         "Normalized comments and docstrings",
+    ),
+)
+
+_COMPARISON_METRICS = (
+    _ComparisonMetric(
+        key="compression_ratio",
+        label="Compressed bytes / raw bytes",
+        filename_slug="compression_ratio",
+        reference_value=1.0,
+        reference_label="No size change",
+    ),
+    _ComparisonMetric(
+        key="bytes_saved",
+        label="Bytes saved per task",
+        filename_slug="bytes_saved",
+        reference_value=0.0,
+        reference_label="No size change",
     ),
 )
 
@@ -125,6 +154,33 @@ def _compression_list(value: str) -> tuple[_CompressionConfig, ...]:
         seen.add(identity)
         configs.append(_compression_config(method, level))
     return tuple(configs)
+
+
+def _single_compression(value: str) -> _CompressionConfig:
+    configs = _compression_list(value)
+    if len(configs) != 1:
+        raise argparse.ArgumentTypeError(
+            "must be one compression configuration such as zstd:3"
+        )
+    return configs[0]
+
+
+def _resolve_ordering_config(
+    parser: argparse.ArgumentParser,
+    configs: Sequence[_CompressionConfig],
+    requested: _CompressionConfig | None,
+) -> _CompressionConfig:
+    configs_by_label = {
+        _compression_label(config): config for config in configs
+    }
+    if requested is not None:
+        requested_label = _compression_label(requested)
+        if requested_label not in configs_by_label:
+            parser.error(
+                f"--order-by {requested_label!r} is not present in --comp"
+            )
+        return configs_by_label[requested_label]
+    return configs_by_label.get(_DEFAULT_ORDERING, configs[0])
 
 
 def _configuration_slug(configs: Sequence[_CompressionConfig]) -> str:
@@ -342,6 +398,278 @@ def _representation_measurements(
     )
 
 
+def _compression_colors(
+    configs: Sequence[_CompressionConfig],
+) -> dict[str, str]:
+    color_values = plt.colormaps["viridis"](
+        [index / max(1, len(configs) - 1) for index in range(len(configs))]
+    )
+    return {
+        _compression_label(config): matplotlib.colors.to_hex(color)
+        for config, color in zip(configs, color_values, strict=True)
+    }
+
+
+def _faceted_figure(count: int) -> tuple[Figure, list[Axes]]:
+    column_count = min(2, count)
+    row_count = math.ceil(count / column_count)
+    figure, raw_axes = plt.subplots(
+        row_count,
+        column_count,
+        figsize=(8 * column_count, 5.5 * row_count),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+    )
+    return figure, cast(list[Axes], list(raw_axes.flat))
+
+
+def _binned_medians(
+    x_values: Sequence[int | float],
+    y_values: Sequence[int | float],
+    *,
+    maximum_bins: int = 8,
+) -> tuple[list[float], list[float]]:
+    ordered = sorted(zip(x_values, y_values, strict=True))
+    bin_count = min(maximum_bins, len(ordered))
+    x_medians: list[float] = []
+    y_medians: list[float] = []
+    for bin_index in range(bin_count):
+        start = bin_index * len(ordered) // bin_count
+        end = (bin_index + 1) * len(ordered) // bin_count
+        chunk = ordered[start:end]
+        x_medians.append(_linear_quantile([pair[0] for pair in chunk], 0.5))
+        y_medians.append(_linear_quantile([pair[1] for pair in chunk], 0.5))
+    return x_medians, y_medians
+
+
+def _plot_size_relationship_axis(
+    axis: Axes,
+    selected: pl.DataFrame,
+    config: _CompressionConfig,
+    metric: _ComparisonMetric,
+    *,
+    color: str,
+) -> None:
+    raw_bytes: list[int] = selected.get_column("raw_bytes").to_list()
+    values: list[int | float] = selected.get_column(metric.key).to_list()
+    median_x, median_y = _binned_medians(raw_bytes, values)
+    axis.scatter(
+        raw_bytes,
+        values,
+        s=22,
+        alpha=0.28,
+        color=color,
+        edgecolors="none",
+        label="Task",
+    )
+    axis.plot(
+        median_x,
+        median_y,
+        color="#222222",
+        linewidth=1.6,
+        marker="o",
+        markersize=4,
+        label="Equal-count bin median",
+    )
+    axis.axhline(
+        metric.reference_value,
+        linestyle="--",
+        linewidth=1.2,
+        color="#666666",
+        label=metric.reference_label,
+    )
+    axis.set_xscale("log")
+    axis.set_title(_compression_label(config))
+    axis.set_xlabel("Initial normalized GT code size (bytes, log scale)")
+    axis.set_ylabel(metric.label)
+    axis.grid(alpha=0.25)
+    axis.legend(fontsize=8)
+
+
+def _save_size_relationship_plots(
+    measurements: pl.DataFrame,
+    configs: Sequence[_CompressionConfig],
+    *,
+    output_dir: Path,
+    configuration_slug: str,
+) -> list[tuple[str, Path]]:
+    code = _REPRESENTATIONS[0]
+    colors = _compression_colors(configs)
+    written: list[tuple[str, Path]] = []
+    selected_by_label = {
+        _compression_label(config): _representation_measurements(
+            measurements, code, config
+        )
+        for config in configs
+    }
+    for metric in _COMPARISON_METRICS:
+        for config in configs:
+            label = _compression_label(config)
+            path = output_dir / (
+                "humaneval_code_raw_bytes_vs_"
+                f"{metric.filename_slug}_{_compression_slug(config)}.png"
+            )
+            figure, axis = plt.subplots(figsize=(8, 5.5))
+            _plot_size_relationship_axis(
+                axis,
+                selected_by_label[label],
+                config,
+                metric,
+                color=colors[label],
+            )
+            figure.suptitle(
+                f"HumanEval GT code: initial size vs {metric.label.lower()}"
+            )
+            figure.tight_layout()
+            figure.savefig(path, dpi=160, bbox_inches="tight")
+            plt.close(figure)
+            written.append(
+                (
+                    f"{label} initial-size/{metric.filename_slug} plot",
+                    path,
+                )
+            )
+
+        faceted_path = output_dir / (
+            "humaneval_code_raw_bytes_vs_"
+            f"{metric.filename_slug}_faceted_{configuration_slug}.png"
+        )
+        figure, axes = _faceted_figure(len(configs))
+        for axis, config in zip(axes, configs, strict=False):
+            label = _compression_label(config)
+            _plot_size_relationship_axis(
+                axis,
+                selected_by_label[label],
+                config,
+                metric,
+                color=colors[label],
+            )
+        for axis in axes[len(configs) :]:
+            axis.set_visible(False)
+        figure.suptitle(
+            f"HumanEval GT code: initial size vs {metric.label.lower()}"
+        )
+        figure.tight_layout()
+        figure.savefig(faceted_path, dpi=160, bbox_inches="tight")
+        plt.close(figure)
+        written.append(
+            (f"faceted initial-size/{metric.filename_slug} plot", faceted_path)
+        )
+    return written
+
+
+def _task_order_table(
+    measurements: pl.DataFrame,
+    order_by: _CompressionConfig,
+) -> pl.DataFrame:
+    selected = _representation_measurements(
+        measurements,
+        _REPRESENTATIONS[0],
+        order_by,
+    ).sort(
+        ["compression_ratio", "task_id"],
+        descending=[True, False],
+    )
+    return selected.with_row_index("task_rank", offset=1).select(
+        "task_rank",
+        "task_id",
+        "raw_bytes",
+        pl.lit(_compression_label(order_by)).alias("order_by_configuration"),
+        pl.col("compression_ratio").alias("order_by_compression_ratio"),
+        pl.col("bytes_saved").alias("order_by_bytes_saved"),
+    )
+
+
+def _plot_ordered_axis(
+    axis: Axes,
+    measurements: pl.DataFrame,
+    task_order: pl.DataFrame,
+    config: _CompressionConfig,
+    metric: _ComparisonMetric,
+    *,
+    color: str,
+) -> None:
+    selected = (
+        _representation_measurements(
+            measurements,
+            _REPRESENTATIONS[0],
+            config,
+        )
+        .join(
+            task_order.select("task_id", "task_rank"),
+            on="task_id",
+            how="inner",
+        )
+        .sort("task_rank")
+    )
+    ranks: list[int] = selected.get_column("task_rank").to_list()
+    values: list[int | float] = selected.get_column(metric.key).to_list()
+    axis.plot(ranks, values, color=color, linewidth=1.0, alpha=0.55)
+    axis.scatter(
+        ranks,
+        values,
+        s=17,
+        alpha=0.34,
+        color=color,
+        edgecolors="none",
+    )
+    axis.axhline(
+        metric.reference_value,
+        linestyle="--",
+        linewidth=1.2,
+        color="#666666",
+        label=metric.reference_label,
+    )
+    axis.set_title(_compression_label(config))
+    axis.set_ylabel(metric.label)
+    axis.grid(alpha=0.25)
+    axis.legend(fontsize=8)
+
+
+def _save_ordered_comparison_plots(
+    measurements: pl.DataFrame,
+    task_order: pl.DataFrame,
+    configs: Sequence[_CompressionConfig],
+    order_by: _CompressionConfig,
+    *,
+    output_dir: Path,
+    configuration_slug: str,
+) -> list[tuple[str, Path]]:
+    order_label = _compression_label(order_by)
+    order_slug = _compression_slug(order_by)
+    colors = _compression_colors(configs)
+    written: list[tuple[str, Path]] = []
+    for metric in _COMPARISON_METRICS:
+        path = output_dir / (
+            f"humaneval_code_ordered_by_{order_slug}_"
+            f"{metric.filename_slug}_{configuration_slug}.png"
+        )
+        figure, axes = _faceted_figure(len(configs))
+        for axis, config in zip(axes, configs, strict=False):
+            label = _compression_label(config)
+            _plot_ordered_axis(
+                axis,
+                measurements,
+                task_order,
+                config,
+                metric,
+                color=colors[label],
+            )
+        for axis in axes[len(configs) :]:
+            axis.set_visible(False)
+        figure.supxlabel(
+            f"Task rank under {order_label} "
+            "(least compressible to most compressible)"
+        )
+        figure.suptitle(f"HumanEval GT code: aligned {metric.label.lower()}")
+        figure.tight_layout()
+        figure.savefig(path, dpi=160, bbox_inches="tight")
+        plt.close(figure)
+        written.append((f"ordered {metric.filename_slug} plot", path))
+    return written
+
+
 def _plot_representation(
     measurements: pl.DataFrame,
     representation: _Representation,
@@ -461,6 +789,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--order-by",
+        type=_single_compression,
+        help=(
+            "configured method used to rank tasks from least to most "
+            f"compressible (default: {_DEFAULT_ORDERING} when present, "
+            "otherwise the first --comp entry)"
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         type=_output_directory,
         help=(
@@ -470,6 +807,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     configs: tuple[_CompressionConfig, ...] = arguments.comp
+    order_by = _resolve_ordering_config(parser, configs, arguments.order_by)
     output_dir = (
         arguments.output_dir
         if arguments.output_dir is not None
@@ -484,6 +822,7 @@ def main() -> int:
 
     measurements = _measurement_table(tasks, configs)
     summary = _summary_table(measurements, configs)
+    task_order = _task_order_table(measurements, order_by)
     output_dir.mkdir(parents=True, exist_ok=True)
     slug = _configuration_slug(configs)
     measurements_path = (
@@ -491,6 +830,9 @@ def main() -> int:
     )
     summary_path = (
         output_dir / f"humaneval_compression_summary_bytes_{slug}.csv"
+    )
+    task_order_path = output_dir / (
+        f"humaneval_code_task_order_by_{_compression_slug(order_by)}_{slug}.csv"
     )
     code_plot_path = (
         output_dir / f"humaneval_code_compression_bytes_{slug}.png"
@@ -503,6 +845,7 @@ def main() -> int:
 
     measurements.write_csv(measurements_path)
     summary.write_csv(summary_path)
+    task_order.write_csv(task_order_path)
     _plot_representation(
         measurements,
         _REPRESENTATIONS[0],
@@ -515,14 +858,38 @@ def main() -> int:
         configs,
         path=comments_plot_path,
     )
+    comparison_plots = [
+        *_save_size_relationship_plots(
+            measurements,
+            configs,
+            output_dir=output_dir,
+            configuration_slug=slug,
+        ),
+        *_save_ordered_comparison_plots(
+            measurements,
+            task_order,
+            configs,
+            order_by,
+            output_dir=output_dir,
+            configuration_slug=slug,
+        ),
+    ]
 
     report = [
         f"Loaded {len(tasks):,} HumanEval tasks from {arguments.snapshot}",
         *_summary_lines(summary, configs),
+        "Task ordering: "
+        f"{_compression_label(order_by)} ratio descending "
+        "(least to most compressible)",
         f"Wrote task measurements: {measurements_path}",
         f"Wrote aggregate summary: {summary_path}",
+        f"Wrote task ordering: {task_order_path}",
         f"Wrote code compression plot: {code_plot_path}",
         f"Wrote comments/docstrings compression plot: {comments_plot_path}",
+        *[
+            f"Wrote {description}: {path}"
+            for description, path in comparison_plots
+        ],
         f"Wrote output log: {log_path}",
     ]
     output = "\n".join(report) + "\n"
