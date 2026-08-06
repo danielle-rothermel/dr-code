@@ -1,7 +1,7 @@
 [project]
 name = "dr-code"
 version = "0.1.2"
-description = "Producer-blind Python code evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
+description = "Python code preparation and evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
 readme = "README.md"
 license = "MIT"
 authors = [

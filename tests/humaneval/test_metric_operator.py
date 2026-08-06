@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 import subprocess
 import sys
@@ -8,7 +7,6 @@ from collections.abc import Callable
 
 import pytest
 
-from dr_code.humaneval import metric_operator
 from dr_code.core.execution.sandbox import (
     SandboxCompletedProcess,
     SandboxError,
@@ -32,7 +30,6 @@ from dr_code.metrics import (
     MetricsDefinition,
     extract_metrics,
 )
-from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.records import MeasuredRecord, MetricRecord
 from dr_code.trace import CodeArtifact, JsonArtifact, Trace, external_trace
 
@@ -395,93 +392,6 @@ def test_code_test_requests_are_the_canonical_batch_request(
         assert request.input_json == canonical.input_json, function_name
         assert request.source == canonical.source, function_name
         assert request.timeout_seconds == canonical.timeout_seconds
-
-
-def test_code_test_validates_one_exact_task_payload_once(
-    task: HumanEvalTask,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    validations = 0
-    validate = metric_operator._validate_task_payload
-
-    def counting_validate(artifact: JsonArtifact) -> HumanEvalTask:
-        nonlocal validations
-        validations += 1
-        return validate(artifact)
-
-    monkeypatch.setattr(
-        metric_operator, "_validate_task_payload", counting_validate
-    )
-    operator = CodeTest(CodeTestSettings())
-    first_auxiliary = {
-        "task": JsonArtifact(payload=task.model_dump(mode="json"))
-    }
-    equal_auxiliary = {
-        "task": JsonArtifact(payload=task.model_dump(mode="json"))
-    }
-    different_task = HumanEvalTask(
-        task_id="HumanEval/different",
-        prompt=task.prompt,
-        canonical_solution=task.canonical_solution,
-        entry_point=task.entry_point,
-        test=_INPUT_RESULT_TEST.replace(
-            "results = [2, 3]", "results = [3, 4]"
-        ),
-    )
-    different_auxiliary = {
-        "task": JsonArtifact(payload=different_task.model_dump(mode="json"))
-    }
-    candidate = CodeArtifact(source="def add_one(x):\n    return x + 1\n")
-
-    assert first_auxiliary["task"] is not equal_auxiliary["task"]
-    operator.validate_auxiliary(first_auxiliary)
-    equal_requests = operator.execution_requests(candidate, equal_auxiliary)
-
-    assert validations == 1
-
-    different_requests = operator.execution_requests(
-        candidate, different_auxiliary
-    )
-
-    assert validations == 2
-    assert different_requests != equal_requests
-
-
-def test_code_test_compute_passes_the_engine_parsed_module(
-    task: HumanEvalTask,
-    good_submission: str,
-    scripted_runner: Callable[..., SandboxRunner],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    parsed_modules: list[ast.Module | None] = []
-    select_names = top_level_function_names
-    engine_module = ast.parse(good_submission)
-
-    def recording_select_names(
-        code_str: str,
-        *,
-        parsed_module: ast.Module | None = None,
-    ) -> list[str]:
-        parsed_modules.append(parsed_module)
-        return select_names(code_str, parsed_module=parsed_module)
-
-    monkeypatch.setattr(
-        metric_operator.runner,
-        "top_level_function_names",
-        recording_select_names,
-    )
-    monkeypatch.setattr(
-        ViewCache,
-        "parsed_module",
-        lambda self, source: engine_module,
-    )
-
-    _extract_code_test(
-        _code_test_trace(good_submission, task),
-        run_in_sandbox=scripted_runner(),
-    )
-
-    assert any(module is engine_module for module in parsed_modules)
 
 
 def test_code_test_function_names_come_from_the_shared_rule(

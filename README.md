@@ -16,6 +16,8 @@ viewer, organized into these functional areas:
 - **[Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing)**
   turns raw model responses into inspected Python candidates through declared,
   ordered preprocessing operations.
+- **[Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)**
+  memoizes preprocessing traces through a caller-supplied record cache.
 - **[Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)**
   preserves intermediate artifacts, structured facts, failure reasons, and
   semantic provenance so results remain explainable and serializable.
@@ -39,8 +41,6 @@ viewer, organized into these functional areas:
     provides shared Python source inspection and transformation.
   - **[Execution](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/execution)**
     provides the shared isolated-execution boundary.
-  - **[Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)**
-    memoizes preprocessing traces through a caller-supplied record cache.
 
 ## Functional areas
 
@@ -80,6 +80,40 @@ class BoundPreprocessingRunner:
 def bind_preprocessing(
     definition: PreprocessingDefinition,
 ) -> BoundPreprocessingRunner: ...
+```
+
+### [Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
+
+`dr_code.caching` provides opt-in preprocessing trace memoization over a
+[dr-store](https://github.com/danielle-rothermel/dr-store) record cache. It
+accepts only validated entries whose input and producer match the request;
+other cache outcomes fall through to fresh preprocessing. dr-store's managed
+`SqliteRecordCache` supplies the persistent lifecycle.
+
+While development mode keeps component versions at `"0"`, discard persistent
+caches after preprocessing source, Python runtime, or dependency changes. Once
+development mode ends, every such behavior-affecting change requires a version
+bump for each affected preprocessing component before reusing its cache.
+
+```python
+def preprocessing_trace_cache_key(
+    text: str,
+    runner: BoundPreprocessingRunner,
+) -> str: ...
+
+
+def run_preprocessing_cached(
+    text: str,
+    runner: BoundPreprocessingRunner,
+    cache: RecordCache,
+) -> Trace: ...
+```
+
+```python
+from dr_store import SqliteRecordCache
+
+with SqliteRecordCache("traces.sqlite3") as cache:
+    trace = run_preprocessing_cached(text, runner, cache)
 ```
 
 ### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
@@ -323,40 +357,6 @@ class SandboxRunner(Protocol):
         input_json: str,
         timeout_seconds: float,
     ) -> SandboxCompletedProcess: ...
-```
-
-### [Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
-
-`dr_code.caching` provides opt-in preprocessing trace memoization over a
-[dr-store](https://github.com/danielle-rothermel/dr-store) record cache. It
-accepts only validated entries whose input and producer match the request;
-other cache outcomes fall through to fresh preprocessing. dr-store's managed
-`SqliteRecordCache` supplies the persistent lifecycle.
-
-While development mode keeps component versions at `"0"`, discard persistent
-caches after preprocessing source, Python runtime, or dependency changes. Once
-development mode ends, every such behavior-affecting change requires a version
-bump for each affected preprocessing component before reusing its cache.
-
-```python
-def preprocessing_trace_cache_key(
-    text: str,
-    runner: BoundPreprocessingRunner,
-) -> str: ...
-
-
-def run_preprocessing_cached(
-    text: str,
-    runner: BoundPreprocessingRunner,
-    cache: RecordCache,
-) -> Trace: ...
-```
-
-```python
-from dr_store import SqliteRecordCache
-
-with SqliteRecordCache("traces.sqlite3") as cache:
-    trace = run_preprocessing_cached(text, runner, cache)
 ```
 
 ## Development

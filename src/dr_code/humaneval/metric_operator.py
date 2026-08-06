@@ -133,7 +133,6 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> CodeTestResult:
         source = _code_source(value)
         task = self._task(aux)
-        # The engine already parses this source for its other questions.
         function_names = runner.top_level_function_names(
             source,
             parsed_module=ctx.views.parsed_module(source),

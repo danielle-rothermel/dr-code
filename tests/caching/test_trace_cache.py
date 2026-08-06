@@ -149,43 +149,19 @@ def _cache_warnings(
     ]
 
 
-def test_read_failure_runs_fresh_and_logs(
+@pytest.mark.parametrize(
+    "cache",
+    [_ReadFailingCache(), _WriteFailingCache(), _HitCache({})],
+    ids=["read-failure", "write-failure", "invalid-record"],
+)
+def test_cache_failure_runs_fresh_and_logs(
+    cache: RecordCache,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     runner = _bound()
 
     with caplog.at_level(logging.WARNING):
-        trace = run_preprocessing_cached(_FENCED, runner, _ReadFailingCache())
-
-    assert runner.runs == 1
-    assert trace.value("input") == TextArtifact(text=_FENCED)
-    warnings = _cache_warnings(caplog)
-    assert len(warnings) == 1
-    assert warnings[0].exc_info is not None
-
-
-def test_write_failure_returns_fresh_trace_and_logs(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    runner = _bound()
-
-    with caplog.at_level(logging.WARNING):
-        trace = run_preprocessing_cached(_FENCED, runner, _WriteFailingCache())
-
-    assert runner.runs == 1
-    assert trace.value("input") == TextArtifact(text=_FENCED)
-    warnings = _cache_warnings(caplog)
-    assert len(warnings) == 1
-    assert warnings[0].exc_info is not None
-
-
-def test_invalid_record_runs_fresh_and_logs(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    runner = _bound()
-
-    with caplog.at_level(logging.WARNING):
-        trace = run_preprocessing_cached(_FENCED, runner, _HitCache({}))
+        trace = run_preprocessing_cached(_FENCED, runner, cache)
 
     assert runner.runs == 1
     assert trace.value("input") == TextArtifact(text=_FENCED)

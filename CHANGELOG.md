@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 - 2026-08-05
+## 0.1.2 - 2026-08-06
 
 - Pull-request CI requires every change to advance the project version by one
   patch, keep the root lockfile version synchronized, and carry the matching
