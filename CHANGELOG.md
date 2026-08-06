@@ -15,6 +15,8 @@
   top-level-function selection and keeps the validated HumanEval task per exact
   payload for the life of a binding, so a batch over one task no longer
   reparses it per trace. The recompute-and-reject task validator is unchanged.
+- `docs/plans/dr-exec-caching-executor.md` plans a dr-exec `CachingExecutor`
+  for after dr-code's execution path migrates to dr-exec.
 
 ## 0.1.1 - 2026-08-05
 
