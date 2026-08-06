@@ -59,6 +59,10 @@ def other(value):
         "Trace equivalence: exact for cold and warm whole-trace cache runs"
         in completed.stdout
     )
+    assert (
+        "Warm cache verification: 4/4 requests served without preprocessing"
+        in completed.stdout
+    )
     assert "Raw extracted-source hit rate" in completed.stdout
     assert (
         "Testable candidate cache hit rate: 50.00% (2/4)" in completed.stdout
@@ -149,4 +153,8 @@ def test_bootstraps_source_and_test_safe_reuse_across_tasks(
     assert (
         "Candidate reuse was planned without executing candidate code."
         in completed.stdout
+    )
+    assert (
+        "Warm cache verification: all selected requests served without "
+        "preprocessing" in completed.stdout
     )
