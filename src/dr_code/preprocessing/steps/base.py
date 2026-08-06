@@ -48,7 +48,8 @@ class StepOutput:
 class Step(Generic[SettingsT]):
     NAME: ClassVar[StepName]
     # In development mode, keep VERSION at "0". Afterward, bump it for
-    # accepted-input, output, fact, default, or failure changes.
+    # accepted-input, output, fact, default, or failure changes, including
+    # runtime or dependency changes that can alter those behaviors.
     VERSION: ClassVar[str]
     INPUT: ClassVar[ArtifactKind]
     OUTPUT: ClassVar[ArtifactKind]

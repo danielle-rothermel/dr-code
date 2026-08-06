@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.2 - 2026-08-06
+
+- Pull-request CI requires every change to advance the project version by one
+  patch, keep the root lockfile version synchronized, and carry the matching
+  dated changelog entry.
+- Tagged releases verify the tagged commit belongs to `main` before validation,
+  build, or PyPI publication; protected `v*` tags restrict release-tag creation
+  and prohibit tag updates and deletion.
+- `dr_code.caching` adds opt-in memoization of preprocessing traces.
+  `run_preprocessing_cached` keys raw input text, the bound runner's resolved
+  producer coordinate, and the trace schema version through dr-store's
+  `derive_cache_key`, stores a serialized trace in a `RecordCache`, and returns
+  either a matching hit or the fresh trace. Cache failures, invalid records,
+  and entries whose producer or input does not match the request are logged
+  and treated as misses.
+  No existing call site consults a cache.
+- dr-store 0.1.4 supplies the record-cache primitive and the managed
+  `SqliteRecordCache` persistent lifecycle.
+- The `code_test` operator uses the metrics engine's shared parsed-module view
+  during result computation and keeps the validated HumanEval task per exact
+  payload for the life of a binding. The recompute-and-reject task validator is
+  unchanged.
+
 ## 0.1.1 - 2026-08-05
 
 - The package is release-ready at version 0.1.1 with project metadata, a

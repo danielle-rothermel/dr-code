@@ -106,6 +106,16 @@ exported_symbols = [
 ]
 
 [[terms]]
+name = "preprocessing trace cache"
+definition = """
+An opt-in memoization layer for reusing serialized preprocessing traces by raw
+input and resolved producer coordinate."""
+exported_symbols = [
+  "dr_code.caching.run_preprocessing_cached",
+  "dr_code.caching.preprocessing_trace_cache_key",
+]
+
+[[terms]]
 name = "metric question"
 definition = """
 A request for one named metric on one trace key under resolved settings."""

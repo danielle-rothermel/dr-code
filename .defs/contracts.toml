@@ -16,6 +16,30 @@ date = "2026-08-05"
 check = "uv run pytest tests/test_component_versioning.py"
 
 [[contracts]]
+title = "Each pull request advances the package patch version"
+statement = """
+Every pull request advances the project version by exactly one patch relative
+to its target, records the same version in the lockfile, and carries a dated
+changelog entry for that version."""
+rationale = """
+An exact increment keeps each reviewed change independently identifiable and
+publishable without path classifications or release-time version assignment."""
+date = "2026-08-06"
+check = "uv run pytest tests/test_release_contract.py"
+
+[[contracts]]
+title = "Releases come from immutable main commits"
+statement = """
+PyPI publication requires a version-matching release tag whose commit belongs
+to main. Only the configured release actor creates release tags, and an
+existing release tag cannot be updated or deleted."""
+rationale = """
+Passing validation establishes build quality but not repository approval.
+Main ancestry retains the pull-request boundary, while restricted creation
+and immutability keep the tag from bypassing or changing that provenance."""
+date = "2026-08-06"
+
+[[contracts]]
 title = "Core depends on no functional package"
 statement = """
 dr_code.core owns shared models, source operations, and execution mechanisms
@@ -139,3 +163,32 @@ implicit pull, unbounded output, or assumed cleanup would make results and
 host safety depend on mutable external state."""
 date = "2026-08-05"
 check = "uv run pytest tests/core/execution/test_sandbox.py"
+
+[[contracts]]
+title = "Preprocessing trace cache entries match their requests"
+statement = """
+A preprocessing trace cache entry is keyed by the raw input text, the
+producing runner's resolved coordinate, and the trace schema version. A hit is
+accepted only when the stored trace validates and its producer and input match
+the request. Caching is opt-in: no existing call site consults a cache. Cache
+reads, validation, and writes degrade to uncached execution on failure."""
+rationale = """
+Wrong-input, wrong-producer, and malformed entries are not evidence for the
+current request. Best-effort cache faults must not turn optional memoization
+into a preprocessing failure."""
+date = "2026-08-05"
+check = "uv run pytest tests/caching/test_trace_cache.py"
+
+[[contracts]]
+title = "Preprocessing cache lifecycles follow behavior identity"
+statement = """
+While component versions remain at the initial version, callers discard
+persistent preprocessing caches after source, Python runtime, or dependency
+changes that can alter preprocessing behavior. After development mode, each
+such change bumps every affected component version before its cache is
+reused."""
+rationale = """
+Producer coordinates distinguish declared component versions and settings,
+not ambient runtime or dependency bytes. Reusing an entry after an unrecorded
+behavior change would make the result depend on stale state."""
+date = "2026-08-05"

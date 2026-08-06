@@ -8,6 +8,7 @@ DR_CODE_PACKAGE = Path(__file__).parents[2] / "src" / "dr_code"
 CORE_PACKAGE = DR_CODE_PACKAGE / "core"
 FUNCTIONAL_PACKAGES = frozenset(
     {
+        "caching",
         "evaluation",
         "humaneval",
         "metrics",

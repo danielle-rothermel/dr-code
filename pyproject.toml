@@ -1,7 +1,7 @@
 [project]
 name = "dr-code"
-version = "0.1.1"
-description = "Producer-blind Python code evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
+version = "0.1.2"
+description = "Python code preparation and evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
 readme = "README.md"
 license = "MIT"
 authors = [
@@ -10,6 +10,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "datasets>=3.0,<4",
+    "dr-store==0.1.4",
     "pydantic>=2.13.4",
     "typer>=0.26.7",
     "zstandard>=0.25.0",
