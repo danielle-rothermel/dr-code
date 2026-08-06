@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7 - 2026-08-06
+
+- The cache benchmark measures exhaustive preprocessing followed by
+  in-memory test-result cache lookup without executing generated code.
+
 ## 0.1.6 - 2026-08-06
 
 - The cache benchmark measures exhaustive preprocessing followed by
