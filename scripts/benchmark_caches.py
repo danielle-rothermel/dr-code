@@ -31,12 +31,14 @@ from dr_code.metrics.engine.execution import ExecutionRequest
 from dr_code.caching import run_preprocessing_cached
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+    BoundPreprocessingRunner,
     StepName,
     bind_preprocessing,
 )
 from dr_code.trace import (
     OUTPUT_KEY,
     Absent,
+    Artifact,
     CodeArtifact,
     CodeCandidateSetArtifact,
     InspectedCodeCandidateSetArtifact,
@@ -58,6 +60,15 @@ _RAW_CANDIDATE_KEY = StepName.EXTRACT_ALL_REPRESENTATIONS.value
 _DERIVED_TASK_FIELDS: frozenset[str] = frozenset(
     {"parsed", "parsed_tests", *HumanEvalTask.model_computed_fields}
 )
+
+
+class _WarmCacheHitRequiredRunner(BoundPreprocessingRunner):
+    """Fail if a supposedly warm cache request reaches preprocessing."""
+
+    def run(self, input_value: Artifact) -> Trace:
+        raise RuntimeError(
+            "warm SQLite whole-trace cache missed; preprocessing was invoked"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,7 +388,6 @@ def _candidate_measurements(
 def _benchmark_task(
     task: HumanEvalTask,
     task_rows: pl.DataFrame,
-    preprocessing_cache: SqliteRecordCache,
 ) -> _TaskBenchmark:
     sample_ids: list[str] = task_rows.get_column("sample_id").to_list()
     decoder_outputs: list[str] = task_rows.get_column(
@@ -396,31 +406,49 @@ def _benchmark_task(
     cached_runner = bind_preprocessing(
         EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
     )
-    cold_started = perf_counter()
-    cold_traces = [
-        run_preprocessing_cached(text, cached_runner, preprocessing_cache)
-        for text in decoder_outputs
-    ]
-    cold_cache_seconds = perf_counter() - cold_started
-    _assert_same_traces(
-        label="cold SQLite whole-trace cache",
-        sample_ids=sample_ids,
-        expected=baseline_traces,
-        actual=cold_traces,
-    )
+    with TemporaryDirectory(
+        prefix="dr-code-preprocessing-cache-benchmark-"
+    ) as temporary_directory:
+        cache_path = Path(temporary_directory) / "traces.sqlite3"
+        with SqliteRecordCache(cache_path) as preprocessing_cache:
+            cold_started = perf_counter()
+            cold_traces = [
+                run_preprocessing_cached(
+                    text,
+                    cached_runner,
+                    preprocessing_cache,
+                )
+                for text in decoder_outputs
+            ]
+            cold_cache_seconds = perf_counter() - cold_started
+            _assert_same_traces(
+                label="cold SQLite whole-trace cache",
+                sample_ids=sample_ids,
+                expected=baseline_traces,
+                actual=cold_traces,
+            )
 
-    warm_started = perf_counter()
-    warm_traces = [
-        run_preprocessing_cached(text, cached_runner, preprocessing_cache)
-        for text in decoder_outputs
-    ]
-    warm_cache_seconds = perf_counter() - warm_started
-    _assert_same_traces(
-        label="warm SQLite whole-trace cache",
-        sample_ids=sample_ids,
-        expected=baseline_traces,
-        actual=warm_traces,
-    )
+            warm_runner = _WarmCacheHitRequiredRunner(
+                definition=cached_runner.definition,
+                steps=cached_runner.steps,
+                producer=cached_runner.producer,
+            )
+            warm_started = perf_counter()
+            warm_traces = [
+                run_preprocessing_cached(
+                    text,
+                    warm_runner,
+                    preprocessing_cache,
+                )
+                for text in decoder_outputs
+            ]
+            warm_cache_seconds = perf_counter() - warm_started
+            _assert_same_traces(
+                label="warm SQLite whole-trace cache",
+                sample_ids=sample_ids,
+                expected=baseline_traces,
+                actual=warm_traces,
+            )
     candidates = _candidate_measurements(baseline_traces, task)
     return _TaskBenchmark(
         task_id=task.task_id,
@@ -611,6 +639,11 @@ def _print_single_task(result: _TaskBenchmark) -> None:
         f"({result.warm_speedup:.2f}x baseline)"
     )
     print("Trace equivalence: exact for cold and warm whole-trace cache runs")
+    print(
+        "Warm cache verification: "
+        f"{result.rows:,}/{result.rows:,} requests served without "
+        "preprocessing"
+    )
     print()
     print("Testing-cache estimates with an initially empty cache:")
     _print_row_cache_summary(result.row_cache)
@@ -658,7 +691,7 @@ def _print_task_sample(
 
     print()
     print(
-        f"{'task':18} {'candidates':>11} {'candidate hits':>15} "
+        f"{'task':18} {'candidates':>11} {'candidate hit rate':>18} "
         f"{'failed':>8} {'zero':>8} {'partial':>8} {'full':>8} "
         f"{'full skip':>10}"
     )
@@ -782,6 +815,10 @@ def _print_task_sample(
     print(
         "Trace equivalence: exact for cold and warm whole-trace cache "
         "runs for every selected task"
+    )
+    print(
+        "Warm cache verification: all selected requests served without "
+        "preprocessing"
     )
     print("Candidate reuse was planned without executing candidate code.")
 
@@ -919,25 +956,14 @@ def main() -> int:
     task_load_seconds = perf_counter() - task_load_started
 
     results: list[_TaskBenchmark] = []
-    with TemporaryDirectory(
-        prefix="dr-code-preprocessing-cache-benchmark-"
-    ) as temporary_directory:
-        cache_path = Path(temporary_directory) / "traces.sqlite3"
-        with SqliteRecordCache(cache_path) as preprocessing_cache:
-            for index, task_id in enumerate(selected_task_ids, start=1):
-                task_rows = selected_rows.filter(pl.col("task_id") == task_id)
-                print(
-                    f"Benchmarking task {index}/{len(selected_task_ids)}: "
-                    f"{task_id} ({task_rows.height:,} rows)",
-                    flush=True,
-                )
-                results.append(
-                    _benchmark_task(
-                        tasks_by_id[task_id],
-                        task_rows,
-                        preprocessing_cache,
-                    )
-                )
+    for index, task_id in enumerate(selected_task_ids, start=1):
+        task_rows = selected_rows.filter(pl.col("task_id") == task_id)
+        print(
+            f"Benchmarking task {index}/{len(selected_task_ids)}: "
+            f"{task_id} ({task_rows.height:,} rows)",
+            flush=True,
+        )
+        results.append(_benchmark_task(tasks_by_id[task_id], task_rows))
 
     print(f"Parquet: {arguments.parquet}")
     print(
