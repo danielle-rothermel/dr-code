@@ -55,6 +55,9 @@ _DEFAULT_HUMANEVAL_SNAPSHOT = (
 )
 _REQUIRED_COLUMNS = frozenset({"decoder_output", "sample_id", "task_id"})
 _RAW_CANDIDATE_KEY = StepName.EXTRACT_ALL_REPRESENTATIONS.value
+_DERIVED_TASK_FIELDS: frozenset[str] = frozenset(
+    {"parsed", "parsed_tests", *HumanEvalTask.model_computed_fields}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,7 +294,12 @@ def _candidate_reuse_keys(
     final_candidate_keys: list[str] = []
     execution_request_keys: list[str] = []
     code_test = CodeTest(CodeTestSettings())
-    task_artifact = JsonArtifact(payload=task.model_dump(mode="json"))
+    task_artifact = JsonArtifact(
+        payload=task.model_dump(
+            mode="json",
+            exclude=set(_DERIVED_TASK_FIELDS),
+        )
+    )
 
     for trace in traces:
         raw_candidates = trace.value(_RAW_CANDIDATE_KEY)
