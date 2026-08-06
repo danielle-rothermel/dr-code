@@ -81,6 +81,7 @@ def test_writes_long_form_compression_analysis(tmp_path: Path) -> None:
         f"humaneval_code_raw_bytes_vs_bytes_saved_faceted_{slug}.png",
         f"humaneval_code_ordered_by_gzip6_compression_ratio_{slug}.png",
         f"humaneval_code_ordered_by_gzip6_bytes_saved_{slug}.png",
+        f"humaneval_code_compression_ratio_ecdf_comparison_{slug}.png",
     ):
         assert (output_dir / filename).stat().st_size > 0
 
