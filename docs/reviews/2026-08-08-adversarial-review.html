@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dr-code adversarial review ledger</title>
+<style>
+  :root {
+    --ink: #1d2733;
+    --muted: #5f6b78;
+    --line: #d8dee6;
+    --surface: #ffffff;
+    --page: #f5f7fa;
+    --code-bg: #eef2f6;
+    --accent: #315b8a;
+    --accent-soft: #e8f0f8;
+    --green: #176b43;
+    --green-soft: #e5f4ec;
+    --amber: #8a5a12;
+    --amber-soft: #fbf0d9;
+    --red: #9a3b35;
+    --red-soft: #f9e9e7;
+    --font-system: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.58 var(--font-system); }
+  main { max-width: 1180px; margin: 0 auto; padding: 44px 34px 72px; background: var(--surface); min-height: 100vh; }
+  h1 { margin: 0 0 8px; font-size: clamp(30px, 4vw, 46px); line-height: 1.08; letter-spacing: -.025em; }
+  h2 { margin: 42px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--line); font-size: 22px; }
+  p { margin: 8px 0 14px; }
+  a { color: var(--accent); }
+  code { font: 12.5px/1.45 var(--font-mono); background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+  pre { margin: 10px 0 18px; padding: 14px 16px; overflow-x: auto; background: var(--code-bg); border-radius: 8px; }
+  pre code { padding: 0; background: transparent; }
+  .byline { color: var(--muted); font-size: 14px; }
+  .verdict { margin: 24px 0; padding: 16px 19px; background: var(--green-soft); border-left: 5px solid var(--green); border-radius: 9px; }
+  .verdict b { color: var(--green); }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 22px 0 30px; }
+  .stat { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .stat strong { display: block; font-size: 28px; line-height: 1.05; }
+  .stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .stat.fixed strong { color: var(--green); }
+  .stat.defer strong { color: var(--amber); }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 22px; font-size: 13.7px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); font-size: 12px; letter-spacing: .02em; }
+  tbody tr:nth-child(even) { background: #fafbfd; }
+  .fixed-table td:first-child { width: 24%; font-weight: 700; color: var(--green); }
+  .deferred td:first-child { width: 20%; font-weight: 700; }
+  .deferred td:nth-child(2) { width: 44%; }
+  .note { padding: 12px 15px; background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 7px; }
+  .boundary { color: var(--muted); font-size: 13.5px; }
+  .colophon { margin-top: 44px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  @media (max-width: 760px) {
+    main { padding: 28px 16px 52px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    table { display: block; overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>dr-code adversarial review ledger</h1>
+  <p class="byline">2026-08-08 &middot; branch <code>08-08-dr-code-adversarial-review-fixes</code> &middot; full repository surface</p>
+
+  <div class="verdict">
+    <b>Verdict.</b> Every reproduced correctness finding selected by the review is resolved on this branch. The remaining work is explicitly classified as hardening, improvement, or style and is intentionally deferred. See the <a href="2026-08-08-adversarial-review.md">Markdown source</a> for the paired review record.
+  </div>
+
+  <div class="stats">
+    <div class="stat fixed"><strong>27</strong><span>correctness outcomes</span></div>
+    <div class="stat defer"><strong>12</strong><span>hardening items</span></div>
+    <div class="stat defer"><strong>8</strong><span>improvements</span></div>
+    <div class="stat"><strong>1</strong><span>style item</span></div>
+  </div>
+
+  <p>The review used independent read-only lanes for preprocessing/HumanEval, execution attribution, persistence/evaluation, synthetic data and scripts, viewer behavior, release architecture, and cross-cutting contracts. A finding entered the fix set only after a concrete reproduction against the branch.</p>
+
+  <h2>Correctness outcomes resolved</h2>
+  <table class="fixed-table">
+    <thead><tr><th>Area</th><th>Current branch behavior</th></tr></thead>
+    <tbody>
+      <tr><td>Import deduplication</td><td>Deduplicates only module-scope imports; equal imports in sibling lexical scopes remain intact.</td></tr>
+      <tr><td>Function discovery</td><td>Evaluates each distinct top-level function name once, preventing duplicated cached case results and false incomplete coverage.</td></tr>
+      <tr><td>Import repair</td><td>Preserves parenthesized and backslash-continued imports, including a closing line shared with another statement.</td></tr>
+      <tr><td>Missing-import inference</td><td>Uses lexical-scope-aware unresolved globals, so a binding in one sibling cannot suppress another sibling's import.</td></tr>
+      <tr><td>Source splitting</td><td>Recognizes an actual module-level main guard instead of matching strings, comments, or nested guards.</td></tr>
+      <tr><td>Synthetic source transforms</td><td>Preserves same-line statements during multiline-import removal and declines alpha-renaming when local names are reflected.</td></tr>
+      <tr><td>Candidate normalization</td><td>Normalizes each extracted candidate only when its compiled AST remains equivalent; literal contents stay intact.</td></tr>
+      <tr><td>JSON extraction</td><td>Does not materialize irrelevant numeric tokens while selecting a string <code>code</code> field.</td></tr>
+      <tr><td>Parsed HumanEval state</td><td>Parsed code/tests are recursively immutable, non-persisted derived state re-created from authoritative text.</td></tr>
+      <tr><td>Check bindings</td><td>Expression checks bind their parsed function argument, including <code>check(fn)</code>.</td></tr>
+      <tr><td>Invalid syntax</td><td><code>CodeTest</code> records full-coverage candidate errors without issuing execution or blaming the operator.</td></tr>
+      <tr><td>Trusted oracle failures</td><td>Oracle evaluation is separate and trusted; oracle exceptions invalidate the harness, while candidate exceptions remain evidence.</td></tr>
+      <tr><td>Trace identity</td><td>Producer-setting identity distinguishes <code>bool</code>, <code>int</code>, and <code>float</code>.</td></tr>
+      <tr><td>Trace immutability</td><td>Serialized traces and JSON artifacts recursively freeze nested containers while retaining their wire shapes.</td></tr>
+      <tr><td>Producer coordinates</td><td>Rejects duplicate setting/step names and reserved <code>input</code>/<code>output</code> step names.</td></tr>
+      <tr><td>Aggregation identity</td><td>Rejects incompatible metric versions, definitions, preprocessing producers, and slot provenance.</td></tr>
+      <tr><td>Aggregation units</td><td>Facts with equal names but incompatible units cannot be combined.</td></tr>
+      <tr><td>Synthetic identity</td><td>Coordinates, sample IDs, and RNG identity pin a full digest of the exact ground-truth source.</td></tr>
+      <tr><td>Corruption strata</td><td>Unicode and quote recipes create real applicable changes; non-clean no-ops are explicit and omitted.</td></tr>
+      <tr><td>Snapshot selection</td><td>Validates the snapshot's pinned <code>test</code> split.</td></tr>
+      <tr><td>Sampling cardinality</td><td>Fails when requested counts are non-positive or exceed the available population.</td></tr>
+      <tr><td>Historical inputs</td><td>Malformed/non-finite measurements fail visibly instead of disappearing from means.</td></tr>
+      <tr><td>Historical coverage</td><td>Every treatment uses one run-wide task/repeat population, exposing entirely missing tasks.</td></tr>
+      <tr><td>Historical labels</td><td>Uses supplied model labels and neutral Historical/Current language.</td></tr>
+      <tr><td>Viewer grammars</td><td><code>CodeDiff</code> requests the five documented grammars; unsupported block languages stay plain text.</td></tr>
+      <tr><td>Viewer declarations</td><td>The emitted declaration surface passes a strict distribution consumer.</td></tr>
+      <tr><td>Release artifact gate</td><td>A supported macOS job executes the exact Linux-built wheel before publication.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Deferred hardening</h2>
+  <p>These gaps are real, but each strengthens a guarantee beyond the correction scope of this pass.</p>
+  <table class="deferred">
+    <thead><tr><th>Boundary</th><th>Gap</th><th>Recommended next action</th></tr></thead>
+    <tbody>
+      <tr><td>Candidate parsing</td><td>Extreme parser complexity can escape as <code>MemoryError</code>.</td><td>Define an explicit parse-complexity/resource budget.</td></tr>
+      <tr><td>Runner attribution</td><td>Timeout, signal, output-limit, and kill outcomes do not expose whether trusted or candidate code owned the phase.</td><td>Add a phase-aware execution protocol.</td></tr>
+      <tr><td>Runner results</td><td>The atomic driver still accepts a clean partial case list as candidate incomplete evidence.</td><td>Treat partial clean output as malformed runner/cache evidence.</td></tr>
+      <tr><td>Cache liveness</td><td>Store operations and writer join are unbounded.</td><td>Bound persistence operations and shutdown.</td></tr>
+      <tr><td>Cache recovery</td><td>A writer <code>BaseException</code> can lose retry state; close does not coordinate an admitted blocked prefetch.</td><td>Preserve in-flight state and define close/prefetch coordination.</td></tr>
+      <tr><td>Synthetic inputs</td><td>Duplicate task/recipe inputs and duplicate snapshot IDs can create duplicate sample identities.</td><td>Reject duplicate identities at construction and snapshot validation.</td></tr>
+      <tr><td>Artifact writes</td><td>Synthetic JSONL and analysis outputs write directly to final paths.</td><td>Validate a temporary artifact, then atomically replace.</td></tr>
+      <tr><td>Trace restoration</td><td>Value keys, fact owners, and absence lineage are not cross-checked against producer steps.</td><td>Add cross-field referential validation.</td></tr>
+      <tr><td>Schema literals</td><td>Numeric schema versions are not exact-typed and full golden compatibility fixtures are incomplete.</td><td>Require integer types and add complete golden payloads.</td></tr>
+      <tr><td>Viewer loading</td><td>Dynamic load failures can remain unhandled and poison the singleton promise.</td><td>Add rejection state and controlled retry.</td></tr>
+      <tr><td>Viewer validation</td><td>The gallery aliases source rather than proving the packed artifact.</td><td>Add an installed/packed consumer smoke.</td></tr>
+      <tr><td>Viewer portability</td><td>Build scripts use POSIX <code>rm -rf</code> without declaring platform scope.</td><td>Use a portable clean command or state supported platforms.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Deferred improvements</h2>
+  <table class="deferred">
+    <thead><tr><th>Area</th><th>Opportunity</th></tr></thead>
+    <tbody>
+      <tr><td>Evaluation plans</td><td>Reconcile the internally-complete contract with intentional live-registry lookup during restoration.</td></tr>
+      <tr><td>Dependencies</td><td>Move Polars out of wheel runtime dependencies while only repository scripts use it.</td></tr>
+      <tr><td>Cache evidence</td><td>Add a real <code>SqliteRecordCache</code> close/reopen execution-cache test.</td></tr>
+      <tr><td>Serialization</td><td>Canonicalize mapping byte order if trace bytes become content-addressed.</td></tr>
+      <tr><td>Subset policy</td><td>Replace or explicitly name prefix selection for partial synthetic corpora.</td></tr>
+      <tr><td>Viewer bundle</td><td>The runtime grammar set is fixed, but the vendor registry still exposes about 302 possible dynamic chunks.</td></tr>
+      <tr><td>Accessibility</td><td>Expose status semantics and standard ARIA/span props.</td></tr>
+      <tr><td>Package contents</td><td>Include license text and usage documentation in the viewer tarball.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Deferred style</h2>
+  <p class="note">Rename <code>test_environment_grant_is_fixed_and_hermetic</code>: the test proves a fixed environment-variable grant, not hermetic containment.</p>
+
+  <h2>Validation record</h2>
+  <p>Focused regressions accompany every correction. The exact-tip repository gate is:</p>
+  <pre><code>scripts/pre-check.sh</code></pre>
+  <p>The viewer is also checked as an independent package:</p>
+  <pre><code>cd viewer
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm build</code></pre>
+  <p class="boundary">Implementation tip <code>e5dcb38c</code> passed the complete gate: 1,287 Python tests passed with 5 expected xfails, all Ruff/ty/schema checks passed, and the viewer passed typecheck, build, 34 tests, and its strict dist-consumer check.</p>
+
+  <h2>Review boundaries</h2>
+  <ul class="boundary">
+    <li>The result channel remains explicitly unauthenticated; this review does not claim candidate containment or forgery resistance.</li>
+    <li>The evaluation surface remains HumanEval/HumanEvalPlus oriented.</li>
+    <li>Deferred work becomes blocking only if a future contract adopts the stronger guarantee it describes.</li>
+  </ul>
+
+  <div class="colophon">Source: independent adversarial review lanes at branch tip, with each correctness finding reproduced before implementation. This report is paired with <a href="2026-08-08-adversarial-review.md">2026-08-08-adversarial-review.md</a>.</div>
+</main>
+</body>
+</html>
