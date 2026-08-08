@@ -80,6 +80,9 @@ def test_parse_oracle_tests_have_expected_expression_metadata() -> None:
     assert [case.case_id for case in parsed.cases] == ["case_0", "case_1"]
     checks = list(parsed.iter_checks(candidate_name="candidate"))
     assert checks[0].expected_output_expr == "ref(*[1])"
+    assert checks[0].code == (
+        "assertion(candidate(*[1]), __dr_code_expected_output, 0.0)"
+    )
 
 
 def test_parse_expression_tests_preserve_indexed_assertion() -> None:

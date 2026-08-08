@@ -20,6 +20,9 @@ from dr_code.evaluation.identity import (
 from dr_code.humaneval.settings import CodeTestSettings
 from dr_code.humaneval.task import EvaluationCaseResult, HumanEvalTask
 from dr_code.humaneval.task import EvaluationCaseStatus
+from dr_code.humaneval.parsed_tests import (
+    EXPECTED_OUTPUT_NAME as _EXPECTED_OUTPUT_NAME,
+)
 from dr_code.humaneval.parsed_tests import ParsedTests, SingleCaseCheck
 from dr_code.metrics import MetricName, MetricQuestionCoordinate
 from dr_code.metrics.coordinates import question_settings
@@ -170,6 +173,9 @@ def _evaluate_suite(
 
     try:
         exec(parsed_tests.support_code, candidate_namespace)
+        # The oracle is trusted test code, so evaluate it here rather than
+        # inside the candidate's case block: a failing oracle is a harness
+        # failure, never a candidate failure.
         compiled_checks = tuple(
             (
                 check,
@@ -178,6 +184,9 @@ def _evaluate_suite(
                     f"<generated {check.case_id}>",
                     "exec",
                 ),
+                None
+                if check.expected_output_expr is None
+                else eval(check.expected_output_expr, candidate_namespace),
             )
             for check in parsed_tests.iter_checks(candidate_name="candidate")
         )
@@ -203,8 +212,11 @@ def _evaluate_suite(
                         candidate_namespace=candidate_namespace,
                         check=check,
                         compiled_check=compiled_check,
+                        expected_output=expected_output,
                     )
-                    for check, compiled_check in compiled_checks
+                    for check, compiled_check, expected_output in (
+                        compiled_checks
+                    )
                 ),
             )
         )
@@ -223,9 +235,12 @@ def _evaluate_case(
     candidate_namespace: dict[str, object],
     check: SingleCaseCheck,
     compiled_check: CodeType,
+    expected_output: object = None,
 ) -> EvaluationCaseResult:
     started_at = time.perf_counter()
     check_namespace = candidate_namespace | {"candidate": candidate}
+    if check.expected_output_expr is not None:
+        check_namespace[_EXPECTED_OUTPUT_NAME] = expected_output
     try:
         exec(compiled_check, check_namespace)
     except AssertionError as error:
@@ -235,6 +250,7 @@ def _evaluate_case(
             check,
             candidate,
             candidate_namespace,
+            expected_output,
         )
     except BaseException as error:
         status = EvaluationCaseStatus.ERROR
@@ -243,6 +259,7 @@ def _evaluate_case(
             check,
             candidate,
             candidate_namespace,
+            expected_output,
         )
     else:
         status = EvaluationCaseStatus.PASSED
@@ -270,6 +287,7 @@ def _failure_metadata(
     check: SingleCaseCheck,
     candidate: object,
     candidate_namespace: dict[str, object],
+    expected_output: object = None,
 ) -> dict[str, str]:
     namespace = candidate_namespace | {"candidate": candidate}
     actual = ""
@@ -279,11 +297,10 @@ def _failure_metadata(
             actual = _clip(eval(check.actual_output_expr, namespace))
     except BaseException as error:
         actual = _exception_message(error)
-    try:
-        if check.expected_output_expr:
-            expected = _clip(eval(check.expected_output_expr, namespace))
-    except BaseException as error:
-        expected = _exception_message(error)
+    # The oracle already ran as trusted code, so report its value rather than
+    # re-evaluating it here.
+    if check.expected_output_expr is not None:
+        expected = _clip(expected_output)
     return {
         "input_repr": check.input_repr,
         "expected_output_repr": expected,

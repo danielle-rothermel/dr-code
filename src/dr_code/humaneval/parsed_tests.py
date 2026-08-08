@@ -10,6 +10,7 @@ from pydantic import BeforeValidator, Field, field_serializer
 from dr_code.core.models import FrozenModel
 
 __all__ = [
+    "EXPECTED_OUTPUT_NAME",
     "HumanEvalTestCaseKind",
     "InputExpressionTestCase",
     "InputOracleTestCase",
@@ -26,6 +27,9 @@ __all__ = [
 EXPECTED_ARG_INDEX = 1
 TOLERANCE_ARG_INDEX = 2
 PAIR_TARGET_SIZE = 2
+# The generated check code reads the oracle value from this name, which the
+# evaluation harness binds after evaluating the oracle as trusted test code.
+EXPECTED_OUTPUT_NAME = "__dr_code_expected_output"
 
 
 class UnsupportedTestFormatError(ValueError):
@@ -142,7 +146,7 @@ class InputOracleTestCase(FrozenModel):
             code=(
                 f"{assertion_name}("
                 f"{candidate_name}(*{arguments_source}), "
-                f"{expected_expr}, {self.atol!r})"
+                f"{EXPECTED_OUTPUT_NAME}, {self.atol!r})"
             ),
         )
 
