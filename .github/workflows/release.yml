@@ -108,17 +108,38 @@ jobs:
           enable-cache: false
       - run: uv build
       - run: uvx --from twine==7.0.0 twine check --strict dist/*
-      - name: Smoke-test installed wheel
-        run: uv run python scripts/check_built_wheel.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: distributions
           path: dist/
           if-no-files-found: error
 
+  wheel-smoke:
+    name: Smoke-test installed wheel on macOS
+    needs: build
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version-file: pyproject.toml
+          python-version: "3.13"
+          enable-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+      - name: Smoke-test installed wheel
+        run: uv run python scripts/check_built_wheel.py
+
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: wheel-smoke
     runs-on: ubuntu-latest
     environment:
       name: pypi
