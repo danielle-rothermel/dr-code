@@ -108,8 +108,8 @@ def dedupe_import_lines(source: str) -> str:
     seen: set[str] = set()
     lines: list[str] = []
     for line in source.splitlines():
-        if IMPORT_LINE_RE.match(line):
-            key = line.strip()
+        if line.startswith(("import ", "from ")):
+            key = line.rstrip()
             if key in seen:
                 continue
             seen.add(key)
