@@ -91,7 +91,10 @@ def repair_import_lines(source: str) -> tuple[str, bool]:
     changed = False
     lines: list[str] = []
     for line in source.splitlines():
-        if IMPORT_LINE_RE.match(line) and _parse_or_none(line) is None:
+        if (
+            IMPORT_LINE_RE.match(line)
+            and _parse_or_none(line.lstrip()) is None
+        ):
             fixed = _repair_import_line(line)
             if fixed is not None:
                 lines.append(fixed)
@@ -130,10 +133,11 @@ def _parse_or_none(text: str) -> ast.Module | None:
 
 
 def _repair_import_line(line: str) -> str | None:
+    indentation = line[: len(line) - len(line.lstrip())]
     candidate = TRAILING_JUNK_RE.sub("", line)
-    candidate = candidate.rstrip().rstrip(",")
+    candidate = candidate.strip().rstrip(",")
     if _parse_or_none(candidate) is not None:
-        return candidate
+        return indentation + candidate
 
     opens = candidate.count("(")
     closes = candidate.count(")")
@@ -142,7 +146,7 @@ def _repair_import_line(line: str) -> str | None:
 
     closed_candidate = candidate + (")" * (opens - closes))
     if _parse_or_none(closed_candidate) is not None:
-        return closed_candidate
+        return indentation + closed_candidate
     return None
 
 

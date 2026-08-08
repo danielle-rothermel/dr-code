@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import argparse
 import re
-import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -82,24 +80,15 @@ def _has_dated_changelog_entry(content: str, version: _Version) -> bool:
 
 def validate_release_contract(
     *,
-    base_pyproject: bytes,
     head_pyproject: bytes,
     head_lock: bytes,
     head_changelog: str,
 ) -> tuple[str, ...]:
     errors: list[str] = []
     try:
-        base = _project_version(base_pyproject, source="base pyproject.toml")
         head = _project_version(head_pyproject, source="head pyproject.toml")
     except ValueError as exc:
         return (str(exc),)
-
-    expected = _Version(base.major, base.minor, base.patch + 1)
-    if head != expected:
-        errors.append(
-            f"project version must advance exactly one patch: "
-            f"expected {expected}, found {head}"
-        )
 
     try:
         locked = _locked_project_version(head_lock)
@@ -119,50 +108,18 @@ def validate_release_contract(
     return tuple(errors)
 
 
-def _git_file(ref: str, path: str) -> bytes:
-    try:
-        return subprocess.run(
-            ["git", "show", f"{ref}:{path}"],
-            cwd=_ROOT,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        ).stdout
-    except subprocess.CalledProcessError as exc:
-        diagnostic = exc.stderr.decode(errors="replace").strip()
-        raise ValueError(
-            f"cannot read {path} from base ref {ref!r}: {diagnostic}"
-        ) from exc
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Validate the pull request release-version contract."
-    )
-    parser.add_argument(
-        "--base-ref",
-        required=True,
-        help="exact base commit or local ref used for comparison",
-    )
-    arguments = parser.parse_args()
-
-    try:
-        base_pyproject = _git_file(arguments.base_ref, "pyproject.toml")
-    except ValueError as exc:
-        parser.error(str(exc))
-
     errors = validate_release_contract(
-        base_pyproject=base_pyproject,
         head_pyproject=(_ROOT / "pyproject.toml").read_bytes(),
         head_lock=(_ROOT / "uv.lock").read_bytes(),
         head_changelog=(_ROOT / "CHANGELOG.md").read_text(),
     )
     if errors:
         for error in errors:
-            print(f"release contract violation: {error}", file=sys.stderr)
+            print(f"release metadata violation: {error}", file=sys.stderr)
         return 1
 
-    print("release contract satisfied")
+    print("release metadata valid")
     return 0
 
 

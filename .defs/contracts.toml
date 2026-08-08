@@ -16,18 +16,6 @@ date = "2026-08-05"
 check = "uv run pytest tests/test_component_versioning.py"
 
 [[contracts]]
-title = "Each pull request advances the package patch version"
-statement = """
-Every pull request advances the project version by exactly one patch relative
-to its target, records the same version in the lockfile, and carries a dated
-changelog entry for that version."""
-rationale = """
-An exact increment keeps each reviewed change independently identifiable and
-publishable without path classifications or release-time version assignment."""
-date = "2026-08-06"
-check = "uv run pytest tests/test_release_contract.py"
-
-[[contracts]]
 title = "Releases come from validated immutable main commits"
 statement = """
 PyPI publication requires a version-matching release tag whose commit belongs

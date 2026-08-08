@@ -160,6 +160,25 @@ def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     assert "import random" not in result
 
 
+@pytest.mark.parametrize(
+    "import_line",
+    (
+        "    import random",
+        "    from functools import cmp_to_key",
+        "    import hashlib",
+    ),
+)
+def test_repair_import_lines_preserves_valid_indented_imports(
+    import_line: str,
+) -> None:
+    source = f"def f():\n{import_line}\n    return None\n"
+
+    repaired, changed = repair_import_lines(source)
+
+    assert repaired == source.rstrip()
+    assert not changed
+
+
 def test_inferred_import_follows_and_preserves_module_docstring() -> None:
     source = (
         '"""Module documentation."""\n\n'

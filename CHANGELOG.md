@@ -11,6 +11,8 @@
   compression reconstruction and current-results comparison.
 - Compression utilities support Python minification, trained zstd
   dictionaries, and compact zstd frames.
+- Import repair preserves valid imports nested inside submitted functions, and
+  Python execution accepts up to 2 MiB of input for large HumanEval test sets.
 
 ## 0.1.5 - 2026-08-06
 
