@@ -395,7 +395,7 @@ def test_code_test_function_names_come_from_the_shared_rule(
     )
 
     names = top_level_function_names(candidate)
-    assert names == ["add_one", "fetch", "add_one"]
+    assert names == ["add_one", "fetch"]
     assert len(requests) == len(names)
 
 

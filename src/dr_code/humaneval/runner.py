@@ -105,11 +105,16 @@ def top_level_function_names(
     parsed_module: ast.Module | None = None,
 ) -> list[str]:
     tree = parsed_module if parsed_module is not None else ast.parse(code_str)
-    return [
-        node.name
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-    ]
+    function_names: list[str] = []
+    seen_names: set[str] = set()
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if node.name in seen_names:
+            continue
+        seen_names.add(node.name)
+        function_names.append(node.name)
+    return function_names
 
 
 def run_subprocess_batch(

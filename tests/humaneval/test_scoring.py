@@ -153,6 +153,29 @@ def test_score_humaneval_submission_reports_incomplete_runner_output() -> None:
     assert result.evaluation.coverage_complete is False
 
 
+def test_score_humaneval_submission_evaluates_redefined_entry_point_once(
+    local_executor: Executor,
+) -> None:
+    result = score_humaneval_submission(
+        raw_submission=(
+            "def add_one(x):\n"
+            "    return x\n"
+            "\n"
+            "def add_one(x):\n"
+            "    return x + 1\n"
+        ),
+        task=_task(),
+        executor=local_executor,
+    )
+
+    assert isinstance(result, CompletedScore)
+    assert result.outcome is SubmissionOutcome.PASSED
+    assert result.evaluation is not None
+    assert result.evaluation.function_names == ["add_one"]
+    assert len(result.evaluation.results) == result.evaluation.total_cases == 2
+    assert result.evaluation.status_counts == {"passed": 2}
+
+
 def test_batch_scorer_runs_all_planned_requests_in_one_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
