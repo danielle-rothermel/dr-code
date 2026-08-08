@@ -5,6 +5,7 @@ from dr_code.synthetic.corruption_recipes import (
     apply_recipe,
 )
 from dr_code.synthetic.dataset_builder import (
+    InapplicableRecipeError,
     build_dataset,
     build_sample,
     load_dataset,
@@ -17,6 +18,7 @@ __all__ = [
     "RECIPES_BY_NAME",
     "REGISTRY",
     "Corruption",
+    "InapplicableRecipeError",
     "Recipe",
     "apply_recipe",
     "build_dataset",
