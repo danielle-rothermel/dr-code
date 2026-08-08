@@ -1,7 +1,9 @@
 # dr-code adversarial review ledger
 
-**Date:** 2026-08-08  
-**Branch:** `08-08-dr-code-adversarial-review-fixes`  
+**Date:** 2026-08-08
+
+**Branch:** `08-08-dr-code-adversarial-review-fixes`
+
 **Scope:** Python package, HumanEval evaluator, preprocessing, execution and metrics, persistence, synthetic data, analysis scripts, release workflow, and viewer package.
 
 ## Verdict
