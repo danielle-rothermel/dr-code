@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from _humaneval_builders import _task
-from dr_code.humaneval.metric_operator import CodeTestSettings
+from dr_code.humaneval.metric_operator import CodeTest, CodeTestSettings
+from dr_code.humaneval.task import HumanEvalTask
 from dr_code.metrics import (
     MetricName,
     MetricQuestion,
@@ -42,3 +45,32 @@ def test_code_test_requires_the_evaluation_batch_execution_outcome() -> None:
     assert record.failure.failure_message == (
         "code_test has no candidate execution outcome"
     )
+
+
+def test_code_test_reuses_validated_task_for_equal_frozen_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.humaneval import metric_operator
+
+    validation_count = 0
+    validate_task_payload = metric_operator._validate_task_payload
+
+    def counting_validate_task_payload(
+        artifact: JsonArtifact,
+    ) -> HumanEvalTask:
+        nonlocal validation_count
+        validation_count += 1
+        return validate_task_payload(artifact)
+
+    monkeypatch.setattr(
+        metric_operator,
+        "_validate_task_payload",
+        counting_validate_task_payload,
+    )
+    operator = CodeTest(CodeTestSettings())
+    payload = _task().model_dump(mode="json")
+
+    operator.validate_auxiliary({"task": JsonArtifact(payload=payload)})
+    operator.validate_auxiliary({"task": JsonArtifact(payload=payload)})
+
+    assert validation_count == 1
