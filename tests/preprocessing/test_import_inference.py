@@ -63,6 +63,19 @@ def test_infer_necessary_imports_skips_function_parameter_name() -> None:
     assert "import" not in result
 
 
+def test_infer_necessary_imports_respects_sibling_function_scopes() -> None:
+    source = (
+        "def passthrough(math):\n"
+        "    return math\n\n"
+        "def square_root(value):\n"
+        "    return math.sqrt(value)\n"
+    )
+
+    result = infer_necessary_imports(source)
+
+    assert result == f"import math\n{source.rstrip()}"
+
+
 def test_infer_necessary_imports_skips_lambda_parameter_name() -> None:
     source = "g = lambda np: np + 1\n"
     result = infer_necessary_imports(source)
@@ -191,6 +204,26 @@ def test_repair_import_lines_preserves_valid_indented_imports(
 
     assert repaired == source.rstrip()
     assert not changed
+
+
+@pytest.mark.parametrize(
+    "import_lines",
+    (
+        "from collections import (\n    Counter,\n    defaultdict,\n)",
+        "from collections import Counter, \\\n    defaultdict",
+        "from os import (\n    path,\n); sibling = 1",
+    ),
+)
+def test_repair_import_lines_preserves_valid_multiline_imports(
+    import_lines: str,
+) -> None:
+    source = f"{import_lines}\n\ndef f():\n    return Counter()\n"
+
+    repaired, changed = repair_import_lines(source)
+
+    assert repaired == source.rstrip()
+    assert not changed
+    compile(repaired, "<repaired>", "exec")
 
 
 def test_inferred_import_follows_and_preserves_module_docstring() -> None:
