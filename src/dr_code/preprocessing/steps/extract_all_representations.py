@@ -33,6 +33,11 @@ FIELD_MARKER_RE: Final[re.Pattern[str]] = re.compile(
     r"\[\[\s*##\s*(?P<field>[A-Za-z_][A-Za-z0-9_]*)\s*##\s*\]\]"
 )
 CODE_FIELD_NAME: Final[str] = "code"
+_IGNORED_JSON_NUMBER: Final[object] = object()
+
+
+def _ignore_json_number(_value: str) -> object:
+    return _IGNORED_JSON_NUMBER
 
 
 @verify(UNIQUE)
@@ -116,7 +121,12 @@ def _json_object_code_value(text: str) -> str | None:
     if not (stripped.startswith("{") and stripped.endswith("}")):
         return None
     try:
-        decoded = json.loads(stripped)
+        decoded = json.loads(
+            stripped,
+            parse_float=_ignore_json_number,
+            parse_int=_ignore_json_number,
+            parse_constant=_ignore_json_number,
+        )
     except (json.JSONDecodeError, TypeError):
         return None
     if not isinstance(decoded, dict):

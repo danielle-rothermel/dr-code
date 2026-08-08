@@ -109,6 +109,7 @@ def test_round_trip_preserves_candidate_lineage() -> None:
         assert operations[1:] == [
             "strip_fences",
             "dedent_candidates",
+            "normalize_text_preserving_semantics",
             "normalize_smart_quotes",
             "split_on_name_guard",
             "repair_import_lines",

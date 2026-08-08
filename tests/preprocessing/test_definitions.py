@@ -15,16 +15,11 @@ from dr_code.preprocessing import (
 
 
 _EXPECTED_STEP_INSTANCES: Final[tuple[str, ...]] = (
-    "normalize_line_endings",
-    "normalize_unicode",
-    "expand_tabs",
-    "strip_trailing_whitespace",
-    "collapse_blank_runs",
-    "trim_outer_blanks",
     "reject_blank_input",
     "extract_all_representations",
     "strip_fences",
     "dedent",
+    "normalize_text_preserving_semantics",
     "normalize_smart_quotes",
     "split_on_name_guard",
     "add_last_return_salvage",
@@ -108,6 +103,7 @@ def test_every_source_mutating_step_precedes_inspection() -> None:
     for mutating in (
         "strip_fences",
         "dedent",
+        "normalize_text_preserving_semantics",
         "normalize_smart_quotes",
         "split_on_name_guard",
         "repair_import_lines",

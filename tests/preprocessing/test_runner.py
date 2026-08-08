@@ -420,54 +420,6 @@ _EXHAUSTIVE_PRODUCER_JSON: Final[dict[str, object]] = {
         "version": "0",
         "steps": [
             {
-                "instance_name": "normalize_line_endings",
-                "component": {
-                    "registered_name": "normalize_line_endings",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
-                "instance_name": "normalize_unicode",
-                "component": {
-                    "registered_name": "normalize_unicode",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
-                "instance_name": "expand_tabs",
-                "component": {
-                    "registered_name": "expand_tabs",
-                    "version": "0",
-                    "settings": [{"name": "tab_width", "value": 4}],
-                },
-            },
-            {
-                "instance_name": "strip_trailing_whitespace",
-                "component": {
-                    "registered_name": "strip_trailing_whitespace",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
-                "instance_name": "collapse_blank_runs",
-                "component": {
-                    "registered_name": "collapse_blank_runs",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
-                "instance_name": "trim_outer_blanks",
-                "component": {
-                    "registered_name": "trim_outer_blanks",
-                    "version": "0",
-                    "settings": [],
-                },
-            },
-            {
                 "instance_name": "reject_blank_input",
                 "component": {
                     "registered_name": "reject_blank_input",
@@ -495,6 +447,14 @@ _EXHAUSTIVE_PRODUCER_JSON: Final[dict[str, object]] = {
                 "instance_name": "dedent",
                 "component": {
                     "registered_name": "dedent_candidates",
+                    "version": "0",
+                    "settings": [],
+                },
+            },
+            {
+                "instance_name": "normalize_text_preserving_semantics",
+                "component": {
+                    "registered_name": ("normalize_text_preserving_semantics"),
                     "version": "0",
                     "settings": [],
                 },

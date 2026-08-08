@@ -40,6 +40,9 @@ from dr_code.preprocessing.steps.materialize_candidate_set import (
 from dr_code.preprocessing.steps.normalize_line_endings import (
     NormalizeLineEndings,
 )
+from dr_code.preprocessing.steps.normalize_text_preserving_semantics import (
+    NormalizeTextPreservingSemantics,
+)
 from dr_code.preprocessing.steps.normalize_smart_quotes import (
     NormalizeSmartQuotes,
 )
@@ -69,6 +72,9 @@ REGISTRY: Mapping[str, type[Step]] = MappingProxyType(
         TrimOuterBlanks.NAME: TrimOuterBlanks,
         RejectBlankInput.NAME: RejectBlankInput,
         ExtractAllRepresentations.NAME: ExtractAllRepresentations,
+        NormalizeTextPreservingSemantics.NAME: (
+            NormalizeTextPreservingSemantics
+        ),
         NormalizeSmartQuotes.NAME: NormalizeSmartQuotes,
         StripFences.NAME: StripFences,
         DedentCandidates.NAME: DedentCandidates,

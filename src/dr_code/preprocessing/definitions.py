@@ -29,19 +29,14 @@ def _spec(
     )
 
 
-_TEXT_NORMALIZATION: Final[tuple[StepSpec, ...]] = (
-    _spec("normalize_line_endings", StepName.NORMALIZE_LINE_ENDINGS),
-    _spec("normalize_unicode", StepName.NORMALIZE_UNICODE),
-    _spec("expand_tabs", StepName.EXPAND_TABS),
-    _spec("strip_trailing_whitespace", StepName.STRIP_TRAILING_WHITESPACE),
-    _spec("collapse_blank_runs", StepName.COLLAPSE_BLANK_RUNS),
-    _spec("trim_outer_blanks", StepName.TRIM_OUTER_BLANKS),
-)
-
 # All source mutation precedes inspection so facts describe the exact source.
 _CANDIDATE_SHAPING: Final[tuple[StepSpec, ...]] = (
     _spec("strip_fences", StepName.STRIP_FENCES),
     _spec("dedent", StepName.DEDENT_CANDIDATES),
+    _spec(
+        "normalize_text_preserving_semantics",
+        StepName.NORMALIZE_TEXT_PRESERVING_SEMANTICS,
+    ),
     _spec("normalize_smart_quotes", StepName.NORMALIZE_SMART_QUOTES),
     _spec("split_on_name_guard", StepName.SPLIT_ON_NAME_GUARD),
 )
@@ -66,7 +61,6 @@ EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION: Final[PreprocessingDefinition] = (
         definition_id=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
         version=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
         steps=(
-            *_TEXT_NORMALIZATION,
             _spec("reject_blank_input", StepName.REJECT_BLANK_INPUT),
             _spec(
                 "extract_all_representations",
