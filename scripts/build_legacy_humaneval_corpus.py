@@ -118,6 +118,7 @@ class DumpHints(_BoundaryModel):
 class DumpedPoolRow(_BoundaryModel):
     project_name: str
     pool_name: str
+    table_name: str
     sample_id: str
     key_values: dict[str, Any] = Field(default_factory=dict)
     sample_idx: int | None = None
@@ -828,13 +829,27 @@ def _build_output_rows(
     if decoder_output is None:
         raise ValueError("attempt builder received a non-decoder row")
     task_id = _validated_task_id(row)
+    if task_id not in prompts_by_task_id:
+        raise ValueError(
+            f"row {_source_record_id(row)} names unknown HumanEval task "
+            f"{task_id!r}"
+        )
     if row.created_at is None:
         raise ValueError(f"row {_source_record_id(row)} has no creation date")
+    if row.created_at.utcoffset() is None:
+        raise ValueError(
+            f"row {_source_record_id(row)} has a timezone-naive creation date"
+        )
 
     source_kind = _source_kind(row)
+    fallback_user_prompt = (
+        prompts_by_task_id[task_id]
+        if row.request_json.get("unavailable") is True
+        else None
+    )
     decoder_projection = _prompt_projection(
         row.request_json,
-        fallback_user_prompt=prompts_by_task_id.get(task_id),
+        fallback_user_prompt=fallback_user_prompt,
     )
     decoder_controls = _request_controls(row.request_json)
     decoder_provider, decoder_model_raw = _response_model(
@@ -865,13 +880,11 @@ def _build_output_rows(
         )
         encoder_model = _canonical_model(encoder_provider, encoder_model_raw)
         encoder_output = _response_text(encoder.response_json)
-        encoder_config_id = _first_string(
-            encoder.key_values.get("llm_config_id"),
-            row.metadata_json.get("enc_llm_config_id"),
+        encoder_config_id = _optional_string(
+            encoder.key_values.get("llm_config_id")
         )
-        encoder_prompt_template_id = _first_string(
-            encoder.key_values.get("prompt_template_id"),
-            row.metadata_json.get("enc_prompt_template_id"),
+        encoder_prompt_template_id = _optional_string(
+            encoder.key_values.get("prompt_template_id")
         )
         if encoder_model is None or encoder_output is None:
             raise ValueError(
@@ -928,7 +941,7 @@ def _build_output_rows(
         "source_kind": _SOURCE_KIND,
         "source_database": row.project_name,
         "source_schema": _SOURCE_SCHEMA,
-        "source_table": row.pool_name,
+        "source_table": row.table_name,
         "source_record_id": source_record_id,
         "generation_run_id": row.run_id or source_record_id,
         "attempt_index": (

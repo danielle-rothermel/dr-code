@@ -236,7 +236,13 @@ def _write_pool(
             file.write(json.dumps(row, sort_keys=True) + "\n")
 
 
-def _dump_fixture(tmp_path: Path, *, prompt_budget: int = 64) -> Path:
+def _dump_fixture(
+    tmp_path: Path,
+    *,
+    prompt_budget: int = 64,
+    exact_task_id: str = "HumanEval/1",
+    migrated_request_json: dict[str, Any] | None = None,
+) -> Path:
     dump_directory = tmp_path / "dump"
     dump_directory.mkdir()
     exact_request = {
@@ -264,7 +270,7 @@ def _dump_fixture(tmp_path: Path, *, prompt_budget: int = 64) -> Path:
                     sample_id="direct-exact",
                     pool_name="dec_v0_orig",
                     source_kind="original_humaneval_prompt",
-                    task_id="HumanEval/1",
+                    task_id=exact_task_id,
                     request_json=exact_request,
                     finish_reason="length",
                 )
@@ -280,10 +286,14 @@ def _dump_fixture(tmp_path: Path, *, prompt_budget: int = 64) -> Path:
                     pool_name="official_decoder_t0",
                     source_kind="task_prompt",
                     task_id="HumanEval/0",
-                    request_json={
-                        "reason": "historical_migration",
-                        "unavailable": True,
-                    },
+                    request_json=(
+                        migrated_request_json
+                        if migrated_request_json is not None
+                        else {
+                            "reason": "historical_migration",
+                            "unavailable": True,
+                        }
+                    ),
                     finish_reason=None,
                 )
             ],
@@ -386,6 +396,7 @@ def test_reconstructs_canonical_corpus_and_request_sidecar(
     )
     assert direct["encoder_model"] is None
     assert direct["is_partial"] is True
+    assert direct["source_table"] == "pool_dec_v0_orig_samples"
 
     migrated = corpus.join(
         requests.filter(pl.col("source_pool") == "official_decoder_t0").select(
@@ -438,6 +449,41 @@ def test_rejects_pool_file_row_count_mismatch_without_publishing_outputs(
     assert completed.returncode == 1
     assert "pool dump row count mismatch" in completed.stderr
     assert not output_directory.exists()
+
+
+def test_rejects_task_id_outside_snapshot_without_publishing_outputs(
+    tmp_path: Path,
+) -> None:
+    dump_directory = _dump_fixture(tmp_path, exact_task_id="HumanEval/999")
+    output_directory = tmp_path / "output"
+
+    completed = _run_builder(dump_directory, output_directory)
+
+    assert completed.returncode == 1
+    assert "names unknown HumanEval task 'HumanEval/999'" in completed.stderr
+    assert not output_directory.exists()
+
+
+def test_does_not_invent_prompt_without_explicit_unavailable_marker(
+    tmp_path: Path,
+) -> None:
+    dump_directory = _dump_fixture(tmp_path, migrated_request_json={})
+    output_directory = tmp_path / "output"
+
+    completed = _run_builder(dump_directory, output_directory)
+
+    assert completed.returncode == 0, completed.stderr
+    corpus = pl.read_parquet(output_directory / _CORPUS_NAME)
+    requests = pl.read_parquet(output_directory / _REQUESTS_NAME)
+    migrated = corpus.join(
+        requests.filter(pl.col("source_pool") == "official_decoder_t0").select(
+            "sample_id"
+        ),
+        on="sample_id",
+    ).row(0, named=True)
+    assert migrated["decoder_user_prompt"] is None
+    assert migrated["prompt_fidelity"] == "unavailable"
+    assert migrated["extraction_warning"] == "structured_prompt_unavailable"
 
 
 def test_refuses_nonempty_output_directory(tmp_path: Path) -> None:

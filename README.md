@@ -332,6 +332,9 @@ def score_humaneval_submission(
 ) -> HumanEvalSubmissionScore: ...
 ```
 
+The locations, lineage, and intended use of the cleaned historical HumanEval
+artifacts are documented in [Previous HumanEval data](docs/previous_data.md).
+
 ### [Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)
 
 Synthetic datasets are built from versioned recipes whose corruption
