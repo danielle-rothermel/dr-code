@@ -105,3 +105,33 @@ def test_cli_build_rejects_unknown_recipe(
     assert result.returncode != 0
     assert "unknown recipe(s): unknown" in result.stderr
     assert not output_path.exists()
+
+
+def test_cli_build_rejects_more_tasks_than_snapshot_contains(
+    tmp_path: Path,
+    one_row_snapshot_path: Path,
+    run_python_module,
+) -> None:
+    output_path = tmp_path / "synthetic.jsonl"
+
+    result = run_python_module(
+        "dr_code.synthetic",
+        "build",
+        "--recipes",
+        "clean",
+        "--tasks",
+        "2",
+        "--seed",
+        "7",
+        "--snapshot",
+        str(one_row_snapshot_path),
+        "--output",
+        str(output_path),
+    )
+
+    assert result.returncode != 0
+    assert (
+        "requested task count exceeds available HumanEvalPlus tasks: 2 > 1"
+        in result.stderr
+    )
+    assert not output_path.exists()

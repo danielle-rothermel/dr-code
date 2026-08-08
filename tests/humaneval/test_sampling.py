@@ -64,6 +64,35 @@ def test_sampling_from_rows_is_deterministic_and_indexed() -> None:
     ]
 
 
+@pytest.mark.parametrize("sample_count", (-1, 0))
+def test_sampling_rejects_non_positive_count(sample_count: int) -> None:
+    rows = [_row(f"HumanEval/{index}", index) for index in range(2)]
+
+    with pytest.raises(
+        ValueError,
+        match=f"sample_count must be positive, received {sample_count}",
+    ):
+        sample_humaneval_tasks_from_rows(
+            rows,
+            seed=17,
+            sample_count=sample_count,
+        )
+
+
+def test_sampling_rejects_count_larger_than_available_tasks() -> None:
+    rows = [_row(f"HumanEval/{index}", index) for index in range(2)]
+
+    with pytest.raises(
+        ValueError,
+        match=("sample_count exceeds the available HumanEval tasks: 3 > 2"),
+    ):
+        sample_humaneval_tasks_from_rows(
+            rows,
+            seed=17,
+            sample_count=3,
+        )
+
+
 def test_raw_row_snapshot_rehydrates_byte_equal_checks(
     raw_snapshot: HumanEvalRawRowsSnapshot,
 ) -> None:
@@ -95,6 +124,20 @@ def test_raw_row_snapshot_rehydrates_byte_equal_checks(
         generated_checks = _check_payload_bytes(task)
         assert generated_checks
         assert all(generated_checks)
+
+
+def test_raw_row_snapshot_rejects_non_test_split() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "HumanEval raw-row snapshot dataset split mismatch: "
+            "'test' != 'validation'"
+        ),
+    ):
+        load_humaneval_rows(
+            snapshot_path=SNAPSHOT_PATH,
+            dataset_split="validation",
+        )
 
 
 @pytest.mark.parametrize(
@@ -166,6 +209,7 @@ def test_raw_row_snapshot_rejects_provenance_mismatch(
         validate_snapshot_header(
             header,
             dataset_name=raw_snapshot.header.dataset_id,
+            dataset_split="test",
             hf_revision=raw_snapshot.header.hf_revision,
         )
 
