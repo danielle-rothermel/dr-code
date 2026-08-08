@@ -61,6 +61,25 @@ def test_salvaged_candidate_still_gets_its_inferred_imports() -> None:
     assert validate_python_source(result.accepted_code).compile_ok
 
 
+def test_extraction_preserves_same_local_import_in_sibling_functions() -> None:
+    result = extract_humaneval_code(
+        "def floor_value(x):\n"
+        "    import math\n"
+        "    return math.floor(x)\n\n"
+        "def ceil_value(x):\n"
+        "    import math\n"
+        "    return math.ceil(x)\n"
+    )
+
+    assert result.succeeded
+    assert result.accepted_code is not None
+    namespace: dict[str, object] = {}
+    exec(result.accepted_code, namespace)
+    ceil_value = namespace["ceil_value"]
+    assert callable(ceil_value)
+    assert ceil_value(1.5) == 2
+
+
 def test_marked_code_field_wins_over_code_in_another_marked_field() -> None:
     result = extract_humaneval_code(
         "[[ ## prompt ## ]]\n"
