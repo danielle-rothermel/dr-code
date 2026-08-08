@@ -6,6 +6,7 @@ import pytest
 
 from dr_code.humaneval.acceptance import extract_humaneval_code
 from dr_code.preprocessing.import_inference import (
+    dedupe_import_lines,
     infer_necessary_imports,
     repair_import_lines,
 )
@@ -144,6 +145,19 @@ def test_infer_necessary_imports_deduplicates_import_lines() -> None:
     source = "import math\nimport math\n\ndef f():\n    return math.pi\n"
     result = infer_necessary_imports(source)
     assert result.count("import math") == 1
+
+
+def test_dedupe_import_lines_preserves_imports_in_sibling_scopes() -> None:
+    source = (
+        "def floor_value(x):\n"
+        "    import math\n"
+        "    return math.floor(x)\n\n"
+        "def ceil_value(x):\n"
+        "    import math\n"
+        "    return math.ceil(x)\n"
+    )
+
+    assert dedupe_import_lines(source) == source.rstrip()
 
 
 def test_infer_necessary_imports_passthrough_on_syntax_error() -> None:
