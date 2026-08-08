@@ -1,21 +1,29 @@
 from __future__ import annotations
 
+import hashlib
 import random
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from dr_code.synthetic.models import SyntheticSample, SyntheticSampleCoordinate
+from dr_code.core.source.python_transforms import strip_docstrings
+from dr_code.humaneval.plus_dataset import (
+    HumanEvalPlusTask,
+    load_humaneval_plus,
+)
 from dr_code.synthetic.corruption_recipes import (
     RECIPES,
     Recipe,
     apply_recipe,
     recipe_coordinate,
 )
-from dr_code.core.source.python_transforms import strip_docstrings
-from dr_code.humaneval.plus_dataset import (
-    HumanEvalPlusTask,
-    load_humaneval_plus,
+from dr_code.synthetic.models import (
+    SyntheticSample,
+    SyntheticSampleCoordinate,
 )
+
+
+class InapplicableRecipeError(ValueError):
+    """The recipe did not alter this sample's ground-truth source."""
 
 
 def build_sample(
@@ -26,11 +34,19 @@ def build_sample(
     ground_truth = strip_docstrings(task.full_source)
     coordinate = SyntheticSampleCoordinate(
         humaneval_task_id=task.task_id,
+        ground_truth_source_sha256=hashlib.sha256(
+            ground_truth.encode("utf-8")
+        ).hexdigest(),
         generation_seed=seed,
         recipe=recipe_coordinate(recipe),
     )
     rng = random.Random(coordinate.model_dump_json())
     corrupted = apply_recipe(recipe, ground_truth, rng)
+    if recipe.corruptions and corrupted.corrupted_source == ground_truth:
+        raise InapplicableRecipeError(
+            f"synthetic recipe {recipe.name}@{recipe.version} is not "
+            f"applicable to {task.task_id}"
+        )
     return SyntheticSample(
         sample_id=SyntheticSample.make_id(coordinate),
         coordinate=coordinate,
@@ -47,7 +63,10 @@ def iter_dataset(
     recipes_list = list(recipes)
     for task in tasks:
         for recipe in recipes_list:
-            yield build_sample(task, recipe, seed)
+            try:
+                yield build_sample(task, recipe, seed)
+            except InapplicableRecipeError:
+                continue
 
 
 def build_dataset(
@@ -93,6 +112,7 @@ def load_dataset(path: Path) -> list[SyntheticSample]:
 
 
 __all__ = [
+    "InapplicableRecipeError",
     "build_dataset",
     "build_sample",
     "load_dataset",

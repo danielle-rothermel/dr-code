@@ -23,6 +23,7 @@ class RecipeCoordinate(FrozenModel):
 
 class SyntheticSampleCoordinate(FrozenModel):
     humaneval_task_id: str
+    ground_truth_source_sha256: str
     generation_seed: int
     recipe: RecipeCoordinate
 
@@ -41,6 +42,7 @@ class SyntheticSample(FrozenModel):
         return SAMPLE_ID_SEP.join(
             (
                 coordinate.humaneval_task_id,
+                coordinate.ground_truth_source_sha256,
                 f"{coordinate.recipe.recipe_name}@{coordinate.recipe.version}",
                 str(coordinate.generation_seed),
             )
