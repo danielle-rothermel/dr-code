@@ -2,6 +2,12 @@
 
 ## 0.1.6 - 2026-08-06
 
+- Historical `dr-llm` pool snapshots can be reconstructed as a canonical
+  HumanEval generation corpus plus a one-to-one request/configuration sidecar.
+  The adapter resolves and verifies encoder lineage, preserves exact requests
+  and model controls, classifies rendered character budgets, distinguishes
+  unavailable migrated prompts and unresolved lineage, and publishes
+  provenance-hashed artifacts only after validating the complete build.
 - A task-sampled HumanEval analysis runs exhaustive preprocessing without
   caching or candidate evaluation and reports per-task outcomes, failure
   codes, throughput, and a task-level bootstrap confidence interval for the
