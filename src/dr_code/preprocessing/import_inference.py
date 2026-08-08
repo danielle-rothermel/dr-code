@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import re
+import symtable
+import textwrap
 import warnings
 from typing import Final
 
@@ -48,12 +50,11 @@ def infer_missing_imports(source: str) -> str:
     if tree is None:
         return source
 
-    referenced = _collect_referenced_names(tree)
-    bound = _collect_bound_names(tree)
+    unresolved = _collect_unresolved_names(source)
     imports = [
         import_statement
         for name, import_statement in IMPORT_ALIAS_MAP.items()
-        if name in referenced and name not in bound
+        if name in unresolved
     ]
     if not imports:
         return source
@@ -89,18 +90,28 @@ def _inferred_import_insertion_line(tree: ast.Module) -> int:
 
 def repair_import_lines(source: str) -> tuple[str, bool]:
     changed = False
+    source_lines = source.splitlines()
     lines: list[str] = []
-    for line in source.splitlines():
+    index = 0
+    while index < len(source_lines):
+        line = source_lines[index]
         if (
             IMPORT_LINE_RE.match(line)
             and _parse_or_none(line.lstrip()) is None
         ):
+            import_end = _valid_multiline_import_end(source_lines, index)
+            if import_end is not None:
+                lines.extend(source_lines[index:import_end])
+                index = import_end
+                continue
             fixed = _repair_import_line(line)
             if fixed is not None:
                 lines.append(fixed)
             changed = True
+            index += 1
             continue
         lines.append(line)
+        index += 1
     return "\n".join(lines), changed
 
 
@@ -150,50 +161,44 @@ def _repair_import_line(line: str) -> str | None:
     return None
 
 
-def _collect_referenced_names(tree: ast.AST) -> set[str]:
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            names.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            value = node
-            while isinstance(value, ast.Attribute):
-                value = value.value
-            if isinstance(value, ast.Name):
-                names.add(value.id)
-    return names
+def _valid_multiline_import_end(lines: list[str], start: int) -> int | None:
+    for end in range(start + 2, len(lines) + 1):
+        candidate = textwrap.dedent("\n".join(lines[start:end]))
+        tree = _parse_or_none(candidate)
+        if tree is None:
+            continue
+        if tree.body and isinstance(tree.body[0], ast.Import | ast.ImportFrom):
+            return end
+        return None
+    return None
 
 
-def _collect_bound_names(tree: ast.AST) -> set[str]:
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                names.add(alias.asname or alias.name.split(".")[0])
-        elif isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                names.add(alias.asname or alias.name)
-        elif isinstance(
-            node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-        ):
-            names.add(node.name)
-        elif isinstance(node, ast.arg):
-            names.add(node.arg)
-        elif isinstance(node, ast.Name) and isinstance(
-            node.ctx, ast.Store | ast.Del
-        ):
-            names.add(node.id)
-        elif isinstance(node, ast.Global | ast.Nonlocal):
-            names.update(node.names)
-        elif isinstance(node, ast.ExceptHandler) and node.name is not None:
-            names.add(node.name)
-        elif isinstance(node, ast.MatchStar) and node.name is not None:
-            names.add(node.name)
-        elif isinstance(node, ast.MatchMapping) and node.rest is not None:
-            names.add(node.rest)
-        elif isinstance(node, ast.MatchAs) and node.name is not None:
-            names.add(node.name)
-    return names
+def _collect_unresolved_names(source: str) -> set[str]:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        try:
+            module = symtable.symtable(source, "<import-inference>", "exec")
+        except (SyntaxError, ValueError):
+            return set()
+
+    module_bound = {
+        symbol.get_name()
+        for symbol in module.get_symbols()
+        if symbol.is_assigned() or symbol.is_imported()
+    }
+    unresolved: set[str] = set()
+    tables = [module]
+    while tables:
+        table = tables.pop()
+        unresolved.update(
+            symbol.get_name()
+            for symbol in table.get_symbols()
+            if symbol.is_referenced()
+            and symbol.is_global()
+            and symbol.get_name() not in module_bound
+        )
+        tables.extend(table.get_children())
+    return unresolved
 
 
 __all__ = [
