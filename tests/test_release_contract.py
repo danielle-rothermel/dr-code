@@ -37,32 +37,38 @@ def _changelog(version: str) -> str:
 
 def _validate(
     *,
-    head_version: str = "1.2.4",
-    lock_version: str = "1.2.4",
-    changelog_version: str = "1.2.4",
+    head_version: str = "1.2.3",
+    lock_version: str = "1.2.3",
+    changelog_version: str = "1.2.3",
 ) -> tuple[str, ...]:
     return validate_release_contract(
-        base_pyproject=_pyproject("1.2.3"),
         head_pyproject=_pyproject(head_version),
         head_lock=_lock(lock_version),
         head_changelog=_changelog(changelog_version),
     )
 
 
-def test_release_contract_accepts_one_patch_with_matching_metadata() -> None:
-    assert _validate() == ()
+@pytest.mark.parametrize("version", ["1.2.3", "1.3.0", "2.0.0"])
+def test_release_contract_accepts_consistent_metadata(version: str) -> None:
+    assert (
+        _validate(
+            head_version=version,
+            lock_version=version,
+            changelog_version=version,
+        )
+        == ()
+    )
 
 
 @pytest.mark.parametrize(
     "violation",
     [
-        lambda: _validate(head_version="1.2.3"),
-        lambda: _validate(head_version="1.3.0"),
-        lambda: _validate(lock_version="1.2.3"),
-        lambda: _validate(changelog_version="1.2.3"),
+        lambda: _validate(lock_version="1.2.2"),
+        lambda: _validate(changelog_version="1.2.2"),
+        lambda: _validate(head_version="not-semver"),
     ],
 )
-def test_release_contract_rejects_each_inconsistent_version(
+def test_release_contract_rejects_inconsistent_metadata(
     violation: Callable[[], tuple[str, ...]],
 ) -> None:
     assert violation()
