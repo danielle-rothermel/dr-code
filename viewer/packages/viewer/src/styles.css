@@ -1,3 +1,4 @@
+@import "@git-diff-view/react/styles/diff-view-pure.css";
 @import "@fontsource-variable/fira-code/wght.css";
 
 .drv-code-block pre,

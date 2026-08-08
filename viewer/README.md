@@ -81,6 +81,9 @@ The package bundles these grammars:
 | JSON | `json` |
 | Shell | `shellscript`, `bash`, `sh`, `shell`, `zsh` |
 
+`CodeBlock` renders any other `lang` value as plain text without attempting to
+load an unsupported grammar.
+
 `CodeBlock` and `CodeDiff` are synchronous client components with no
 server-only API. They can be rendered by plain React DOM or Vite applications
 and used at a client boundary in an RSC application. While their highlighters

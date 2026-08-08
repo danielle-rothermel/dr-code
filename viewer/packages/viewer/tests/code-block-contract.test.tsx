@@ -7,7 +7,8 @@ const highlighterMocks = vi.hoisted(() => ({
   getHighlighter: vi.fn(),
 }));
 
-vi.mock("../src/highlighter.js", () => ({
+vi.mock("../src/highlighter.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/highlighter.js")>()),
   getHighlighter: highlighterMocks.getHighlighter,
 }));
 
@@ -51,6 +52,17 @@ describe("CodeBlock contract", () => {
 
     expect(container.firstElementChild?.className).toBe(
       "drv-code-block result-code",
+    );
+  });
+
+  it("keeps unsupported languages as plain text without loading Shiki", () => {
+    const { container } = render(
+      <CodeBlock code="language is caller input" lang="not-a-grammar" />,
+    );
+
+    expect(highlighterMocks.getHighlighter).not.toHaveBeenCalled();
+    expect(container.querySelector("pre > code")?.textContent).toBe(
+      "language is caller input",
     );
   });
 

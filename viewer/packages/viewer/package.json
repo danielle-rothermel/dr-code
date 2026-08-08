@@ -21,7 +21,8 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run && pnpm test:dist",
+    "test:dist": "pnpm build && tsc -p tsconfig.dist-consumer.json",
     "prepare": "pnpm build"
   },
   "peerDependencies": {

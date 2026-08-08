@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { getDiffViewHighlighter } from "@git-diff-view/shiki";
 
-import { getHighlighter } from "../src/highlighter.js";
+import {
+  getHighlighter,
+  isSupportedLanguage,
+  SHIKI_LANGUAGES,
+} from "../src/highlighter.js";
 
 const LANGUAGE_ALIASES = [
   ["python", "print('ready')"],
@@ -35,9 +40,20 @@ describe("getHighlighter", () => {
     async (lang, code) => {
       const highlighter = await getHighlighter();
 
+      expect(isSupportedLanguage(lang)).toBe(true);
       expect(() =>
         highlighter.codeToHtml(code, { lang, theme: "github-light" }),
       ).not.toThrow();
     },
   );
+
+  it("limits the diff highlighter to the documented grammars and themes", async () => {
+    const highlighter = await getDiffViewHighlighter([...SHIKI_LANGUAGES]);
+    const engine = highlighter.getHighlighterEngine();
+
+    expect(new Set(engine?.getLoadedLanguages())).toEqual(
+      new Set(LANGUAGE_ALIASES.map(([lang]) => lang)),
+    );
+    expect(engine?.getLoadedThemes()).toEqual(["github-light", "github-dark"]);
+  });
 });
