@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import io
 import json
 import re
@@ -203,11 +204,100 @@ def _is_unpaired_escape(source: str, index: int, escaped: str) -> bool:
     return preceding_slashes % 2 == 0
 
 
+def _is_main_name_guard(test: ast.expr) -> bool:
+    return (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "__name__"
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Constant)
+        and test.comparators[0].value == "__main__"
+    )
+
+
+def _if_test(
+    tokens: list[tokenize.TokenInfo], if_index: int
+) -> ast.expr | None:
+    expression_tokens: list[tuple[int, str]] = []
+    bracket_depth = 0
+    ignored = {
+        token.COMMENT,
+        token.INDENT,
+        token.DEDENT,
+        token.NL,
+        token.NEWLINE,
+        token.ENDMARKER,
+    }
+    for item in tokens[if_index + 1 :]:
+        if item.type == token.OP:
+            if item.string in "([{":
+                bracket_depth += 1
+            elif item.string in ")]}":
+                bracket_depth = max(0, bracket_depth - 1)
+            elif item.string == ":" and bracket_depth == 0:
+                break
+        if item.type == token.NEWLINE and bracket_depth == 0:
+            return None
+        if item.type not in ignored:
+            expression_tokens.append((item.type, item.string))
+    else:
+        return None
+
+    try:
+        return ast.parse(
+            tokenize.untokenize(expression_tokens), mode="eval"
+        ).body
+    except (SyntaxError, ValueError):
+        return None
+
+
+def _module_level_name_guard_linenos(text: str) -> set[int]:
+    tokens: list[tokenize.TokenInfo] = []
+    try:
+        for item in tokenize.generate_tokens(io.StringIO(text).readline):
+            tokens.append(item)
+    except (SyntaxError, ValueError, tokenize.TokenError):
+        pass
+
+    guard_linenos: set[int] = set()
+    indent_level = 0
+    at_statement_start = True
+    for index, item in enumerate(tokens):
+        if item.type == token.INDENT:
+            indent_level += 1
+            continue
+        if item.type == token.DEDENT:
+            indent_level = max(0, indent_level - 1)
+            continue
+        if item.type in {token.COMMENT, token.NL, token.ENDMARKER}:
+            continue
+        if item.type == token.NEWLINE:
+            at_statement_start = True
+            continue
+        if (
+            indent_level == 0
+            and at_statement_start
+            and item.type == token.NAME
+            and item.string == "if"
+        ):
+            test = _if_test(tokens, index)
+            if test is not None and _is_main_name_guard(test):
+                guard_linenos.add(item.start[0])
+        at_statement_start = False
+    return guard_linenos
+
+
 def drop_if_name(text: str) -> list[str]:
-    """Lossily split on any line containing ``if __name__``."""
+    """Lossily split on module-level ``__name__ == "__main__"`` guards."""
 
     lines = text.split(LINE_SEP)
-    split_lines = [line for line in lines if "if __name__" in line]
+    split_lines = [
+        line
+        for lineno, line in enumerate(lines, start=1)
+        if lineno in _module_level_name_guard_linenos(text)
+    ]
     if not split_lines:
         return [text]
 
