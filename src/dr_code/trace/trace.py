@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Final, get_args
 
 from dr_code.trace.absent import Absent
-from dr_code.trace.artifacts import Artifact, JsonArtifact
+from dr_code.trace.artifacts import Artifact
 from dr_code.trace.facts import (
     FactError,
     JsonFactValue,
@@ -38,10 +37,7 @@ class WiringError(Exception):
 
 
 def _snapshot_value(value: TraceValue) -> TraceValue:
-    # Frozen models do not freeze a JsonArtifact's nested payload.
-
-    if isinstance(value, JsonArtifact):
-        return JsonArtifact(payload=copy.deepcopy(value.payload))
+    # Artifact models recursively freeze their nested public containers.
     return value
 
 

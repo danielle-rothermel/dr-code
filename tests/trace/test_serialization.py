@@ -228,6 +228,35 @@ def test_serialization_is_stable_across_public_mutation_attempts() -> None:
     assert serialize_trace(trace).model_dump(mode="json") == before
 
 
+def test_serialized_trace_nested_containers_are_defensively_immutable() -> (
+    None
+):
+    serialized = serialize_trace(_full_trace())
+    before = serialized.model_dump(mode="json")
+    payload_artifact = serialized.values["payload"]
+    assert isinstance(payload_artifact, JsonArtifact)
+    payload = cast(Mapping[str, object], payload_artifact.payload)
+    detail = cast(
+        Mapping[str, object], serialized.step_facts["parse"]["detail"]
+    )
+    rejected_locations = serialized.step_facts["parse"]["rejected_locations"]
+
+    _attempt_public_mutation(
+        lambda: operator.setitem(
+            serialized.values, "late", TextArtifact(text="late")
+        )
+    )
+    _attempt_public_mutation(
+        lambda: operator.setitem(payload, "task", "mutated")
+    )
+    _attempt_public_mutation(lambda: operator.setitem(detail, "line", 99))
+    _attempt_public_mutation(
+        lambda: cast(list[object], rejected_locations).append(2)
+    )
+
+    assert serialized.model_dump(mode="json") == before
+
+
 def test_serialized_trace_rejects_non_finite_step_fact_floats() -> None:
     payload = serialize_trace(_full_trace()).model_dump(mode="python")
     payload["step_facts"]["parse"]["confidence"] = float("inf")

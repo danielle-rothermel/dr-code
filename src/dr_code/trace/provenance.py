@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import math
-from typing import Annotated, Final, Literal, TypeAlias
+from collections.abc import Iterable
+from typing import Annotated, Final, Literal, Self, TypeAlias
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from dr_code.core.models import FrozenModel
 
@@ -16,6 +17,20 @@ ComponentSettingValue: TypeAlias = (
 class ComponentSetting(FrozenModel):
     name: str
     value: ComponentSettingValue
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ComponentSetting):
+            return NotImplemented
+        if type(self) is not type(other):
+            return False
+        return (
+            self.name == other.name
+            and type(self.value) is type(other.value)
+            and self.value == other.value
+        )
+
+    def __hash__(self) -> int:
+        return hash((type(self), self.name, type(self.value), self.value))
 
     @field_validator("value")
     @classmethod
@@ -53,6 +68,17 @@ class ComponentCoordinate(FrozenModel):
     version: str
     settings: tuple[ComponentSetting, ...] = ()
 
+    @model_validator(mode="after")
+    def _validate_unique_setting_names(self) -> Self:
+        duplicates = _duplicate_names(
+            setting.name for setting in self.settings
+        )
+        if duplicates:
+            raise ValueError(
+                "duplicate component setting names: " + ", ".join(duplicates)
+            )
+        return self
+
 
 class StepCoordinate(FrozenModel):
     instance_name: str
@@ -63,6 +89,34 @@ class PreprocessingDefinitionCoordinate(FrozenModel):
     definition_id: str
     version: str
     steps: tuple[StepCoordinate, ...]
+
+    @model_validator(mode="after")
+    def _validate_step_instance_names(self) -> Self:
+        from dr_code.trace.trace import RESERVED_KEYS
+
+        names = tuple(step.instance_name for step in self.steps)
+        reserved = RESERVED_KEYS & set(names)
+        if reserved:
+            raise ValueError(
+                "step instance names must not be reserved trace keys: "
+                + ", ".join(sorted(reserved))
+            )
+        duplicates = _duplicate_names(names)
+        if duplicates:
+            raise ValueError(
+                "duplicate step instance names: " + ", ".join(duplicates)
+            )
+        return self
+
+
+def _duplicate_names(names: Iterable[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for name in names:
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    return tuple(sorted(duplicates))
 
 
 class ExternalTraceProducer(FrozenModel):
