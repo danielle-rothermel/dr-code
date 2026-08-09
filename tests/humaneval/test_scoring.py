@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ast
 from collections.abc import Sequence
 
@@ -23,8 +24,8 @@ from dr_code.humaneval.scoring import (
     HumanEvalSubmissionScore,
     SubmissionOutcome,
     evaluation_outcome,
-    score_humaneval_submission,
-    score_humaneval_submissions_batch,
+    score_humaneval_submission as _score_humaneval_submission,
+    score_humaneval_submissions_batch as _score_humaneval_submissions_batch,
 )
 from dr_code.metrics.engine.execution import (
     ExecutionCache,
@@ -36,6 +37,14 @@ from dr_code.humaneval.task import (
     EvaluationCaseResult,
     EvaluationTaskResult,
 )
+
+
+def score_humaneval_submission(**kwargs):
+    return asyncio.run(_score_humaneval_submission(**kwargs))
+
+
+def score_humaneval_submissions_batch(requests, **kwargs):
+    return asyncio.run(_score_humaneval_submissions_batch(requests, **kwargs))
 
 
 def _partial_evaluation_result(task: HumanEvalTask) -> EvaluationTaskResult:
@@ -160,7 +169,7 @@ def test_batch_scorer_runs_all_planned_requests_in_one_batch(
     calls: list[tuple[ExecutionRequest, ...]] = []
     cache = InMemoryExecutionCache()
 
-    def recording_run_requests(
+    async def recording_run_requests(
         requests: Sequence[ExecutionRequest],
         *,
         executor: Executor | None,
@@ -168,7 +177,7 @@ def test_batch_scorer_runs_all_planned_requests_in_one_batch(
     ) -> dict[ExecutionRequest, ExecutionOutcome]:
         calls.append(tuple(requests))
         assert cache is expected_cache
-        return original_run_requests(
+        return await original_run_requests(
             requests,
             executor=executor,
             cache=cache,
@@ -212,7 +221,7 @@ def test_batch_scorer_calls_execution_planning_once_for_empty_batch(
 ) -> None:
     calls: list[tuple[ExecutionRequest, ...]] = []
 
-    def recording_run_requests(
+    async def recording_run_requests(
         requests: Sequence[ExecutionRequest],
         *,
         executor: Executor | None,

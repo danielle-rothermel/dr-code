@@ -38,7 +38,7 @@ def preprocessing_trace_cache_key(
     )
 
 
-def run_preprocessing_cached(
+async def run_preprocessing_cached(
     text: str,
     runner: BoundPreprocessingRunner,
     cache: RecordCache,
@@ -50,7 +50,7 @@ def run_preprocessing_cached(
     """
     key = preprocessing_trace_cache_key(text, runner)
     input_value = TextArtifact(text=text)
-    cached = _restore_cached_trace(
+    cached = await _restore_cached_trace(
         key=key,
         input_value=input_value,
         runner=runner,
@@ -62,7 +62,7 @@ def run_preprocessing_cached(
     trace = runner.run(input_value)
     record = serialize_trace(trace).model_dump(mode="json")
     try:
-        cache.put(key, _TRACE_RECORD_SCHEMA, record)
+        await cache.put(key, _TRACE_RECORD_SCHEMA, record)
     except Exception:
         # Cache implementations are optional infrastructure. Preserve the
         # successful computation while retaining the failure traceback.
@@ -73,7 +73,7 @@ def run_preprocessing_cached(
     return trace
 
 
-def _restore_cached_trace(
+async def _restore_cached_trace(
     *,
     key: str,
     input_value: TextArtifact,
@@ -81,7 +81,7 @@ def _restore_cached_trace(
     cache: RecordCache,
 ) -> Trace | None:
     try:
-        hit = cache.get(key, schema=_TRACE_RECORD_SCHEMA)
+        hit = await cache.get(key, schema=_TRACE_RECORD_SCHEMA)
     except Exception:
         _LOGGER.warning(
             "preprocessing trace cache read failed; running fresh",

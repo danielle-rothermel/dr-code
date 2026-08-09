@@ -113,7 +113,7 @@ class _PlannedSubmission:
     total_cases: int
 
 
-def score_humaneval_submission(
+async def score_humaneval_submission(
     *,
     raw_submission: str,
     task: HumanEvalTask,
@@ -122,7 +122,7 @@ def score_humaneval_submission(
     executor: Executor | None = None,
     execution_cache: ExecutionCache | None = None,
 ) -> HumanEvalSubmissionScore:
-    return score_humaneval_submissions_batch(
+    scores = await score_humaneval_submissions_batch(
         (
             HumanEvalSubmissionRequest(
                 raw_submission=raw_submission,
@@ -133,10 +133,11 @@ def score_humaneval_submission(
         ),
         executor=executor,
         execution_cache=execution_cache,
-    )[0]
+    )
+    return scores[0]
 
 
-def score_humaneval_submissions_batch(
+async def score_humaneval_submissions_batch(
     requests: Sequence[HumanEvalSubmissionRequest],
     *,
     executor: Executor | None = None,
@@ -161,7 +162,7 @@ def score_humaneval_submissions_batch(
         else InMemoryExecutionCache()
     )
     try:
-        outcomes = run_requests(
+        outcomes = await run_requests(
             execution_requests,
             executor=executor,
             cache=cache,

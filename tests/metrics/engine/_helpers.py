@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 
 def _definition(questions) -> object:
     from dr_code.metrics import MetricsDefinition
@@ -25,10 +27,10 @@ def _facts(record):
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
-    return extract_metrics(definition, trace, **kwargs)
+    return asyncio.run(extract_metrics(definition, trace, **kwargs))
 
 
 def _extract_batch(definition, traces, **kwargs):
     from dr_code.metrics import extract_metrics_batch
 
-    return extract_metrics_batch(definition, traces, **kwargs)
+    return asyncio.run(extract_metrics_batch(definition, traces, **kwargs))

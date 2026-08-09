@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -252,7 +253,7 @@ def _engine_records(text_trace) -> tuple[object, ...]:
             ),
         ),
     )
-    return extract_metrics(definition, text_trace("hello world"))
+    return asyncio.run(extract_metrics(definition, text_trace("hello world")))
 
 
 @pytest.mark.parametrize(

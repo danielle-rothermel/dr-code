@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -98,10 +99,12 @@ def _extract_code_test(
     *,
     executor: Executor,
 ) -> MetricRecord:
-    records = extract_metrics(
-        _code_test_definition(),
-        trace,
-        executor=executor,
+    records = asyncio.run(
+        extract_metrics(
+            _code_test_definition(),
+            trace,
+            executor=executor,
+        )
     )
     assert len(records) == 1
     return records[0]
