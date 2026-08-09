@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from _executor_stubs import scripted_executor
 from dr_code.trace import (
     CodeArtifact,
@@ -85,7 +87,7 @@ def _answer(record):
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
-    return extract_metrics(definition, trace, **kwargs)
+    return asyncio.run(extract_metrics(definition, trace, **kwargs))
 
 
 def _stub_executor():
@@ -150,10 +152,12 @@ def test_batch_over_identical_traces_yields_equal_record_sets(
     fresh = code_test_trace(CODE, task)
     restored = deserialize_trace(serialize_trace(fresh))
     definition = _code_test_definition()
-    record_sets = extract_metrics_batch(
-        definition,
-        [fresh, restored, fresh],
-        executor=_stub_executor(),
+    record_sets = asyncio.run(
+        extract_metrics_batch(
+            definition,
+            [fresh, restored, fresh],
+            executor=_stub_executor(),
+        )
     )
     answers = [[_answer(r) for r in records] for records in record_sets]
     assert answers[0] == answers[1] == answers[2]

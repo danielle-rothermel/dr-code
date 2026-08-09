@@ -252,4 +252,4 @@ def test_host_process_executor_composes_the_production_pieces(
     assert isinstance(executor, ProcessExecutor)
     assert executor.run_store.root == tmp_path
     record = executor.runtime.describe()
-    assert record.resolved_executable == Path(sys.executable).resolve()
+    assert record.resolved_executable == Path(sys.executable)

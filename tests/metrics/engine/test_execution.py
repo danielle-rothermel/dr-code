@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 
 import pytest
@@ -58,10 +59,12 @@ def _run(requests, *, executor=None, cache=None):
         run_requests,
     )
 
-    return run_requests(
-        requests,
-        executor=executor if executor is not None else _counting_stub(),
-        cache=cache or InMemoryExecutionCache(),
+    return asyncio.run(
+        run_requests(
+            requests,
+            executor=executor if executor is not None else _counting_stub(),
+            cache=cache or InMemoryExecutionCache(),
+        )
     )
 
 
@@ -103,7 +106,7 @@ def test_in_memory_cache_get_put_round_trip() -> None:
     outcome = _outcome()
     cache = InMemoryExecutionCache()
     assert cache.get("opaque-key") is None
-    cache.put("opaque-key", outcome)
+    asyncio.run(cache.put("opaque-key", outcome))
     assert cache.get("opaque-key") == outcome
 
 
@@ -113,8 +116,8 @@ def test_in_memory_cache_put_overwrites() -> None:
     cache = InMemoryExecutionCache()
     first = _outcome(returncode=0, stdout="a")
     second = _outcome(returncode=1, stdout="b")
-    cache.put("k", first)
-    cache.put("k", second)
+    asyncio.run(cache.put("k", first))
+    asyncio.run(cache.put("k", second))
     assert cache.get("k") == second
 
 
@@ -123,9 +126,9 @@ def test_in_memory_cache_prefetch_is_a_no_op() -> None:
 
     cache = InMemoryExecutionCache()
     outcome = _outcome()
-    cache.put("present", outcome)
+    asyncio.run(cache.put("present", outcome))
 
-    cache.prefetch(("present", "missing"))
+    asyncio.run(cache.prefetch(("present", "missing")))
 
     assert cache.get("present") == outcome
     assert cache.get("missing") is None
@@ -227,14 +230,14 @@ def test_run_requests_prefetches_deduplicated_keys_before_gets() -> None:
         def __init__(self) -> None:
             self.events: list[tuple[str, object]] = []
 
-        def prefetch(self, keys: Sequence[str]) -> None:
+        async def prefetch(self, keys: Sequence[str]) -> None:
             self.events.append(("prefetch", tuple(keys)))
 
         def get(self, key: str) -> ExecutionOutcome | None:
             self.events.append(("get", key))
             return None
 
-        def put(self, key: str, outcome: ExecutionOutcome) -> None:
+        async def put(self, key: str, outcome: ExecutionOutcome) -> None:
             self.events.append(("put", key))
 
     first = _request()
@@ -308,7 +311,7 @@ def test_run_requests_cache_hits_need_no_executor() -> None:
     cache = InMemoryExecutionCache()
     _run([request], cache=cache)
 
-    outcomes = run_requests([request], executor=None, cache=cache)
+    outcomes = asyncio.run(run_requests([request], executor=None, cache=cache))
     assert outcomes[request] == _outcome()
 
 
@@ -319,10 +322,12 @@ def test_run_requests_without_executor_fails_closed() -> None:
     )
 
     with pytest.raises(ExecutorFailure, match="no executor"):
-        run_requests(
-            [_request()],
-            executor=None,
-            cache=InMemoryExecutionCache(),
+        asyncio.run(
+            run_requests(
+                [_request()],
+                executor=None,
+                cache=InMemoryExecutionCache(),
+            )
         )
 
 

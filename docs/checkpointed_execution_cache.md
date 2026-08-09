@@ -9,11 +9,11 @@ The execution-result cache keeps its hot path entirely in memory and uses
 operations in addition to its point API:
 
 ```python
-def get_many(
+async def get_many(
     keys: Iterable[str], *, schema: str
 ) -> dict[str, CacheHit | None]: ...
 
-def put_many(
+async def put_many(
     entries: Mapping[str, CacheEntry],
 ) -> dict[str, ObjectReference]: ...
 ```
@@ -31,11 +31,12 @@ and returns the stored first-writer winner for each key.
 - The metrics engine supplies all planned keys to the cache before point
   lookups. A persistent implementation bulk-loads only previously unseen keys;
   all subsequent `get` and `put` operations use memory.
-- `score_humaneval_submissions_batch` extracts and plans every submission before
-  one `run_requests` call, so one cache prefetch covers the complete scoring
-  batch. The single-submission scorer delegates to that batch boundary.
+- `score_humaneval_submissions_batch` extracts and plans every submission
+  before one awaited `run_requests` call, so one cache prefetch covers the
+  complete scoring batch. The single-submission scorer delegates to that batch
+  boundary.
 - Newly computed outcomes remain dirty until a checkpoint snapshots them for
-  one background writer thread. Only one checkpoint is in flight, and later
+  one background writer task. Only one checkpoint is in flight, and later
   writes are coalesced into the next batch.
 - Checkpoints are triggered by explicit task boundaries or a configured number
   of new outcomes, not elapsed time. Normal close drains a final checkpoint.

@@ -83,22 +83,23 @@ class _EngineContext:
             ) from exc
 
 
-def extract_metrics(
+async def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
     *,
     executor: Executor | None = None,
     execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]:
-    return extract_metrics_batch(
+    record_sets = await extract_metrics_batch(
         definition,
         (trace,),
         executor=executor,
         execution_cache=execution_cache,
-    )[0]
+    )
+    return record_sets[0]
 
 
-def extract_metrics_batch(
+async def extract_metrics_batch(
     definition: MetricsDefinition,
     traces: Sequence[Trace],
     *,
@@ -138,7 +139,7 @@ def extract_metrics_batch(
         if execution_cache is not None
         else InMemoryExecutionCache()
     )
-    outcomes = run_requests(
+    outcomes = await run_requests(
         requests,
         executor=executor,
         cache=cache,

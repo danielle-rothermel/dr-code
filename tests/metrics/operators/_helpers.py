@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from dr_code.trace import CodeArtifact, TextArtifact, external_trace
 
 
@@ -54,7 +56,7 @@ def _code_trace(source: str):
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
-    return extract_metrics(definition, trace, **kwargs)
+    return asyncio.run(extract_metrics(definition, trace, **kwargs))
 
 
 def _facts(record):

@@ -107,7 +107,7 @@ def preprocessing_trace_cache_key(
 ) -> str: ...
 
 
-def run_preprocessing_cached(
+async def run_preprocessing_cached(
     text: str,
     runner: BoundPreprocessingRunner,
     cache: RecordCache,
@@ -117,8 +117,8 @@ def run_preprocessing_cached(
 ```python
 from dr_store import SqliteRecordCache
 
-with SqliteRecordCache("traces.sqlite3") as cache:
-    trace = run_preprocessing_cached(text, runner, cache)
+async with await SqliteRecordCache.open("traces.sqlite3") as cache:
+    trace = await run_preprocessing_cached(text, runner, cache)
 ```
 
 ### Checkpointed execution caching
@@ -146,24 +146,25 @@ runtime_identity = IdentityDocument(
     payload={"python": "3.13.2", "environment": "experiment-image@sha256:..."},
 )
 
-with CheckpointedExecutionCache(
+async with CheckpointedExecutionCache(
     batch_record_store,
     runtime_identity=runtime_identity,
     checkpoint_entry_count=1_000,
 ) as cache:
-    cache.prefetch(planned_request_keys)
+    await cache.prefetch(planned_request_keys)
     ...
     cache.checkpoint()
 ```
 
-The injected store must provide `get_many(keys, *, schema=...)`, returning each
-distinct key as a verified hit or explicit `None` miss, and atomic
-`put_many(entries)`, where every entry carries its schema and record. Point-only
-record stores are not adapted because per-entry persistence would violate the
-bulk-I/O contract. Callers use persistent reuse only for workloads whose
-outcomes they treat as stable within the runtime scope and coordinate one active
-writer for that scope. Concurrent writers are unsupported because this cache
-does not reconcile a different first-writer winner after a checkpoint.
+The injected store must provide async `get_many(keys, *, schema=...)`,
+returning each distinct key as a verified hit or explicit `None` miss, and
+atomic async `put_many(entries)`, where every entry carries its schema and
+record. Point-only record stores are not adapted because per-entry persistence
+would violate the bulk-I/O contract. Callers use persistent reuse only for
+workloads whose outcomes they treat as stable within the runtime scope and
+coordinate one active writer for that scope. Concurrent writers are unsupported
+because this cache does not reconcile a different first-writer winner after a
+checkpoint.
 
 ### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
 
@@ -232,7 +233,7 @@ class MetricsDefinition(FrozenModel):
     questions: tuple[MetricQuestion, ...]
 
 
-def extract_metrics(
+async def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
     *,
@@ -313,7 +314,7 @@ class HumanEvalSubmissionRequest:
     scoring_profile_version: str = ...
 
 
-def score_humaneval_submissions_batch(
+async def score_humaneval_submissions_batch(
     requests: Sequence[HumanEvalSubmissionRequest],
     *,
     executor: Executor | None = None,
@@ -321,7 +322,7 @@ def score_humaneval_submissions_batch(
 ) -> tuple[HumanEvalSubmissionScore, ...]: ...
 
 
-def score_humaneval_submission(
+async def score_humaneval_submission(
     *,
     raw_submission: str,
     task: HumanEvalTask,

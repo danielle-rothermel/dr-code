@@ -39,28 +39,28 @@ class ExecutionOutcome(FrozenModel):
 class ExecutionCache(Protocol):
     """Cache opaque request keys; persistent adapters own scope identity."""
 
-    def prefetch(self, keys: Sequence[str]) -> None: ...
+    async def prefetch(self, keys: Sequence[str]) -> None: ...
 
     def get(self, key: str) -> ExecutionOutcome | None: ...
 
-    def put(self, key: str, outcome: ExecutionOutcome) -> None: ...
+    async def put(self, key: str, outcome: ExecutionOutcome) -> None: ...
 
 
 class InMemoryExecutionCache:
     def __init__(self) -> None:
         self._outcomes: dict[str, ExecutionOutcome] = {}
 
-    def prefetch(self, keys: Sequence[str]) -> None:
+    async def prefetch(self, keys: Sequence[str]) -> None:
         pass
 
     def get(self, key: str) -> ExecutionOutcome | None:
         return self._outcomes.get(key)
 
-    def put(self, key: str, outcome: ExecutionOutcome) -> None:
+    async def put(self, key: str, outcome: ExecutionOutcome) -> None:
         self._outcomes[key] = outcome
 
 
-def run_requests(
+async def run_requests(
     requests: Sequence[ExecutionRequest],
     *,
     executor: Executor | None,
@@ -75,7 +75,7 @@ def run_requests(
         key = _execution_request_cache_key(request, text_digests)
         unique_requests.setdefault(key, request)
 
-    cache.prefetch(tuple(unique_requests))
+    await cache.prefetch(tuple(unique_requests))
     for key, request in unique_requests.items():
         cached = cache.get(key)
         if cached is not None:
@@ -111,7 +111,7 @@ def run_requests(
                 stdout="",
                 stderr=str(exc),
             )
-        cache.put(key, outcome)
+        await cache.put(key, outcome)
         outcomes[request] = outcome
     return outcomes
 
