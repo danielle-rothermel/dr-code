@@ -1,40 +1,27 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping
-from typing import Self
-
-from pydantic import model_validator
-
+from dr_code.evaluation.records import (
+    CandidateJobCompleted,
+    CandidateJobTerminated,
+    ExecutorExecutionFailure,
+    HarnessExecutionFailure,
+)
 from dr_code.humaneval import runner
-from dr_code.humaneval.profiles import DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
-from dr_code.core.execution.executor import (
-    CompletedPythonProcess,
-    ExecutionKilledError,
-    ExecutionOutputLimitError,
+from dr_code.humaneval.job import (
+    HumanEvalEvaluatorSuite,
 )
-from dr_code.humaneval.task import (
-    EvaluationCaseResult,
-    EvaluationCaseStatus,
-    EvaluationTaskResult,
-    HumanEvalTask,
-)
-from dr_code.metrics.engine.execution import (
-    ExecutionOutcome,
-    ExecutionRequest,
-    is_killed_outcome,
-    is_output_limit_outcome,
-    is_timeout_outcome,
-)
+from dr_code.humaneval.settings import CodeTestSettings
+from dr_code.humaneval.task import EvaluationCaseStatus, HumanEvalTask
+from dr_code.metrics.coordinates import MetricQuestionCoordinate
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import (
     EngineContext,
     MetricOperator,
     OperatorResult,
 )
-from dr_code.metrics.settings import OperatorSettings
-from dr_code.metrics.units import MetricFactUnit
+from dr_code.metrics.units import MetricValueUnit
 from dr_code.trace import (
     Artifact,
     ArtifactKind,
@@ -43,32 +30,16 @@ from dr_code.trace import (
 )
 
 
-class CodeTestSettings(OperatorSettings):
-    task_key: str = "task"
-    timeout_seconds: float = DEFAULT_HUMANEVAL_TIMEOUT_SECONDS
-
-    @model_validator(mode="after")
-    def validate_values(self) -> Self:
-        if not self.task_key:
-            raise ValueError("task_key must not be empty")
-        if (
-            not math.isfinite(self.timeout_seconds)
-            or self.timeout_seconds <= 0
-        ):
-            raise ValueError("timeout_seconds must be finite and positive")
-        return self
-
-
 class CodeTestResult(OperatorResult):
     UNITS = {
-        "total_cases": MetricFactUnit.COUNT,
-        "passed_count": MetricFactUnit.COUNT,
-        "failed_count": MetricFactUnit.COUNT,
-        "error_count": MetricFactUnit.COUNT,
-        "timeout_count": MetricFactUnit.COUNT,
-        "coverage_complete": MetricFactUnit.BOOLEAN,
-        "function_count": MetricFactUnit.COUNT,
-        "best_function_name": MetricFactUnit.IDENTIFIER,
+        "total_cases": MetricValueUnit.COUNT,
+        "passed_count": MetricValueUnit.COUNT,
+        "failed_count": MetricValueUnit.COUNT,
+        "error_count": MetricValueUnit.COUNT,
+        "timeout_count": MetricValueUnit.COUNT,
+        "coverage_complete": MetricValueUnit.BOOLEAN,
+        "function_count": MetricValueUnit.COUNT,
+        "best_function_name": MetricValueUnit.IDENTIFIER,
     }
 
     total_cases: int
@@ -107,21 +78,17 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     def validate_auxiliary(self, aux: Mapping[str, Artifact]) -> None:
         self._task(aux)
 
-    def execution_requests(
+    def evaluator_suite(
         self,
         value: Artifact,
         aux: Mapping[str, Artifact],
-    ) -> tuple[ExecutionRequest, ...]:
-        source = _code_source(value)
-        task = self._task(aux)
-        function_names = runner.top_level_function_names(source)
-        return tuple(
-            self._request(
-                task=task,
-                candidate_code=source,
-                function_name=function_name,
-            )
-            for function_name in function_names
+        question: MetricQuestionCoordinate,
+    ) -> HumanEvalEvaluatorSuite:
+        _code_source(value)
+        return HumanEvalEvaluatorSuite(
+            question=question,
+            task=self._task(aux),
+            settings=self.settings,
         )
 
     def compute(
@@ -132,32 +99,20 @@ class CodeTest(MetricOperator[CodeTestSettings]):
     ) -> CodeTestResult:
         source = _code_source(value)
         task = self._task(aux)
-        function_names = runner.top_level_function_names(
-            source,
-            parsed_module=ctx.views.parsed_module(source),
-        )
-        case_results: list[EvaluationCaseResult] = []
-        for function_name in function_names:
-            request = self._request(
-                task=task,
-                candidate_code=source,
-                function_name=function_name,
-            )
-            case_results.extend(
-                _results_from_outcome(
-                    task=task,
-                    function_name=function_name,
-                    timeout_seconds=request.timeout_seconds,
-                    outcome=ctx.outcome_for(request),
-                )
-            )
-
-        evaluation = EvaluationTaskResult(
-            task_id=task.task_id,
-            entry_point=task.entry_point,
-            function_names=function_names,
-            total_cases=len(runner.require_parsed_tests(task).cases),
-            results=case_results,
+        outcome = ctx.candidate_execution_outcome
+        if not isinstance(
+            outcome,
+            CandidateJobCompleted
+            | CandidateJobTerminated
+            | HarnessExecutionFailure
+            | ExecutorExecutionFailure,
+        ):
+            raise RuntimeError("code_test has no candidate execution outcome")
+        evaluation = runner.evaluation_from_candidate_execution(
+            task=task,
+            candidate_source=source,
+            question=ctx.question,
+            outcome=outcome,
         )
         counts = evaluation.status_counts
         return CodeTestResult(
@@ -187,65 +142,6 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         task = _validate_task_payload(artifact)
         self._validated_tasks[payload_key] = task
         return task
-
-    def _request(
-        self,
-        *,
-        task: HumanEvalTask,
-        candidate_code: str,
-        function_name: str,
-    ) -> ExecutionRequest:
-        request = runner.build_humaneval_batch_request(
-            task=task,
-            candidate_code=candidate_code,
-            function_name=function_name,
-            timeout_seconds=self.settings.timeout_seconds,
-        )
-        return ExecutionRequest(
-            source=request.source,
-            input_json=request.input_json,
-            timeout_seconds=request.timeout_seconds,
-            computation_id=runner.HUMANEVAL_RUNNER_COMPUTATION_ID,
-        )
-
-
-def _results_from_outcome(
-    *,
-    task: HumanEvalTask,
-    function_name: str,
-    timeout_seconds: float,
-    outcome: ExecutionOutcome,
-) -> list[EvaluationCaseResult]:
-    if is_timeout_outcome(outcome):
-        return runner.timeout_results(
-            task=task,
-            function_name=function_name,
-            timeout_seconds=timeout_seconds,
-        )
-    if is_output_limit_outcome(outcome):
-        return runner.error_results(
-            task=task,
-            function_name=function_name,
-            message=f"{ExecutionOutputLimitError.__name__}: {outcome.stderr}",
-        )
-    if is_killed_outcome(outcome):
-        return runner.error_results(
-            task=task,
-            function_name=function_name,
-            message=f"{ExecutionKilledError.__name__}: {outcome.stderr}",
-        )
-
-    completed = CompletedPythonProcess(
-        returncode=outcome.returncode,
-        stdout=outcome.stdout,
-        stderr=outcome.stderr,
-    )
-    return runner.interpret_subprocess_batch_result(
-        task=task,
-        function_name=function_name,
-        completed=completed,
-        elapsed_seconds=0.0,
-    )
 
 
 def _validate_task_payload(artifact: JsonArtifact) -> HumanEvalTask:

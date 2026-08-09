@@ -11,7 +11,7 @@ from dr_code.metrics.operators.base import (
     artifact_text,
 )
 from dr_code.metrics.settings import OperatorSettings
-from dr_code.metrics.units import MetricFactUnit
+from dr_code.metrics.units import MetricValueUnit
 from dr_code.trace import Artifact, ArtifactKind
 
 _BRANCH_NODES = (
@@ -37,34 +37,34 @@ _FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 class AstStatsResult(OperatorResult):
     UNITS = {
-        "top_level_function_count": MetricFactUnit.COUNT,
-        "nested_function_count": MetricFactUnit.COUNT,
-        "async_function_count": MetricFactUnit.COUNT,
-        "lambda_count": MetricFactUnit.COUNT,
-        "class_count": MetricFactUnit.COUNT,
-        "import_count": MetricFactUnit.COUNT,
-        "ast_node_count": MetricFactUnit.COUNT,
-        "statement_count": MetricFactUnit.COUNT,
-        "branch_count": MetricFactUnit.COUNT,
-        "return_count": MetricFactUnit.COUNT,
-        "yield_count": MetricFactUnit.COUNT,
-        "call_count": MetricFactUnit.COUNT,
-        "assignment_count": MetricFactUnit.COUNT,
-        "comprehension_count": MetricFactUnit.COUNT,
-        "literal_count": MetricFactUnit.COUNT,
-        "max_branch_depth": MetricFactUnit.DEPTH,
-        "function_count": MetricFactUnit.COUNT,
-        "total_argument_count": MetricFactUnit.COUNT,
-        "positional_only_argument_count": MetricFactUnit.COUNT,
-        "keyword_only_argument_count": MetricFactUnit.COUNT,
-        "vararg_count": MetricFactUnit.COUNT,
-        "kwarg_count": MetricFactUnit.COUNT,
-        "decorated_function_count": MetricFactUnit.COUNT,
-        "annotated_return_count": MetricFactUnit.COUNT,
-        "docstring_function_count": MetricFactUnit.COUNT,
-        "total_function_body_statement_count": MetricFactUnit.COUNT,
-        "max_function_body_statement_count": MetricFactUnit.COUNT,
-        "max_function_line_span": MetricFactUnit.LINES,
+        "top_level_function_count": MetricValueUnit.COUNT,
+        "nested_function_count": MetricValueUnit.COUNT,
+        "async_function_count": MetricValueUnit.COUNT,
+        "lambda_count": MetricValueUnit.COUNT,
+        "class_count": MetricValueUnit.COUNT,
+        "import_count": MetricValueUnit.COUNT,
+        "ast_node_count": MetricValueUnit.COUNT,
+        "statement_count": MetricValueUnit.COUNT,
+        "branch_count": MetricValueUnit.COUNT,
+        "return_count": MetricValueUnit.COUNT,
+        "yield_count": MetricValueUnit.COUNT,
+        "call_count": MetricValueUnit.COUNT,
+        "assignment_count": MetricValueUnit.COUNT,
+        "comprehension_count": MetricValueUnit.COUNT,
+        "literal_count": MetricValueUnit.COUNT,
+        "max_branch_depth": MetricValueUnit.DEPTH,
+        "function_count": MetricValueUnit.COUNT,
+        "total_argument_count": MetricValueUnit.COUNT,
+        "positional_only_argument_count": MetricValueUnit.COUNT,
+        "keyword_only_argument_count": MetricValueUnit.COUNT,
+        "vararg_count": MetricValueUnit.COUNT,
+        "kwarg_count": MetricValueUnit.COUNT,
+        "decorated_function_count": MetricValueUnit.COUNT,
+        "annotated_return_count": MetricValueUnit.COUNT,
+        "docstring_function_count": MetricValueUnit.COUNT,
+        "total_function_body_statement_count": MetricValueUnit.COUNT,
+        "max_function_body_statement_count": MetricValueUnit.COUNT,
+        "max_function_line_span": MetricValueUnit.LINES,
     }
 
     top_level_function_count: int

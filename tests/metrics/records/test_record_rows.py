@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ._builders import (
-    _fact,
+    _value,
     _identity,
     _measured,
     _not_applicable,
@@ -27,15 +27,15 @@ def test_record_rows_empty_input_returns_empty_list() -> None:
     assert record_rows([]) == []
 
 
-def test_record_rows_prefix_fact_columns_with_metric_and_name() -> None:
+def test_record_rows_prefix_value_columns_with_metric_and_name() -> None:
     from dr_code.metrics import record_rows
 
     row = record_rows(
         [
             _measured(
-                facts=(
-                    _fact(name="character_count", value=4),
-                    _fact(name="word_count", value=1),
+                values=(
+                    _value(name="character_count", value=4),
+                    _value(name="word_count", value=1),
                 )
             )
         ]
@@ -47,17 +47,17 @@ def test_record_rows_prefix_fact_columns_with_metric_and_name() -> None:
     assert "word_count" not in row
 
 
-def test_record_rows_carry_each_facts_unit_in_a_sibling_column() -> None:
-    from dr_code.metrics import MetricFactUnit, record_rows
+def test_record_rows_carry_each_values_unit_in_a_sibling_column() -> None:
+    from dr_code.metrics import MetricValueUnit, record_rows
 
     row = record_rows(
         [
             _measured(
-                facts=(_fact(name="byte_count", unit=MetricFactUnit.BYTES),)
+                values=(_value(name="byte_count", unit=MetricValueUnit.BYTES),)
             )
         ]
     )[0]
-    assert row["text_stats.byte_count.unit"] == MetricFactUnit.BYTES
+    assert row["text_stats.byte_count.unit"] == MetricValueUnit.BYTES
 
     assert "text_stats.byte_count.bytes" not in row
 
@@ -77,16 +77,16 @@ def test_record_rows_include_identity_and_lineage_columns() -> None:
     assert row["status"] == RecordStatus.MEASURED
 
 
-def test_record_rows_fact_columns_are_collision_free_across_metrics() -> None:
+def test_record_rows_value_columns_are_collision_free_across_metrics() -> None:
     from dr_code.metrics import MetricName, record_rows
 
     ast = _question_coordinate(metric=MetricName.AST_STATS)
     rows = record_rows(
         [
-            _measured(facts=(_fact(name="count", value=1),)),
+            _measured(values=(_value(name="count", value=1),)),
             _measured(
                 identity=_identity(question=ast),
-                facts=(_fact(name="count", value=2),),
+                values=(_value(name="count", value=2),),
             ),
         ]
     )
@@ -99,7 +99,7 @@ def test_record_rows_status_column_distinguishes_absence_from_zero() -> None:
 
     rows = record_rows(
         [
-            _measured(facts=(_fact(name="count", value=0),)),
+            _measured(values=(_value(name="count", value=0),)),
             _not_applicable(),
         ]
     )

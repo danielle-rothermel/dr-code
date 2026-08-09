@@ -31,7 +31,7 @@ def _registered_result_classes() -> dict[str, type]:
 def test_every_registered_result_declares_units_for_exactly_its_fields() -> (
     None
 ):
-    from dr_code.metrics.units import MetricFactUnit
+    from dr_code.metrics.units import MetricValueUnit
 
     result_classes = _registered_result_classes()
     assert result_classes, "no operator result classes were discovered"
@@ -43,7 +43,7 @@ def test_every_registered_result_declares_units_for_exactly_its_fields() -> (
         assert units - fields == set(), f"{name} declares units for no field"
         assert fields - units == set(), f"{name} has fields without a unit"
         for field_name, unit in result_class.UNITS.items():
-            assert isinstance(unit, MetricFactUnit), f"{name}.{field_name}"
+            assert isinstance(unit, MetricValueUnit), f"{name}.{field_name}"
 
 
 def test_registered_result_discovery_reaches_the_subclass_variant() -> None:

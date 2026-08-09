@@ -121,14 +121,20 @@ async with await SqliteRecordCache.open("traces.sqlite3") as cache:
     trace = await run_preprocessing_cached(text, runner, cache)
 ```
 
-### Checkpointed execution caching
+### [Windowed execution caching](docs/windowed_execution_cache.md)
 
-`CheckpointedExecutionCache` bulk-prefetches planned execution outcomes, then
-serves every point lookup and update from memory. New outcomes are checkpointed
-by entry count or an explicit task boundary through one background writer;
-normal close drains a final batch. Persistent read, validation, and write
-failures are logged and degrade to cache misses or retained dirty entries rather
+`WindowedExecutionCache` bulk-prefetches planned execution observations into a
+bounded resident window. It retains at most one bounded persistence batch in
+flight and one bounded pending batch; further outcomes remain memory-only.
+Normal close attempts one final checkpoint. Persistent read, validation, and
+write failures are logged and degrade to misses or dropped retry state rather
 than failing evaluation.
+
+Fresh execution observations become eligible for persistence only after the
+owning sample evaluation record has a portable evidence reference. Batch
+assembly publishes that reference with the observation, then releases the
+resident cache key; reuse therefore never fabricates a source record or keeps
+attempt-wide pending cache state.
 
 Persistent keys combine the opaque execution-request key with the full digest
 of a mandatory, caller-owned runtime identity. The identity must cover the
@@ -137,23 +143,27 @@ already represented by the request. The executor object itself is not part of
 the persisted key.
 
 ```python
-from dr_code.caching import CheckpointedExecutionCache
-from dr_serialize import IdentityDocument
+from dr_code.caching import WindowedExecutionCache
+from dr_code.evaluation import EvaluationRuntimeIdentity
+from dr_serialize import build_identity_document
 
-runtime_identity = IdentityDocument(
-    schema="example/python-runtime",
-    schema_version=1,
-    payload={"python": "3.13.2", "environment": "experiment-image@sha256:..."},
+runtime = EvaluationRuntimeIdentity(
+    document=build_identity_document(
+        schema="example/python-runtime",
+        schema_version=1,
+        payload={"python": "3.13.2", "environment": "experiment-image@sha256:..."},
+    )
 )
 
-async with CheckpointedExecutionCache(
+async with WindowedExecutionCache(
     batch_record_store,
-    runtime_identity=runtime_identity,
-    checkpoint_entry_count=1_000,
+    runtime=runtime,
+    max_resident_entries=1_000,
+    max_pending_checkpoint_entries=100,
 ) as cache:
     await cache.prefetch(planned_request_keys)
     ...
-    cache.checkpoint()
+    cache.discard(assembled_request_key)
 ```
 
 The injected store must provide async `get_many(keys, *, schema=...)`,
@@ -236,9 +246,6 @@ class MetricsDefinition(FrozenModel):
 async def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
-    *,
-    executor: Executor | None = None,
-    execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]: ...
 ```
 
@@ -273,11 +280,49 @@ class EvaluationPlan(FrozenModel):
 def aggregate(request: AggregationInput) -> AggregationResult: ...
 ```
 
+`evaluate_batch` runs one standalone bounded pool, while
+`evaluate_durable_partition` runs cache misses serially without a nested pool.
+Both stream terminal sample records through bundle-local shards or a supplied
+`dr_store.ObjectStore`, retain only compact attempt membership and aggregate
+state across the attempt, and optionally publish one terminal evaluation
+bundle. Requested projections are written separately from authoritative
+evidence and carry their source-attempt binding.
+
+Evaluation bundles can be consumed at three grains:
+
+- `read_evaluation_projection` verifies and validates only one fixed,
+  self-bound projection artifact;
+- `restore_evaluation_attempt` consumes the attempt and required record or
+  reference shards without a preliminary whole-bundle audit; and
+- `audit_evaluation_bundle` first verifies every artifact through dr-store,
+  then validates the complete evaluation schema and reference graph without
+  resolving external objects.
+
+Object-store restoration resolves references sequentially under caller-owned
+count limits. The released object store fully materializes and decodes each
+canonical JSON record before dr-code can apply its strict record schema, so the
+reader does not claim a caller-owned pre-decode byte or depth bound for those
+external records.
+
+`preflight_replay` reconstructs the complete ordered source attempt as frozen
+samples or frozen materialized candidates. It returns `ReplayUnavailable`
+without creating an attempt when recorded definitions or evidence are not
+supported; `replay_evaluation_attempt` sends a ready replay through the same
+standalone bounded batch path and records its source before publication.
+
+`compare_evaluation_attempts` aligns compact attempt membership by slot and
+sample identity. Equal references or content hashes remain compact; only
+matched changed references are resolved, one pair at a time. Optional
+projection definitions are explicit `(kind, left_version, right_version)`
+tuples and yield either denominated comparable results or a typed
+`ProjectionNotComparable` result.
+
 ### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
 
-HumanEval owns the benchmark-specific task, extraction, runner protocol, and
-scoring policy. Scoring returns a discriminated result so a completed scoring
-outcome cannot be confused with harness failure.
+HumanEval owns the benchmark-specific task, evaluator job, and scoring policy.
+Scoring is a projection over authoritative sample evaluation records; it never
+starts a second candidate execution route. Results distinguish completed
+benchmark outcomes from harness failure.
 
 ```python
 class HumanEvalTask(FrozenModel):
@@ -300,37 +345,29 @@ class SubmissionOutcome(StrEnum):
 ```
 
 ```python
-HumanEvalSubmissionScore = Annotated[
-    CompletedScore | HarnessFailure,
+HumanEvalSubmissionResult = Annotated[
+    CompletedSubmissionResult | HarnessFailure,
     Field(discriminator="kind"),
 ]
 
 
-@dataclass(frozen=True, slots=True)
-class HumanEvalSubmissionRequest:
-    raw_submission: str
-    task: HumanEvalTask
-    scoring_profile_id: str = ...
-    scoring_profile_version: str = ...
+class HumanEvalSubmissionRequest(FrozenModel):
+    sample: EvaluationSampleIdentity
+    scoring_profile: HumanEvalScoringProfile
 
 
-async def score_humaneval_submissions_batch(
+def project_humaneval_submissions_batch(
+    records: Sequence[tuple[SampleEvaluationRecord, EvidenceReference]],
     requests: Sequence[HumanEvalSubmissionRequest],
-    *,
-    executor: Executor | None = None,
-    execution_cache: ExecutionCache | None = None,
-) -> tuple[HumanEvalSubmissionScore, ...]: ...
+) -> tuple[HumanEvalSubmissionResult, ...]: ...
 
 
-async def score_humaneval_submission(
+def project_humaneval_submission(
+    record: SampleEvaluationRecord,
+    request: HumanEvalSubmissionRequest,
     *,
-    raw_submission: str,
-    task: HumanEvalTask,
-    scoring_profile_id: str = ...,
-    scoring_profile_version: str = ...,
-    executor: Executor | None = None,
-    execution_cache: ExecutionCache | None = None,
-) -> HumanEvalSubmissionScore: ...
+    sample_record: EvidenceReference,
+) -> HumanEvalSubmissionResult: ...
 ```
 
 ### [Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)
@@ -414,32 +451,23 @@ and measurement policy remain in their functional packages.
 
 Candidate code executes through a pinned
 [dr-exec](https://github.com/danielle-rothermel/dr-exec) executor:
-`dr_code.core.execution` builds `ExecutionJob`s (an `UntrustedPythonTarget`
-driver plus a JSON request) under finite wall-clock, input, and
-payload-output budgets, and interprets dr-exec's typed outcome and
-attribution taxonomy back into candidate-versus-harness semantics. Submitted
-programs are not contained by that process boundary: they retain the invoking
-worker's permissions, external worker isolation is the deployment boundary,
-and evaluations run only on disposable workers.
+`dr_code.evaluation.execution` builds one bounded importable-JSON job per
+materialized candidate and interprets dr-exec's typed outcome and attribution
+taxonomy into candidate, harness, and executor records. `dr_code.core.execution`
+only provisions the caller-selected production executor. Submitted programs
+are not contained by that process boundary: they retain the invoking worker's
+permissions, external worker isolation is the deployment boundary, and
+evaluations run only on disposable workers.
 
 ```python
 class FrozenModel(BaseModel): ...
 
 
-@dataclass(frozen=True, slots=True)
-class CompletedPythonProcess:
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-def run_python_source(
-    executor: Executor | None,
+def host_process_executor(
+    record_root: Path,
     *,
-    source: str,
-    input_json: str,
-    timeout_seconds: float,
-) -> CompletedPythonProcess: ...
+    runtime_executable: Path,
+) -> ProcessExecutor: ...
 ```
 
 ## Development

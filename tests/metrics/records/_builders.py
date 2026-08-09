@@ -57,13 +57,13 @@ def _identity(question=None, **overrides):
     return MetricRecordIdentity(**base)
 
 
-def _fact(name="character_count", value=4, unit=None):
-    from dr_code.metrics import MetricFact, MetricFactUnit
+def _value(name="character_count", value=4, unit=None):
+    from dr_code.metrics import MetricValue, MetricValueUnit
 
-    return MetricFact(
+    return MetricValue(
         name=name,
         value=value,
-        unit=MetricFactUnit.COUNT if unit is None else unit,
+        unit=MetricValueUnit.COUNT if unit is None else unit,
     )
 
 
@@ -72,7 +72,7 @@ def _measured(**overrides):
 
     base: dict[str, object] = {
         "identity": _identity(),
-        "facts": (_fact(),),
+        "values": (_value(),),
     }
     base.update(overrides)
     return MeasuredRecord(**base)

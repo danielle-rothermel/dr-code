@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-EXPECTED_FACT_UNITS = {
+EXPECTED_VALUE_UNITS = {
     "count",
     "ratio",
     "percent",
@@ -15,7 +15,7 @@ EXPECTED_FACT_UNITS = {
 }
 
 
-def test_metric_fact_unit_is_the_closed_unit_vocabulary() -> None:
-    from dr_code.metrics import MetricFactUnit
+def test_metric_value_unit_is_the_closed_unit_vocabulary() -> None:
+    from dr_code.metrics import MetricValueUnit
 
-    assert {unit.value for unit in MetricFactUnit} == EXPECTED_FACT_UNITS
+    assert {unit.value for unit in MetricValueUnit} == EXPECTED_VALUE_UNITS

@@ -54,6 +54,22 @@ class MetricQuestionCoordinate(FrozenModel):
         )
 
 
+class MetricValueCoordinate(FrozenModel):
+    question: MetricQuestionCoordinate
+    value: str
+
+    @model_validator(mode="after")
+    def validate_value_name(self) -> Self:
+        if not self.value:
+            raise ValueError("a metric value coordinate must name a value")
+        if "." in self.value:
+            raise ValueError(
+                f"metric value name {self.value!r} must not contain '.': "
+                "no metric value can carry a dotted name"
+            )
+        return self
+
+
 class MetricsDefinitionCoordinate(FrozenModel):
     definition_id: str
     version: str
@@ -82,5 +98,6 @@ class MetricsDefinitionCoordinate(FrozenModel):
 
 __all__ = [
     "MetricQuestionCoordinate",
+    "MetricValueCoordinate",
     "MetricsDefinitionCoordinate",
 ]

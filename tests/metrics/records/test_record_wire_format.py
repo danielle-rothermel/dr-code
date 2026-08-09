@@ -6,7 +6,7 @@ import json
 import pytest
 
 from ._builders import (
-    _fact,
+    _value,
     _identity,
     _measured,
     _not_applicable,
@@ -59,7 +59,7 @@ _GOLDEN_MEASURED_RECORD = {
             ],
         },
     },
-    "facts": [
+    "values": [
         {"name": "keyword_count", "value": 2, "unit": "count"},
         {
             "name": "punctuation_density",
@@ -71,7 +71,7 @@ _GOLDEN_MEASURED_RECORD = {
 
 
 def _golden_record():
-    from dr_code.metrics import MetricFactUnit, MetricName
+    from dr_code.metrics import MetricName, MetricValueUnit
     from dr_code.trace import ComponentSetting
 
     question = _question_coordinate(
@@ -81,12 +81,12 @@ def _golden_record():
     )
     return _measured(
         identity=_identity(question=question, metric_version="0"),
-        facts=(
-            _fact(name="keyword_count", value=2),
-            _fact(
+        values=(
+            _value(name="keyword_count", value=2),
+            _value(
                 name="punctuation_density",
                 value=0.25,
-                unit=MetricFactUnit.RATIO,
+                unit=MetricValueUnit.RATIO,
             ),
         ),
     )

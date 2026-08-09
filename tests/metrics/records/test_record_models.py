@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from ._builders import (
     _absent,
-    _fact,
+    _value,
     _identity,
     _measured,
     _not_applicable,
@@ -55,7 +55,7 @@ def test_records_reject_any_other_schema_version() -> None:
         MeasuredRecord(
             schema_version=2,  # type: ignore[arg-type]
             identity=_identity(),
-            facts=(_fact(),),
+            values=(_value(),),
         )
 
 
@@ -87,7 +87,7 @@ def test_record_variant_fields_are_the_documented_schema() -> None:
     )
 
     shared = {"schema_version", "status", "identity"}
-    assert set(MeasuredRecord.model_fields) == shared | {"facts"}
+    assert set(MeasuredRecord.model_fields) == shared | {"values"}
     assert set(NotApplicableRecord.model_fields) == shared | {"absence"}
     assert set(OperatorFailureRecord.model_fields) == shared | {"failure"}
 
@@ -95,11 +95,11 @@ def test_record_variant_fields_are_the_documented_schema() -> None:
 def test_records_are_frozen() -> None:
     record = _measured()
     with pytest.raises(ValidationError) as exc_info:
-        record.facts = record.facts  # type: ignore[misc]
+        record.values = record.values  # type: ignore[misc]
 
     error = exc_info.value.errors()[0]
     assert error["type"] == "frozen_instance"
-    assert error["loc"] == ("facts",)
+    assert error["loc"] == ("values",)
 
 
 def test_equal_records_compare_equal() -> None:
@@ -113,18 +113,18 @@ def test_measured_and_not_applicable_records_are_never_equal() -> None:
     assert _not_applicable() != _operator_failure()
 
 
-def test_metric_fact_accepts_every_scalar_type() -> None:
-    from dr_code.metrics import MetricFactUnit
+def test_metric_value_accepts_every_scalar_type() -> None:
+    from dr_code.metrics import MetricValueUnit
 
-    facts = (
-        _fact(name="int_val", value=42),
-        _fact(name="float_val", value=3.14, unit=MetricFactUnit.RATIO),
-        _fact(name="str_val", value="hello", unit=MetricFactUnit.IDENTIFIER),
-        _fact(name="bool_val", value=True, unit=MetricFactUnit.BOOLEAN),
-        _fact(name="none_val", value=None, unit=MetricFactUnit.TEXT),
+    values = (
+        _value(name="int_val", value=42),
+        _value(name="float_val", value=3.14, unit=MetricValueUnit.RATIO),
+        _value(name="str_val", value="hello", unit=MetricValueUnit.IDENTIFIER),
+        _value(name="bool_val", value=True, unit=MetricValueUnit.BOOLEAN),
+        _value(name="none_val", value=None, unit=MetricValueUnit.TEXT),
     )
-    record = _measured(facts=facts)
-    assert [fact.value for fact in record.facts] == [
+    record = _measured(values=values)
+    assert [value.value for value in record.values] == [
         42,
         3.14,
         "hello",
@@ -134,67 +134,69 @@ def test_metric_fact_accepts_every_scalar_type() -> None:
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
-def test_metric_fact_rejects_non_finite_values(value: float) -> None:
+def test_metric_value_rejects_non_finite_values(value: float) -> None:
     from pydantic import ValidationError
 
-    from dr_code.metrics import MetricFactUnit
+    from dr_code.metrics import MetricValueUnit
 
     with pytest.raises(ValidationError):
-        _fact(name="ratio", value=value, unit=MetricFactUnit.RATIO)
+        _value(name="ratio", value=value, unit=MetricValueUnit.RATIO)
 
 
-def test_metric_fact_requires_a_unit_from_the_closed_vocabulary() -> None:
+def test_metric_value_requires_a_unit_from_the_closed_vocabulary() -> None:
     from pydantic import ValidationError
 
-    from dr_code.metrics import MetricFact
+    from dr_code.metrics import MetricValue
 
     with pytest.raises(ValidationError):
-        MetricFact(name="count", value=1, unit="furlongs")
+        MetricValue(name="count", value=1, unit="furlongs")
 
 
 @pytest.mark.parametrize("name", ["character_count.unit", "a.b", ".", "x."])
-def test_metric_fact_rejects_a_dotted_name(name: str) -> None:
+def test_metric_value_rejects_a_dotted_name(name: str) -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError, match="must not contain"):
-        _fact(name=name, value=1)
+        _value(name=name, value=1)
 
 
-def test_metric_fact_rejects_an_empty_name() -> None:
+def test_metric_value_rejects_an_empty_name() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
-        _fact(name="", value=1)
+        _value(name="", value=1)
 
     error = exc_info.value.errors(include_url=False)[0]
     assert error["type"] == "value_error"
     assert error["loc"] == ()
-    assert str(error["ctx"]["error"]) == ("metric fact name must not be empty")
-
-
-def test_facts_preserve_operator_declaration_order() -> None:
-    facts = (
-        _fact(name="second", value=2),
-        _fact(name="first", value=1),
+    assert str(error["ctx"]["error"]) == (
+        "metric value name must not be empty"
     )
-    assert [fact.name for fact in _measured(facts=facts).facts] == [
+
+
+def test_values_preserve_operator_declaration_order() -> None:
+    values = (
+        _value(name="second", value=2),
+        _value(name="first", value=1),
+    )
+    assert [value.name for value in _measured(values=values).values] == [
         "second",
         "first",
     ]
 
 
-def test_measured_records_require_at_least_one_fact() -> None:
+def test_measured_records_require_at_least_one_value() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        _measured(facts=())
+        _measured(values=())
 
 
-def test_measured_records_reject_duplicate_fact_names() -> None:
+def test_measured_records_reject_duplicate_value_names() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        _measured(facts=(_fact(name="count"), _fact(name="count")))
+        _measured(values=(_value(name="count"), _value(name="count")))
 
 
 def test_not_applicable_record_nests_the_complete_absent() -> None:

@@ -25,7 +25,7 @@ from dr_code.evaluation import (
     NotApplicablePolicy,
     aggregate,
 )
-from dr_code.metrics import MetricFactUnit
+from dr_code.metrics import MetricValueUnit
 
 EXPECTED_STATUSES = {
     "ok",
@@ -212,7 +212,7 @@ def test_overflow_is_reported_as_a_result_not_raised() -> None:
     assert "overflow" in result.reason
 
 
-def test_an_int_fact_too_large_for_a_float_is_a_non_finite_result() -> None:
+def test_an_int_value_too_large_for_a_float_is_a_non_finite_result() -> None:
     result = aggregate(
         request_for(
             slot(measured(10**309), ordinal=0),
@@ -329,11 +329,11 @@ def test_proportion_is_the_truthy_share_on_a_zero_to_one_scale() -> None:
     assert result.value == 0.5
 
 
-def test_boolean_facts_aggregate_as_one_and_zero() -> None:
+def test_boolean_values_aggregate_as_one_and_zero() -> None:
     result = aggregate(
         request_for(
-            slot(measured(True, unit=MetricFactUnit.BOOLEAN), ordinal=0),
-            slot(measured(False, unit=MetricFactUnit.BOOLEAN), ordinal=1),
+            slot(measured(True, unit=MetricValueUnit.BOOLEAN), ordinal=0),
+            slot(measured(False, unit=MetricValueUnit.BOOLEAN), ordinal=1),
             statistic=AggregationStatistic.MEAN,
         )
     )
@@ -378,13 +378,15 @@ def test_a_non_measured_record_answering_another_question_raises(
         )
 
 
-def test_a_record_without_the_policys_fact_raises() -> None:
-    with pytest.raises(ValueError, match="no fact named"):
-        aggregate(request_for(slot(measured(1, name="other_fact"), ordinal=0)))
+def test_a_record_without_the_policys_value_raises() -> None:
+    with pytest.raises(ValueError, match="no value named"):
+        aggregate(
+            request_for(slot(measured(1, name="other_value"), ordinal=0))
+        )
 
 
-def test_a_non_numeric_fact_value_raises() -> None:
-    text = measured("hello", unit=MetricFactUnit.TEXT)
+def test_a_non_numeric_metric_value_raises() -> None:
+    text = measured("hello", unit=MetricValueUnit.TEXT)
     with pytest.raises(ValueError, match="non-numeric"):
         aggregate(request_for(slot(text, ordinal=0)))
 

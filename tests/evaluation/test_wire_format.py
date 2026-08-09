@@ -11,13 +11,8 @@ from _builders import (
     task_set,
     task_set_coordinate,
 )
-from dr_code.evaluation import (
-    EvaluationCoordinate,
-    EvaluationPlan,
-    FactCoordinate,
-    Score,
-)
-from dr_code.metrics import MetricFactUnit
+from dr_code.evaluation import EvaluationCoordinate, EvaluationPlan, Score
+from dr_code.metrics import MetricValueCoordinate, MetricValueUnit
 
 # Literal keys pin persisted evaluation shapes; deriving them would hide drift.
 _GOLDEN_EVALUATION_PLAN = {
@@ -64,7 +59,7 @@ _GOLDEN_EVALUATION_PLAN = {
             "on_key": "output",
             "settings": [],
         },
-        "fact": "char_count",
+        "value": "char_count",
         "statistic": "mean",
         "not_applicable": "exclude",
         "operator_failure": "fail",
@@ -92,7 +87,7 @@ _GOLDEN_SCORE = {
                 "on_key": "output",
                 "settings": [],
             },
-            "fact": "char_count",
+            "value": "char_count",
         }
     ],
 }
@@ -113,7 +108,7 @@ def _golden_score() -> Score:
     return Score(
         name="mean_char_count",
         value=12.5,
-        unit=MetricFactUnit.COUNT,
+        unit=MetricValueUnit.COUNT,
         evaluation=EvaluationCoordinate(
             plan_id="plan",
             version="1",
@@ -121,7 +116,9 @@ def _golden_score() -> Score:
             repeat_plan=repeat_plan_coordinate(),
         ),
         sources=(
-            FactCoordinate(question=question_coordinate(), fact="char_count"),
+            MetricValueCoordinate(
+                question=question_coordinate(), value="char_count"
+            ),
         ),
     )
 

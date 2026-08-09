@@ -21,16 +21,18 @@ def _q(metric_name: str, on: str = "input", **settings) -> object:
 
 def _facts(record):
     assert record.status.value == "measured", record
-    return {fact.name: fact.value for fact in record.facts}
+    return {value.name: value.value for value in record.values}
 
 
 def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
+    kwargs.pop("executor", None)
     return asyncio.run(extract_metrics(definition, trace, **kwargs))
 
 
 def _extract_batch(definition, traces, **kwargs):
     from dr_code.metrics import extract_metrics_batch
 
+    kwargs.pop("executor", None)
     return asyncio.run(extract_metrics_batch(definition, traces, **kwargs))

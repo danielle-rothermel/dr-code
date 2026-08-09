@@ -4,7 +4,7 @@ from enum import StrEnum, verify, UNIQUE
 
 
 @verify(UNIQUE)
-class MetricFactUnit(StrEnum):
+class MetricValueUnit(StrEnum):
     # Never build payloads by iterating this closed vocabulary.
 
     COUNT = "count"
@@ -19,4 +19,4 @@ class MetricFactUnit(StrEnum):
     TEXT = "text"
 
 
-__all__ = ["MetricFactUnit"]
+__all__ = ["MetricValueUnit"]

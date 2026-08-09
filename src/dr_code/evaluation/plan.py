@@ -38,19 +38,19 @@ class NotApplicablePolicy(StrEnum):
 
 class AggregationPolicy(FrozenModel):
     question: MetricQuestionCoordinate
-    fact: str
+    value: str
     statistic: AggregationStatistic
     not_applicable: NotApplicablePolicy = NotApplicablePolicy.EXCLUDE
     operator_failure: NotApplicablePolicy = NotApplicablePolicy.FAIL
 
     @model_validator(mode="after")
-    def validate_fact_name(self) -> Self:
-        if not self.fact:
-            raise ValueError("an aggregation policy must name a fact")
-        if "." in self.fact:
+    def validate_value_name(self) -> Self:
+        if not self.value:
+            raise ValueError("an aggregation policy must name a metric value")
+        if "." in self.value:
             raise ValueError(
-                f"fact name {self.fact!r} must not contain '.': no metric "
-                "fact can carry a dotted name"
+                f"metric value name {self.value!r} must not contain '.': "
+                "no metric value can carry a dotted name"
             )
         return self
 

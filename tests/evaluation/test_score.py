@@ -8,12 +8,8 @@ from _builders import (
     repeat_plan_coordinate,
     task_set_coordinate,
 )
-from dr_code.evaluation import (
-    EvaluationCoordinate,
-    FactCoordinate,
-    Score,
-)
-from dr_code.metrics import MetricFactUnit
+from dr_code.evaluation import EvaluationCoordinate, Score
+from dr_code.metrics import MetricValue, MetricValueCoordinate, MetricValueUnit
 
 
 def evaluation_coordinate(**overrides: object) -> EvaluationCoordinate:
@@ -28,11 +24,11 @@ def evaluation_coordinate(**overrides: object) -> EvaluationCoordinate:
     )
 
 
-def fact_coordinate(**overrides: object) -> FactCoordinate:
-    return FactCoordinate(
+def value_coordinate(**overrides: object) -> MetricValueCoordinate:
+    return MetricValueCoordinate(
         **{
             "question": question_coordinate(),
-            "fact": "char_count",
+            "value": "char_count",
             **overrides,
         }
     )
@@ -43,21 +39,21 @@ def score(**overrides: object) -> Score:
         **{
             "name": "mean_char_count",
             "value": 12.5,
-            "unit": MetricFactUnit.COUNT,
+            "unit": MetricValueUnit.COUNT,
             "evaluation": evaluation_coordinate(),
-            "sources": (fact_coordinate(),),
+            "sources": (value_coordinate(),),
             **overrides,
         }
     )
 
 
-def test_score_reuses_the_metric_fact_unit_vocabulary() -> None:
-    assert Score.model_fields["unit"].annotation is MetricFactUnit
+def test_score_reuses_the_metric_value_unit_vocabulary() -> None:
+    assert Score.model_fields["unit"].annotation is MetricValueUnit
 
 
 def test_score_rejects_the_text_unit() -> None:
     with pytest.raises(ValidationError, match="a score is a measurement"):
-        score(unit=MetricFactUnit.TEXT)
+        score(unit=MetricValueUnit.TEXT)
 
 
 def test_score_rejects_the_text_unit_by_its_wire_value() -> None:
@@ -67,9 +63,9 @@ def test_score_rejects_the_text_unit_by_its_wire_value() -> None:
 
 @pytest.mark.parametrize(
     "unit",
-    [unit for unit in MetricFactUnit if unit is not MetricFactUnit.TEXT],
+    [unit for unit in MetricValueUnit if unit is not MetricValueUnit.TEXT],
 )
-def test_score_accepts_every_measurement_unit(unit: MetricFactUnit) -> None:
+def test_score_accepts_every_measurement_unit(unit: MetricValueUnit) -> None:
     assert score(unit=unit).unit is unit
 
 
@@ -83,58 +79,58 @@ def test_score_accepts_zero() -> None:
     assert score(value=0.0).value == 0.0
 
 
-def test_score_requires_at_least_one_source_fact() -> None:
-    with pytest.raises(ValidationError, match="must name the facts"):
+def test_score_requires_at_least_one_source_value() -> None:
+    with pytest.raises(ValidationError, match="must name the metric values"):
         score(sources=())
 
 
-def test_score_rejects_duplicated_source_facts() -> None:
-    with pytest.raises(ValidationError, match="source facts must be unique"):
-        score(sources=(fact_coordinate(), fact_coordinate()))
+def test_score_rejects_duplicated_source_values() -> None:
+    with pytest.raises(
+        ValidationError, match="source metric values must be unique"
+    ):
+        score(sources=(value_coordinate(), value_coordinate()))
 
 
-def test_score_records_distinct_facts_of_the_same_question() -> None:
+def test_score_records_distinct_values_of_the_same_question() -> None:
     built = score(
         sources=(
-            fact_coordinate(fact="char_count"),
-            fact_coordinate(fact="word_count"),
+            value_coordinate(value="char_count"),
+            value_coordinate(value="word_count"),
         )
     )
-    assert {source.fact for source in built.sources} == {
+    assert {source.value for source in built.sources} == {
         "char_count",
         "word_count",
     }
 
 
-def test_a_fact_coordinate_is_a_question_plus_a_name() -> None:
-    assert set(FactCoordinate.model_fields) == {"question", "fact"}
+def test_a_value_coordinate_is_a_question_plus_a_name() -> None:
+    assert set(MetricValueCoordinate.model_fields) == {"question", "value"}
 
 
-def test_a_fact_coordinate_rejects_an_empty_fact_name() -> None:
-    with pytest.raises(ValidationError, match="must name a fact"):
-        fact_coordinate(fact="")
+def test_a_value_coordinate_rejects_an_empty_value_name() -> None:
+    with pytest.raises(ValidationError, match="must name a value"):
+        value_coordinate(value="")
 
 
 @pytest.mark.parametrize("name", ("x.unit", "char_count.unit", "a.b"))
-def test_a_fact_coordinate_rejects_a_dotted_fact_name(name: str) -> None:
+def test_a_value_coordinate_rejects_a_dotted_value_name(name: str) -> None:
     with pytest.raises(ValidationError, match="must not contain"):
-        fact_coordinate(fact=name)
+        value_coordinate(value=name)
 
 
-def test_score_is_not_accepted_as_a_metric_fact() -> None:
-    from dr_code.metrics import MetricFact
-
+def test_score_is_not_accepted_as_a_metric_value() -> None:
     with pytest.raises(ValidationError):
-        MetricFact(
+        MetricValue(
             name="mean_char_count",
             value=score(),
-            unit=MetricFactUnit.COUNT,
+            unit=MetricValueUnit.COUNT,
         )
 
 
 @pytest.mark.parametrize(
     "value",
-    [evaluation_coordinate(), fact_coordinate(), score()],
+    [evaluation_coordinate(), value_coordinate(), score()],
 )
 def test_score_model_round_trips_through_json(value) -> None:
     assert type(value).model_validate_json(value.model_dump_json()) == value

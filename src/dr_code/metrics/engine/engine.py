@@ -1,30 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-
-# The metrics engine is a deliberate direct dr-exec importer: its injected
-# runner is the dr-exec executor type and its fail-closed infrastructure
-# exception is dr-exec's.
-from dr_exec import Executor, ExecutorFailure
+from typing import TYPE_CHECKING
 
 from dr_code.metrics.coordinates import (
     MetricQuestionCoordinate,
     MetricsDefinitionCoordinate,
 )
 from dr_code.metrics.definition import MetricsDefinition, MetricQuestion
-from dr_code.metrics.engine.execution import (
-    ExecutionCache,
-    ExecutionOutcome,
-    ExecutionRequest,
-    InMemoryExecutionCache,
-    run_requests,
-)
+from dr_code.evaluation.records import CandidateExecutionOutcome
+from dr_code.humaneval.job import HumanEvalEvaluatorSuite
+from dr_code.humaneval.metric_operator import CodeTest
 from dr_code.metrics.engine.views import ViewCache
 from dr_code.metrics.operators.base import MetricOperator
 from dr_code.metrics.records import (
     MeasuredRecord,
-    MetricFact,
+    MetricValue,
     MetricRecord,
     MetricRecordIdentity,
     NotApplicableRecord,
@@ -33,6 +25,9 @@ from dr_code.metrics.records import (
 )
 from dr_code.metrics.registry import REGISTRY
 from dr_code.trace import Absent, Artifact, Trace, WiringError
+
+if TYPE_CHECKING:
+    from dr_code.evaluation.identity import MaterializedEvaluationCandidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,40 +66,97 @@ class EngineInvariantError(Exception):
 @dataclass(frozen=True, slots=True)
 class _EngineContext:
     views: ViewCache
-    outcomes: Mapping[ExecutionRequest, ExecutionOutcome]
+    question: MetricQuestionCoordinate
+    candidate_execution_outcome: object | None
 
-    def outcome_for(self, request: ExecutionRequest) -> ExecutionOutcome:
+
+@dataclass(frozen=True, slots=True)
+class _CandidateMetricPlan:
+    definition: MetricsDefinition
+    bindings: tuple[_TraceBinding, ...]
+    suites: tuple[HumanEvalEvaluatorSuite, ...]
+
+    def records(
+        self,
+        outcome: CandidateExecutionOutcome,
+    ) -> tuple[MetricRecord, ...]:
+        views = ViewCache()
+        return tuple(
+            _compute_record(
+                self.definition,
+                binding,
+                _EngineContext(
+                    views=views,
+                    question=MetricQuestionCoordinate.of(
+                        binding.question_binding.question
+                    ),
+                    candidate_execution_outcome=outcome,
+                ),
+            )
+            for binding in self.bindings
+        )
+
+
+def _plan_candidate_metrics(
+    definition: MetricsDefinition,
+    trace: Trace,
+    candidate: MaterializedEvaluationCandidate,
+    /,
+) -> _CandidateMetricPlan:
+    """Bind one candidate to the plan's questions without executing it."""
+
+    question_bindings = _bind_questions(definition)
+    values = dict(trace.values)
+    for question_binding in question_bindings:
+        if isinstance(question_binding.operator, CodeTest):
+            values[question_binding.question.on] = candidate.source
+    candidate_trace = Trace(
+        values=values,
+        producer=trace.producer,
+        step_facts=trace.step_facts,
+    )
+    bindings = tuple(
+        _bind_trace_question(candidate_trace, question_binding)
+        for question_binding in question_bindings
+    )
+    suites: list[HumanEvalEvaluatorSuite] = []
+    for binding in bindings:
+        if binding.absence is not None:
+            continue
+        operator = binding.question_binding.operator
+        if not isinstance(operator, CodeTest):
+            continue
+        assert binding.value is not None
         try:
-            return self.outcomes[request]
-        except KeyError as exc:
-            raise EngineInvariantError(
-                "no execution outcome planned for request "
-                f"{request.computation_id!r}"
-            ) from exc
+            suites.append(
+                operator.evaluator_suite(
+                    binding.value,
+                    binding.auxiliary,
+                    MetricQuestionCoordinate.of(
+                        binding.question_binding.question
+                    ),
+                )
+            )
+        except Exception as error:
+            binding.planning_failure = error
+    return _CandidateMetricPlan(
+        definition=definition,
+        bindings=bindings,
+        suites=tuple(suites),
+    )
 
 
 async def extract_metrics(
     definition: MetricsDefinition,
     trace: Trace,
-    *,
-    executor: Executor | None = None,
-    execution_cache: ExecutionCache | None = None,
 ) -> tuple[MetricRecord, ...]:
-    record_sets = await extract_metrics_batch(
-        definition,
-        (trace,),
-        executor=executor,
-        execution_cache=execution_cache,
-    )
+    record_sets = await extract_metrics_batch(definition, (trace,))
     return record_sets[0]
 
 
 async def extract_metrics_batch(
     definition: MetricsDefinition,
     traces: Sequence[Trace],
-    *,
-    executor: Executor | None = None,
-    execution_cache: ExecutionCache | None = None,
 ) -> tuple[tuple[MetricRecord, ...], ...]:
     question_bindings = _bind_questions(definition)
     trace_bindings = tuple(
@@ -115,39 +167,20 @@ async def extract_metrics_batch(
         for trace in traces
     )
 
-    requests: list[ExecutionRequest] = []
-    for per_trace in trace_bindings:
-        for binding in per_trace:
-            if binding.absence is not None:
-                continue
-            assert binding.value is not None
-            operator = binding.question_binding.operator
-            try:
-                binding_requests = operator.execution_requests(
-                    binding.value,
-                    binding.auxiliary,
-                )
-            except (ExecutorFailure, EngineInvariantError):
-                raise
-            except Exception as exc:
-                binding.planning_failure = exc
-                continue
-            requests.extend(binding_requests)
-
-    cache = (
-        execution_cache
-        if execution_cache is not None
-        else InMemoryExecutionCache()
-    )
-    outcomes = await run_requests(
-        requests,
-        executor=executor,
-        cache=cache,
-    )
-    context = _EngineContext(views=ViewCache(), outcomes=outcomes)
+    views = ViewCache()
     return tuple(
         tuple(
-            _compute_record(definition, binding, context)
+            _compute_record(
+                definition,
+                binding,
+                _EngineContext(
+                    views=views,
+                    question=MetricQuestionCoordinate.of(
+                        binding.question_binding.question
+                    ),
+                    candidate_execution_outcome=None,
+                ),
+            )
             for binding in per_trace
         )
         for per_trace in trace_bindings
@@ -248,16 +281,16 @@ def _compute_record(
         return _failure_record(identity, binding.planning_failure)
 
     assert binding.value is not None
-    # Invalid operator result models or facts become operator failures.
+    # Invalid operator result models or values become operator failures.
     try:
         result = binding.question_binding.operator.compute(
             binding.value,
             binding.auxiliary,
             context,
         )
-        facts: tuple[MetricFact, ...] = result.to_facts()
-        return MeasuredRecord(identity=identity, facts=facts)
-    except (ExecutorFailure, EngineInvariantError):
+        values: tuple[MetricValue, ...] = result.to_values()
+        return MeasuredRecord(identity=identity, values=values)
+    except EngineInvariantError:
         raise
     except Exception as exc:
         return _failure_record(identity, exc)

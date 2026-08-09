@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from importlib.util import resolve_name
 from pathlib import Path
 
@@ -17,6 +18,153 @@ FUNCTIONAL_PACKAGES = frozenset(
         "trace",
     }
 )
+
+EVALUATION_CORE_EXPORTS = {
+    "dr_code.caching": frozenset(
+        {
+            "CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION",
+            "EXECUTION_CACHE_NAMESPACE",
+            "EXECUTION_CACHE_RECORD_SCHEMA",
+            "CachedExecutionObservation",
+            "ExecutionCacheStats",
+            "WindowedExecutionCache",
+        }
+    ),
+    "dr_code.evaluation": frozenset(
+        {
+            "AggregationPolicy",
+            "AttemptCompleteness",
+            "AttemptLimitExhaustion",
+            "AttemptLimitKind",
+            "AttemptLimits",
+            "AttemptValidity",
+            "BundleRecordReference",
+            "CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION",
+            "CandidateExecutionOutcome",
+            "CandidateExecutionProvenance",
+            "CandidateExecutionRecord",
+            "CandidateJobBudget",
+            "CandidateJobCompleted",
+            "CandidateJobTerminated",
+            "CandidateTerminationReason",
+            "ComparableProjectionComparison",
+            "ComparisonStatus",
+            "CorpusSampleProvenance",
+            "EVALUATION_ATTEMPT_SCHEMA_VERSION",
+            "EVALUATION_BUNDLE_FORMAT",
+            "EVALUATION_BUNDLE_SCHEMA_VERSION",
+            "EVALUATION_PROJECTION_FORMAT",
+            "EVALUATION_PROJECTION_SCHEMA_VERSION",
+            "EvaluationAttemptIdentity",
+            "EvaluationAttemptRecord",
+            "EvaluationBatchRequest",
+            "EvaluationBatchResult",
+            "EvaluationBundleAudit",
+            "EvaluationBundlePayload",
+            "EvaluationCandidateIdentity",
+            "EvaluationEvidenceResolver",
+            "EvaluationInput",
+            "EvaluationMemberRecord",
+            "EvaluationProjectionReference",
+            "EvaluationReadLimits",
+            "EvaluationRuntimeIdentity",
+            "EvaluationSample",
+            "EvaluationSampleAuxiliaryArtifact",
+            "EvaluationSampleIdentity",
+            "EvaluationSampleMetadata",
+            "EvaluationSampleProjectionRow",
+            "EvaluationSampleProvenance",
+            "EvaluationSlotIdentity",
+            "EvaluationSourceIdentity",
+            "EvaluatedSampleRecord",
+            "EvidenceReference",
+            "ExecutedCandidateProvenance",
+            "ExecutorExecutionFailure",
+            "FrozenCandidateEvaluationInput",
+            "GeneratedSampleProvenance",
+            "HarnessExecutionFailure",
+            "MaterializedCandidateProjectionRow",
+            "MaterializedEvaluationCandidate",
+            "MetricRecordProjectionRow",
+            "NoCandidatesSampleRecord",
+            "PreprocessingAbsentSampleRecord",
+            "ProjectionArtifactHeader",
+            "ProjectionComparison",
+            "ProjectionKind",
+            "ProjectionNotComparable",
+            "ProjectionRequest",
+            "ProjectionRow",
+            "RecordPlacement",
+            "ReplayMode",
+            "ReplayPreflight",
+            "ReplayReady",
+            "ReplaySource",
+            "ReplayUnavailable",
+            "RestoredEvaluationAttempt",
+            "ReusedCandidateProvenance",
+            "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
+            "SAMPLE_RECORD_OBJECT_SCHEMA",
+            "SampleEvaluationInput",
+            "SampleEvaluationRecord",
+            "Score",
+            "ScoreProjectionRow",
+            "ShardLimits",
+            "StoredRecordReference",
+            "StructuralEvaluationComparison",
+            "StructuralMemberIdentity",
+            "StructuralRecordComparison",
+            "SyntheticSampleProvenance",
+            "WindowLimits",
+            "AggregationResultProjectionRow",
+            "audit_evaluation_bundle",
+            "compare_evaluation_attempts",
+            "evaluate_batch",
+            "evaluate_durable_partition",
+            "preflight_replay",
+            "read_evaluation_projection",
+            "replay_evaluation_attempt",
+            "restore_evaluation_attempt",
+        }
+    ),
+    "dr_code.humaneval": frozenset(
+        {
+            "CandidateNamespaceFailure",
+            "CandidateNamespaceLoaded",
+            "CandidateNamespaceOutcome",
+            "CompletedSubmissionResult",
+            "HUMANEVAL_CANDIDATE_ENTRY_POINT",
+            "HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION",
+            "HarnessFailure",
+            "HarnessFailureCause",
+            "HumanEvalCandidateJobRequest",
+            "HumanEvalCandidateJobResult",
+            "HumanEvalEvaluatorSuite",
+            "HumanEvalFunctionGroupResult",
+            "HumanEvalSubmissionRequest",
+            "HumanEvalSubmissionResult",
+            "HumanEvalSuiteCompleted",
+            "HumanEvalSuiteHarnessFailure",
+            "HumanEvalSuiteResult",
+            "SubmissionOutcome",
+            "evaluate_humaneval_candidate_job",
+            "project_humaneval_submission",
+            "project_humaneval_submissions_batch",
+            "score_humaneval_submission",
+            "score_humaneval_submissions_batch",
+        }
+    ),
+    "dr_code.metrics": frozenset(
+        {
+            "MeasuredRecord",
+            "MetricRecord",
+            "MetricValue",
+            "MetricValueCoordinate",
+            "MetricValueUnit",
+            "NotApplicableRecord",
+            "OperatorFailureRecord",
+        }
+    ),
+}
 
 
 def _internal_imports(path: Path) -> set[str]:
@@ -72,3 +220,19 @@ def test_core_does_not_import_functional_packages() -> None:
     assert not {
         path: imports for path, imports in violations.items() if imports
     }
+
+
+def test_evaluation_core_public_exports_are_complete() -> None:
+    for module_name, expected in EVALUATION_CORE_EXPORTS.items():
+        module = importlib.import_module(module_name)
+        public_names = tuple(module.__all__)
+        assert len(public_names) == len(set(public_names))
+        exported = frozenset(public_names)
+        assert expected <= exported, (
+            f"{module_name} is missing exports: {sorted(expected - exported)}"
+        )
+        assert not {
+            name
+            for name in public_names
+            if getattr(module, name, None) is None
+        }

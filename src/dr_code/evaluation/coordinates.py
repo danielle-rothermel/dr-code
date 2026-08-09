@@ -5,7 +5,6 @@ from typing import Self
 from pydantic import model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.trace import PreprocessingDefinitionCoordinate
 
 
 class DatasetCoordinate(FrozenModel):
@@ -102,45 +101,10 @@ class RepeatPlan(FrozenModel):
         return task_position * self.repeats + repeat_index
 
 
-class SampleCoordinate(FrozenModel):
-    task_set: TaskSetCoordinate
-    repeat_plan: RepeatPlanCoordinate
-    task: str
-    repeat_index: int
-
-    @model_validator(mode="after")
-    def validate_repeat_index(self) -> Self:
-        if self.repeat_index < 0:
-            raise ValueError("repeat_index must be non-negative")
-        return self
-
-    def within(self, plan: RepeatPlan) -> bool:
-        return (
-            self.repeat_plan == plan.coordinate
-            and 0 <= self.repeat_index < plan.repeats
-        )
-
-
-class CandidateCoordinate(FrozenModel):
-    """Assigns ordinals after exact-source deduplication and filtering by `materialize_candidate_set`."""
-
-    sample: SampleCoordinate
-    preprocessing: PreprocessingDefinitionCoordinate
-    candidate_ordinal: int
-
-    @model_validator(mode="after")
-    def validate_candidate_ordinal(self) -> Self:
-        if self.candidate_ordinal < 0:
-            raise ValueError("candidate_ordinal must be non-negative")
-        return self
-
-
 __all__ = [
-    "CandidateCoordinate",
     "DatasetCoordinate",
     "RepeatPlan",
     "RepeatPlanCoordinate",
-    "SampleCoordinate",
     "TaskSet",
     "TaskSetCoordinate",
 ]

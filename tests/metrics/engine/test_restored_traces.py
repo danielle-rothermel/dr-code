@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-from _executor_stubs import scripted_executor
 from dr_code.trace import (
     CodeArtifact,
     ComponentCoordinate,
@@ -74,13 +73,13 @@ def _namespace():
 def _answer(record):
     from dr_code.metrics import MeasuredRecord
 
-    facts = record.facts if isinstance(record, MeasuredRecord) else ()
+    values = record.values if isinstance(record, MeasuredRecord) else ()
     return (
         record.identity.question.metric,
         record.identity.metric_version,
         record.identity.question.on_key,
         record.status,
-        facts,
+        values,
     )
 
 
@@ -88,10 +87,6 @@ def _extract(definition, trace, **kwargs):
     from dr_code.metrics import extract_metrics
 
     return asyncio.run(extract_metrics(definition, trace, **kwargs))
-
-
-def _stub_executor():
-    return scripted_executor(stdout="[]")
 
 
 def test_deserialized_trace_measures_identically_to_fresh() -> None:
@@ -127,7 +122,7 @@ def _code_test_definition():
             MetricQuestion(
                 metric=MetricName.CODE_TEST,
                 on="input",
-                settings={"timeout_seconds": 5.0},
+                settings={},
             ),
         ),
     )
@@ -139,9 +134,9 @@ def test_code_test_record_equal_across_fresh_and_restored(
     fresh = code_test_trace(CODE, task)
     restored = deserialize_trace(serialize_trace(fresh))
     definition = _code_test_definition()
-    assert _answer(
-        _extract(definition, fresh, executor=_stub_executor())[0]
-    ) == _answer(_extract(definition, restored, executor=_stub_executor())[0])
+    assert _answer(_extract(definition, fresh)[0]) == _answer(
+        _extract(definition, restored)[0]
+    )
 
 
 def test_batch_over_identical_traces_yields_equal_record_sets(
@@ -156,7 +151,6 @@ def test_batch_over_identical_traces_yields_equal_record_sets(
         extract_metrics_batch(
             definition,
             [fresh, restored, fresh],
-            executor=_stub_executor(),
         )
     )
     answers = [[_answer(r) for r in records] for records in record_sets]
