@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-import json
+import argparse
+import asyncio
 import logging
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -26,27 +27,34 @@ from dr_code.trace import (
     InspectedCodeCandidateSetArtifact,
 )
 
+from corpus_loader import (
+    format_manifest_summary,
+    load_manifest_summary,
+    load_workflow_frame,
+)
 from workflow_settings import (
     ELIGIBLE_CORPUS,
-    GENERATION_CORPUS,
+    EXPECTED_MANIFEST_SHA256,
     PREPROCESSING_CACHE,
     PREPROCESS_LOG,
     PREPROCESSING_SUMMARY,
     SETTINGS,
-    SOURCE_KIND,
+    generation_corpus_bundle_path,
     prepare_run_directory,
 )
 
 _REQUIRED_COLUMNS = frozenset(
     {
+        "budget_mode",
         "decoder_model",
         "decoder_output",
         "encoder_model",
         "encoder_output",
         "encoder_user_prompt",
+        "generation_mode",
+        "max_characters",
         "model",
         "sample_id",
-        "source_kind",
         "task_id",
     }
 )
@@ -70,31 +78,6 @@ def _is_nonblank(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _max_characters(value: object) -> int | None:
-    if not _is_nonblank(value):
-        return None
-    assert isinstance(value, str)
-    try:
-        payload = json.loads(value)
-    except json.JSONDecodeError as exc:
-        if "max_characters" in value:
-            raise ValueError(
-                "encoder_user_prompt mentions max_characters but is not "
-                "valid JSON"
-            ) from exc
-        return None
-    if not isinstance(payload, Mapping) or "max_characters" not in payload:
-        return None
-    maximum = payload["max_characters"]
-    if (
-        isinstance(maximum, bool)
-        or not isinstance(maximum, int)
-        or maximum < 1
-    ):
-        raise ValueError("max_characters must be a positive integer")
-    return maximum
-
-
 def classify_generation_rows(corpus: pl.DataFrame) -> pl.DataFrame:
     missing = _REQUIRED_COLUMNS.difference(corpus.columns)
     if missing:
@@ -103,18 +86,25 @@ def classify_generation_rows(corpus: pl.DataFrame) -> pl.DataFrame:
             + ", ".join(sorted(missing))
         )
 
+    filtered = corpus.filter(
+        pl.struct(["generation_mode", "budget_mode"]).is_in(
+            [
+                {
+                    "generation_mode": generation_mode,
+                    "budget_mode": budget_mode,
+                }
+                for generation_mode, budget_mode in SETTINGS
+            ]
+        )
+    )
+
     records: list[dict[str, object]] = []
-    for row in corpus.filter(pl.col("source_kind") == SOURCE_KIND).iter_rows(
-        named=True
-    ):
+    for row in filtered.iter_rows(named=True):
         decoder_output = row["decoder_output"]
         if not _is_nonblank(decoder_output):
             continue
 
-        encoder_model = row["encoder_model"]
-        generation_mode = (
-            "enc_dec" if _is_nonblank(encoder_model) else "direct"
-        )
+        generation_mode = row["generation_mode"]
         if generation_mode == "enc_dec" and not _is_nonblank(
             row["encoder_output"]
         ):
@@ -125,18 +115,10 @@ def classify_generation_rows(corpus: pl.DataFrame) -> pl.DataFrame:
             raise ValueError(
                 f"sample {row['sample_id']!r} has no decoder model"
             )
-        maximum = _max_characters(row["encoder_user_prompt"])
-        budget_mode = "budget" if maximum is not None else "no_budget"
-        setting = (generation_mode, budget_mode)
-        if setting not in SETTINGS:
-            raise ValueError(f"unexpected experiment setting: {setting!r}")
 
         records.append(
             {
                 **row,
-                "generation_mode": generation_mode,
-                "budget_mode": budget_mode,
-                "max_characters": maximum,
                 "model_key": model_key,
             }
         )
@@ -163,7 +145,7 @@ def _candidate_sources(trace_output: object) -> tuple[str, ...]:
     return tuple(sources)
 
 
-def preprocess_distinct_outputs(
+async def preprocess_distinct_outputs(
     outputs: Sequence[str],
     *,
     cache_path: Path,
@@ -172,9 +154,9 @@ def preprocess_distinct_outputs(
     runner = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
     results: dict[str, tuple[str, ...]] = {}
     started = perf_counter()
-    with SqliteRecordCache(cache_path) as cache:
+    async with await SqliteRecordCache.open(cache_path) as cache:
         for index, output in enumerate(dict.fromkeys(outputs), start=1):
-            trace = run_preprocessing_cached(output, runner, cache)
+            trace = await run_preprocessing_cached(output, runner, cache)
             results[output] = _candidate_sources(trace.value(OUTPUT_KEY))
             if index % 500 == 0:
                 logger.info(
@@ -240,12 +222,40 @@ def attach_preprocessing_results(
     return eligible, summary
 
 
-def main() -> int:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--corpus-bundle",
+        type=Path,
+        default=None,
+        help=(
+            "generation corpus bundle directory "
+            f"(default: {generation_corpus_bundle_path()})"
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = _parse_args(argv)
+    bundle_dir = (
+        arguments.corpus_bundle.expanduser().resolve()
+        if arguments.corpus_bundle is not None
+        else generation_corpus_bundle_path()
+    )
     prepare_run_directory()
     logger = _configure_logging(PREPROCESS_LOG)
     started = perf_counter()
-    logger.info("Loading %s", GENERATION_CORPUS)
-    corpus = pl.read_parquet(GENERATION_CORPUS)
+    manifest_summary = load_manifest_summary(bundle_dir)
+    logger.info(
+        "Loading generation corpus bundle %s (%s)",
+        bundle_dir,
+        format_manifest_summary(manifest_summary),
+    )
+    corpus = load_workflow_frame(
+        bundle_dir,
+        expected_manifest_sha256=EXPECTED_MANIFEST_SHA256,
+    )
     logger.info("Loaded %d rows and %d columns", corpus.height, corpus.width)
 
     rows = classify_generation_rows(corpus)
@@ -255,10 +265,12 @@ def main() -> int:
         rows.height,
         len(set(outputs)),
     )
-    candidates = preprocess_distinct_outputs(
-        outputs,
-        cache_path=PREPROCESSING_CACHE,
-        logger=logger,
+    candidates = asyncio.run(
+        preprocess_distinct_outputs(
+            outputs,
+            cache_path=PREPROCESSING_CACHE,
+            logger=logger,
+        )
     )
     eligible, summary = attach_preprocessing_results(rows, candidates)
     eligible.write_parquet(ELIGIBLE_CORPUS)

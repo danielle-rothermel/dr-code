@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import logging
 import sys
@@ -10,10 +11,13 @@ from types import ModuleType
 import polars as pl
 import pytest
 
-from _executor_stubs import local_python_executor
+from _executor_stubs import importable_json_executor
 
 _ROOT = Path(__file__).parents[2]
 _SCRIPT_DIRECTORY = _ROOT / "scripts" / "verification" / "task_difficulty"
+_FIXTURE_BUNDLE = (
+    _ROOT / "tests" / "fixtures" / "generation_corpus" / "human_eval"
+)
 sys.path.insert(0, str(_SCRIPT_DIRECTORY))
 
 
@@ -33,6 +37,8 @@ _SAMPLE = _load_script("02_select_balanced_sample.py")
 _EVALUATE = _load_script("03_evaluate_sample.py")
 _SUMMARIZE = _load_script("04_summarize_results.py")
 _SETTINGS = _load_script("workflow_settings.py")
+_LOADER = _load_script("corpus_loader.py")
+_HELPERS = _load_script("evaluation_helpers.py")
 
 
 def _evaluation_settings(
@@ -54,14 +60,16 @@ def test_workflow_logging_uses_supported_percent_placeholders() -> None:
 def _generation_row(
     sample_id: str,
     *,
+    generation_mode: str,
+    budget_mode: str,
     encoder_model: str | None,
     encoder_output: str | None,
     encoder_user_prompt: str | None,
+    max_characters: int | None = None,
     decoder_output: str = "def f(x):\n    return x\n",
 ) -> dict[str, object]:
     return {
         "sample_id": sample_id,
-        "source_kind": _SETTINGS.SOURCE_KIND,
         "task_id": "HumanEval/0",
         "model": "model-a",
         "encoder_model": encoder_model,
@@ -69,49 +77,29 @@ def _generation_row(
         "encoder_output": encoder_output,
         "encoder_user_prompt": encoder_user_prompt,
         "decoder_output": decoder_output,
+        "generation_mode": generation_mode,
+        "budget_mode": budget_mode,
+        "max_characters": max_characters,
     }
 
 
+def test_load_workflow_frame_reads_fixture_bundle() -> None:
+    frame = _LOADER.load_workflow_frame(_FIXTURE_BUNDLE)
+    assert frame.height == 6
+    assert "sample_id" in frame.columns
+    assert frame.filter(pl.col("sample_id") == "direct").height == 1
+
+
+def test_load_workflow_frame_validates_manifest_sha256() -> None:
+    with pytest.raises(ValueError, match="manifest SHA-256 mismatch"):
+        _LOADER.load_workflow_frame(
+            _FIXTURE_BUNDLE,
+            expected_manifest_sha256="0" * 64,
+        )
+
+
 def test_classification_keeps_three_complete_settings() -> None:
-    corpus = pl.DataFrame(
-        [
-            _generation_row(
-                "direct",
-                encoder_model=None,
-                encoder_output=None,
-                encoder_user_prompt=None,
-            ),
-            _generation_row(
-                "enc-no-budget",
-                encoder_model="model-a",
-                encoder_output="description",
-                encoder_user_prompt='{"code":"def f(): pass"}',
-            ),
-            _generation_row(
-                "enc-budget",
-                encoder_model="model-a",
-                encoder_output="short description",
-                encoder_user_prompt=(
-                    '{"code":"def f(): pass","max_characters":50}'
-                ),
-            ),
-            _generation_row(
-                "incomplete-encoder",
-                encoder_model="model-a",
-                encoder_output=None,
-                encoder_user_prompt=(
-                    '{"code":"def f(): pass","max_characters":50}'
-                ),
-            ),
-            _generation_row(
-                "blank",
-                encoder_model=None,
-                encoder_output=None,
-                encoder_user_prompt=None,
-                decoder_output="  ",
-            ),
-        ]
-    )
+    corpus = _LOADER.load_workflow_frame(_FIXTURE_BUNDLE)
 
     classified = _BUILD.classify_generation_rows(corpus)
 
@@ -144,26 +132,25 @@ def test_preprocessing_retains_compilable_function_candidates(
 ) -> None:
     source = "```python\ndef f(x):\n    return x + 1\n```"
     logger = logging.getLogger("test_preprocessing_candidates")
-    candidates = _BUILD.preprocess_distinct_outputs(
-        [source],
-        cache_path=tmp_path / "cache.sqlite3",
-        logger=logger,
+    candidates = asyncio.run(
+        _BUILD.preprocess_distinct_outputs(
+            [source],
+            cache_path=tmp_path / "cache.sqlite3",
+            logger=logger,
+        )
     )
     rows = pl.DataFrame(
         [
-            {
-                **_generation_row(
-                    "sample",
-                    encoder_model=None,
-                    encoder_output=None,
-                    encoder_user_prompt=None,
-                    decoder_output=source,
-                ),
-                "generation_mode": "direct",
-                "budget_mode": "no_budget",
-                "max_characters": None,
-                "model_key": "model-a",
-            }
+            _generation_row(
+                "sample",
+                generation_mode="direct",
+                budget_mode="no_budget",
+                encoder_model=None,
+                encoder_output=None,
+                encoder_user_prompt=None,
+                decoder_output=source,
+            )
+            | {"model_key": "model-a"}
         ]
     )
 
@@ -237,7 +224,7 @@ def test_selected_ground_truth_candidate_passes_full_metric() -> None:
     results = _EVALUATE.evaluate_task_rows(
         selected,
         task,
-        executor=local_python_executor(),
+        executor=importable_json_executor(),
     )
 
     assert results.item(0, "metric_status") == "measured"
@@ -343,10 +330,12 @@ def test_evaluator_fails_before_execution_when_hard_limit_is_too_low(
         )
 
 
-def test_metrics_definition_uses_requested_timeout() -> None:
-    definition = _EVALUATE._metrics_definition(45.5)  # noqa: SLF001
+def test_candidate_job_budget_scales_with_timeout() -> None:
+    budget = _HELPERS.candidate_job_budget(45.5)
 
-    assert definition.questions[0].settings.timeout_seconds == 45.5
+    assert budget.wall_time_ns == 45_500_000_000
+    assert budget.input_bytes == 2_097_152
+    assert budget.payload_output_bytes == 1_073_741_824
 
 
 def test_task_jobs_run_concurrently_without_timing_as_evidence() -> None:

@@ -10,6 +10,9 @@
   historical HumanEval corpus, selects a balanced directional sample,
   evaluates it only on an explicitly identified disposable worker, and
   summarizes generation- and task-level outcomes.
+- The task-difficulty workflow reads validated generation corpus bundles from
+  the #108 extraction format and projects `generations.parquet` plus
+  `requests.parquet` into the workflow frame.
 - Directional HumanEval evaluation accepts task-worker and candidate-timeout
   flags, isolates resumable artifacts by the effective settings, and reports
   end-to-end and evaluation-only time per selected generation.

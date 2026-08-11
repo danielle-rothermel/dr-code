@@ -18,24 +18,15 @@ from typing import Callable, Iterator
 import polars as pl
 from dr_exec import Executor, ProcessExecutor
 
+from dr_code.core.execution.executor import host_process_executor
 from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
-from dr_code.humaneval.metric_operator import CodeTestSettings
 from dr_code.humaneval.sampling import load_humaneval_rows
-from dr_code.core.execution.executor import (
-    host_process_executor,
-    run_python_source,
-)
-from dr_code.metrics import (
-    MeasuredRecord,
-    MetricName,
-    MetricQuestion,
-    MetricRecord,
-    MetricsDefinition,
-    OperatorFailureRecord,
-    extract_metrics_batch,
-)
-from dr_code.trace import CodeArtifact, JsonArtifact, external_trace
 
+from evaluation_helpers import (
+    evaluate_code_test,
+    probe_runtime_packages,
+    runtime_identity,
+)
 from workflow_settings import (
     EVALUATION_TIMEOUT_SECONDS,
     EvaluationPaths,
@@ -47,9 +38,6 @@ from workflow_settings import (
     prepare_run_directory,
 )
 
-_DERIVED_TASK_FIELDS = frozenset(
-    {"parsed", "parsed_tests", *HumanEvalTask.model_computed_fields}
-)
 _RUNTIME_ENVIRONMENT_VARIABLE = "DR_CODE_EVALUATION_PYTHON"
 _MINIMUM_OPEN_FILE_LIMIT = 4096
 _OPEN_FILES_PER_WORKER = 64
@@ -86,20 +74,6 @@ class _TaskCompletion:
     generation_count: int
     candidate_count: int
     elapsed_seconds: float
-
-
-def _metrics_definition(timeout_seconds: float) -> MetricsDefinition:
-    return MetricsDefinition(
-        definition_id="directional-humaneval-task-difficulty",
-        version="0",
-        questions=(
-            MetricQuestion(
-                metric=MetricName.CODE_TEST,
-                on="output",
-                settings=CodeTestSettings(timeout_seconds=timeout_seconds),
-            ),
-        ),
-    )
 
 
 def _configure_logging(path: Path) -> logging.Logger:
@@ -181,59 +155,6 @@ def _load_tasks(
     return tasks
 
 
-def _metric_values(record: MetricRecord) -> dict[str, object]:
-    metric_identity = record.identity
-    identity_values = {
-        "metric_schema_version": record.schema_version,
-        "metric_name": str(metric_identity.question.metric),
-        "metric_version": metric_identity.metric_version,
-        "metrics_definition_id": (
-            metric_identity.metrics_definition.definition_id
-        ),
-        "metrics_definition_version": (
-            metric_identity.metrics_definition.version
-        ),
-    }
-    if isinstance(record, MeasuredRecord):
-        facts = {fact.name: fact.value for fact in record.facts}
-        total_cases = facts["total_cases"]
-        passed_count = facts["passed_count"]
-        coverage_complete = facts["coverage_complete"]
-        if (
-            isinstance(total_cases, bool)
-            or not isinstance(total_cases, int)
-            or isinstance(passed_count, bool)
-            or not isinstance(passed_count, int)
-            or not isinstance(coverage_complete, bool)
-        ):
-            raise TypeError("code-test metric returned invalid fact types")
-        return {
-            **identity_values,
-            "metric_status": "measured",
-            **facts,
-            "candidate_passed": (
-                coverage_complete and passed_count == total_cases
-            ),
-            "failure_type": None,
-            "failure_message": None,
-        }
-    if isinstance(record, OperatorFailureRecord):
-        return {
-            **identity_values,
-            "metric_status": "operator_failure",
-            "candidate_passed": None,
-            "failure_type": record.failure.failure_type,
-            "failure_message": record.failure.failure_message,
-        }
-    return {
-        **identity_values,
-        "metric_status": "not_applicable",
-        "candidate_passed": None,
-        "failure_type": None,
-        "failure_message": None,
-    }
-
-
 def evaluate_task_rows(
     task_rows: pl.DataFrame,
     task: HumanEvalTask,
@@ -241,14 +162,10 @@ def evaluate_task_rows(
     timeout_seconds: float = EVALUATION_TIMEOUT_SECONDS,
     executor: Executor | None = None,
 ) -> pl.DataFrame:
-    task_artifact = JsonArtifact(
-        payload=task.model_dump(
-            mode="json",
-            exclude=set(_DERIVED_TASK_FIELDS),
-        )
-    )
-    identities: list[dict[str, object]] = []
-    traces = []
+    if executor is None:
+        raise ValueError("executor is required for candidate evaluation")
+    runtime = runtime_identity(executor)
+    records: list[dict[str, object]] = []
     for row in task_rows.iter_rows(named=True):
         candidates = row["code_candidates"]
         if not isinstance(candidates, list) or not candidates:
@@ -258,17 +175,16 @@ def evaluate_task_rows(
         for candidate_index, source in enumerate(candidates):
             if not isinstance(source, str):
                 raise TypeError("candidate source must be a string")
-            code = CodeArtifact(source=source)
-            traces.append(
-                external_trace(
-                    {
-                        "input": code,
-                        "output": code,
-                        "task": task_artifact,
-                    }
-                )
+            metric_values = evaluate_code_test(
+                source=source,
+                task=task,
+                sample_id=str(row["sample_id"]),
+                candidate_index=candidate_index,
+                timeout_seconds=timeout_seconds,
+                executor=executor,
+                runtime=runtime,
             )
-            identities.append(
+            records.append(
                 {
                     "sample_id": row["sample_id"],
                     "task_id": row["task_id"],
@@ -277,19 +193,9 @@ def evaluate_task_rows(
                     "model_key": row["model_key"],
                     "candidate_index": candidate_index,
                     "candidate_source": source,
+                    **metric_values,
                 }
             )
-
-    record_batches = extract_metrics_batch(
-        _metrics_definition(timeout_seconds),
-        traces,
-        executor=executor,
-    )
-    records: list[dict[str, object]] = []
-    for identity, batch in zip(identities, record_batches, strict=True):
-        if len(batch) != 1:
-            raise RuntimeError("expected exactly one code-test metric record")
-        records.append({**identity, **_metric_values(batch[0])})
     return pl.DataFrame(records, infer_schema_length=None)
 
 
@@ -300,7 +206,7 @@ def _part_path(parts_directory: Path, task_id: str) -> Path:
 def _validate_existing_part(
     path: Path,
     task_rows: pl.DataFrame,
-    runtime_identity: str,
+    runtime_identity_value: str,
     evaluation_settings: EvaluationSettings,
 ) -> None:
     existing = pl.read_parquet(path)
@@ -343,7 +249,7 @@ def _validate_existing_part(
     if (
         existing.height != expected_rows
         or actual_candidates != expected_candidates
-        or identities != [runtime_identity]
+        or identities != [runtime_identity_value]
         or settings != expected_settings
     ):
         raise RuntimeError(
@@ -387,23 +293,10 @@ def _runtime_executable_from_environment() -> Path:
 
 
 def _runtime_identity(executor: ProcessExecutor) -> str:
-    completed = run_python_source(
+    package_identity = probe_runtime_packages(
         executor,
-        source=_RUNTIME_PROBE_SOURCE,
-        input_json="{}",
-        timeout_seconds=10.0,
+        probe_source=_RUNTIME_PROBE_SOURCE,
     )
-    if completed.returncode != 0:
-        raise RuntimeError(
-            "evaluation runtime dependency probe failed: "
-            + completed.stderr.strip()
-        )
-    try:
-        package_identity = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            "evaluation runtime dependency probe returned invalid JSON"
-        ) from exc
     identity = {
         "runtime": executor.runtime.describe().id_doc.to_json_dict(),
         "packages": package_identity,
@@ -423,7 +316,7 @@ def _preflight_runtime(
         record_directory,
         runtime_executable=runtime_executable,
     )
-    runtime_identity = _runtime_identity(executor)
+    runtime_identity_value = _runtime_identity(executor)
     selected = pl.DataFrame(
         [
             {
@@ -448,7 +341,7 @@ def _preflight_runtime(
         raise RuntimeError(
             "runtime preflight ground-truth candidate did not pass"
         )
-    return runtime_identity
+    return runtime_identity_value
 
 
 def _run_task_job(job: _TaskJob) -> _TaskCompletion:
@@ -541,7 +434,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         HUMANEVAL_SNAPSHOT,
         [preflight_task_id],
     )[preflight_task_id]
-    runtime_identity = _preflight_runtime(
+    runtime_identity_value = _preflight_runtime(
         runtime_executable,
         preflight_task,
         evaluation_settings,
@@ -550,7 +443,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     logger.info(
         "Validated evaluation runtime %s: %s",
         runtime_executable,
-        runtime_identity,
+        runtime_identity_value,
     )
     logger.info(
         "Loaded %d selected generations across %d tasks",
@@ -566,7 +459,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _validate_existing_part(
                 part_path,
                 task_rows,
-                runtime_identity,
+                runtime_identity_value,
                 evaluation_settings,
             )
             logger.info("Skipping completed task: %s", task_id)
@@ -577,7 +470,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 task_rows=task_rows,
                 task=tasks[task_id],
                 runtime_executable=runtime_executable,
-                runtime_identity=runtime_identity,
+                runtime_identity=runtime_identity_value,
                 evaluation_settings=evaluation_settings,
                 evaluation_paths=paths,
             )

@@ -2,20 +2,18 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[3]
-GENERATION_CORPUS: Final = (
-    Path.home()
-    / "drotherm"
-    / "repos"
-    / "gen-viewer"
-    / "data"
-    / "generation-corpus.parquet"
+GENERATION_CORPUS_BUNDLE: Final = (
+    REPOSITORY_ROOT / "tests" / "fixtures" / "generation_corpus" / "human_eval"
 )
+GENERATION_CORPUS_BUNDLE_ENV: Final = "DR_CODE_GENERATION_CORPUS_BUNDLE"
+EXPECTED_MANIFEST_SHA256: Final[str | None] = None
 HUMANEVAL_SNAPSHOT: Final = (
     REPOSITORY_ROOT / "tests" / "corpus" / "humanevalplus_snapshot.json"
 )
@@ -35,7 +33,6 @@ PREPROCESSING_SUMMARY: Final = RUN_DIRECTORY / "preprocessing_summary.parquet"
 PREPROCESSING_CACHE: Final = RUN_DIRECTORY / "preprocessing_cache.sqlite3"
 SELECTED_SAMPLE: Final = RUN_DIRECTORY / "selected_sample.parquet"
 SAMPLING_COVERAGE: Final = RUN_DIRECTORY / "sampling_coverage.parquet"
-SOURCE_KIND: Final = "legacy_dbos_generation_attempt"
 SAMPLING_SEED: Final = 42
 EVALUATION_WORKERS: Final = 16
 EVALUATION_TIMEOUT_SECONDS: Final = 120.0
@@ -71,6 +68,13 @@ class EvaluationPaths:
     task_results: Path
     evaluation_log: Path
     summary_log: Path
+
+
+def generation_corpus_bundle_path() -> Path:
+    override = os.environ.get(GENERATION_CORPUS_BUNDLE_ENV)
+    if override:
+        return Path(override).expanduser().resolve()
+    return GENERATION_CORPUS_BUNDLE
 
 
 def _positive_worker_count(value: str) -> int:
