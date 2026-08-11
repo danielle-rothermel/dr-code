@@ -7,11 +7,10 @@ outside the repository under
 
 ## One-command baseline
 
-From the repository root, on a **disposable worker**:
+From the repository root:
 
 ```bash
-DR_CODE_DISPOSABLE_WORKER=1 \
-  scripts/verification/task_difficulty/run_baseline.sh pre-106
+scripts/verification/task_difficulty/run_baseline.sh pre-106
 ```
 
 This runs stages 01–04 against the reviewed production HumanEval bundle, then
@@ -41,6 +40,5 @@ Override the bundle or manifest pin with `DR_CODE_GENERATION_CORPUS_BUNDLE` and
 ```bash
 DR_CODE_GENERATION_CORPUS_BUNDLE=tests/fixtures/generation_corpus/human_eval \
 DR_CODE_TASK_DIFFICULTY_RUN_DIR=/tmp/task-difficulty-fixture \
-DR_CODE_DISPOSABLE_WORKER=1 \
 scripts/verification/task_difficulty/run_baseline.sh fixture-smoke
 ```

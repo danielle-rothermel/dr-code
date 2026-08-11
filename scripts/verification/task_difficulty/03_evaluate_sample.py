@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Evaluate the selected historical candidates on a disposable worker."""
+"""Evaluate the selected historical candidates with an explicit runtime."""
 
 from __future__ import annotations
 
@@ -405,12 +405,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_started = perf_counter()
     evaluation_settings = parse_evaluation_args(__doc__, argv)
     paths = evaluation_paths(evaluation_settings)
-    if os.environ.get("DR_CODE_DISPOSABLE_WORKER") != "1":
-        raise SystemExit(
-            "refusing to execute historical model output: run this stage "
-            "only on a disposable worker and set DR_CODE_DISPOSABLE_WORKER=1"
-        )
-
     prepare_run_directory()
     paths.parts.mkdir(parents=True, exist_ok=True)
     paths.execution_records.mkdir(parents=True, exist_ok=True)

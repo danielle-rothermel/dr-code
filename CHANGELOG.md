@@ -8,8 +8,8 @@
   task material.
 - A fixed, staged verification workflow builds a preprocessing-eligible
   historical HumanEval corpus, selects a balanced directional sample,
-  evaluates it only on an explicitly identified disposable worker, and
-  summarizes generation- and task-level outcomes.
+  evaluates it with an explicit evaluation Python runtime and preflight checks,
+  and summarizes generation- and task-level outcomes.
 - The task-difficulty workflow reads validated generation corpus bundles from
   the #108 extraction format and projects `generations.parquet` plus
   `requests.parquet` into the workflow frame.
@@ -21,6 +21,8 @@
   actionable shell command when the hard limit prevents it.
 - A one-command baseline runner exports git-tracked run config and results for
   before/after comparisons against the reviewed HumanEval generation corpus.
+- Directional HumanEval evaluation no longer requires a separate environment
+  flag before stage 3; the explicit evaluation Python runtime remains required.
 
 ## 0.1.6 - 2026-08-06
 
@@ -105,8 +107,8 @@
   runtime discovery, image inspection, runtime allowlisting, and runtime
   environment construction. Under dr-exec, submitted programs are not
   contained by the subprocess boundary: they retain the invoking worker's
-  permissions, external worker isolation is the deployment boundary, and
-  evaluations run only on disposable workers. `DR_CODE_SANDBOX_IMAGE`,
+  permissions, external worker isolation is the deployment boundary.
+  `DR_CODE_SANDBOX_IMAGE`,
   `DR_CODE_RUN_SANDBOX_TESTS`, the `oci` pytest marker, and the dedicated CI
   and release OCI jobs are removed with the sandbox.
 

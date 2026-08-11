@@ -460,8 +460,7 @@ materialized candidate and interprets dr-exec's typed outcome and attribution
 taxonomy into candidate, harness, and executor records. `dr_code.core.execution`
 only provisions the caller-selected production executor. Submitted programs
 are not contained by that process boundary: they retain the invoking worker's
-permissions, external worker isolation is the deployment boundary, and
-evaluations run only on disposable workers.
+permissions, and external worker isolation is the deployment boundary.
 
 ```python
 class FrozenModel(BaseModel): ...

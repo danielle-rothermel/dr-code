@@ -45,14 +45,12 @@ uv run python scripts/build_generation_corpus.py human_eval \
 2. `uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py`
    selects one deterministic generation for each available task, setting, and
    model in the fixed model roster.
-3. On a disposable worker only, provision a copied evaluation interpreter and
-   run the evaluator:
+3. Provision a copied evaluation interpreter and run the evaluator:
 
    ```shell
    python3 -m venv --copies .evaluation-venv
    uv pip install --python .evaluation-venv/bin/python3 .
-   DR_CODE_DISPOSABLE_WORKER=1 \
-     DR_CODE_EVALUATION_PYTHON="$PWD/.evaluation-venv/bin/python3" \
+   DR_CODE_EVALUATION_PYTHON="$PWD/.evaluation-venv/bin/python3" \
      uv run python scripts/verification/task_difficulty/03_evaluate_sample.py \
        --workers 16 --timeout-seconds 120
    ```
@@ -67,8 +65,6 @@ uv run python scripts/build_generation_corpus.py human_eval \
    to a worker-scaled minimum when the process hard limit permits it. If that
    is impossible, it exits before evaluation with the required `ulimit`
    command.
-   Historical model output executes with the worker's permissions. Do not run
-   this stage on a workstation containing credentials or valuable data.
    Each workers/timeout combination writes to its own experiment directory,
    so changing either flag starts an independent run without deleting prior
    results.
@@ -94,8 +90,7 @@ config and results live under
 Run the full workflow and export git-tracked run config and results in one command:
 
 ```bash
-DR_CODE_DISPOSABLE_WORKER=1 \
-  scripts/verification/task_difficulty/run_baseline.sh pre-106
+scripts/verification/task_difficulty/run_baseline.sh pre-106
 ```
 
 See [`baseline/README.md`](baseline/README.md) for the pinned production corpus,
