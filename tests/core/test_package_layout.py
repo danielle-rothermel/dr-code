@@ -11,6 +11,7 @@ FUNCTIONAL_PACKAGES = frozenset(
     {
         "caching",
         "evaluation",
+        "generation_corpus",
         "humaneval",
         "metrics",
         "preprocessing",

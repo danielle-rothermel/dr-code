@@ -517,3 +517,246 @@ exported_symbols = [
   "@dr-code/viewer:CodeDiff",
   "@dr-code/viewer:StatusBadge",
 ]
+
+[[terms]]
+name = "generation corpus"
+definition = """
+A content-addressed collection of persisted model generations whose generation
+records, source lifecycle records, standalone encoder artifact records, task
+records, and request provenance records retain their distinct analytical
+grains. These archival records are distinct from evaluation evidence until
+re-evaluation binds them."""
+exported_symbols = [
+  "dr_code.generation_corpus.GenerationRecord",
+  "dr_code.generation_corpus.SourceRecord",
+  "dr_code.generation_corpus.EncoderArtifactRecord",
+  "dr_code.generation_corpus.RequestRecord",
+  "dr_code.generation_corpus.TaskRecord",
+  "dr_code.generation_corpus.build_generation_corpus",
+  "dr_code.generation_corpus.BuildManifest",
+  "dr_code.generation_corpus.CorpusWriter",
+]
+categories = ["generation corpus"]
+
+[[terms]]
+name = "pool dump"
+definition = """
+An archived export of raw pool rows and its manifest, selected as the immutable
+input to one generation-corpus build."""
+exported_symbols = [
+  "dr_code.generation_corpus.SourceManifest",
+  "dr_code.generation_corpus.DumpedPoolRow",
+  "dr_code.generation_corpus.read_manifest",
+  "dr_code.generation_corpus.iter_pool_rows",
+]
+categories = ["generation corpus"]
+
+[[terms]]
+name = "generation corpus bundle"
+definition = """
+One atomically published generation-corpus directory: validated Parquet tables,
+a build manifest, and content hashes for every artifact."""
+exported_symbols = [
+  "dr_code.generation_corpus.BuildManifest",
+  "dr_code.generation_corpus.CorpusWriter",
+  "dr_code.generation_corpus.build_generation_corpus",
+]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "corpus adapter"
+definition = """
+A dataset-specific extraction boundary that maps one pool dump into validated
+generation-corpus tables through a corpus adapter name and version recorded in
+the build manifest."""
+exported_symbols = ["dr_code.generation_corpus.adapters.base.CorpusAdapter"]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "task adapter"
+definition = """
+A dataset-specific boundary that resolves persisted task identities to exact,
+content-addressed task material stored as task records."""
+exported_symbols = ["dr_code.generation_corpus.tasks.base.TaskAdapter"]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "generation record"
+definition = """
+The persisted corpus row for one generation's final output at decoder stage.
+It stores generation output and provenance; code candidates are extracted
+separately during evaluation."""
+exported_symbols = ["dr_code.generation_corpus.GenerationRecord"]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "source lifecycle record"
+definition = """
+One raw pool row preserved at full lifecycle grain, including blank, failed,
+pending, encoder-only, and seeded states."""
+exported_symbols = ["dr_code.generation_corpus.SourceRecord"]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "encoder artifact record"
+definition = """
+One persisted nonblank encoder output that has no explicit link to a generation
+record."""
+exported_symbols = ["dr_code.generation_corpus.EncoderArtifactRecord"]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "request provenance record"
+definition = """
+The one-to-one request and configuration provenance record for one generation
+record."""
+exported_symbols = ["dr_code.generation_corpus.RequestRecord"]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "task record"
+definition = """
+Content-addressed task and evaluator material at a dataset's natural task grain,
+resolved through a task adapter."""
+exported_symbols = ["dr_code.generation_corpus.TaskRecord"]
+categories = ["generation corpus"]
+part_of = ["generation corpus"]
+
+[[terms]]
+name = "prompt fidelity"
+definition = """
+An explicit classification of whether a persisted prompt is exact request
+evidence, recovered from pinned task material, or unavailable."""
+exported_symbols = ["dr_code.generation_corpus.PromptFidelity"]
+categories = ["generation corpus"]
+part_of = ["request provenance record", "generation record"]
+
+[[terms]]
+name = "task material fidelity"
+definition = """
+An explicit classification of whether task material is pinned snapshot evidence,
+persisted row-local material, or unavailable."""
+exported_symbols = ["dr_code.generation_corpus.TaskMaterialFidelity"]
+categories = ["generation corpus"]
+part_of = ["task record"]
+
+[[terms]]
+name = "source lifecycle state"
+definition = """
+The declared terminal or in-progress state of one source lifecycle record, such
+as evaluated, pending validation, encoder-only, or failed."""
+exported_symbols = ["dr_code.generation_corpus.LifecycleState"]
+categories = ["generation corpus"]
+part_of = ["source lifecycle record"]
+
+[[terms]]
+name = "task"
+definition = """
+A single dataset element identified by a task id and carrying the original
+prompt, ground truth code, and test suite needed to score generations."""
+categories = ["experiment design"]
+
+[[terms]]
+name = "original prompt"
+definition = """
+The code generation prompt provided by the dataset or derived from related
+fields the dataset provides."""
+categories = ["experiment design"]
+part_of = ["task"]
+
+[[terms]]
+name = "ground truth code"
+definition = """
+A single example of correct code that should match the original prompt and
+pass the task test suite."""
+categories = ["experiment design"]
+part_of = ["task"]
+
+[[terms]]
+name = "test suite"
+definition = """
+The set of test cases that should pass against any code that is correct for
+one task."""
+categories = ["experiment design"]
+part_of = ["task"]
+
+[[terms]]
+name = "sample"
+definition = """
+One fresh generation for a given task. In an encoder-decoder setup this is one
+full encode-decode run. It is distinct from an evaluation sample unless an
+adapter explicitly binds them."""
+categories = ["experiment design"]
+
+[[terms]]
+name = "num samples"
+definition = """
+The number of samples planned or observed per task."""
+categories = ["experiment design"]
+
+[[terms]]
+name = "sample index"
+definition = """
+The zero-based position of one sample among a task's num samples."""
+categories = ["experiment design"]
+part_of = ["sample"]
+
+[[terms]]
+name = "task index"
+definition = """
+The position of one task among the full dataset, ordered according to the
+dataset's defined canonical ordering."""
+categories = ["experiment design"]
+part_of = ["task"]
+
+[[terms]]
+name = "generation graph"
+definition = """
+The structure of the steps that convert task input into generation output to
+be scored."""
+categories = ["experiment design"]
+
+[[terms]]
+name = "direct generation"
+definition = """
+A generation graph that uses the original prompt as input and produces one
+generation output."""
+categories = ["experiment design"]
+is_a = ["generation graph"]
+
+[[terms]]
+name = "encoder-decoder generation"
+definition = """
+A generation graph that encodes ground truth code into an intermediate
+representation and decodes it back to generation output."""
+categories = ["experiment design"]
+is_a = ["generation graph"]
+
+[[terms]]
+name = "generation"
+definition = """
+One run of a generation graph for one task sample, producing generation output
+that may later yield code candidates through preprocessing."""
+categories = ["experiment design"]
+
+[[terms]]
+name = "generation index"
+definition = """
+A task index and sample index pair that defines one planned generation slot."""
+categories = ["experiment design"]
+part_of = ["generation"]
+
+[[terms]]
+name = "generation output"
+definition = """
+The final output produced by one generation graph run, from which code
+candidates may be extracted for evaluation."""
+categories = ["experiment design"]
+part_of = ["generation"]

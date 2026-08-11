@@ -474,3 +474,19 @@ owners preserves reusable evaluation semantics and prevents another experiment
 framework."""
 date = "2026-08-09"
 check = "uv run pytest tests/core/test_package_layout.py"
+
+[[contracts]]
+title = "Generation corpus evidence keeps its natural grain"
+statement = """
+A generation corpus stores nonblank final generation outputs separately from
+source lifecycle records and standalone encoder artifact records, gives every
+generation record exactly one request provenance record and one content-addressed
+task record, and resolves encoder lineage only through an explicit persisted
+source reference. Aggregate migration attempt counts remain raw evidence and do
+not create retry or attempt identities."""
+rationale = """
+Collapsing incomplete records, encoder outputs, generation records, or task
+versions into one row grain invents joins and corrupts analysis denominators;
+derived retry identities similarly overstate flattened historical evidence."""
+date = "2026-08-08"
+check = "uv run pytest tests/generation_corpus"
