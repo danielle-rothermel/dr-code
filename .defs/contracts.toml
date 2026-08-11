@@ -127,11 +127,17 @@ evaluation records. Candidate-attributable outcomes remain candidate execution
 evidence; trusted support-code initialization failures and malformed runner
 results remain harness or operator failures rather than candidate failures.
 Every scoring profile declares its candidate reduction, and the projection
-reduces candidates only as declared: first-candidate scores candidate zero
-alone, any-candidate-passes scores a pass when any candidate's validated metric
-slice passes the complete suite. Under any reduction that reads more than one
-candidate, an unmeasured candidate is a harness or operator failure rather than
-a measured zero, because a candidate whose measurement broke might have passed.
+reduces candidates only as declared. Each reduction also fixes the rule applied
+within one candidate, whose evaluation runs the complete suite once per
+top-level function: first-candidate scores candidate zero alone and requires
+every one of its function groups to pass; any-candidate-passes scores a pass
+when any candidate's validated metric slice has any function group passing the
+complete test-case set, so a helper extracted beside a correct solution cannot
+mask it. Under any reduction that reads more than one candidate, an unmeasured
+candidate is a harness or operator failure rather than a measured zero, because
+a candidate whose measurement broke might have passed; likewise a candidate
+whose groups did not finish is reported as timed out rather than as a measured
+failure.
 Batch scoring returns one result per submission in request order;
 single-submission scoring is the one-item convenience. Public scoring reads the
 authoritative records and never invokes a second execution path."""

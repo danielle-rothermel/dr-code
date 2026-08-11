@@ -320,9 +320,14 @@ def _project_any_candidate(
     expected_questions: tuple[MetricQuestionCoordinate, ...],
     question_count: int,
 ) -> HumanEvalSubmissionResult:
-    """Score a sample by whether any candidate passes the complete suite.
+    """Score a pass when any candidate's any function group passes the suite.
 
-    Failure attribution survives the reduction: a candidate whose measurement
+    A candidate is one extracted representation, which carries every top-level
+    function written alongside the solution, so the within-candidate rule is
+    existential too: one function group passing the complete test-case set is a
+    pass, and helpers that fail beside a correct solution do not mask it.
+
+    Failure attribution survives both quantifiers: a candidate whose measurement
     is broken cannot be scored as a clean fail, because it might have passed.
     """
 
@@ -363,7 +368,12 @@ def _project_any_candidate(
                 )
             continue
 
-        classified = _classify_candidate(candidate, execution, request)
+        classified = _classify_candidate(
+            candidate,
+            execution,
+            request,
+            any_function_group=True,
+        )
         if isinstance(classified, _CandidateHarnessFailure):
             if first_broken is None:
                 first_broken = classified
@@ -474,7 +484,19 @@ def _classify_candidate(
     candidate: MaterializedEvaluationCandidate,
     execution: CandidateExecutionRecord,
     request: HumanEvalSubmissionRequest,
+    *,
+    any_function_group: bool = False,
 ) -> _CandidateOutcome | _CandidateHarnessFailure:
+    """Classify one candidate's benchmark outcome.
+
+    ``any_function_group`` selects the within-candidate rule. Extraction keeps a
+    solution and the helpers it was written beside in one candidate, and
+    evaluation runs the complete suite once per top-level function, so requiring
+    every group to pass scores a correct solution zero for the company it keeps.
+    When set, the candidate passes if any one function group passes the complete
+    suite; when unset, every group's cases must pass.
+    """
+
     outcome = execution.outcome
     if isinstance(outcome, HarnessExecutionFailure | ExecutorExecutionFailure):
         return _CandidateHarnessFailure(
@@ -524,15 +546,25 @@ def _classify_candidate(
     assert isinstance(suite, HumanEvalSuiteCompleted)
     cases = tuple(case for group in suite.groups for case in group.cases)
     if not outcome.result.namespace.function_names:
-        projected = SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
-    elif any(case.status is EvaluationCaseStatus.TIMEOUT for case in cases):
-        projected = SubmissionOutcome.TIMED_OUT
-    elif cases and all(
-        case.status is EvaluationCaseStatus.PASSED for case in cases
+        return _CandidateOutcome(
+            outcome=SubmissionOutcome.NO_TOP_LEVEL_FUNCTIONS
+        )
+    if any_function_group and any(
+        group.cases
+        and all(
+            case.status is EvaluationCaseStatus.PASSED for case in group.cases
+        )
+        for group in suite.groups
     ):
-        projected = SubmissionOutcome.PASSED
+        return _CandidateOutcome(outcome=SubmissionOutcome.PASSED)
+    if any(case.status is EvaluationCaseStatus.TIMEOUT for case in cases):
+        # The candidate exhausted its wall-time budget, so every group that did
+        # not pass is an unfinished measurement rather than a measured failure.
+        projected = SubmissionOutcome.TIMED_OUT
     elif not cases:
         projected = SubmissionOutcome.EVALUATION_INCOMPLETE
+    elif all(case.status is EvaluationCaseStatus.PASSED for case in cases):
+        projected = SubmissionOutcome.PASSED
     else:
         projected = SubmissionOutcome.TESTS_FAILED
     return _CandidateOutcome(outcome=projected)

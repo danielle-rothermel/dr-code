@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from dr_exec import ExecutionPoolConfig
 
@@ -18,6 +20,7 @@ from dr_code.humaneval import (
     score_humaneval_submission,
     score_humaneval_submissions_batch,
 )
+from dr_code.humaneval.task import EvaluationCaseStatus
 from dr_code.metrics import OperatorFailure, OperatorFailureRecord
 from dr_code.trace import TextArtifact
 
@@ -163,6 +166,39 @@ async def _two_candidate_record(
     return record, execution_cache
 
 
+async def _one_candidate_record(
+    source: str,
+) -> tuple[EvaluatedSampleRecord, object]:
+    """Evaluate one sample whose submission yields exactly one candidate."""
+
+    batch_request = request()
+    selected_sample = batch_request.inputs[0].sample.model_copy(
+        update={"raw_input": TextArtifact(text=f"```python\n{source}\n```")}
+    )
+    batch_request = batch_request.model_copy(
+        update={
+            "inputs": (
+                batch_request.inputs[0].model_copy(
+                    update={"sample": selected_sample}
+                ),
+            )
+        }
+    )
+    execution_cache = cache(BatchStore())
+    placement = MemoryPlacement()
+    await _evaluate_batch_assembly(
+        batch_request,
+        executor=importable_json_executor(),
+        execution_cache=execution_cache,
+        pool_config=ExecutionPoolConfig(),
+        placement_sink=placement,
+    )
+    record = placement.records[0]
+    assert isinstance(record, EvaluatedSampleRecord)
+    assert len(record.candidates) == 1
+    return record, execution_cache
+
+
 def _project(
     record: EvaluatedSampleRecord,
     profile: object,
@@ -249,6 +285,142 @@ async def test_any_candidate_reduction_scores_a_broken_measurement_as_failure() 
     assert isinstance(measured, CompletedSubmissionResult)
     assert measured.outcome is SubmissionOutcome.TESTS_FAILED
     assert measured.score == 0.0
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_passes_a_solution_beside_a_helper() -> (
+    None
+):
+    # One fenced block is one candidate, and every top-level function in it
+    # becomes its own test group, so a correct solution keeps the company of
+    # the helper it was written with.
+    record, execution_cache = await _one_candidate_record(
+        "def helper(_x):\n    return 999\n\n\n"
+        "def observed_load_count(_x):\n    return 1\n"
+    )
+    (execution,) = record.executions
+    (suite,) = execution.outcome.result.suites
+    assert {group.function_name for group in suite.groups} == {
+        "helper",
+        "observed_load_count",
+    }
+
+    any_passes = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(any_passes, CompletedSubmissionResult)
+    assert any_passes.outcome is SubmissionOutcome.PASSED
+    assert any_passes.score == 1.0
+
+    # The strict comparator profile still requires every group to pass.
+    first_only = _project(record, DEFAULT_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(first_only, CompletedSubmissionResult)
+    assert first_only.outcome is SubmissionOutcome.TESTS_FAILED
+    assert first_only.score == 0.0
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_requires_one_group_to_pass_wholly() -> (
+    None
+):
+    # No single group passes the complete suite: each function is wrong, so
+    # the existential fails and the sample is a measured zero.
+    record, execution_cache = await _one_candidate_record(
+        "def helper(_x):\n    return 999\n\n\n"
+        "def observed_load_count(_x):\n    return 998\n"
+    )
+
+    for profile in (
+        DEFAULT_HUMANEVAL_SCORING_PROFILE,
+        ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
+    ):
+        projected = _project(record, profile)
+        assert isinstance(projected, CompletedSubmissionResult)
+        assert projected.outcome is SubmissionOutcome.TESTS_FAILED
+        assert projected.score == 0.0
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_finds_a_passing_group_in_any_candidate() -> (
+    None
+):
+    # The two quantifiers compose: the passing group sits in a later candidate
+    # next to a failing helper.
+    record, execution_cache = await _two_candidate_record(
+        first_source="def observed_load_count(_x):\n    return 999",
+        second_source=(
+            "def helper(_x):\n    return 997\n\n\n"
+            "def observed_load_count(_x):\n    return 1"
+        ),
+    )
+
+    any_passes = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(any_passes, CompletedSubmissionResult)
+    assert any_passes.outcome is SubmissionOutcome.PASSED
+    assert any_passes.score == 1.0
+
+    first_only = _project(record, DEFAULT_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(first_only, CompletedSubmissionResult)
+    assert first_only.outcome is SubmissionOutcome.TESTS_FAILED
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_reports_an_unfinished_group_honestly() -> (
+    None
+):
+    # A candidate whose solution group failed cleanly beside a group that never
+    # finished is not a measured zero: the wall-time budget stopped the
+    # measurement, and the unfinished group might have passed.
+    record, execution_cache = await _one_candidate_record(
+        "def helper(_x):\n    return 999\n\n\n"
+        "def observed_load_count(_x):\n    return 998\n"
+    )
+    (execution,) = record.executions
+    (suite,) = execution.outcome.result.suites
+    solution, unfinished = (
+        suite.groups
+        if suite.groups[0].function_name == "helper"
+        else (suite.groups[1], suite.groups[0])
+    )
+    stalled = unfinished.model_copy(
+        update={
+            "cases": tuple(
+                replace(case, status=EvaluationCaseStatus.TIMEOUT)
+                for case in unfinished.cases
+            )
+        }
+    )
+    timed_out = record.model_copy(
+        update={
+            "executions": (
+                execution.model_copy(
+                    update={
+                        "outcome": execution.outcome.model_copy(
+                            update={
+                                "result": execution.outcome.result.model_copy(
+                                    update={
+                                        "suites": (
+                                            suite.model_copy(
+                                                update={
+                                                    "groups": (
+                                                        solution,
+                                                        stalled,
+                                                    )
+                                                }
+                                            ),
+                                        )
+                                    }
+                                )
+                            }
+                        )
+                    }
+                ),
+            )
+        }
+    )
+
+    projected = _project(timed_out, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(projected, CompletedSubmissionResult)
+    assert projected.outcome is SubmissionOutcome.TIMED_OUT
+    assert projected.score == 0.0
     await execution_cache.close()
 
 

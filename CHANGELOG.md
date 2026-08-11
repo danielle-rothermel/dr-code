@@ -5,12 +5,16 @@
 - Pull-request CI runs lint, type, and test checks only. Distribution build,
   metadata, and installed-wheel qualification run at publication time in the
   tag-triggered release workflow.
-- HumanEval scoring profiles declare a candidate reduction. `first_candidate`
-  scores candidate zero alone; `any_candidate_passes` scores a pass when any
-  candidate passes the complete suite, matching the whetstone correctness
-  score, and reports harness or operator failure rather than a measured zero
-  when no candidate passes but some candidate's measurement is broken. Blank
-  and unextractable submissions stay distinct zero-scoring outcomes under both.
+- HumanEval scoring profiles declare a candidate reduction, which also fixes
+  the rule applied across the function groups within one candidate.
+  `first_candidate` scores candidate zero alone and requires every one of its
+  function groups to pass; `any_candidate_passes` scores a pass when any
+  candidate has any function group passing the complete suite, matching the
+  whetstone correctness score, so a helper extracted beside a correct solution
+  no longer scores the sample zero. Both report harness or operator failure
+  rather than a measured zero when no candidate passes but some candidate's
+  measurement is broken. Blank and unextractable submissions stay distinct
+  zero-scoring outcomes under both.
 
 - Generation corpus adapters extract HumanEval, MBPP Pro, HumanEval Pro,
   ClassEval, BigCodeBench Lite Pro, and NL Latents archived model activity into

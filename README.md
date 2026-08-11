@@ -353,10 +353,15 @@ starts a second candidate execution route. Results distinguish completed
 benchmark outcomes from harness failure.
 
 A scoring profile declares how the projection reduces a sample's candidates to
-one outcome. `FIRST_CANDIDATE` scores candidate zero alone; `ANY_CANDIDATE_PASSES`
-scores a pass when any candidate passes the complete suite, and reports a
-harness or operator failure — never a measured zero — when no candidate passes
-but some candidate's measurement is broken.
+one outcome, and how it reduces the function groups within one candidate.
+Extraction keeps one representation per candidate, so a solution and the helpers
+written beside it share a candidate, and evaluation runs the complete suite once
+per top-level function. `FIRST_CANDIDATE` scores candidate zero alone and
+requires every one of its function groups to pass. `ANY_CANDIDATE_PASSES` scores
+a pass when any candidate has any function group passing the complete suite, so
+a failing helper cannot mask a correct solution; it reports a harness or
+operator failure — never a measured zero — when no candidate passes but some
+candidate's measurement is broken.
 
 ```python
 class HumanEvalTask(FrozenModel):
