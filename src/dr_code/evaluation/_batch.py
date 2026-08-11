@@ -22,18 +22,14 @@ from dr_exec import (
     ExecutionPoolConfig,
     ExecutionSubmission,
     Executor,
+    FixedPoolCapacity,
     JobId,
 )
-from dr_store import MemoryBackend, ObjectStore, RecordCache
 from dr_serialize import Sha256Digest, canonical_json_bytes
 
 from dr_code.caching import WindowedExecutionCache
 from dr_code.caching.execution_cache import CachedExecutionObservation
-from dr_code.caching.preprocess_batch import (
-    default_preprocess_batch_limits,
-    preprocess_batch,
-    resolved_pool_worker_count,
-)
+from dr_code.caching.preprocess_batch import preprocess_batch
 from dr_code.evaluation.aggregation import (
     AggregationInput,
     AggregationOk,
@@ -281,6 +277,15 @@ async def _run_durable_job(
         raise cancelled
 
 
+def _preprocessing_worker_count(config: ExecutionPoolConfig) -> int | None:
+    """Give preprocessing the width the caller asked evaluation to use."""
+
+    capacity = config.capacity
+    if isinstance(capacity, FixedPoolCapacity):
+        return capacity.max_active_jobs
+    return None
+
+
 async def _assemble(
     request: EvaluationBatchRequest,
     *,
@@ -304,15 +309,10 @@ async def _assemble(
             if isinstance(item, SampleEvaluationInput)
         ]
         if sample_texts:
-            preprocessing_cache = RecordCache(ObjectStore(MemoryBackend()))
             traces_by_text = await preprocess_batch(
                 sample_texts,
                 definition=request.plan.procedure.preprocessing,
-                store=preprocessing_cache,
-                pool_config=pool_config,
-                limits=default_preprocess_batch_limits(
-                    worker_count=resolved_pool_worker_count(pool_config),
-                ),
+                worker_count=_preprocessing_worker_count(pool_config),
             )
     prepared_inputs, prepare_exhaustion = _prepare_inputs(
         request,

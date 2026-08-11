@@ -16,16 +16,12 @@ from time import perf_counter
 from typing import Final
 
 import polars as pl
-from dr_exec import ExecutionPoolConfig, FixedPoolCapacity
 
 from bootstrap_statistics import (
     BootstrapConfidenceInterval,
     bootstrap_confidence_interval,
 )
-from dr_code.caching import (
-    default_preprocess_batch_limits,
-    preprocess_batch,
-)
+from dr_code.caching import preprocess_batch
 from dr_code.preprocessing import EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
 from dr_code.trace import (
     OUTPUT_KEY,
@@ -33,7 +29,6 @@ from dr_code.trace import (
     InspectedCodeCandidateSetArtifact,
     Trace,
 )
-from dr_store import MemoryBackend, ObjectStore, RecordCache
 
 _ROOT = Path(__file__).parents[1]
 _DEFAULT_CORPUS = (
@@ -100,16 +95,11 @@ def _analyze_task(
         "decoder_output"
     ).to_list()
     started = perf_counter()
-    cache = RecordCache(ObjectStore(MemoryBackend()))
     traces_by_text = asyncio.run(
         preprocess_batch(
             decoder_outputs,
             definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
-            store=cache,
-            pool_config=ExecutionPoolConfig(
-                capacity=FixedPoolCapacity(max_active_jobs=worker_count)
-            ),
-            limits=default_preprocess_batch_limits(worker_count=worker_count),
+            worker_count=worker_count,
         )
     )
     preprocessing_seconds = perf_counter() - started

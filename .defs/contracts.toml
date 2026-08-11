@@ -184,22 +184,24 @@ date = "2026-08-05"
 check = "uv run pytest tests/caching/test_trace_cache.py"
 
 [[contracts]]
-title = "Parallel preprocessing uses in-process pool and windowed trace cache"
+title = "Parallel preprocessing runs on the dr-exec worker pool"
 statement = """
-`preprocess_batch` deduplicates requested texts, window-prefetches trace cache
-keys through dr-store batch reads, schedules misses through dr-exec 0.1.8
-`ImportableJsonExecutor` bounded by worker count, validates restored traces
-before reuse, and checkpoints fresh traces through bounded dr-store batch writes.
-Callers treat missing or invalid preprocessing job completions as failures
-without aborting unrelated inputs. `run_preprocessing_cached` and
-`evaluate_batch` sample prepare delegate to this path for bound runners and
-batch-capable stores."""
+`preprocess_batch` deduplicates requested texts and runs each distinct text
+once as one trusted importable JSON job on a dr-exec worker pool, which imports
+the preprocessing entry point once per worker. A completion that does not carry
+one valid trace is that text's failure and never aborts unrelated inputs.
+Without an observer every trace is returned keyed by text; with an observer each
+result is handed over as it completes and no trace is retained, so a caller that
+consumes results per text does not hold the batch in memory. `evaluate_batch`
+sample prepare and the eligible-corpus stage delegate to this path."""
 rationale = """
-One default parallel path avoids ad-hoc thread pools while preserving the
-existing preprocessing trace cache contract and keeping untrusted candidate
-execution on process-bound executors."""
-date = "2026-08-10"
-check = "uv run pytest tests/caching/test_preprocess_batch.py tests/caching/test_trace_window_cache.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
+Preprocessing is trusted, CPU-bound, milliseconds-per-item work, so it needs
+real cores without paying interpreter startup per item, and it makes no
+containment claim. Streaming results to an observer keeps corpus-scale batches
+from retaining every trace, which candidate execution — untrusted and therefore
+spawn-per-job — must not share."""
+date = "2026-08-11"
+check = "uv run pytest tests/caching/test_preprocess_batch.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
 
 [[contracts]]
 title = "Execution cache persistence is scoped and checkpointed"

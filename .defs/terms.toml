@@ -318,33 +318,18 @@ input and resolved producer coordinate."""
 exported_symbols = [
   "dr_code.caching.run_preprocessing_cached",
   "dr_code.caching.preprocessing_trace_cache_key",
-  "dr_code.caching.trace_from_cached_record",
   "dr_code.caching.TRACE_RECORD_SCHEMA",
-]
-
-[[terms]]
-name = "windowed trace cache"
-definition = """
-A preprocessing-trace memoization layer that reads planned cache keys in bounded
-windows, retains bounded resident and checkpoint state, and validates restored
-traces before reuse."""
-exported_symbols = [
-  "dr_code.caching.WindowedTraceCache",
-  "dr_code.caching.TraceCacheStats",
 ]
 
 [[terms]]
 name = "preprocessing batch"
 definition = """
-A bounded parallel preprocessing path that window-prefetches trace cache keys,
-schedules misses through dr-exec's in-process importable JSON pool, and
-checkpoints serialized traces through dr-store batch writes."""
+A parallel preprocessing path that runs each distinct text once as one trusted
+importable JSON job on a dr-exec worker pool, either returning every trace or
+streaming each result to a caller-supplied observer."""
 exported_symbols = [
   "dr_code.caching.preprocess_batch",
-  "dr_code.caching.preprocess_batch_cached",
-  "dr_code.caching.PreprocessBatchLimits",
-  "dr_code.caching.default_preprocess_batch_limits",
-  "dr_code.caching.DEFAULT_WORKER_COUNT",
+  "dr_code.caching.TraceObserver",
 ]
 
 [[terms]]
