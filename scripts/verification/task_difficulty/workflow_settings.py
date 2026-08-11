@@ -74,7 +74,6 @@ RUN_DIRECTORY: Final = _RUN_DIRECTORY
 EVALUATION_RUN_ROOT: Final = _RUN_DIRECTORY / "explicit-runtime"
 ELIGIBLE_CORPUS: Final = _RUN_DIRECTORY / "eligible_generations.parquet"
 PREPROCESSING_SUMMARY: Final = _RUN_DIRECTORY / "preprocessing_summary.parquet"
-PREPROCESSING_CACHE: Final = _RUN_DIRECTORY / "preprocessing_cache.sqlite3"
 SELECTED_SAMPLE: Final = _RUN_DIRECTORY / "selected_sample.parquet"
 SAMPLING_COVERAGE: Final = _RUN_DIRECTORY / "sampling_coverage.parquet"
 PREPROCESS_LOG: Final = _RUN_DIRECTORY / "01_preprocess.log"

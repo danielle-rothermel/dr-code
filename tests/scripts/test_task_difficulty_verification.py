@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import logging
 import sys
@@ -33,8 +32,10 @@ sys.path.insert(0, str(_SCRIPT_DIRECTORY))
 
 
 def _load_script(filename: str) -> ModuleType:
+    # Register under the real stem: spawned worker processes re-import
+    # pickled module-level functions by this name from _SCRIPT_DIRECTORY.
     path = _SCRIPT_DIRECTORY / filename
-    module_name = f"test_{path.stem}"
+    module_name = path.stem
     spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -136,17 +137,13 @@ def test_classification_keeps_three_complete_settings() -> None:
     ]
 
 
-def test_preprocessing_retains_compilable_function_candidates(
-    tmp_path: Path,
-) -> None:
+def test_preprocessing_retains_compilable_function_candidates() -> None:
     source = "```python\ndef f(x):\n    return x + 1\n```"
     logger = logging.getLogger("test_preprocessing_candidates")
-    candidates = asyncio.run(
-        _BUILD.preprocess_distinct_outputs(
-            [source],
-            cache_path=tmp_path / "cache.sqlite3",
-            logger=logger,
-        )
+    candidates = _BUILD.preprocess_distinct_outputs(
+        [source],
+        logger=logger,
+        worker_count=2,
     )
     rows = pl.DataFrame(
         [
@@ -178,29 +175,15 @@ def test_preprocessing_retains_compilable_function_candidates(
     )
 
 
-def test_preprocessing_continues_after_distinct_output_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_preprocessing_continues_after_distinct_output_failure() -> None:
     good_source = "```python\ndef f(x):\n    return x + 1\n```"
-    bad_source = "def broken():\n    return 1\n"
+    bad_source = "```python\ndef broken(:\n    return 1\n```"
     logger = logging.getLogger("test_preprocessing_failure_tolerance")
-    original = _BUILD.preprocess_batch
 
-    async def _preprocess_batch(texts, **kwargs):  # noqa: ANN001
-        return await original(
-            [text for text in texts if text != bad_source],
-            **kwargs,
-        )
-
-    monkeypatch.setattr(_BUILD, "preprocess_batch", _preprocess_batch)
-
-    results = asyncio.run(
-        _BUILD.preprocess_distinct_outputs(
-            [bad_source, good_source],
-            cache_path=tmp_path / "cache.sqlite3",
-            logger=logger,
-        )
+    results = _BUILD.preprocess_distinct_outputs(
+        [bad_source, good_source],
+        logger=logger,
+        worker_count=2,
     )
 
     assert results[bad_source] == ()

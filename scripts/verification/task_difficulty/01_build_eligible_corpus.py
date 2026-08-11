@@ -5,29 +5,27 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from time import perf_counter
+from typing import Final
 
 import polars as pl
-from dr_exec import ExecutionPoolConfig, FixedPoolCapacity
-from dr_store import SqliteRecordCache
 
-from dr_code.caching import (
-    default_preprocess_batch_limits,
-    preprocess_batch,
-)
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
+    BoundPreprocessingRunner,
+    bind_preprocessing,
 )
 from dr_code.trace import (
     OUTPUT_KEY,
     Absent,
     InspectedCodeCandidateSetArtifact,
+    TextArtifact,
 )
 
 from corpus_loader import (
@@ -38,7 +36,6 @@ from corpus_loader import (
 from workflow_settings import (
     ELIGIBLE_CORPUS,
     EVALUATION_WORKERS,
-    PREPROCESSING_CACHE,
     PREPROCESS_LOG,
     PREPROCESSING_SUMMARY,
     SETTINGS,
@@ -47,6 +44,13 @@ from workflow_settings import (
     generation_corpus_bundle_path,
     prepare_run_directory,
 )
+
+# Amortizes inter-process dispatch; each output costs single-digit
+# milliseconds, so a chunk stays well under one second of worker latency.
+_PREPROCESS_CHUNK_SIZE: Final = 64
+
+_WORKER_RUNNER: BoundPreprocessingRunner | None = None
+
 
 _REQUIRED_COLUMNS = frozenset(
     {
@@ -150,10 +154,27 @@ def _candidate_sources(trace_output: object) -> tuple[str, ...]:
     return tuple(sources)
 
 
-async def preprocess_distinct_outputs(
+def _initialize_preprocess_worker() -> None:
+    global _WORKER_RUNNER
+    _WORKER_RUNNER = bind_preprocessing(
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
+    )
+
+
+def _preprocess_one_output(text: str) -> tuple[str, ...] | None:
+    """Return candidate sources, or None when preprocessing fails."""
+    if _WORKER_RUNNER is None:
+        raise RuntimeError("preprocess worker was not initialized")
+    try:
+        trace = _WORKER_RUNNER.run(TextArtifact(text=text))
+        return _candidate_sources(trace.value(OUTPUT_KEY))
+    except Exception:
+        return None
+
+
+def preprocess_distinct_outputs(
     outputs: Sequence[str],
     *,
-    cache_path: Path,
     logger: logging.Logger,
     worker_count: int = EVALUATION_WORKERS,
 ) -> dict[str, tuple[str, ...]]:
@@ -164,70 +185,46 @@ async def preprocess_distinct_outputs(
     distinct_outputs = list(dict.fromkeys(outputs))
     started = perf_counter()
     failed_count = 0
-    completed_count = 0
     logger.info(
-        "Preprocessing %d distinct outputs with workers=%d",
+        "Preprocessing %d distinct outputs with %d worker processes",
         len(distinct_outputs),
         worker_count,
     )
 
-    def _record_completion(_text: str, _trace: object) -> None:
-        nonlocal completed_count
-        completed_count += 1
-        if completed_count % 500 == 0:
-            logger.info(
-                "Preprocessed %d distinct outputs in %.1f seconds",
-                completed_count,
-                perf_counter() - started,
-            )
-
-    async with await SqliteRecordCache.open(cache_path) as cache:
-        traces = await preprocess_batch(
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        initializer=_initialize_preprocess_worker,
+    ) as pool:
+        sources_iterator = pool.map(
+            _preprocess_one_output,
             distinct_outputs,
-            definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
-            store=cache,
-            pool_config=ExecutionPoolConfig(
-                capacity=FixedPoolCapacity(max_active_jobs=worker_count)
-            ),
-            limits=default_preprocess_batch_limits(worker_count=worker_count),
-            on_trace_completed=_record_completion,
+            chunksize=_PREPROCESS_CHUNK_SIZE,
         )
-
-    for index, output in enumerate(distinct_outputs, start=1):
-        trace = traces.get(output)
-        if trace is None:
-            failed_count += 1
-            if failed_count <= 5:
-                logger.warning(
-                    "Preprocessing failed for distinct output %d/%d",
+        for index, (output, sources) in enumerate(
+            zip(distinct_outputs, sources_iterator, strict=True), start=1
+        ):
+            if sources is None:
+                failed_count += 1
+                if failed_count <= 5:
+                    logger.warning(
+                        "Preprocessing failed for distinct output %d/%d",
+                        index,
+                        len(distinct_outputs),
+                    )
+                elif failed_count == 6:
+                    logger.warning(
+                        "Further preprocessing failures will not be logged "
+                        "individually"
+                    )
+                results[output] = ()
+            else:
+                results[output] = sources
+            if index % 5000 == 0:
+                logger.info(
+                    "Preprocessed %d distinct outputs in %.1f seconds",
                     index,
-                    len(distinct_outputs),
+                    perf_counter() - started,
                 )
-            elif failed_count == 6:
-                logger.warning(
-                    "Further preprocessing failures will not be logged "
-                    "individually"
-                )
-            results[output] = ()
-            continue
-        try:
-            results[output] = _candidate_sources(trace.value(OUTPUT_KEY))
-        except Exception as exc:
-            failed_count += 1
-            if failed_count <= 5:
-                logger.warning(
-                    "Preprocessing failed for distinct output %d/%d: %s: %s",
-                    index,
-                    len(distinct_outputs),
-                    type(exc).__name__,
-                    exc,
-                )
-            elif failed_count == 6:
-                logger.warning(
-                    "Further preprocessing failures will not be logged "
-                    "individually"
-                )
-            results[output] = ()
 
     if failed_count:
         logger.info(
@@ -309,7 +306,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=_positive_worker_count,
         default=EVALUATION_WORKERS,
         help=(
-            f"concurrent preprocessing workers (default: {EVALUATION_WORKERS})"
+            "concurrent preprocessing worker processes "
+            f"(default: {EVALUATION_WORKERS})"
         ),
     )
     return parser.parse_args(argv)
@@ -344,13 +342,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         rows.height,
         len(set(outputs)),
     )
-    candidates = asyncio.run(
-        preprocess_distinct_outputs(
-            outputs,
-            cache_path=PREPROCESSING_CACHE,
-            logger=logger,
-            worker_count=arguments.workers,
-        )
+    candidates = preprocess_distinct_outputs(
+        outputs,
+        logger=logger,
+        worker_count=arguments.workers,
     )
     eligible, summary = attach_preprocessing_results(rows, candidates)
     eligible.write_parquet(ELIGIBLE_CORPUS)

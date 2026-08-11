@@ -40,8 +40,8 @@ uv run python scripts/build_generation_corpus.py human_eval \
 1. `uv run python scripts/verification/task_difficulty/01_build_eligible_corpus.py`
    loads the pinned generation corpus bundle, keeps the three comparable
    `(generation_mode, budget_mode)` settings, runs exhaustive preprocessing
-   with `--workers` concurrent tasks (default 16), and stores generations with
-   at least one compilable top-level-function candidate.
+   across `--workers` worker processes (default 16), and stores generations
+   with at least one compilable top-level-function candidate.
 2. `uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py`
    selects one deterministic generation for each available task, setting, and
    model in the fixed model roster.
@@ -89,7 +89,7 @@ uv run python scripts/build_generation_corpus.py human_eval \
    success rates.
 
 All inputs, outputs, and sampling choices are fixed in `workflow_settings.py`.
-Heavy run artifacts and preprocessing caches are written under
+Heavy run artifacts and evaluation caches are written under
 `~/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/<baseline-name>/`
 (override with `DR_CODE_TASK_DIFFICULTY_RUN_DIR`). Git-tracked baseline run
 config and results live under
