@@ -115,11 +115,6 @@ explains the modes in full.
   parent decodes and validates every returned byte single-threaded, so
   returning whole traces would cost about a hundred times the payload and cap
   throughput at the parent's parse rate regardless of worker count.
-- **Tiny trusted transforms — inline in-process executor.** Work whose per-item
-  cost is smaller than the cost of sending it anywhere stays in this process as
-  a recorded call. It buys the dr-exec job/completion vocabulary, not
-  parallelism: under the GIL, one worker and thirty-two produce the same
-  throughput on CPU-bound Python.
 
 All inputs, outputs, and sampling choices are fixed in `workflow_settings.py`.
 Heavy run artifacts and evaluation caches are written under

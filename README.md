@@ -175,8 +175,7 @@ for the full decision table.
 | Work | Primitive | Why |
 |---|---|---|
 | Candidate and test execution | Spawned subprocess jobs (`ProcessExecutor`) | The source is model-produced and untrusted, so each candidate needs a real process boundary, an enforced budget, and a durable record of its own. |
-| Preprocessing | dr-exec worker pool (`preprocess_batch`) | Trusted first-party code, CPU-bound, milliseconds per item: long-lived workers pay the import once each and use real cores, where spawn-per-job would spend all of them on `import`. |
-| Tiny trusted transforms | Inline in-process executor (`ImportableJsonExecutor`) | The work per item is smaller than the cost of sending it anywhere; this mode buys the recorded-call vocabulary, not parallelism. |
+| Preprocessing | dr-exec worker pool (`WorkerPoolImportableJsonExecutor`, via `preprocess_batch`) | Trusted first-party code, CPU-bound, milliseconds per item: long-lived workers pay the import once each and use real cores, where spawn-per-job would spend all of them on `import`. |
 
 ### [Windowed execution caching](docs/windowed_execution_cache.md)
 

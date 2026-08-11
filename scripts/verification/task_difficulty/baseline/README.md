@@ -1,7 +1,7 @@
 # Task-difficulty baselines
 
 Git-tracked **run config** and **results** for directional HumanEval baseline
-runs. Heavy evaluation bundles, preprocessing caches, execution caches, and verbose
+runs. Heavy evaluation bundles, execution caches, and verbose
 stage logs stay outside the repository under
 `~/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/`.
 
