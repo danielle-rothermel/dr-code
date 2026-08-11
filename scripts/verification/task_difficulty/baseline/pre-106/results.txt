@@ -1,0 +1,12 @@
+baseline: pre-106
+exported_at: 2026-08-11T22:25:15.133653+00:00
+git_rev: 27ada3e466dabde480d926c21893ad444424bc8e
+git_branch: 08-06-directional-humaneval
+corpus_bundle: /Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval
+manifest_sha256: fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728
+run_directory: /Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/pre-106
+stages_completed: preprocess, sample, evaluate, summarize
+preprocessing: 201051 eligible / 203406 nonblank (163 tasks)
+sampling: 326 selected generations across 163 tasks
+evaluation: 326/326 complete generations, mean task success rate 0.8344
+observed task extremes: {'all_passed': 115, 'mixed': 42, 'all_failed': 6}
