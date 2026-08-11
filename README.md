@@ -33,6 +33,10 @@ viewer, organized into these functional areas:
   loads and samples benchmark tasks, extracts candidate solutions, runs them
   through a [dr-exec](https://github.com/danielle-rothermel/dr-exec)
   executor, and reports structured outcomes.
+- **[Generation corpus extraction](docs/generation_corpus.md)**
+  converts archived model activity into validated, content-addressed Parquet
+  tables while preserving raw evidence, task material, prompts, requests, and
+  configuration provenance at their natural grains.
 - **[Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)**
   applies deterministic corruption recipes to known solutions for
   preprocessing and robustness experiments.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Generation corpus adapters extract HumanEval, MBPP Pro, HumanEval Pro,
+  ClassEval, BigCodeBench Lite Pro, and NL Latents archived model activity into
+  five validated Parquet grains with atomic publication and content-addressed
+  task material.
+
 ## 0.1.6 - 2026-08-06
 
 - A task-sampled HumanEval analysis runs exhaustive preprocessing without
