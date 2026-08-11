@@ -149,11 +149,12 @@ date = "2026-08-09"
 check = "uv run pytest tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
 
 [[contracts]]
-title = "Execution jobs are bounded and outcome mapping is closed"
+title = "Candidate execution jobs are bounded and outcome mapping is closed"
 statement = """
-Every execution job declares finite wall-clock, input, and payload-output
-budgets and a fixed environment grant, and production executor construction
-requires an explicit Python executable. Exited, signaled, wall-time, and
+Every candidate execution job declares finite wall-clock, input, and
+payload-output budgets and a fixed environment grant, and production executor
+construction requires an explicit Python executable. Trusted non-candidate
+jobs may run unbudgeted. Exited, signaled, wall-time, and
 payload-output outcomes have fixed mappings; payload-owned protocol failures
 map to candidate-attributable kills; every other outcome fails closed as an
 executor failure. Candidate execution records preserve this closed
@@ -173,7 +174,7 @@ statement = """
 A preprocessing trace cache entry is keyed by the raw input text, the
 producing runner's resolved coordinate, and the trace schema version. A hit is
 accepted only when the stored trace validates and its producer and input match
-the request. Caching is opt-in: no existing call site consults a cache. Cache
+the request. Caching is opt-in through an explicitly supplied store. Cache
 reads, validation, and writes degrade to uncached execution on failure."""
 rationale = """
 Wrong-input, wrong-producer, and malformed entries are not evidence for the
@@ -199,20 +200,6 @@ existing preprocessing trace cache contract and keeping untrusted candidate
 execution on process-bound executors."""
 date = "2026-08-10"
 check = "uv run pytest tests/caching/test_preprocess_batch.py tests/caching/test_trace_window_cache.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
-
-[[contracts]]
-title = "Preprocessing cache lifecycles follow behavior identity"
-statement = """
-While component versions remain at the initial version, callers discard
-persistent preprocessing caches after source, Python runtime, or dependency
-changes that can alter preprocessing behavior. After development mode, each
-such change bumps every affected component version before its cache is
-reused."""
-rationale = """
-Producer coordinates distinguish declared component versions and settings,
-not ambient runtime or dependency bytes. Reusing an entry after an unrecorded
-behavior change would make the result depend on stale state."""
-date = "2026-08-05"
 
 [[contracts]]
 title = "Execution cache persistence is scoped and checkpointed"
@@ -243,7 +230,7 @@ check = "uv run pytest tests/caching/test_execution_cache.py"
 title = "Evaluation uses one bounded execution path"
 statement = """
 Every production code evaluation reaches execution through one dr-code path
-over the released dr-exec job and scheduling primitives. One job evaluates one
+over the dr-exec job and scheduling primitives. One job evaluates one
 materialized candidate. A HumanEval job loads one candidate namespace once and
 evaluates all ordered requested function/test groups there; multiple CodeTest
 questions are ordered suites with per-suite settings under one finite aggregate
