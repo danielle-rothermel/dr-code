@@ -41,7 +41,9 @@ uv run python scripts/build_generation_corpus.py human_eval \
    loads the pinned generation corpus bundle, keeps the three comparable
    `(generation_mode, budget_mode)` settings, runs exhaustive preprocessing
    across `--workers` worker processes (default 16), and stores generations
-   with at least one compilable top-level-function candidate.
+   with at least one compilable top-level-function candidate. Workers return
+   each output's candidate sources rather than its whole trace, and stage 1
+   consumes them as they complete rather than retaining them.
 2. `uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py`
    selects one deterministic generation for each available task, setting, and
    model in the fixed model roster.
@@ -87,6 +89,37 @@ uv run python scripts/build_generation_corpus.py human_eval \
 
    It reads `candidate_results.parquet` and reports generation- and task-level
    success rates.
+
+## Execution primitives
+
+The two parallel stages of this workflow run on different dr-exec execution
+modes, because they are different kinds of work. dr-exec's
+[parallelism guide](https://github.com/danielle-rothermel/dr-exec#choosing-an-execution-mode-a-parallelism-guide)
+explains the modes in full.
+
+- **Candidate and test execution (stage 3) — spawned subprocess jobs.** Each
+  candidate is model-produced source this workflow did not write, so it runs in
+  its own freshly spawned process with its own wall-time budget and its own
+  durable execution record. The process boundary is the point: a candidate that
+  crashes, hangs, or exits takes nothing else with it, and its outcome is
+  evidence attributable to that candidate alone. Startup cost is noise next to
+  running a test suite.
+- **Preprocessing (stage 1) — dr-exec worker pool.** Preprocessing is
+  first-party trusted code that costs single-digit milliseconds per output.
+  Spawning an interpreter per output would spend all the cores on `import`, and
+  running it on threads in one process would serialize under the GIL. The pool
+  starts N long-lived worker processes, each importing the preprocessing entry
+  point once, then feeds them jobs over pipes: real cores, no per-item startup.
+  It makes no containment claim, which is fine because nothing here is
+  untrusted. Workers return only the candidate sources stage 1 consumes: the
+  parent decodes and validates every returned byte single-threaded, so
+  returning whole traces would cost about a hundred times the payload and cap
+  throughput at the parent's parse rate regardless of worker count.
+- **Tiny trusted transforms — inline in-process executor.** Work whose per-item
+  cost is smaller than the cost of sending it anywhere stays in this process as
+  a recorded call. It buys the dr-exec job/completion vocabulary, not
+  parallelism: under the GIL, one worker and thirty-two produce the same
+  throughput on CPU-bound Python.
 
 All inputs, outputs, and sampling choices are fixed in `workflow_settings.py`.
 Heavy run artifacts and evaluation caches are written under

@@ -18,10 +18,15 @@
   end-to-end and evaluation-only time per selected generation.
 - `evaluate_batch` schedules candidate execution across all samples through one
   global plan-order queue bounded by worker count and attempt limits.
-- Parallel preprocessing uses dr-exec 0.1.8 `ImportableJsonExecutor` with
-  `preprocess_batch`, windowed dr-store trace caching, and the same worker pool
-  contract as candidate execution. Stage 1, analysis scripts, `run_preprocessing_cached`,
-  and `evaluate_batch` sample prepare share this path.
+- Parallel preprocessing runs on dr-exec 0.1.9's worker-pool importable JSON
+  executor. `preprocess_batch` runs each distinct text once across long-lived
+  worker processes and streams results to an optional observer so a
+  corpus-scale batch retains nothing. `candidate_sources_batch` returns
+  candidate sources alone for callers that consume them, keeping traces inside
+  the workers. Stage 1, the analysis script, and `evaluate_batch` sample
+  prepare share this path; the in-process pool, windowed dr-store trace
+  caching, and the hand-rolled admission windows and process pool they
+  replaced are removed.
 - The directional evaluator raises a low per-process open-file soft limit to a
   worker-scaled minimum before parallel execution, or fails early with an
   actionable shell command when the hard limit prevents it.

@@ -5,27 +5,19 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from time import perf_counter
-from typing import Final
 
 import polars as pl
 
+from dr_code.caching import candidate_sources_batch
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
-    BoundPreprocessingRunner,
-    bind_preprocessing,
-)
-from dr_code.trace import (
-    OUTPUT_KEY,
-    Absent,
-    InspectedCodeCandidateSetArtifact,
-    TextArtifact,
 )
 
 from corpus_loader import (
@@ -44,13 +36,6 @@ from workflow_settings import (
     generation_corpus_bundle_path,
     prepare_run_directory,
 )
-
-# Amortizes inter-process dispatch; each output costs single-digit
-# milliseconds, so a chunk stays well under one second of worker latency.
-_PREPROCESS_CHUNK_SIZE: Final = 64
-
-_WORKER_RUNNER: BoundPreprocessingRunner | None = None
-
 
 _REQUIRED_COLUMNS = frozenset(
     {
@@ -137,41 +122,6 @@ def classify_generation_rows(corpus: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame(records, infer_schema_length=None)
 
 
-def _candidate_sources(trace_output: object) -> tuple[str, ...]:
-    if isinstance(trace_output, Absent):
-        return ()
-    if not isinstance(trace_output, InspectedCodeCandidateSetArtifact):
-        raise TypeError(
-            "exhaustive preprocessing did not return inspected candidates"
-        )
-    sources: list[str] = []
-    for inspected in trace_output.candidates:
-        if not inspected.inspection.compiles:
-            raise RuntimeError("final candidate does not compile")
-        if not inspected.inspection.top_level_function_names:
-            raise RuntimeError("final candidate has no top-level function")
-        sources.append(inspected.candidate.source)
-    return tuple(sources)
-
-
-def _initialize_preprocess_worker() -> None:
-    global _WORKER_RUNNER
-    _WORKER_RUNNER = bind_preprocessing(
-        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
-    )
-
-
-def _preprocess_one_output(text: str) -> tuple[str, ...] | None:
-    """Return candidate sources, or None when preprocessing fails."""
-    if _WORKER_RUNNER is None:
-        raise RuntimeError("preprocess worker was not initialized")
-    try:
-        trace = _WORKER_RUNNER.run(TextArtifact(text=text))
-        return _candidate_sources(trace.value(OUTPUT_KEY))
-    except Exception:
-        return None
-
-
 def preprocess_distinct_outputs(
     outputs: Sequence[str],
     *,
@@ -184,6 +134,7 @@ def preprocess_distinct_outputs(
     results: dict[str, tuple[str, ...]] = {}
     distinct_outputs = list(dict.fromkeys(outputs))
     started = perf_counter()
+    completed_count = 0
     failed_count = 0
     logger.info(
         "Preprocessing %d distinct outputs with %d worker processes",
@@ -191,40 +142,40 @@ def preprocess_distinct_outputs(
         worker_count,
     )
 
-    with ProcessPoolExecutor(
-        max_workers=worker_count,
-        initializer=_initialize_preprocess_worker,
-    ) as pool:
-        sources_iterator = pool.map(
-            _preprocess_one_output,
-            distinct_outputs,
-            chunksize=_PREPROCESS_CHUNK_SIZE,
-        )
-        for index, (output, sources) in enumerate(
-            zip(distinct_outputs, sources_iterator, strict=True), start=1
-        ):
-            if sources is None:
-                failed_count += 1
-                if failed_count <= 5:
-                    logger.warning(
-                        "Preprocessing failed for distinct output %d/%d",
-                        index,
-                        len(distinct_outputs),
-                    )
-                elif failed_count == 6:
-                    logger.warning(
-                        "Further preprocessing failures will not be logged "
-                        "individually"
-                    )
-                results[output] = ()
-            else:
-                results[output] = sources
-            if index % 5000 == 0:
-                logger.info(
-                    "Preprocessed %d distinct outputs in %.1f seconds",
-                    index,
-                    perf_counter() - started,
+    def _record(text: str, sources: tuple[str, ...] | None) -> None:
+        nonlocal completed_count, failed_count
+        completed_count += 1
+        if sources is None:
+            failed_count += 1
+            if failed_count <= 5:
+                logger.warning(
+                    "Preprocessing failed for distinct output %d/%d",
+                    completed_count,
+                    len(distinct_outputs),
                 )
+            elif failed_count == 6:
+                logger.warning(
+                    "Further preprocessing failures will not be logged "
+                    "individually"
+                )
+            results[text] = ()
+        else:
+            results[text] = sources
+        if completed_count % 5000 == 0:
+            logger.info(
+                "Preprocessed %d distinct outputs in %.1f seconds",
+                completed_count,
+                perf_counter() - started,
+            )
+
+    asyncio.run(
+        candidate_sources_batch(
+            distinct_outputs,
+            definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+            worker_count=worker_count,
+            on_sources=_record,
+        )
+    )
 
     if failed_count:
         logger.info(

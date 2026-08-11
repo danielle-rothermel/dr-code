@@ -125,26 +125,58 @@ async with await SqliteRecordCache.open("traces.sqlite3") as cache:
     trace = await run_preprocessing_cached(text, runner, cache)
 ```
 
-Parallel batch preprocessing uses dr-exec 0.1.8's in-process importable JSON
-executor with the same `ExecutionPool` scheduling contract as candidate
-execution. `preprocess_batch` window-prefetches trace keys through dr-store
-`get_many`, runs misses through the pool, and checkpoints with bounded
-`put_many` via `WindowedTraceCache`. See [docs/windowed_trace_cache.md](docs/windowed_trace_cache.md).
+Parallel batch preprocessing runs on dr-exec's worker pool. `preprocess_batch`
+deduplicates the requested texts and runs each one as one trusted importable
+JSON job across long-lived worker processes, which import the preprocessing
+entry point once per worker. Pass `on_trace` to consume each result as it
+completes instead of retaining the whole batch.
 
 ```python
-from dr_exec import ExecutionPoolConfig, FixedPoolCapacity, ImportableJsonExecutor
-from dr_code.caching import default_preprocess_batch_limits, preprocess_batch
+from dr_code.caching import preprocess_batch
+
+traces_by_text = await preprocess_batch(
+    texts,
+    definition=definition,
+    worker_count=16,
+)
 
 await preprocess_batch(
     texts,
     definition=definition,
-    store=batch_record_store,
-    pool_config=ExecutionPoolConfig(
-        capacity=FixedPoolCapacity(max_active_jobs=16),
-    ),
-    limits=default_preprocess_batch_limits(worker_count=16),
+    worker_count=16,
+    on_trace=lambda text, trace: consume(text, trace),
 )
 ```
+
+A caller that wants candidate sources rather than whole traces uses
+`candidate_sources_batch`, which runs an entry point returning the sources
+alone. Result size is the term that decides worker-pool throughput: the caller
+decodes and validates every byte a worker returns, single-threaded, so a whole
+serialized trace costs about a hundred times the payload of the sources it
+carries and no number of workers recovers it.
+
+```python
+from dr_code.caching import candidate_sources_batch
+
+sources_by_text = await candidate_sources_batch(
+    texts,
+    definition=definition,
+    worker_count=16,
+)
+```
+
+### Execution primitives
+
+Each kind of work in this repository runs on the dr-exec execution mode that
+matches its trust boundary and its cost per item. See dr-exec's
+[parallelism guide](https://github.com/danielle-rothermel/dr-exec#choosing-an-execution-mode-a-parallelism-guide)
+for the full decision table.
+
+| Work | Primitive | Why |
+|---|---|---|
+| Candidate and test execution | Spawned subprocess jobs (`ProcessExecutor`) | The source is model-produced and untrusted, so each candidate needs a real process boundary, an enforced budget, and a durable record of its own. |
+| Preprocessing | dr-exec worker pool (`preprocess_batch`) | Trusted first-party code, CPU-bound, milliseconds per item: long-lived workers pay the import once each and use real cores, where spawn-per-job would spend all of them on `import`. |
+| Tiny trusted transforms | Inline in-process executor (`ImportableJsonExecutor`) | The work per item is smaller than the cost of sending it anywhere; this mode buys the recorded-call vocabulary, not parallelism. |
 
 ### [Windowed execution caching](docs/windowed_execution_cache.md)
 
