@@ -26,7 +26,11 @@
   the workers. Stage 1, the analysis script, and `evaluate_batch` sample
   prepare share this path; the in-process pool, windowed dr-store trace
   caching, and the hand-rolled admission windows and process pool they
-  replaced are removed.
+  replaced are removed. The single-text `run_preprocessing_cached` sqlite
+  memoization path is removed with them: batch preprocessing left it without
+  production callers, and evaluation sizes preprocessing width through
+  dr-exec's public `resolve_pool_capacity` rather than mapping capacity
+  variants itself.
 - The directional evaluator raises a low per-process open-file soft limit to a
   worker-scaled minimum before parallel execution, or fails early with an
   actionable shell command when the hard limit prevents it.

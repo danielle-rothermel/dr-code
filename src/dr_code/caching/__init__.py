@@ -15,11 +15,6 @@ from dr_code.caching.preprocess_batch import (
     candidate_sources_batch,
     preprocess_batch,
 )
-from dr_code.caching.trace_cache import (
-    TRACE_RECORD_SCHEMA,
-    preprocessing_trace_cache_key,
-    run_preprocessing_cached,
-)
 
 __all__ = [
     "BatchRecordStore",
@@ -29,11 +24,8 @@ __all__ = [
     "EXECUTION_CACHE_NAMESPACE",
     "EXECUTION_CACHE_RECORD_SCHEMA",
     "ExecutionCacheStats",
-    "TRACE_RECORD_SCHEMA",
     "TraceObserver",
     "WindowedExecutionCache",
     "candidate_sources_batch",
     "preprocess_batch",
-    "preprocessing_trace_cache_key",
-    "run_preprocessing_cached",
 ]

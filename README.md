@@ -91,45 +91,12 @@ def bind_preprocessing(
 ) -> BoundPreprocessingRunner: ...
 ```
 
-### [Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
-
-`dr_code.caching` provides opt-in preprocessing trace memoization over a
-[dr-store](https://github.com/danielle-rothermel/dr-store) record cache. It
-accepts only validated entries whose input and producer match the request;
-other cache outcomes fall through to fresh preprocessing. dr-store's managed
-`SqliteRecordCache` supplies the persistent lifecycle.
-
-While development mode keeps component versions at `"0"`, discard persistent
-caches after preprocessing source, Python runtime, or dependency changes. Once
-development mode ends, every such behavior-affecting change requires a version
-bump for each affected preprocessing component before reusing its cache.
-
-```python
-def preprocessing_trace_cache_key(
-    text: str,
-    runner: BoundPreprocessingRunner,
-) -> str: ...
-
-
-async def run_preprocessing_cached(
-    text: str,
-    runner: BoundPreprocessingRunner,
-    cache: RecordCache,
-) -> Trace: ...
-```
-
-```python
-from dr_store import SqliteRecordCache
-
-async with await SqliteRecordCache.open("traces.sqlite3") as cache:
-    trace = await run_preprocessing_cached(text, runner, cache)
-```
+### [Batch preprocessing](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
 
 Parallel batch preprocessing runs on dr-exec's worker pool. `preprocess_batch`
 deduplicates the requested texts and runs each one as one trusted importable
 JSON job across long-lived worker processes, which import the preprocessing
-entry point once per worker. Pass `on_trace` to consume each result as it
-completes instead of retaining the whole batch.
+entry point once per worker.
 
 ```python
 from dr_code.caching import preprocess_batch
@@ -139,7 +106,12 @@ traces_by_text = await preprocess_batch(
     definition=definition,
     worker_count=16,
 )
+```
 
+Pass `on_trace` to consume each result as it completes instead of retaining the
+whole batch; the returned mapping is then empty.
+
+```python
 await preprocess_batch(
     texts,
     definition=definition,

@@ -89,6 +89,17 @@ uv run python scripts/build_generation_corpus.py human_eval \
 
    It reads `candidate_results.parquet` and reports generation- and task-level
    success rates.
+5. Export the git-tracked baseline run config and results with the same flags,
+   naming the baseline:
+
+   ```bash
+   uv run python scripts/verification/task_difficulty/05_export_baseline.py \
+     pre-106 --workers 16 --timeout-seconds 120
+   ```
+
+   It writes the run's stage logs, corpus pins, and result tables under
+   [`baseline/`](baseline/README.md). [`run_baseline.sh`](run_baseline.sh) runs
+   stages 1-5 in order and invokes this stage last.
 
 ## Execution primitives
 

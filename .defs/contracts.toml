@@ -169,21 +169,6 @@ date = "2026-08-09"
 check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
-title = "Preprocessing trace cache entries match their requests"
-statement = """
-A preprocessing trace cache entry is keyed by the raw input text, the
-producing runner's resolved coordinate, and the trace schema version. A hit is
-accepted only when the stored trace validates and its producer and input match
-the request. Caching is opt-in through an explicitly supplied store. Cache
-reads, validation, and writes degrade to uncached execution on failure."""
-rationale = """
-Wrong-input, wrong-producer, and malformed entries are not evidence for the
-current request. Best-effort cache faults must not turn optional memoization
-into a preprocessing failure."""
-date = "2026-08-05"
-check = "uv run pytest tests/caching/test_trace_cache.py"
-
-[[contracts]]
 title = "Parallel preprocessing runs on the dr-exec worker pool"
 statement = """
 `preprocess_batch` and `candidate_sources_batch` deduplicate requested texts and

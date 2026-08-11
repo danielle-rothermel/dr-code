@@ -22,8 +22,8 @@ from dr_exec import (
     ExecutionPoolConfig,
     ExecutionSubmission,
     Executor,
-    FixedPoolCapacity,
     JobId,
+    resolve_pool_capacity,
 )
 from dr_serialize import Sha256Digest, canonical_json_bytes
 
@@ -277,13 +277,10 @@ async def _run_durable_job(
         raise cancelled
 
 
-def _preprocessing_worker_count(config: ExecutionPoolConfig) -> int | None:
+def _preprocessing_worker_count(config: ExecutionPoolConfig) -> int:
     """Give preprocessing the width the caller asked evaluation to use."""
 
-    capacity = config.capacity
-    if isinstance(capacity, FixedPoolCapacity):
-        return capacity.max_active_jobs
-    return None
+    return resolve_pool_capacity(config.capacity).max_active_jobs
 
 
 async def _assemble(

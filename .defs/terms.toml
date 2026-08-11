@@ -311,17 +311,6 @@ exported_symbols = [
 ]
 
 [[terms]]
-name = "preprocessing trace cache"
-definition = """
-An opt-in memoization layer for reusing serialized preprocessing traces by raw
-input and resolved producer coordinate."""
-exported_symbols = [
-  "dr_code.caching.run_preprocessing_cached",
-  "dr_code.caching.preprocessing_trace_cache_key",
-  "dr_code.caching.TRACE_RECORD_SCHEMA",
-]
-
-[[terms]]
 name = "preprocessing batch"
 definition = """
 A parallel preprocessing path that runs each distinct text once as one trusted
