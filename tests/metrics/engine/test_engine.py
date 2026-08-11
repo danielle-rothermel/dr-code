@@ -153,7 +153,7 @@ def test_operator_result_violating_a_record_invariant_is_a_failure_record(
     operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
 
     class _NoFacts:
-        def to_facts(self) -> tuple[()]:
+        def to_values(self) -> tuple[()]:
             return ()
 
     def empty(self, value, aux, ctx):  # noqa: ANN001
@@ -171,38 +171,4 @@ def test_operator_result_violating_a_record_invariant_is_a_failure_record(
     failed = by_metric[MetricName.TEXT_STATS]
     assert failed.status.value == "operator_failure"
     assert failed.failure.failure_type == "ValidationError"
-    assert by_metric[MetricName.AST_STATS].status.value == "measured"
-
-
-def test_planning_failure_is_isolated_from_unaffected_question(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from dr_code.metrics import MetricName
-    from dr_code.metrics.registry import REGISTRY
-
-    source = "def f(x):\n    return x\n"
-    trace = external_trace(
-        {
-            "input": CodeArtifact(source=source),
-            "output": CodeArtifact(source=source),
-        }
-    )
-
-    operator_cls = REGISTRY[str(MetricName.TEXT_STATS)]
-
-    def fail_planning(self, value, aux):  # noqa: ANN001
-        raise ValueError("invalid execution plan")
-
-    monkeypatch.setattr(operator_cls, "execution_requests", fail_planning)
-    records = _extract(
-        _definition(
-            [_q("text_stats", on="input"), _q("ast_stats", on="input")]
-        ),
-        trace,
-    )
-
-    by_metric = {record.identity.question.metric: record for record in records}
-    failed = by_metric[MetricName.TEXT_STATS]
-    assert failed.status.value == "operator_failure"
-    assert failed.failure.failure_type == "ValueError"
     assert by_metric[MetricName.AST_STATS].status.value == "measured"

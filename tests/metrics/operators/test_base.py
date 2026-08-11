@@ -12,4 +12,4 @@ def test_a_result_field_without_a_declared_unit_fails_loudly() -> None:
         widget_count: int
 
     with pytest.raises(ValueError, match="declares no unit"):
-        UndeclaredResult(widget_count=1).to_facts()
+        UndeclaredResult(widget_count=1).to_values()

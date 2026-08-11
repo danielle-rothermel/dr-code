@@ -6,19 +6,21 @@ from pydantic import ValidationError
 from _builders import (
     candidate,
     dataset,
+    evaluation_slot,
     preprocessing_coordinate,
     repeat_plan,
     repeat_plan_coordinate,
-    sample,
+    sample_identity,
     task_set,
     task_set_coordinate,
 )
 from dr_code.evaluation import (
-    CandidateCoordinate,
     DatasetCoordinate,
+    EvaluationCandidateIdentity,
+    EvaluationSampleIdentity,
+    EvaluationSlotIdentity,
     RepeatPlan,
     RepeatPlanCoordinate,
-    SampleCoordinate,
     TaskSet,
     TaskSetCoordinate,
 )
@@ -140,26 +142,26 @@ def test_repeat_plan_rejects_empty_seeds_when_slots_exist() -> None:
         repeat_plan(task_count=2, repeats=2, seeds=())
 
 
-def test_sample_rejects_a_negative_repeat_index() -> None:
+def test_evaluation_slot_rejects_a_negative_repeat_index() -> None:
     with pytest.raises(ValidationError, match="repeat_index"):
-        sample(repeat_index=-1)
+        evaluation_slot(repeat_index=-1)
 
 
-def test_sample_is_within_a_plan_that_declares_its_slot() -> None:
+def test_evaluation_slot_is_within_a_plan_that_declares_it() -> None:
     plan = repeat_plan(repeats=3)
-    assert sample(repeat_index=2).within(plan)
+    assert evaluation_slot(repeat_index=2).within(plan)
 
 
-def test_sample_is_outside_a_plan_with_fewer_repeats() -> None:
+def test_evaluation_slot_is_outside_a_plan_with_fewer_repeats() -> None:
     plan = repeat_plan(repeats=2)
-    assert not sample(repeat_index=2).within(plan)
+    assert not evaluation_slot(repeat_index=2).within(plan)
 
 
-def test_sample_is_outside_a_plan_it_does_not_name() -> None:
+def test_evaluation_slot_is_outside_a_plan_it_does_not_name() -> None:
     other = repeat_plan(
         coordinate=repeat_plan_coordinate(repeat_plan_id="other"), repeats=9
     )
-    assert not sample(repeat_index=0).within(other)
+    assert not evaluation_slot(repeat_index=0).within(other)
 
 
 def test_candidate_rejects_a_negative_ordinal() -> None:
@@ -172,16 +174,14 @@ def test_candidate_accepts_the_first_ordinal() -> None:
 
 
 def test_candidate_ordinal_documents_the_post_filter_definition() -> None:
-    doc = CandidateCoordinate.__doc__ or ""
+    doc = EvaluationCandidateIdentity.__doc__ or ""
     assert "after" in doc
-    assert "deduplication" in doc
-    assert "filter" in doc
-    assert "materialize_candidate_set" in doc
+    assert "materialization" in doc
 
 
-def test_candidate_nests_the_whole_sample_and_preprocessing() -> None:
+def test_candidate_nests_sample_identity_and_preprocessing() -> None:
     built = candidate()
-    assert built.sample == sample()
+    assert built.sample == sample_identity()
     assert built.preprocessing == preprocessing_coordinate()
 
 
@@ -194,8 +194,9 @@ def test_candidate_nests_the_whole_sample_and_preprocessing() -> None:
         (RepeatPlanCoordinate, repeat_plan_coordinate()),
         (RepeatPlan, repeat_plan()),
         (RepeatPlan, repeat_plan(seeds=(1, 2, 3, 4))),
-        (SampleCoordinate, sample()),
-        (CandidateCoordinate, candidate()),
+        (EvaluationSlotIdentity, evaluation_slot()),
+        (EvaluationSampleIdentity, sample_identity()),
+        (EvaluationCandidateIdentity, candidate()),
     ],
 )
 def test_coordinate_round_trips_through_json(model, value) -> None:

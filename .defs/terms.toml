@@ -11,11 +11,214 @@ or untrusted-input boundary."""
 exported_symbols = ["dr_code.core.models.FrozenModel"]
 
 [[terms]]
+name = "evidence"
+definition = """
+An immutable, self-describing record of an input, observation, or attempted
+operation that preserves the semantic identity, provenance, context, and
+explicit outcome, absence, or failure needed for interpretation. It is
+authoritative only about what the evaluation recorded. Derived rows, summaries,
+and aggregates are projections, not evidence."""
+categories = ["evaluation evidence"]
+
+[[terms]]
+name = "evaluation slot"
+definition = """
+One planned task-and-repeat position in an evaluation plan. It establishes
+expected membership and order without claiming that an input was observed or
+evaluated at that position."""
+exported_symbols = ["dr_code.evaluation.EvaluationSlotIdentity"]
+categories = ["evaluation identity", "evaluation planning"]
+part_of = ["evaluation plan"]
+
+[[terms]]
+name = "evaluation sample"
+definition = """
+One realized raw input selected for evaluation, carrying a stable sample
+identity, task identity, and provenance. It may originate from live generation
+or a frozen historical corpus, and its relationship to an evaluation slot is
+explicit rather than reconstructed from content."""
+exported_symbols = [
+  "dr_code.evaluation.EvaluationSampleIdentity",
+  "dr_code.evaluation.EvaluationSourceIdentity",
+  "dr_code.evaluation.GeneratedSampleProvenance",
+  "dr_code.evaluation.CorpusSampleProvenance",
+  "dr_code.evaluation.SyntheticSampleProvenance",
+  "dr_code.evaluation.EvaluationSampleMetadata",
+  "dr_code.evaluation.EvaluationSampleAuxiliaryArtifact",
+  "dr_code.evaluation.EvaluationSample",
+]
+categories = ["evaluation evidence", "evaluation identity"]
+is_a = ["evidence"]
+part_of = ["sample evaluation record"]
+
+[[terms]]
+name = "evaluation candidate identity"
+definition = """
+The semantic identity of one materialized candidate occurrence, composed from
+its evaluation sample, resolved preprocessing definition, and ordered position
+after materialization. Candidate content and its hash may verify that
+occurrence but do not replace its identity."""
+exported_symbols = [
+  "dr_code.evaluation.EvaluationCandidateIdentity",
+  "dr_code.evaluation.MaterializedEvaluationCandidate",
+]
+categories = ["evaluation identity"]
+part_of = ["candidate execution record", "sample evaluation record"]
+
+[[terms]]
+name = "evaluation runtime identity"
+definition = """
+A caller-owned stable identity for execution behavior not fully expressed by
+an evaluation request, including behavior-changing runtime components and
+environment assumptions. It scopes persistent outcome reuse without identifying
+one machine or path."""
+exported_symbols = ["dr_code.evaluation.EvaluationRuntimeIdentity"]
+categories = ["evaluation execution", "evaluation identity"]
+part_of = ["candidate execution record", "evaluation attempt record"]
+
+[[terms]]
+name = "evaluation attempt identity"
+definition = """
+An opaque identity for one evaluation attempt occurrence, distinct from its
+evaluation plan, ordered membership, and content hashes."""
+exported_symbols = ["dr_code.evaluation.EvaluationAttemptIdentity"]
+categories = ["evaluation identity"]
+part_of = ["evaluation attempt record"]
+
+[[terms]]
+name = "candidate execution record"
+definition = """
+Evidence binding one evaluation candidate identity to its request, runtime
+identity, cache scope, interpreted outcome, and optional portable run-record
+reference. It supports audit independently of projections without duplicating
+referenced data."""
+exported_symbols = [
+  "dr_code.evaluation.CandidateExecutionRecord",
+  "dr_code.evaluation.CandidateExecutionProvenance",
+  "dr_code.evaluation.CandidateExecutionOutcome",
+]
+categories = ["evaluation evidence", "evaluation execution"]
+is_a = ["evidence"]
+part_of = ["sample evaluation record"]
+
+[[terms]]
+name = "sample evaluation record"
+definition = """
+The authoritative record of one evaluation slot and its evaluation sample. It
+composes sample metadata with the complete preprocessing trace whose input owns
+the selected raw-input bytes, ordered materialized candidates, candidate
+execution records, and metric records, and remains evidence when no candidate
+is materialized or no candidate yields a measurement."""
+exported_symbols = [
+  "dr_code.evaluation.SampleEvaluationRecord",
+  "dr_code.evaluation.PreprocessingAbsentSampleRecord",
+  "dr_code.evaluation.NoCandidatesSampleRecord",
+  "dr_code.evaluation.EvaluatedSampleRecord",
+]
+categories = ["evaluation evidence"]
+is_a = ["evidence"]
+part_of = ["evaluation attempt record"]
+
+[[terms]]
+name = "evaluation attempt record"
+definition = """
+The immutable versioned record of one evaluation attempt, including its plan,
+ordered membership, execution context, sample evaluation records,
+completeness, and validity. It is the authoritative source for publication,
+replay, comparison, and derived analysis."""
+exported_symbols = [
+  "dr_code.evaluation.EvaluationAttemptRecord",
+  "dr_code.evaluation.EvaluationMemberRecord",
+]
+categories = ["evaluation evidence"]
+is_a = ["evidence"]
+
+[[terms]]
+name = "evaluation projection"
+definition = """
+A versioned table, summary, or aggregate derived from an authoritative attempt
+record. It is deterministic given that record and a supported implementation,
+but is not an independent source of evaluation truth."""
+categories = ["evaluation analysis"]
+
+[[terms]]
+name = "evaluation replay"
+definition = """
+A new attempt from frozen samples or frozen candidates, available only when its
+evidence and recorded definitions are supported. It records its mode and current
+execution context and never rewrites its source record."""
+exported_symbols = [
+  "dr_code.evaluation.ReplayUnavailable",
+  "dr_code.evaluation.ReplayReady",
+  "dr_code.evaluation.preflight_replay",
+  "dr_code.evaluation.replay_evaluation_attempt",
+]
+categories = ["evaluation analysis"]
+
+[[terms]]
+name = "structural evaluation comparison"
+definition = """
+An identity-aware comparison of two attempt records that reports membership,
+ordering, and exact changed-or-unchanged status, with denominators for supported
+projection comparisons. It makes no benchmark or statistical judgment."""
+exported_symbols = [
+  "dr_code.evaluation.StructuralEvaluationComparison",
+  "dr_code.evaluation.StructuralMemberIdentity",
+  "dr_code.evaluation.compare_evaluation_attempts",
+]
+categories = ["evaluation analysis"]
+
+[[terms]]
+name = "evaluation batch"
+definition = """
+A finite reusable operation that evaluates ordered membership through
+preprocessing, candidate materialization, cache prefetch, bounded execution,
+metrics, record publication, and projections. It owns evaluation semantics, not
+durable scheduling or experiment policy."""
+exported_symbols = [
+  "dr_code.evaluation.evaluate_batch",
+  "dr_code.evaluation.evaluate_durable_partition",
+]
+categories = ["evaluation execution"]
+
+[[terms]]
+name = "evaluation bundle"
+definition = """
+An immutable artifact-bundle publication whose versioned dr-code payload and
+artifact schemas identify one evaluation attempt record and its included
+projections. It uses portable references and relative artifact names rather
+than machine-specific paths."""
+exported_symbols = [
+  "dr_code.evaluation.read_evaluation_projection",
+  "dr_code.evaluation.restore_evaluation_attempt",
+  "dr_code.evaluation.audit_evaluation_bundle",
+]
+categories = ["evaluation publication"]
+
+[[terms]]
+name = "evaluation execution path"
+definition = """
+The canonical bounded path that turns one materialized candidate and its
+ordered evaluator suites into one process-bound job, interprets the typed
+outcome, and preserves candidate, harness, and executor attribution. Standalone
+and durable orchestration use the same path; executor construction is caller
+provisioning rather than another route."""
+exported_symbols = [
+  "dr_code.evaluation.evaluate_batch",
+  "dr_code.evaluation.evaluate_durable_partition",
+  "dr_code.humaneval.evaluate_humaneval_candidate_job",
+]
+categories = ["evaluation execution"]
+part_of = ["evaluation batch"]
+
+[[terms]]
 name = "trace value"
 definition = """
 One named observation in a trace, represented as either an artifact or an
 explicit absence."""
 exported_symbols = ["dr_code.trace.TraceValue"]
+categories = ["preprocessing"]
+part_of = ["trace"]
 
 [[terms]]
 name = "artifact"
@@ -79,6 +282,8 @@ exported_symbols = [
   "dr_code.trace.deserialize_trace",
   "dr_code.trace.external_trace",
 ]
+categories = ["evaluation evidence", "preprocessing"]
+is_a = ["evidence"]
 
 [[terms]]
 name = "preprocessing definition"
@@ -116,15 +321,17 @@ exported_symbols = [
 ]
 
 [[terms]]
-name = "checkpointed execution cache"
+name = "windowed execution cache"
 definition = """
-An execution-outcome memoization layer that bulk-loads planned requests as
-explicit hits or misses and periodically persists newly computed outcomes as
-schema-qualified atomic batches scoped to a declared runtime identity."""
+An execution-observation memoization layer that reads planned request keys in
+bounded windows, retains bounded resident and checkpoint state, and preserves
+the source-record provenance required to distinguish reuse from a new process
+execution."""
 exported_symbols = [
-  "dr_code.caching.CheckpointedExecutionCache",
+  "dr_code.caching.WindowedExecutionCache",
   "dr_code.caching.ExecutionCacheStats",
 ]
+categories = ["evaluation execution"]
 
 [[terms]]
 name = "metric question"
@@ -148,19 +355,23 @@ exported_symbols = [
 part_of = ["evaluation procedure"]
 
 [[terms]]
-name = "metric fact"
+name = "metric value"
 definition = """
 A named measured or observed value with an explicit unit; floating-point
-values must be finite."""
+values must be finite. Its metric record supplies the identity and context
+needed to interpret the value as part of evidence."""
 exported_symbols = [
-  "dr_code.metrics.MetricFact",
-  "dr_code.metrics.MetricFactUnit",
+  "dr_code.metrics.MetricValue",
+  "dr_code.metrics.MetricValueUnit",
+  "dr_code.metrics.MetricValueCoordinate",
 ]
+categories = ["metrics"]
+part_of = ["metric record"]
 
 [[terms]]
 name = "metric record"
 definition = """
-The self-identifying answer to one metric question: measured facts, an
+The self-identifying answer to one metric question: measured metric values, an
 explicit not-applicable absence, or an operator failure."""
 exported_symbols = [
   "dr_code.metrics.MetricRecord",
@@ -170,6 +381,8 @@ exported_symbols = [
   "dr_code.metrics.OperatorFailureRecord",
   "dr_code.metrics.RecordStatus",
 ]
+categories = ["evaluation evidence", "metrics"]
+is_a = ["evidence"]
 
 [[terms]]
 name = "evaluation procedure"
@@ -193,13 +406,14 @@ exported_symbols = [
 [[terms]]
 name = "aggregation policy"
 definition = """
-The declared metric question, fact, statistic, and separate treatment of
+The declared metric question, metric value, statistic, and separate treatment of
 not-applicable and operator-failure records used for reduction."""
 exported_symbols = [
   "dr_code.evaluation.AggregationPolicy",
   "dr_code.evaluation.AggregationStatistic",
   "dr_code.evaluation.NotApplicablePolicy",
 ]
+categories = ["evaluation analysis", "metrics"]
 part_of = ["evaluation plan"]
 
 [[terms]]
@@ -216,16 +430,20 @@ exported_symbols = [
   "dr_code.evaluation.AggregationNonFinite",
   "dr_code.evaluation.aggregate",
 ]
+categories = ["evaluation analysis", "metrics"]
+is_a = ["evaluation projection"]
 
 [[terms]]
 name = "score"
 definition = """
 A finite non-text measurement under an evaluation coordinate that names the
-unique metric facts from which it derives."""
+unique metric values from which it derives."""
 exported_symbols = [
   "dr_code.evaluation.Score",
   "dr_code.evaluation.EvaluationCoordinate",
 ]
+categories = ["evaluation analysis", "metrics"]
+is_a = ["evaluation projection"]
 
 [[terms]]
 name = "HumanEval task"
@@ -238,33 +456,23 @@ exported_symbols = [
 ]
 
 [[terms]]
-name = "HumanEval submission score"
+name = "HumanEval submission result"
 definition = """
-A discriminated result that separates a completed submission outcome from
-evaluation-harness failure."""
+A benchmark-specific evaluation projection that separates a completed
+submission outcome and score from evaluation-harness failure."""
 exported_symbols = [
-  "dr_code.humaneval.HumanEvalSubmissionScore",
+  "dr_code.humaneval.HumanEvalSubmissionResult",
   "dr_code.humaneval.HumanEvalSubmissionRequest",
-  "dr_code.humaneval.CompletedScore",
+  "dr_code.humaneval.CompletedSubmissionResult",
   "dr_code.humaneval.HarnessFailure",
   "dr_code.humaneval.SubmissionOutcome",
+  "dr_code.humaneval.project_humaneval_submission",
+  "dr_code.humaneval.project_humaneval_submissions_batch",
   "dr_code.humaneval.score_humaneval_submission",
   "dr_code.humaneval.score_humaneval_submissions_batch",
 ]
-
-[[terms]]
-name = "execution runner"
-definition = """
-A capability that evaluates a Python driver against a JSON request under
-finite wall-clock, input, and output budgets, then classifies completion as
-candidate behavior or execution-infrastructure failure."""
-exported_symbols = [
-  "dr_code.core.execution.executor.CompletedPythonProcess",
-  "dr_code.core.execution.executor.build_python_execution_job",
-  "dr_code.core.execution.executor.run_python_source",
-  "dr_code.core.execution.executor.interpret_completed_execution",
-  "dr_code.core.execution.executor.host_process_executor",
-]
+categories = ["benchmark evaluation", "evaluation analysis"]
+is_a = ["evaluation projection"]
 
 [[terms]]
 name = "synthetic corruption"
@@ -286,14 +494,17 @@ exported_symbols = [
 [[terms]]
 name = "synthetic sample"
 definition = """
-A known solution paired with corrupted source and identified by its HumanEval
-task, complete recipe coordinate, and generation seed."""
+An evaluation sample pairing a known solution with corrupted source and
+identified by its HumanEval task, complete recipe coordinate, and generation
+seed."""
 exported_symbols = [
   "dr_code.synthetic.models.SyntheticSample",
   "dr_code.synthetic.models.SyntheticSampleCoordinate",
   "dr_code.synthetic.build_sample",
   "dr_code.synthetic.build_dataset",
 ]
+categories = ["evaluation evidence", "synthetic data"]
+is_a = ["evaluation sample"]
 
 [[terms]]
 name = "viewer primitive"

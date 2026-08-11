@@ -8,7 +8,7 @@ from typing import Annotated, Literal, Self, TypeAlias
 from pydantic import Field, model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.coordinates import CandidateCoordinate
+from dr_code.evaluation.identity import EvaluationCandidateIdentity
 from dr_code.evaluation.plan import (
     AggregationPolicy,
     AggregationStatistic,
@@ -16,7 +16,6 @@ from dr_code.evaluation.plan import (
 )
 from dr_code.metrics import (
     MeasuredRecord,
-    MetricQuestionCoordinate,
     MetricRecord,
     NotApplicableRecord,
     OperatorFailureRecord,
@@ -24,7 +23,7 @@ from dr_code.metrics import (
 
 
 class AggregationSlot(FrozenModel):
-    candidate: CandidateCoordinate
+    candidate: EvaluationCandidateIdentity
     record: MetricRecord | None = None
 
 
@@ -55,22 +54,6 @@ class AggregationStatus(StrEnum):
     NON_FINITE = "non_finite"
 
 
-class FactCoordinate(FrozenModel):
-    question: MetricQuestionCoordinate
-    fact: str
-
-    @model_validator(mode="after")
-    def validate_fact_name(self) -> Self:
-        if not self.fact:
-            raise ValueError("a fact coordinate must name a fact")
-        if "." in self.fact:
-            raise ValueError(
-                f"fact name {self.fact!r} must not contain '.': no metric "
-                "fact can carry a dotted name"
-            )
-        return self
-
-
 class AggregationOk(FrozenModel):
     status: Literal[AggregationStatus.OK] = AggregationStatus.OK
     value: float
@@ -86,7 +69,7 @@ class AggregationOk(FrozenModel):
 
 class AggregationMissing(FrozenModel):
     status: Literal[AggregationStatus.MISSING] = AggregationStatus.MISSING
-    missing: tuple[CandidateCoordinate, ...]
+    missing: tuple[EvaluationCandidateIdentity, ...]
 
     @model_validator(mode="after")
     def validate_missing(self) -> Self:
@@ -99,7 +82,7 @@ class AggregationNotApplicable(FrozenModel):
     status: Literal[AggregationStatus.NOT_APPLICABLE] = (
         AggregationStatus.NOT_APPLICABLE
     )
-    refused: tuple[CandidateCoordinate, ...]
+    refused: tuple[EvaluationCandidateIdentity, ...]
 
     @model_validator(mode="after")
     def validate_refused(self) -> Self:
@@ -157,7 +140,7 @@ def aggregate(request: AggregationInput) -> AggregationResult:
     if missing:
         return AggregationMissing(missing=missing)
 
-    refused: list[CandidateCoordinate] = []
+    refused: list[EvaluationCandidateIdentity] = []
     values: list[float] = []
     excluded = 0
     for slot in request.slots:
@@ -227,10 +210,12 @@ def _by_policy(rule: NotApplicablePolicy) -> _SlotOutcome:
 def _measured_contribution(
     record: MeasuredRecord, policy: AggregationPolicy
 ) -> _SlotOutcome:
-    for fact in record.facts:
-        if fact.name == policy.fact:
-            return _Counted(value=_numeric(fact.name, fact.value))
-    raise ValueError(f"measured record carries no fact named {policy.fact!r}")
+    for value in record.values:
+        if value.name == policy.value:
+            return _Counted(value=_numeric(value.name, value.value))
+    raise ValueError(
+        f"measured record carries no value named {policy.value!r}"
+    )
 
 
 def _numeric(name: str, value: object) -> float:
@@ -242,7 +227,7 @@ def _numeric(name: str, value: object) -> float:
         except OverflowError:
             return math.inf if value > 0 else -math.inf
     raise ValueError(
-        f"fact {name!r} has non-numeric value {value!r} and cannot be "
+        f"metric value {name!r} has non-numeric value {value!r} and cannot be "
         "aggregated"
     )
 
@@ -305,6 +290,5 @@ __all__ = [
     "AggregationResult",
     "AggregationSlot",
     "AggregationStatus",
-    "FactCoordinate",
     "aggregate",
 ]

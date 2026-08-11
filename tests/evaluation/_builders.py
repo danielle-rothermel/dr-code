@@ -6,19 +6,20 @@ from dr_code.evaluation import (
     AggregationPolicy,
     AggregationSlot,
     AggregationStatistic,
-    CandidateCoordinate,
+    EvaluationCandidateIdentity,
+    EvaluationSampleIdentity,
+    EvaluationSlotIdentity,
     DatasetCoordinate,
     EvaluationProcedure,
     RepeatPlan,
     RepeatPlanCoordinate,
-    SampleCoordinate,
     TaskSet,
     TaskSetCoordinate,
 )
 from dr_code.metrics import (
     MeasuredRecord,
-    MetricFact,
-    MetricFactUnit,
+    MetricValue,
+    MetricValueUnit,
     MetricName,
     MetricQuestion,
     MetricQuestionCoordinate,
@@ -41,7 +42,7 @@ from dr_code.trace import (
 TASK_SET_ID = "task-set"
 REPEAT_PLAN_ID = "repeat-plan"
 PLAN_ID = "plan"
-FACT_NAME = "char_count"
+VALUE_NAME = "char_count"
 
 
 def dataset(**overrides: object) -> DatasetCoordinate:
@@ -89,12 +90,12 @@ def repeat_plan(**overrides: object) -> RepeatPlan:
     )
 
 
-def sample(**overrides: object) -> SampleCoordinate:
-    return SampleCoordinate(
+def evaluation_slot(**overrides: object) -> EvaluationSlotIdentity:
+    return EvaluationSlotIdentity(
         **{
             "task_set": task_set_coordinate(),
             "repeat_plan": repeat_plan_coordinate(),
-            "task": "t0",
+            "task_id": "t0",
             "repeat_index": 0,
             **overrides,
         }
@@ -122,10 +123,14 @@ def preprocessing_coordinate(
     )
 
 
-def candidate(**overrides: object) -> CandidateCoordinate:
-    return CandidateCoordinate(
+def sample_identity(**overrides: object) -> EvaluationSampleIdentity:
+    return EvaluationSampleIdentity(**{"sample_id": "sample-0", **overrides})
+
+
+def candidate(**overrides: object) -> EvaluationCandidateIdentity:
+    return EvaluationCandidateIdentity(
         **{
-            "sample": sample(),
+            "sample": sample_identity(),
             "preprocessing": preprocessing_coordinate(),
             "candidate_ordinal": 0,
             **overrides,
@@ -187,7 +192,7 @@ def policy(**overrides: object) -> AggregationPolicy:
     return AggregationPolicy(
         **{
             "question": question_coordinate(),
-            "fact": FACT_NAME,
+            "value": VALUE_NAME,
             "statistic": AggregationStatistic.MEAN,
             **overrides,
         }
@@ -216,14 +221,14 @@ def record_identity(**overrides: object) -> MetricRecordIdentity:
 def measured(
     value: float | int | bool = 1,
     *,
-    name: str = FACT_NAME,
-    unit: MetricFactUnit = MetricFactUnit.COUNT,
+    name: str = VALUE_NAME,
+    unit: MetricValueUnit = MetricValueUnit.COUNT,
     **overrides: object,
 ) -> MeasuredRecord:
     return MeasuredRecord(
         **{
             "identity": record_identity(),
-            "facts": (MetricFact(name=name, value=value, unit=unit),),
+            "values": (MetricValue(name=name, value=value, unit=unit),),
             **overrides,
         }
     )

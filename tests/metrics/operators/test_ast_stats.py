@@ -113,4 +113,4 @@ def test_ast_stats_raises_on_unparseable_code_instead_of_fabricating_zeros() -> 
     record = _extract(definition, trace)[0]
     assert record.status.value == "operator_failure"
     assert record.identity.question.metric is MetricName.AST_STATS
-    assert not hasattr(record, "facts")
+    assert not hasattr(record, "values")

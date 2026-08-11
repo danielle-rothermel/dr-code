@@ -41,14 +41,24 @@ from dr_exec import (
     SpawnFailedOutcome,
     UntrustedPythonTarget,
 )
+from dr_serialize import (
+    IdentityDocument,
+    build_identity_document,
+    validate_identity_document,
+)
 
 _LOCAL_BOOTSTRAP = (
     "\n"
     "import json as _stub_json\n"
     "import sys as _stub_sys\n"
+    "_stub_results = _stub_sys.stdout\n"
+    "_stub_sys.stdout = _stub_sys.stderr\n"
+    "def _stub_emit(_document):\n"
+    "    _stub_results.write(_stub_json.dumps(_document) + '\\n')\n"
+    "    _stub_results.flush()\n"
     "dr_exec_main(\n"
     "    _stub_json.loads(_stub_sys.stdin.buffer.read().decode('utf-8')),\n"
-    "    lambda _document: None,\n"
+    "    _stub_emit,\n"
     ")\n"
 )
 
@@ -96,6 +106,7 @@ def completed_execution(
     stdout: str = "",
     stderr: str = "",
     outcome: ExecutionOutcome | None = None,
+    protocol_outputs: tuple[IdentityDocument, ...] = (),
 ) -> CompletedExecution:
     if outcome is None:
         outcome = (
@@ -113,7 +124,7 @@ def completed_execution(
             execution_id=execution_id,
             outcome=outcome,
             attribution=_attribute(outcome),
-            protocol_outputs=(),
+            protocol_outputs=protocol_outputs,
             payload_outputs=PayloadOutputs(
                 stdout=_stream(stdout.encode("utf-8")),
                 stderr=_stream(stderr.encode("utf-8")),
@@ -210,7 +221,32 @@ def local_python_executor() -> FakeExecutor:
             returncode=completed.returncode,
             stdout=completed.stdout,
             stderr=completed.stderr,
+            protocol_outputs=tuple(
+                validate_identity_document(json.loads(line))
+                for line in completed.stdout.splitlines()
+                if line
+            ),
         )
+
+    return FakeExecutor(responder=respond)
+
+
+def importable_json_executor() -> FakeExecutor:
+    """Run the installed HumanEval entry point without a real-time subprocess."""
+
+    def respond(job: ExecutionJob, cancellation: object) -> CompletedExecution:
+        del cancellation
+        from dr_code.humaneval.job import evaluate_humaneval_candidate_job
+
+        target = job.target
+        assert isinstance(target, UntrustedPythonTarget)
+        result = evaluate_humaneval_candidate_job(target.request.payload)
+        output = build_identity_document(
+            schema="dr_exec.importable_json",
+            schema_version=1,
+            payload=result,
+        )
+        return completed_execution(job, protocol_outputs=(output,))
 
     return FakeExecutor(responder=respond)
 

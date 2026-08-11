@@ -82,21 +82,21 @@ def test_policy_defaults_exclude_not_applicable_and_fail_on_error() -> None:
     assert built.operator_failure is NotApplicablePolicy.FAIL
 
 
-def test_policy_rejects_an_empty_fact_name() -> None:
-    with pytest.raises(ValidationError, match="must name a fact"):
-        policy(fact="")
+def test_policy_rejects_an_empty_value_name() -> None:
+    with pytest.raises(ValidationError, match="must name a metric value"):
+        policy(value="")
 
 
 @pytest.mark.parametrize("name", ("x.unit", "char_count.unit"))
-def test_policy_rejects_a_dotted_fact_name(name: str) -> None:
+def test_policy_rejects_a_dotted_value_name(name: str) -> None:
     with pytest.raises(ValidationError, match="must not contain"):
-        policy(fact=name)
+        policy(value=name)
 
 
 def test_policy_fields_are_exactly_the_minimal_surface() -> None:
     assert set(AggregationPolicy.model_fields) == {
         "question",
-        "fact",
+        "value",
         "statistic",
         "not_applicable",
         "operator_failure",

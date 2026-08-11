@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import re
+import shlex
 import tomllib
 from pathlib import Path
 
@@ -108,3 +109,8 @@ def test_contract_entries_have_unique_complete_shapes() -> None:
             isinstance(value, str) and value.strip()
             for value in entry.values()
         )
+        for token in shlex.split(entry.get("check", "")):
+            if token.startswith(("scripts/", "tests/")):
+                assert (ROOT / token).exists(), (
+                    f"contract check path does not exist: {token}"
+                )

@@ -61,7 +61,7 @@ def _extract(definition, trace, **kwargs):
 
 def _facts(record):
     assert record.status.value == "measured", record
-    return {fact.name: fact.value for fact in record.facts}
+    return {value.name: value.value for value in record.values}
 
 
 def _value(record, key):

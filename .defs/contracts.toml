@@ -42,19 +42,19 @@ date = "2026-08-05"
 check = "uv run pytest tests/core/test_package_layout.py"
 
 [[contracts]]
-title = "Traces are complete defensive snapshots"
+title = "Traces are complete defensive evidence"
 statement = """
-Every trace contains input and output, accepts only typed artifacts or
-explicit absences, records a validated producer, and returns projections that
-cannot mutate its stored snapshot."""
+Every trace is immutable self-describing evidence that contains input and
+output, accepts only typed artifacts or explicit absences, records a validated
+producer, and exposes only projections that cannot mutate its stored snapshot."""
 rationale = """
 Missing wiring must remain distinguishable from failed computation, and
 caller mutation must not rewrite evidence after capture."""
-date = "2026-08-05"
+date = "2026-08-09"
 check = "uv run pytest tests/trace/test_trace.py tests/trace/test_facts.py"
 
 [[contracts]]
-title = "Persisted observations are self-describing"
+title = "Persisted evidence is self-describing"
 statement = """
 Serialized traces and metric records carry fixed schema versions and their
 resolved producer, definition, component, question, and settings identity;
@@ -63,7 +63,7 @@ rationale = """
 Recorded evidence must remain interpretable after registries or accepted
 settings change. Resolving persisted identity through live registries would
 make history depend on current code."""
-date = "2026-08-05"
+date = "2026-08-09"
 check = "uv run pytest tests/trace/test_serialization.py tests/metrics/records/test_record_wire_format.py"
 
 [[contracts]]
@@ -74,23 +74,23 @@ artifact-kind wiring before any input runs; declared step failures produce
 explicit absences in a complete trace, while unexpected exceptions escape
 unchanged."""
 rationale = """
-Configuration defects are wiring errors, expected candidate failures are
-evidence, and infrastructure defects must not be mislabeled as candidate
-outcomes."""
-date = "2026-08-05"
+Configuration defects are wiring errors, declared candidate failures are
+recorded as evidence, and infrastructure defects must not be mislabeled as
+candidate outcomes."""
+date = "2026-08-09"
 check = "uv run pytest tests/preprocessing/test_definition.py tests/preprocessing/test_runner.py tests/preprocessing/steps/test_conformance.py"
 
 [[contracts]]
 title = "Metric outcomes are explicit records"
 statement = """
-Metric extraction returns one discriminated record per declared question: a
-measured record with non-empty unique finite facts, a not-applicable record
-carrying the causal absence, or an operator-failure record carrying failure
-type and message."""
+Metric extraction returns one discriminated metric record per declared
+question: a measured record with non-empty unique finite metric values, a
+not-applicable record carrying the causal absence, or an operator-failure
+record carrying failure type and message."""
 rationale = """
 Zero, inapplicability, and computation failure have different meanings and
 cannot share a sentinel without corrupting downstream interpretation."""
-date = "2026-08-05"
+date = "2026-08-09"
 check = "uv run pytest tests/metrics/test_definition.py tests/metrics/records tests/metrics/engine"
 
 [[contracts]]
@@ -109,42 +109,43 @@ check = "uv run pytest tests/evaluation/test_plan.py tests/evaluation/test_wire_
 title = "Aggregation is deterministic over explicit slots"
 statement = """
 Aggregation is registry-free and deterministic over its explicit input slots
-and reports missing input, policy refusal, empty denominator, and non-finite
-computation as distinct typed results."""
+and returns an evaluation projection that reports missing input, policy
+refusal, an empty denominator, and non-finite computation as distinct typed
+results."""
 rationale = """
 Exceptional outcomes are evaluation data, not ambiguous numbers or incidental
-exceptions."""
-date = "2026-08-05"
+exceptions. Classifying the result as a projection keeps the metric records
+from which it derives authoritative."""
+date = "2026-08-09"
 check = "uv run pytest tests/evaluation/test_aggregation.py"
 
 [[contracts]]
-title = "HumanEval evaluation separates outcomes from harness failure"
+title = "HumanEval projections preserve failure attribution"
 statement = """
-HumanEval scoring and code-test metrics preserve candidate-attributable
-execution results as experimental evidence. Trusted support-code
-initialization failures and malformed runner results surface as harness or
-operator failures instead of measured candidate failures. Batch scoring
-extracts every submission, plans all accepted candidates, executes the
-complete request set through one engine call, and returns results in request
-order. Single-submission scoring is the one-element batch convenience."""
+A HumanEval submission result is a benchmark projection derived from sample
+evaluation records. Candidate-attributable outcomes remain candidate execution
+evidence; trusted support-code initialization failures and malformed runner
+results remain harness or operator failures rather than candidate failures.
+Batch scoring returns one result per submission in request order;
+single-submission scoring is the one-item convenience. Public scoring reads the
+authoritative records and never invokes a second execution path."""
 rationale = """
-Incorrect or resource-exhausting candidate code is experimental evidence;
-broken evaluation infrastructure invalidates the measurement. One complete
-execution batch preserves scoring semantics while allowing persistent caches
-to prefetch once and serve the evaluation hot path from memory."""
-date = "2026-08-05"
-check = "uv run pytest tests/humaneval/test_scoring.py tests/humaneval/test_metric_operator.py"
+Incorrect or resource-exhausting candidate code is evidence about candidate
+behavior; broken evaluation infrastructure invalidates the measurement.
+Keeping results derivable prevents a score envelope from replacing the complete
+execution record."""
+date = "2026-08-09"
+check = "uv run pytest tests/humaneval/test_projection.py tests/humaneval/test_metric_operator.py"
 
 [[contracts]]
-title = "Synthetic coordinates determine generated samples"
+title = "Synthetic coordinates determine sample identity"
 statement = """
-A synthetic sample is deterministic for the same HumanEval task, registered
-recipe coordinate, and generation seed, and an altered or unregistered recipe
-cannot impersonate that coordinate."""
+A synthetic evaluation sample is deterministic for its HumanEval task,
+registered recipe coordinate, and generation seed; an altered or unregistered
+recipe cannot claim the same identity."""
 rationale = """
-Datasets must be reproducible from their recorded identities rather than
-ambient registry state."""
-date = "2026-08-05"
+Recorded identities, not ambient registry state, make datasets reproducible."""
+date = "2026-08-09"
 check = "uv run pytest tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
 
 [[contracts]]
@@ -155,15 +156,16 @@ budgets and a fixed environment grant, and production executor construction
 requires an explicit Python executable. Exited, signaled, wall-time, and
 payload-output outcomes have fixed mappings; payload-owned protocol failures
 map to candidate-attributable kills; every other outcome fails closed as an
-executor failure."""
+executor failure. Candidate execution records preserve this closed
+interpretation."""
 rationale = """
 Evaluating model-produced source remains an adversarial boundary. Under
 dr-exec the subprocess retains the invoking worker's permissions and worker
 isolation is the deployment boundary, so bounded budgets and one closed
-mapping are what keep candidate evidence separate from broken
+mapping are what keep candidate execution records separate from broken
 infrastructure."""
-date = "2026-08-06"
-check = "uv run pytest tests/core/execution/test_executor.py"
+date = "2026-08-09"
+check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
 title = "Preprocessing trace cache entries match their requests"
@@ -197,27 +199,278 @@ date = "2026-08-05"
 [[contracts]]
 title = "Execution cache persistence is scoped and checkpointed"
 statement = """
-A persistent execution cache bulk-loads each planned request key at most once
-through a batch read that returns an explicit hit or miss for every distinct
-key, then serves point reads and writes from memory. Persistent keys include the
-opaque request key, the full digest of a mandatory caller-owned runtime
-identity, and the versioned execution-cache namespace. Strictly invalid records
-are observable misses. One background writer task keeps at most one atomic
-batch of schema-qualified records in flight, coalesces later outcomes, retains
-failed batches for a later checkpoint, and attempts a final checkpoint during
-normal close. Persistent failures never fail evaluation. The caller uses
+A persistent execution cache reads distinct request keys in bounded windows
+that return an explicit hit or miss for every key, then serves point reads and
+writes from a bounded memory window. Clean outcomes may be evicted after their
+dependent records are assembled. Persistent keys include the opaque request
+key, the full digest of a mandatory caller-owned runtime identity, and the
+versioned execution-cache namespace. Strictly invalid records are observable
+misses. One background writer keeps at most one bounded atomic batch in flight,
+coalesces later outcomes within one bounded pending batch, and leaves additional
+outcomes memory-only rather than growing persistence state. It attempts a final
+checkpoint during normal close. A failed checkpoint remains observable but
+never creates unbounded retry state or fails evaluation. The caller uses
 persistent reuse only for workloads whose outcomes it treats as stable within
-the runtime scope and coordinates one active writer for that scope; concurrent
-writers are unsupported because the cache does not reconcile a different first-writer
-winner."""
+the runtime scope and coordinates one active writer for that scope."""
 rationale = """
-Bulk boundaries keep storage latency off the execution hot path, runtime scope
-prevents reuse across ambient behavior changes absent from the request, strict
-restoration prevents malformed data from becoming evidence, and retryable
-checkpoint state preserves best-effort durability without coupling evaluation
-success to cache availability. Arbitrary candidate code can depend on time,
-randomness, environment, or contention, so stable-outcome selection and
-single-writer coordination remain explicit caller policy rather than an
-unsupported storage guarantee."""
-date = "2026-08-06"
+Bounded windows keep storage latency and total membership out of the execution
+hot path without retaining every outcome in memory. Runtime scope prevents
+reuse across ambient behavior changes, strict restoration prevents malformed
+data from becoming evidence, and bounded best-effort checkpointing cannot turn
+storage failure into memory growth or evaluation failure."""
+date = "2026-08-09"
 check = "uv run pytest tests/caching/test_execution_cache.py"
+
+[[contracts]]
+title = "Evaluation uses one bounded execution path"
+statement = """
+Every production code evaluation reaches execution through one dr-code path
+over the released dr-exec job and scheduling primitives. One job evaluates one
+materialized candidate. A HumanEval job loads one candidate namespace once and
+evaluates all ordered requested function/test groups there; multiple CodeTest
+questions are ordered suites with per-suite settings under one finite aggregate
+job budget. Multiple candidates or evaluation samples never share a job.
+Standalone batches bound concurrency; durable application work invokes
+candidate jobs serially within its bounded attempt partition without nesting
+schedulers. Every job enforces finite budgets and a fixed environment
+declaration, distinguishes candidate from infrastructure outcomes, and retains
+portable execution-record identity. This path is not an operating-system
+sandbox."""
+rationale = """
+One execution boundary prevents script-specific process behavior and unbounded
+concurrency while preserving candidate-versus-infrastructure attribution."""
+date = "2026-08-09"
+check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py tests/evaluation/test_batch.py"
+
+[[contracts]]
+title = "Evaluation batches bound resident and aggregate work"
+statement = """
+Every evaluation request declares finite attempt, processing-window, and shard
+limits. Attempt limits cover ordered membership, materialized candidates,
+admitted jobs, retained evidence bytes, and requested projection rows. The
+materialized-candidate limit counts all candidates; the admitted-job limit
+counts cache misses actually submitted to or run by an executor. Known
+violations fail before admission. Work discovered after admission proceeds
+through bounded windows and shards; reaching a limit stops new admission and
+yields a partial invalid evaluation attempt record without attributing the
+limit to candidate behavior. Pending jobs, full cache outcomes, record
+assembly, and projection rows do not remain resident in proportion to total
+membership beyond the compact identities and references required for
+authoritative ordering."""
+rationale = """
+Finite per-job budgets and execution concurrency do not bound aggregate work or
+memory. Explicit attempt limits and bounded windows keep a reusable primitive
+safe when applications evaluate large memberships."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_batch_limits.py tests/evaluation/test_resident_bounds.py"
+
+[[contracts]]
+title = "Evaluation attempt records are authoritative"
+statement = """
+An evaluation attempt record preserves the versioned evidence and ordered
+membership needed for interpretation. Each projection names its source record
+and versioned definition and is deterministic given both and a supported
+implementation. Projections neither replace evidence nor supply identity absent
+from the source record. They retain identities, measurements, and portable
+evidence references without repeating raw input, trace, candidate, request, or
+execution-output payloads."""
+rationale = """
+Projections intentionally discard structure. Keeping them derivable prevents
+publication formats from becoming lossy domain contracts without embedding
+executable algorithms or supporting every historical version indefinitely."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_record_wire_format.py tests/evaluation/test_projections.py"
+
+[[contracts]]
+title = "Evaluation bundles are portable and closed"
+statement = """
+Every evaluation bundle uses the released dr-store artifact-bundle integrity
+envelope, with an evaluation format marker, closed versioned dr-code manifest,
+and versioned artifact schemas. One bundle publishes one bounded evaluation
+attempt, never one evaluation sample, candidate execution, or durable member
+operation. The manifest identifies the authoritative attempt record and
+included projections through portable references without machine-specific
+absolute paths. Bundle-local evidence and reference indexes use declared
+bounded shards. Attempt records use explicit closed variants for bundle-local
+artifact references and content-addressed stored-record references; readers
+never infer a reference kind from byte size, path, or availability. Readers
+validate the bundle envelope and each selected artifact's schema and source
+binding, rejecting unknown fields and unsupported versions. Each projection
+carries its own source-attempt binding because released selective artifact
+reads do not expose the manifest payload. Restoration bounds reference counts
+and sequential ObjectStore reads and validates closed schemas after decode; it
+does not claim a pre-decode byte, depth, or allocation bound that released
+ObjectStore reads do not provide. Restoration verifies evidence while consuming
+it rather than first performing a separate full audit. Restoring or auditing an
+attempt validates the full record; reading one projection does not."""
+rationale = """
+The storage envelope proves byte integrity and completeness, not evaluation
+meaning; versioned domain schemas and portable references make restored
+artifacts interpretable without eager full-record reads."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_bundle_wire_format.py tests/evaluation/test_bundle_reading.py tests/evaluation/test_bundle_audit.py"
+
+[[contracts]]
+title = "Evaluation replay preserves provenance"
+statement = """
+Replay names its source attempt record and selects sample or
+materialized-candidate mode. Sample replay requires frozen samples and support
+for the recorded preprocessing definition. Candidate replay requires ordered
+candidates in a supported schema and bypasses rather than reproduces
+preprocessing. A successful replay creates a new immutable attempt record with
+its current runtime identity, cache scope, and candidate execution records; it
+never changes or fills its source. Unsupported source evidence remains
+inspectable; replay preflight returns a typed unavailable result and creates no
+new attempt record. Malformed or internally inconsistent source evidence is a
+validation error."""
+rationale = """
+Explicit source, mode, and current context distinguish re-execution from result
+reuse without requiring legacy implementation or environment archives."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_replay.py"
+
+[[contracts]]
+title = "Structural comparison matches semantic identities"
+statement = """
+Structural comparison aligns records by evaluation slot, evaluation sample,
+preprocessing definition, and evaluation candidate identity. It reports
+matched, added, and removed identities; ordering changes; and exact changed or
+unchanged status for samples, traces, ordered candidates, and metric records.
+Each supported projection comparison reports its population and available
+denominator. It accepts compact attempt records plus an injected evidence
+resolver, short-circuits equal references or content hashes, and resolves only
+matched changed evidence needed for the comparison.
+Unsupported or mismatched projection definitions and versions produce a typed
+not-comparable result. Field-level diffs and arbitrary projection comparison
+are not required."""
+rationale = """
+Position, identity, and content can change independently. Identity-aware
+alignment and explicit denominators expose those differences without turning
+the core into a general diff or analysis engine."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_comparison.py"
+
+[[contracts]]
+title = "Evaluation identity distinguishes plans from samples"
+statement = """
+An evaluation slot identifies only one planned task-and-repeat position. An
+evaluation sample separately carries the stable identity and provenance of the
+realized raw input bound to that slot. An evaluation candidate identity
+composes the evaluation sample identity, the complete resolved preprocessing
+definition identity, and the candidate's ordered position after
+materialization. Raw content, source content, and their hashes never substitute
+for any of those semantic identities."""
+rationale = """
+Planned membership, realized inputs, and materialized candidate occurrences
+answer different attribution questions. Explicit composition supports live
+generation and frozen corpora without guessing identity from equal content or
+ambient ordering."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_identity.py tests/evaluation/test_record_models.py"
+
+[[contracts]]
+title = "Candidate execution records preserve execution provenance"
+statement = """
+Each evaluated materialized candidate produces a record binding its evaluation
+candidate identity, request, runtime identity, cache scope, interpreted dr-exec
+outcome, and optional portable run-record reference. The record identifies the
+outcome as executed or reused. A reused outcome references its source candidate
+execution record and never claims a new process execution. Metric records and
+projections do not replace it."""
+rationale = """
+Scores omit what ran, under which context, and how outcomes were attributed.
+The execution record preserves those bindings independently of projections
+without duplicating referenced data."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_candidate_execution.py tests/caching/test_execution_cache.py"
+
+[[contracts]]
+title = "Every selected input has a sample evaluation record"
+statement = """
+An evaluation attempt record accounts for every ordered evaluation slot and
+selected evaluation sample with one sample evaluation record. That record
+composes sample metadata with a complete preprocessing trace whose required
+input is the one authoritative persisted occurrence of the selected raw input,
+plus the ordered materialized candidates, metric records, and candidate
+execution records that exist for it. Zero-candidate, declared absence,
+not-applicable, candidate-failure, operator-failure, harness-failure, and
+executor-failure outcomes remain distinct nested records under one sample
+terminal record, including when outcomes are mixed; they neither collapse into
+one lossy sample status nor disappear from the attempt record."""
+rationale = """
+Flattening only successful measurements silently changes membership and
+denominators. Complete typed records retain attribution through every expected
+and exceptional evaluation outcome."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_record_models.py tests/evaluation/test_batch.py"
+
+[[contracts]]
+title = "Evaluation attempt completeness and validity are explicit"
+statement = """
+An evaluation attempt record separately reports whether every declared member
+reached a typed terminal record and whether the attempt is valid evaluation
+evidence. Candidate-attributable failure, zero candidates, and declared
+inapplicability do not by themselves make a complete attempt invalid. An
+explicit infrastructure or operator failure completes its affected terminal
+record but marks the evaluation attempt invalid; an interrupted member without
+a terminal record makes the attempt partial and invalid. Publication may
+preserve partial or invalid evidence but never presents it as a valid completed
+evaluation."""
+rationale = """
+Evidence can be complete about a failed evaluation without supporting a score.
+Separating completeness, validity, and candidate behavior prevents missing work
+or broken infrastructure from being counted as experimental outcomes."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_record_models.py tests/evaluation/test_batch_limits.py"
+
+[[contracts]]
+title = "Cancellation is not an evaluation outcome"
+statement = """
+Cancellation propagates without being translated into a terminal evaluation
+record. A dr-exec CancelledOutcome becomes asyncio.CancelledError and never
+becomes evidence. Already persisted member records may later contribute to a
+partial evaluation attempt record, but standalone cancellation does not
+guarantee terminal evaluation bundle publication."""
+rationale = """
+Cancellation is caller and scheduler control flow, not candidate behavior or
+evaluation evidence. Translating it would misattribute interrupted work;
+requiring synchronous terminal publication would add lifecycle machinery not
+owned by the evaluation core."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_candidate_execution.py -k cancellation"
+
+[[contracts]]
+title = "Execution composition preserves interpretation"
+statement = """
+The evaluation batch applies one evaluation model to one caller-selected
+bounded partition of explicit ordered membership. Grouping multiple attempts
+and their fan-in remain application policy. Standalone batches and separately
+recovered durable work use the same rules for evaluation sample and evaluation
+candidate identity, metric meaning, ordering, denominators, and failure
+attribution. Each attempt records the operational context needed to interpret
+its outcomes. Concurrency, cache reuse, partitioning, retry, and recovery may
+change candidate behavior and derived results; execution composition does not
+guarantee deterministic outcomes."""
+rationale = """
+Execution placement is operational policy, but candidate code may depend on
+time, randomness, environment, or contention. Preserving interpretation keeps
+local and durable evidence comparable without requiring deterministic
+execution."""
+date = "2026-08-09"
+check = "uv run pytest tests/evaluation/test_batch.py tests/evaluation/test_durable_partition.py"
+
+[[contracts]]
+title = "Evaluation core excludes experiment and workflow policy"
+statement = """
+The evaluation core accepts selected samples or frozen candidates and owns
+preprocessing, candidate materialization, execution interpretation, metrics,
+evaluation records, projections, replay, and structural comparison.
+Model-provider and prompt work, experiment membership and acceptance,
+statistical analysis, and durable workflow scheduling and fan-in remain
+outside the core. Application and workflow adapters invoke the same boundary."""
+rationale = """
+Keeping provider, optimizer, statistical, and scheduling policy with existing
+owners preserves reusable evaluation semantics and prevents another experiment
+framework."""
+date = "2026-08-09"
+check = "uv run pytest tests/core/test_package_layout.py"

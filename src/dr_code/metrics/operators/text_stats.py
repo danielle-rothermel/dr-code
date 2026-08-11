@@ -11,7 +11,7 @@ from dr_code.metrics.operators.base import (
     artifact_text,
 )
 from dr_code.metrics.settings import OperatorSettings
-from dr_code.metrics.units import MetricFactUnit
+from dr_code.metrics.units import MetricValueUnit
 from dr_code.core.source.text_analysis import OPERATOR_CHARS, WORD_RE
 from dr_code.trace import Artifact, ArtifactKind
 
@@ -20,14 +20,14 @@ _TEXT_ENCODING = "utf-8"
 
 class TextStatsResult(OperatorResult):
     UNITS = {
-        "character_count": MetricFactUnit.CHARACTERS,
-        "byte_count": MetricFactUnit.BYTES,
-        "line_count": MetricFactUnit.LINES,
-        "nonempty_line_count": MetricFactUnit.LINES,
-        "word_count": MetricFactUnit.COUNT,
-        "average_word_length": MetricFactUnit.CHARACTERS,
-        "punctuation_count": MetricFactUnit.COUNT,
-        "symbol_count": MetricFactUnit.COUNT,
+        "character_count": MetricValueUnit.CHARACTERS,
+        "byte_count": MetricValueUnit.BYTES,
+        "line_count": MetricValueUnit.LINES,
+        "nonempty_line_count": MetricValueUnit.LINES,
+        "word_count": MetricValueUnit.COUNT,
+        "average_word_length": MetricValueUnit.CHARACTERS,
+        "punctuation_count": MetricValueUnit.COUNT,
+        "symbol_count": MetricValueUnit.COUNT,
     }
 
     character_count: int

@@ -12,7 +12,7 @@ from dr_code.metrics.coordinates import (
     MetricQuestionCoordinate,
     MetricsDefinitionCoordinate,
 )
-from dr_code.metrics.units import MetricFactUnit
+from dr_code.metrics.units import MetricValueUnit
 from dr_code.trace import Absent, TraceProducer
 
 METRIC_RECORD_SCHEMA_VERSION: Final = 1
@@ -27,27 +27,27 @@ class RecordStatus(StrEnum):
 MetricScalar: TypeAlias = float | int | str | bool | None
 
 
-class MetricFact(FrozenModel):
+class MetricValue(FrozenModel):
     name: str
     value: MetricScalar
-    unit: MetricFactUnit
+    unit: MetricValueUnit
 
     @model_validator(mode="after")
     def reject_non_finite_value(self) -> Self:
         if isinstance(self.value, float) and not math.isfinite(self.value):
             raise ValueError(
-                f"metric fact {self.name!r} must be a finite value"
+                f"metric value {self.name!r} must be a finite value"
             )
         return self
 
     @model_validator(mode="after")
     def validate_name(self) -> Self:
         if not self.name:
-            raise ValueError("metric fact name must not be empty")
+            raise ValueError("metric value name must not be empty")
         if "." in self.name:
             raise ValueError(
-                f"metric fact name {self.name!r} must not contain '.': "
-                "the dot separates a fact column from its unit column"
+                f"metric value name {self.name!r} must not contain '.': "
+                "the dot separates a value column from its unit column"
             )
         return self
 
@@ -78,15 +78,15 @@ class MeasuredRecord(FrozenModel):
     schema_version: Literal[1] = METRIC_RECORD_SCHEMA_VERSION
     status: Literal[RecordStatus.MEASURED] = RecordStatus.MEASURED
     identity: MetricRecordIdentity
-    facts: tuple[MetricFact, ...]
+    values: tuple[MetricValue, ...]
 
     @model_validator(mode="after")
-    def validate_facts(self) -> Self:
-        if not self.facts:
-            raise ValueError("measured records require at least one fact")
-        names = [fact.name for fact in self.facts]
+    def validate_values(self) -> Self:
+        if not self.values:
+            raise ValueError("measured records require at least one value")
+        names = [value.name for value in self.values]
         if len(set(names)) != len(names):
-            raise ValueError("measured record fact names must be unique")
+            raise ValueError("measured record value names must be unique")
         return self
 
 
@@ -127,12 +127,12 @@ def record_rows(
         row["question_settings"] = question["settings"]
         row.update(identity)
 
-        facts = row.pop("facts", ())
+        values = row.pop("values", ())
         prefix = str(record.identity.question.metric)
-        for fact in facts:
-            column = f"{prefix}.{fact['name']}"
-            row[column] = fact["value"]
-            row[f"{column}.unit"] = fact["unit"]
+        for value in values:
+            column = f"{prefix}.{value['name']}"
+            row[column] = value["value"]
+            row[f"{column}.unit"] = value["unit"]
         rows.append(row)
     return rows
 
@@ -141,7 +141,7 @@ __all__ = [
     "METRIC_RECORD_ADAPTER",
     "METRIC_RECORD_SCHEMA_VERSION",
     "MeasuredRecord",
-    "MetricFact",
+    "MetricValue",
     "MetricRecord",
     "MetricRecordIdentity",
     "MetricScalar",

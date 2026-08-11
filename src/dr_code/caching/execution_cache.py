@@ -2,23 +2,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from threading import Lock
-from typing import Final, Protocol
+from typing import Final, Literal, Protocol
 
-from dr_serialize import IdentityDocument, identity_document_hash
+from dr_serialize import canonical_json_bytes, identity_document_hash
 from dr_store import CacheEntry, CacheHit, ObjectReference, derive_cache_key
 
-from dr_code.metrics.engine.execution import ExecutionOutcome
+from dr_code.core.models import FrozenModel
+from dr_code.evaluation.identity import EvaluationRuntimeIdentity
+from dr_code.evaluation.records import CandidateExecutionOutcome
+from dr_code.evaluation.references import StoredRecordReference
 
-_EXECUTION_CACHE_NAMESPACE: Final = "dr-code/execution-cache@1"
-_EXECUTION_OUTCOME_SCHEMA: Final = "dr-code/execution-outcome@1"
+CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION: Final = 1
+EXECUTION_CACHE_NAMESPACE: Final = "dr-code/evaluation-execution-v1"
+EXECUTION_CACHE_RECORD_SCHEMA: Final = (
+    "dr-code/cached-execution-observation-v1"
+)
 _LOGGER = logging.getLogger(__name__)
 
 
 class BatchRecordStore(Protocol):
-    """The batch record-store operations required by execution caching."""
+    """The bounded batch record-store operations required by the cache."""
 
     async def get_many(
         self,
@@ -33,10 +38,14 @@ class BatchRecordStore(Protocol):
     ) -> dict[str, ObjectReference]: ...
 
 
+class CachedExecutionObservation(FrozenModel):
+    schema_version: Literal[1] = CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION
+    source_record: StoredRecordReference
+    outcome: CandidateExecutionOutcome
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionCacheStats:
-    """An immutable point-in-time view of execution-cache activity."""
-
     prefetched_entries: int
     memory_hits: int
     memory_misses: int
@@ -47,47 +56,34 @@ class ExecutionCacheStats:
     in_flight: bool
 
 
-class CheckpointedExecutionCache:
-    """Bulk-persistent execution outcomes with a memory-only hot path.
-
-    The runtime identity is caller-owned because it covers behavior outside
-    the request itself, including the Python runtime, harness, and dependency
-    environment. The injected executor is deliberately not persisted. Callers
-    restrict reuse to stable workloads and coordinate one writer per scope;
-    conflicting first-writer winners are not reconciled.
-    """
+class WindowedExecutionCache:
+    """Bounded resident observations with bounded best-effort checkpointing."""
 
     def __init__(
         self,
         store: BatchRecordStore,
         *,
-        runtime_identity: IdentityDocument,
-        checkpoint_entry_count: int = 1_000,
+        runtime: EvaluationRuntimeIdentity,
+        max_resident_entries: int,
+        max_pending_checkpoint_entries: int,
     ) -> None:
-        if not isinstance(runtime_identity, IdentityDocument):
-            raise TypeError("runtime_identity must be an IdentityDocument")
-        if (
-            isinstance(checkpoint_entry_count, bool)
-            or not isinstance(checkpoint_entry_count, int)
-            or checkpoint_entry_count <= 0
-        ):
-            raise ValueError(
-                "checkpoint_entry_count must be a positive integer"
-            )
-
+        _require_positive_int(max_resident_entries, "max_resident_entries")
+        _require_positive_int(
+            max_pending_checkpoint_entries,
+            "max_pending_checkpoint_entries",
+        )
         self._store = store
-        self._runtime_digest = str(identity_document_hash(runtime_identity))
-        self._checkpoint_entry_count = checkpoint_entry_count
-        self._lock = Lock()
+        self._runtime_digest = str(identity_document_hash(runtime.document))
+        self._max_resident_entries = max_resident_entries
+        self._max_pending_checkpoint_entries = max_pending_checkpoint_entries
+        self._resident: dict[str, CachedExecutionObservation | None] = {}
+        self._pending: dict[str, CachedExecutionObservation] = {}
+        self._in_flight_batch: dict[str, CachedExecutionObservation] | None = (
+            None
+        )
         self._checkpoint_event = asyncio.Event()
-        self._outcomes: dict[str, ExecutionOutcome] = {}
-        self._seen_keys: set[str] = set()
-        self._dirty: dict[str, ExecutionOutcome] = {}
-        self._checkpoint_admissions: list[asyncio.Event] = []
-        self._checkpoint_requested = False
         self._closing = False
         self._closed = False
-        self._in_flight = False
         self._prefetched_entries = 0
         self._memory_hits = 0
         self._memory_misses = 0
@@ -96,26 +92,23 @@ class CheckpointedExecutionCache:
         self._checkpoint_failures = 0
         self._writer = asyncio.create_task(
             self._write_checkpoints(),
-            name="dr-code-execution-cache-writer",
+            name="dr-code-windowed-execution-cache-writer",
         )
 
-    async def __aenter__(self) -> CheckpointedExecutionCache:
+    async def __aenter__(self) -> WindowedExecutionCache:
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:
         await self.close()
 
-    async def prefetch(self, keys: Sequence[str]) -> None:
-        """Bulk-load previously unseen keys without affecting evaluation."""
-        with self._lock:
-            self._require_open()
-            unseen: list[str] = []
-            for key in keys:
-                if key in self._seen_keys:
-                    continue
-                self._seen_keys.add(key)
-                unseen.append(key)
-
+    async def prefetch(self, request_keys: Iterable[str], /) -> None:
+        self._require_open()
+        keys = tuple(dict.fromkeys(request_keys))
+        unseen = tuple(key for key in keys if key not in self._resident)
+        if len(self._resident) + len(unseen) > self._max_resident_entries:
+            raise ValueError(
+                "execution cache prefetch exceeds max_resident_entries"
+            )
         if not unseen:
             return
 
@@ -125,81 +118,104 @@ class CheckpointedExecutionCache:
         try:
             hits = await self._store.get_many(
                 tuple(persistent_to_request),
-                schema=_EXECUTION_OUTCOME_SCHEMA,
+                schema=EXECUTION_CACHE_RECORD_SCHEMA,
             )
         except Exception:
             _LOGGER.warning(
                 "execution cache prefetch failed; treating entries as misses",
                 exc_info=True,
             )
-            return
+            hits = {}
 
-        restored: dict[str, ExecutionOutcome] = {}
+        restored: dict[str, CachedExecutionObservation | None] = {}
         for persistent_key, request_key in persistent_to_request.items():
             hit = hits.get(persistent_key)
             if hit is None:
+                restored[request_key] = None
                 continue
             try:
-                restored[request_key] = ExecutionOutcome.model_validate(
-                    hit.record,
-                    strict=True,
+                restored[request_key] = (
+                    CachedExecutionObservation.model_validate_json(
+                        canonical_json_bytes(hit.record),
+                        strict=True,
+                    )
                 )
             except Exception:
                 _LOGGER.warning(
                     "invalid execution cache entry; treating it as a miss",
                     exc_info=True,
                 )
+                restored[request_key] = None
 
-        with self._lock:
-            for key, outcome in restored.items():
-                # A computation that completed while prefetch was in progress
-                # is newer local evidence and must not be overwritten.
-                if key in self._outcomes:
-                    continue
-                self._outcomes[key] = outcome
+        self._require_open()
+        for key, observation in restored.items():
+            if key in self._resident:
+                continue
+            self._resident[key] = observation
+            if observation is not None:
                 self._prefetched_entries += 1
 
-    def get(self, key: str) -> ExecutionOutcome | None:
-        """Return a memory hit or miss without consulting persistence."""
-        with self._lock:
-            self._require_open()
-            self._seen_keys.add(key)
-            outcome = self._outcomes.get(key)
-            if outcome is None:
-                self._memory_misses += 1
-            else:
-                self._memory_hits += 1
-            return outcome
+    def get(self, request_key: str, /) -> CachedExecutionObservation | None:
+        self._require_open()
+        observation = self._resident.get(request_key)
+        if observation is None:
+            self._memory_misses += 1
+        else:
+            self._memory_hits += 1
+        return observation
 
-    async def put(self, key: str, outcome: ExecutionOutcome) -> None:
-        """Update memory and schedule an entry-count checkpoint if needed."""
-        admission: asyncio.Event | None = None
-        with self._lock:
-            self._require_open()
-            self._seen_keys.add(key)
-            self._outcomes[key] = outcome
-            self._dirty[key] = outcome
-            if len(self._dirty) >= self._checkpoint_entry_count:
-                admission = asyncio.Event()
-                self._checkpoint_admissions.append(admission)
-                self._request_checkpoint()
-        if admission is not None:
-            await admission.wait()
+    async def put(
+        self,
+        request_key: str,
+        observation: CachedExecutionObservation,
+        /,
+    ) -> None:
+        self._require_open()
+        if (
+            request_key not in self._resident
+            and len(self._resident) >= self._max_resident_entries
+        ):
+            raise ValueError(
+                "execution cache put exceeds max_resident_entries"
+            )
+        self._resident[request_key] = observation
 
-    def checkpoint(self) -> None:
-        """Schedule all currently dirty entries for background persistence."""
-        with self._lock:
-            self._require_open()
-            self._request_checkpoint()
+        if request_key in self._pending:
+            self._pending[request_key] = observation
+        elif len(self._pending) < self._max_pending_checkpoint_entries:
+            self._pending[request_key] = observation
+        if (
+            len(self._pending) >= self._max_pending_checkpoint_entries
+            and self._in_flight_batch is None
+        ):
+            self._checkpoint_event.set()
+
+    def discard(self, request_key: str, /) -> None:
+        self._require_open()
+        self._resident.pop(request_key, None)
+
+    def stats(self) -> ExecutionCacheStats:
+        return ExecutionCacheStats(
+            prefetched_entries=self._prefetched_entries,
+            memory_hits=self._memory_hits,
+            memory_misses=self._memory_misses,
+            dirty_entries=len(self._pending)
+            + (
+                0
+                if self._in_flight_batch is None
+                else len(self._in_flight_batch)
+            ),
+            checkpoint_batches=self._checkpoint_batches,
+            checkpoint_entries=self._checkpoint_entries,
+            checkpoint_failures=self._checkpoint_failures,
+            in_flight=self._in_flight_batch is not None,
+        )
 
     async def close(self) -> None:
-        """Drain one final checkpoint and stop the writer task."""
-        with self._lock:
-            if self._closed:
-                return
-            if not self._closing:
-                self._closing = True
-                self._request_checkpoint()
+        if self._closed:
+            return
+        self._closing = True
+        self._checkpoint_event.set()
         cancellation: asyncio.CancelledError | None = None
         while True:
             try:
@@ -216,39 +232,18 @@ class CheckpointedExecutionCache:
                 except BaseException as writer_error:
                     raise cancellation from writer_error
                 raise cancellation
-            except BaseException as error:
-                if cancellation is not None:
-                    raise cancellation from error
-                raise
             if cancellation is not None:
                 raise cancellation
             return
 
-    def stats(self) -> ExecutionCacheStats:
-        with self._lock:
-            return ExecutionCacheStats(
-                prefetched_entries=self._prefetched_entries,
-                memory_hits=self._memory_hits,
-                memory_misses=self._memory_misses,
-                dirty_entries=len(self._dirty),
-                checkpoint_batches=self._checkpoint_batches,
-                checkpoint_entries=self._checkpoint_entries,
-                checkpoint_failures=self._checkpoint_failures,
-                in_flight=self._in_flight,
-            )
-
     def _persistent_key(self, request_key: str) -> str:
         return derive_cache_key(
-            _EXECUTION_CACHE_NAMESPACE,
+            EXECUTION_CACHE_NAMESPACE,
             {
                 "request_key": request_key,
                 "runtime_identity": self._runtime_digest,
             },
         )
-
-    def _request_checkpoint(self) -> None:
-        self._checkpoint_requested = True
-        self._checkpoint_event.set()
 
     def _require_open(self) -> None:
         if self._closing or self._closed:
@@ -257,62 +252,60 @@ class CheckpointedExecutionCache:
     async def _write_checkpoints(self) -> None:
         while True:
             await self._checkpoint_event.wait()
-            with self._lock:
-                self._checkpoint_event.clear()
-                self._checkpoint_requested = False
-                if not self._dirty:
-                    if self._closing:
-                        self._closed = True
-                        return
-                    continue
-                batch = self._dirty
-                self._dirty = {}
-                self._in_flight = True
-                admissions = self._checkpoint_admissions
-                self._checkpoint_admissions = []
-                for admission in admissions:
-                    admission.set()
-
-            persisted = await self._persist_batch(batch)
-
-            with self._lock:
+            self._checkpoint_event.clear()
+            if self._pending:
+                batch = self._pending
+                self._pending = {}
+                self._in_flight_batch = batch
+                persisted = await self._persist_batch(batch)
                 self._checkpoint_batches += 1
-                self._in_flight = False
                 if persisted:
                     self._checkpoint_entries += len(batch)
                 else:
                     self._checkpoint_failures += 1
-                    # Outcomes computed during the failed write win over the
-                    # older failed snapshot for the same request key.
-                    self._dirty = batch | self._dirty
-                if self._closing and not self._checkpoint_requested:
-                    self._closed = True
-                    return
+                self._in_flight_batch = None
+            if self._closing:
+                if self._pending:
+                    self._checkpoint_event.set()
+                    continue
+                self._closed = True
+                return
+            if len(self._pending) >= self._max_pending_checkpoint_entries:
+                self._checkpoint_event.set()
 
     async def _persist_batch(
         self,
-        batch: Mapping[str, ExecutionOutcome],
+        batch: Mapping[str, CachedExecutionObservation],
     ) -> bool:
         try:
             entries = {
                 self._persistent_key(key): CacheEntry(
-                    schema=_EXECUTION_OUTCOME_SCHEMA,
-                    record=outcome.model_dump(mode="json"),
+                    schema=EXECUTION_CACHE_RECORD_SCHEMA,
+                    record=observation.model_dump(mode="json"),
                 )
-                for key, outcome in batch.items()
+                for key, observation in batch.items()
             }
             await self._store.put_many(entries)
         except Exception:
             _LOGGER.warning(
-                "execution cache checkpoint failed; retaining entries",
+                "execution cache checkpoint failed; dropping retry state",
                 exc_info=True,
             )
             return False
         return True
 
 
+def _require_positive_int(value: int, name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+
+
 __all__ = [
     "BatchRecordStore",
-    "CheckpointedExecutionCache",
+    "CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION",
+    "CachedExecutionObservation",
+    "EXECUTION_CACHE_NAMESPACE",
+    "EXECUTION_CACHE_RECORD_SCHEMA",
     "ExecutionCacheStats",
+    "WindowedExecutionCache",
 ]

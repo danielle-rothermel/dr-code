@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 from dr_code.metrics.coordinates import (
     MetricQuestionCoordinate,
+    MetricValueCoordinate,
     MetricsDefinitionCoordinate,
 )
 from dr_code.metrics.definition import (
@@ -13,7 +14,7 @@ from dr_code.metrics.records import (
     METRIC_RECORD_ADAPTER,
     METRIC_RECORD_SCHEMA_VERSION,
     MeasuredRecord,
-    MetricFact,
+    MetricValue,
     MetricRecord,
     MetricRecordIdentity,
     NotApplicableRecord,
@@ -23,7 +24,7 @@ from dr_code.metrics.records import (
     record_rows,
 )
 from dr_code.metrics.settings import OperatorSettings
-from dr_code.metrics.units import MetricFactUnit
+from dr_code.metrics.units import MetricValueUnit
 
 if TYPE_CHECKING:
     from dr_code.metrics.engine.engine import (
@@ -60,8 +61,9 @@ __all__ = (
     "METRIC_RECORD_ADAPTER",
     "METRIC_RECORD_SCHEMA_VERSION",
     "MeasuredRecord",
-    "MetricFact",
-    "MetricFactUnit",
+    "MetricValue",
+    "MetricValueCoordinate",
+    "MetricValueUnit",
     "MetricName",
     "MetricQuestion",
     "MetricQuestionCoordinate",

@@ -6,12 +6,11 @@ from typing import Self
 from pydantic import model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.aggregation import FactCoordinate
 from dr_code.evaluation.coordinates import (
     RepeatPlanCoordinate,
     TaskSetCoordinate,
 )
-from dr_code.metrics import MetricFactUnit
+from dr_code.metrics import MetricValueCoordinate, MetricValueUnit
 
 
 class EvaluationCoordinate(FrozenModel):
@@ -24,9 +23,9 @@ class EvaluationCoordinate(FrozenModel):
 class Score(FrozenModel):
     name: str
     value: float
-    unit: MetricFactUnit
+    unit: MetricValueUnit
     evaluation: EvaluationCoordinate
-    sources: tuple[FactCoordinate, ...]
+    sources: tuple[MetricValueCoordinate, ...]
 
     @model_validator(mode="after")
     def validate_value(self) -> Self:
@@ -36,10 +35,10 @@ class Score(FrozenModel):
 
     @model_validator(mode="after")
     def reject_text_unit(self) -> Self:
-        if self.unit is MetricFactUnit.TEXT:
+        if self.unit is MetricValueUnit.TEXT:
             raise ValueError(
                 f"score {self.name!r} cannot have unit "
-                f"{MetricFactUnit.TEXT.value!r}: a score is a measurement, "
+                f"{MetricValueUnit.TEXT.value!r}: a score is a measurement, "
                 "not an observation"
             )
         return self
@@ -48,11 +47,11 @@ class Score(FrozenModel):
     def validate_sources(self) -> Self:
         if not self.sources:
             raise ValueError(
-                f"score {self.name!r} must name the facts it derives from"
+                f"score {self.name!r} must name the metric values it derives from"
             )
         if len(set(self.sources)) != len(self.sources):
             raise ValueError(
-                f"score {self.name!r} source facts must be unique"
+                f"score {self.name!r} source metric values must be unique"
             )
         return self
 
