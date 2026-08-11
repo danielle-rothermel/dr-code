@@ -170,13 +170,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     prepare_run_directory()
     paths.root.mkdir(parents=True, exist_ok=True)
     logger = _configure_logging(paths.summary_log)
-    part_paths = sorted(paths.parts.glob("*.parquet"))
-    if not part_paths:
-        raise SystemExit(f"no evaluation parts found in {paths.parts}")
-    candidate_results = pl.concat(
-        [pl.read_parquet(path) for path in part_paths],
-        how="diagonal_relaxed",
-    )
+    if paths.candidate_results.is_file():
+        candidate_results = pl.read_parquet(paths.candidate_results)
+    else:
+        raise SystemExit(
+            f"candidate results not found at {paths.candidate_results}; "
+            "run stage 3 first"
+        )
     selected = pl.read_parquet(SELECTED_SAMPLE)
     preprocessing_summary = pl.read_parquet(PREPROCESSING_SUMMARY)
     generations, task_settings, tasks = summarize_results(

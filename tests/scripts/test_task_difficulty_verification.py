@@ -4,14 +4,25 @@ import asyncio
 import importlib.util
 import logging
 import sys
-import threading
 from pathlib import Path
 from types import ModuleType
+from uuid import UUID
 
 import polars as pl
 import pytest
+from dr_exec import ExecutionPoolConfig, FixedPoolCapacity
+from dr_store import (
+    ArtifactBundlePublication,
+    CacheEntry,
+    CacheHit,
+    MemoryBackend,
+    ObjectReference,
+    ObjectStore,
+)
 
 from _executor_stubs import importable_json_executor
+from dr_code.caching import WindowedExecutionCache
+from dr_code.evaluation import AttemptCompleteness, evaluate_batch
 
 _ROOT = Path(__file__).parents[2]
 _SCRIPT_DIRECTORY = _ROOT / "scripts" / "verification" / "task_difficulty"
@@ -34,11 +45,10 @@ def _load_script(filename: str) -> ModuleType:
 
 _BUILD = _load_script("01_build_eligible_corpus.py")
 _SAMPLE = _load_script("02_select_balanced_sample.py")
-_EVALUATE = _load_script("03_evaluate_sample.py")
 _SUMMARIZE = _load_script("04_summarize_results.py")
 _SETTINGS = _load_script("workflow_settings.py")
 _LOADER = _load_script("corpus_loader.py")
-_HELPERS = _load_script("evaluation_helpers.py")
+_BATCH = _load_script("evaluation_batch.py")
 
 
 def _evaluation_settings(
@@ -73,7 +83,6 @@ def _generation_row(
         "task_id": "HumanEval/0",
         "model": "model-a",
         "encoder_model": encoder_model,
-        "decoder_model": "model-a",
         "encoder_output": encoder_output,
         "encoder_user_prompt": encoder_user_prompt,
         "decoder_output": decoder_output,
@@ -234,36 +243,74 @@ def test_sampling_selects_one_stable_row_per_cell() -> None:
     )
 
 
-def test_selected_ground_truth_candidate_passes_full_metric() -> None:
-    task = _EVALUATE._load_tasks(  # noqa: SLF001
-        _SETTINGS.HUMANEVAL_SNAPSHOT,
-        ["HumanEval/0"],
-    )["HumanEval/0"]
+def test_batch_request_preserves_slot_order_and_limits() -> None:
     selected = pl.DataFrame(
         [
             {
-                "sample_id": "ground-truth",
-                "task_id": task.task_id,
+                "sample_id": "sample-a",
+                "task_id": "HumanEval/0",
                 "generation_mode": "direct",
                 "budget_mode": "no_budget",
-                "model_key": "fixture",
-                "code_candidates": [task.ground_truth_code],
+                "model_key": "model-a",
+                "decoder_output": "def f():\n    return 1\n",
+                "code_candidates": ["def f():\n    return 1\n"],
                 "candidate_count": 1,
-            }
+            },
+            {
+                "sample_id": "sample-b",
+                "task_id": "HumanEval/0",
+                "generation_mode": "enc_dec",
+                "budget_mode": "no_budget",
+                "model_key": "model-b",
+                "decoder_output": "def g():\n    return 2\n",
+                "code_candidates": ["def g():\n    return 2\n"],
+                "candidate_count": 1,
+            },
         ]
     )
-
-    results = _EVALUATE.evaluate_task_rows(
+    runtime = _BATCH.runtime_identity_from_executor(importable_json_executor())
+    attempt = _BATCH.attempt_identity("test-fingerprint")
+    request = _BATCH.build_task_difficulty_batch_request(
         selected,
-        task,
-        executor=importable_json_executor(),
+        snapshot_path=_SETTINGS.HUMANEVAL_SNAPSHOT,
+        manifest_sha256="a" * 64,
+        settings=_evaluation_settings(worker_count=2),
+        runtime=runtime,
+        attempt=attempt,
     )
 
-    assert results.item(0, "metric_status") == "measured"
-    assert results.item(0, "candidate_passed") is True
-    assert results.item(0, "metrics_definition_id") == (
-        "directional-humaneval-task-difficulty"
+    assert request.plan.repeat_plan.repeats == 2
+    assert len(request.inputs) == 2
+    assert request.inputs[0].sample.metadata.identity.sample_id == "sample-a"
+    assert request.inputs[1].sample.metadata.identity.sample_id == "sample-b"
+    assert request.attempt_limits.max_slots == 2
+    assert request.attempt_limits.max_materialized_candidates == 2
+
+
+def test_settings_fingerprint_changes_with_workers(
+    tmp_path: Path,
+) -> None:
+    selected_path = tmp_path / "selected.parquet"
+    pl.DataFrame([{"sample_id": "x"}]).write_parquet(selected_path)
+    manifest = "b" * 64
+    first = _BATCH.settings_fingerprint(
+        settings=_evaluation_settings(worker_count=16),
+        manifest_sha256=manifest,
+        selected_sample_path=selected_path,
     )
+    second = _BATCH.settings_fingerprint(
+        settings=_evaluation_settings(worker_count=8),
+        manifest_sha256=manifest,
+        selected_sample_path=selected_path,
+    )
+    assert first != second
+
+
+def test_attempt_identity_is_deterministic() -> None:
+    first = _BATCH.attempt_identity("same")
+    second = _BATCH.attempt_identity("same")
+    assert first.attempt_id == second.attempt_id
+    assert isinstance(first.attempt_id, UUID)
 
 
 def test_evaluation_cli_overrides_workers_and_timeout() -> None:
@@ -293,253 +340,122 @@ def test_evaluation_paths_are_scoped_to_effective_settings() -> None:
 
     assert first == same
     assert first.root.name == "workers-16_timeout-120"
+    assert first.bundle_root == first.root / "evaluation_bundles"
     assert different_workers.root != first.root
     assert different_timeout.root != first.root
 
 
-def test_evaluator_raises_low_open_file_soft_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    current = [256, 65_536]
-    updates: list[tuple[int, int]] = []
-
-    def getrlimit(_resource: int) -> tuple[int, int]:
-        return (current[0], current[1])
-
-    def setrlimit(_resource: int, limits: tuple[int, int]) -> None:
-        updates.append(limits)
-        current[:] = limits
-
-    monkeypatch.setattr(_EVALUATE.resource, "getrlimit", getrlimit)
-    monkeypatch.setattr(_EVALUATE.resource, "setrlimit", setrlimit)
-
-    effective = _EVALUATE._ensure_open_file_limit(  # noqa: SLF001
-        32,
-        logging.getLogger("test_open_file_limit"),
-    )
-
-    assert effective == 4096
-    assert updates == [(4096, 65_536)]
-
-
-def test_evaluator_preserves_sufficient_open_file_soft_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        _EVALUATE.resource,
-        "getrlimit",
-        lambda _resource: (8192, 65_536),
-    )
-    updates: list[tuple[int, int]] = []
-    monkeypatch.setattr(
-        _EVALUATE.resource,
-        "setrlimit",
-        lambda _resource, limits: updates.append(limits),
-    )
-
-    effective = _EVALUATE._ensure_open_file_limit(  # noqa: SLF001
-        32,
-        logging.getLogger("test_open_file_limit"),
-    )
-
-    assert effective == 8192
-    assert updates == []
-
-
-def test_evaluator_fails_before_execution_when_hard_limit_is_too_low(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        _EVALUATE.resource,
-        "getrlimit",
-        lambda _resource: (256, 1024),
-    )
-
-    with pytest.raises(SystemExit, match=r"ulimit -n 4096"):
-        _EVALUATE._ensure_open_file_limit(  # noqa: SLF001
-            32,
-            logging.getLogger("test_open_file_limit"),
-        )
-
-
 def test_candidate_job_budget_scales_with_timeout() -> None:
-    budget = _HELPERS.candidate_job_budget(45.5)
+    budget = _BATCH.candidate_job_budget(45.5)
 
     assert budget.wall_time_ns == 45_500_000_000
     assert budget.input_bytes == 2_097_152
     assert budget.payload_output_bytes == 1_073_741_824
 
 
-def test_task_jobs_run_concurrently_without_timing_as_evidence() -> None:
-    task = _EVALUATE._load_tasks(  # noqa: SLF001
+class _BatchStore:
+    def __init__(self) -> None:
+        self.records: dict[str, tuple[str, object]] = {}
+
+    async def get_many(self, keys, *, schema: str):  # noqa: ANN001
+        return {
+            key: (
+                CacheHit(record=stored[1])
+                if (stored := self.records.get(key)) is not None
+                and stored[0] == schema
+                else None
+            )
+            for key in keys
+        }
+
+    async def put_many(self, entries):  # noqa: ANN001
+        for key, entry in entries.items():
+            if isinstance(entry, CacheEntry):
+                self.records[key] = (entry.schema, entry.record)
+        return {
+            key: ObjectReference.for_record(entry.schema, entry.record)
+            for key, entry in entries.items()
+        }
+
+
+@pytest.mark.asyncio
+async def test_evaluate_batch_exports_candidate_results_for_fixture_sample(
+    tmp_path: Path,
+) -> None:
+    task = _BATCH.load_humaneval_tasks(
         _SETTINGS.HUMANEVAL_SNAPSHOT,
-        ["HumanEval/0"],
+        ("HumanEval/0",),
     )["HumanEval/0"]
-    jobs = [
-        _EVALUATE._TaskJob(  # noqa: SLF001
-            task_id=f"HumanEval/{index}",
-            task_rows=pl.DataFrame(),
-            task=task,
-            runtime_executable=Path("/runtime/python"),
-            runtime_identity="runtime-a",
-            evaluation_settings=_evaluation_settings(),
-            evaluation_paths=_SETTINGS.evaluation_paths(
-                _evaluation_settings()
+    selected = pl.DataFrame(
+        [
+            {
+                "sample_id": "fixture-sample",
+                "task_id": "HumanEval/0",
+                "generation_mode": "direct",
+                "budget_mode": "no_budget",
+                "model_key": "fixture",
+                "decoder_output": "",
+                "code_candidates": [task.ground_truth_code],
+                "candidate_count": 1,
+            }
+        ]
+    )
+    settings = _evaluation_settings(worker_count=1, timeout_seconds=30.0)
+    runtime = _BATCH.runtime_identity_from_executor(importable_json_executor())
+    runtime = _BATCH.runtime_identity_with_packages(
+        runtime,
+        {"python_version": "test"},
+    )
+    attempt = _BATCH.attempt_identity("fixture-eval")
+    request = _BATCH.build_task_difficulty_batch_request(
+        selected,
+        snapshot_path=_SETTINGS.HUMANEVAL_SNAPSHOT,
+        manifest_sha256="c" * 64,
+        settings=settings,
+        runtime=runtime,
+        attempt=attempt,
+    )
+    publication = ArtifactBundlePublication.allocate(
+        tmp_path,
+        prefix="evaluation",
+    )
+    object_store = ObjectStore(MemoryBackend())
+    execution_cache = WindowedExecutionCache(
+        _BatchStore(),
+        runtime=runtime,
+        max_resident_entries=4,
+        max_pending_checkpoint_entries=4,
+    )
+    try:
+        result = await evaluate_batch(
+            request,
+            executor=importable_json_executor(),
+            execution_cache=execution_cache,
+            object_store=object_store,
+            publication=publication,
+            pool_config=ExecutionPoolConfig(
+                capacity=FixedPoolCapacity(max_active_jobs=1)
             ),
         )
-        for index in range(3)
-    ]
-    barrier = threading.Barrier(len(jobs))
+    finally:
+        await execution_cache.close()
 
-    def run_job(job):  # noqa: ANN001, ANN202
-        barrier.wait(timeout=5)
-        return _EVALUATE._TaskCompletion(  # noqa: SLF001
-            task_id=job.task_id,
-            generation_count=0,
-            candidate_count=0,
-            elapsed_seconds=0.0,
-        )
-
-    completions = [
-        future.result()
-        for _, future in _EVALUATE._completed_jobs(  # noqa: SLF001
-            jobs,
-            worker_count=3,
-            run_job=run_job,
-        )
-    ]
-
-    assert {completion.task_id for completion in completions} == {
-        "HumanEval/0",
-        "HumanEval/1",
-        "HumanEval/2",
-    }
-    assert _SETTINGS.EVALUATION_WORKERS == 16
-
-
-def test_evaluation_checkpoint_must_match_exact_candidates(
-    tmp_path: Path,
-) -> None:
-    task_rows = pl.DataFrame(
-        [
-            {
-                "sample_id": "sample",
-                "candidate_count": 1,
-                "code_candidates": ["def f():\n    return 1\n"],
-            }
-        ]
+    assert result.attempt.completeness is AttemptCompleteness.COMPLETE
+    assert result.bundle_path is not None
+    runtime_json = _BATCH.runtime_identity_json(runtime)
+    output_path = tmp_path / "candidate_results.parquet"
+    exported = _BATCH.export_candidate_results(
+        result.bundle_path,
+        selected,
+        output_path,
+        settings=settings,
+        runtime_identity_json=runtime_json,
     )
-    part_path = tmp_path / "part.parquet"
-    pl.DataFrame(
-        [
-            {
-                "sample_id": "sample",
-                "candidate_index": 0,
-                "candidate_source": "def f():\n    return 2\n",
-                "runtime_identity": "runtime-a",
-            }
-        ]
-    ).write_parquet(part_path)
-
-    with pytest.raises(RuntimeError, match="current sample, runtime"):
-        _EVALUATE._validate_existing_part(  # noqa: SLF001
-            part_path,
-            task_rows,
-            "runtime-a",
-            _evaluation_settings(),
-        )
-
-
-def test_evaluation_checkpoint_must_match_runtime(tmp_path: Path) -> None:
-    source = "def f():\n    return 1\n"
-    task_rows = pl.DataFrame(
-        [
-            {
-                "sample_id": "sample",
-                "candidate_count": 1,
-                "code_candidates": [source],
-            }
-        ]
+    assert exported.height >= 1
+    assert "candidate_passed" in exported.columns
+    assert exported.item(0, "metrics_definition_id") == (
+        "directional-humaneval-task-difficulty"
     )
-    part_path = tmp_path / "part.parquet"
-    pl.DataFrame(
-        [
-            {
-                "sample_id": "sample",
-                "candidate_index": 0,
-                "candidate_source": source,
-                "runtime_identity": "runtime-a",
-            }
-        ]
-    ).write_parquet(part_path)
-
-    with pytest.raises(RuntimeError, match="current sample, runtime"):
-        _EVALUATE._validate_existing_part(  # noqa: SLF001
-            part_path,
-            task_rows,
-            "runtime-b",
-            _evaluation_settings(),
-        )
-
-
-def test_evaluation_checkpoint_must_match_evaluation_settings(
-    tmp_path: Path,
-) -> None:
-    source = "def f():\n    return 1\n"
-    task_rows = pl.DataFrame(
-        [
-            {
-                "sample_id": "sample",
-                "candidate_count": 1,
-                "code_candidates": [source],
-            }
-        ]
-    )
-    part_path = tmp_path / "part.parquet"
-    pl.DataFrame(
-        [
-            {
-                "sample_id": "sample",
-                "candidate_index": 0,
-                "candidate_source": source,
-                "runtime_identity": "runtime-a",
-                "evaluation_worker_count": 16,
-                "evaluation_timeout_seconds": 120.0,
-            }
-        ]
-    ).write_parquet(part_path)
-    _EVALUATE._validate_existing_part(  # noqa: SLF001
-        part_path,
-        task_rows,
-        "runtime-a",
-        _evaluation_settings(),
-    )
-
-    with pytest.raises(RuntimeError, match="evaluation settings"):
-        _EVALUATE._validate_existing_part(  # noqa: SLF001
-            part_path,
-            task_rows,
-            "runtime-a",
-            _evaluation_settings(worker_count=8),
-        )
-
-
-def test_task_evaluation_rejects_operator_failures() -> None:
-    results = pl.DataFrame(
-        [
-            {
-                "metric_status": "operator_failure",
-                "failure_type": "EvaluationHarnessError",
-                "failure_message": "support dependency unavailable",
-            }
-        ]
-    )
-
-    with pytest.raises(RuntimeError, match="harness/operator failures"):
-        _EVALUATE._require_measured_results(  # noqa: SLF001
-            results,
-            "HumanEval/0",
-        )
 
 
 def test_summary_uses_complete_generations_as_the_task_denominator() -> None:

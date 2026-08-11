@@ -90,7 +90,10 @@ class EvaluationSettings:
 @dataclass(frozen=True, slots=True)
 class EvaluationPaths:
     root: Path
-    parts: Path
+    bundle_root: Path
+    execution_cache: Path
+    evaluation_object_store: Path
+    run_manifest: Path
     execution_records: Path
     candidate_results: Path
     generation_results: Path
@@ -154,7 +157,10 @@ def evaluation_paths(settings: EvaluationSettings) -> EvaluationPaths:
     )
     return EvaluationPaths(
         root=root,
-        parts=root / "evaluation_parts",
+        bundle_root=root / "evaluation_bundles",
+        execution_cache=root / "execution_cache.sqlite3",
+        evaluation_object_store=root / "evaluation_object_store.sqlite3",
+        run_manifest=root / "run_manifest.json",
         execution_records=root / "execution_records",
         candidate_results=root / "candidate_results.parquet",
         generation_results=root / "generation_results.parquet",

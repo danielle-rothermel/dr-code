@@ -44,14 +44,27 @@ def _git_value(*args: str) -> str | None:
 
 
 def _stage_status(run_dir: Path, paths) -> dict[str, bool]:  # noqa: ANN001
+    bundle_path = None
+    if paths.run_manifest.is_file():
+        try:
+            manifest = json.loads(
+                paths.run_manifest.read_text(encoding="utf-8")
+            )
+            if isinstance(manifest, dict):
+                stored = manifest.get("bundle_path")
+                if isinstance(stored, str) and stored:
+                    bundle_path = Path(stored)
+        except json.JSONDecodeError:
+            bundle_path = None
     return {
         "preprocess": (run_dir / PREPROCESS_LOG.name).is_file()
         and ELIGIBLE_CORPUS.is_file(),
         "sample": (run_dir / SAMPLING_LOG.name).is_file()
         and SELECTED_SAMPLE.is_file(),
         "evaluate": paths.evaluation_log.is_file()
-        and paths.parts.is_dir()
-        and any(paths.parts.glob("*.parquet")),
+        and paths.run_manifest.is_file()
+        and bundle_path is not None
+        and (bundle_path / "manifest.json").is_file(),
         "summarize": paths.summary_log.is_file()
         and paths.task_results.is_file(),
     }
@@ -155,6 +168,22 @@ def export_baseline(
             "evaluation_root": str(paths.root),
         },
     }
+    if paths.run_manifest.is_file():
+        try:
+            run_manifest = json.loads(
+                paths.run_manifest.read_text(encoding="utf-8")
+            )
+            if isinstance(run_manifest, dict):
+                for key in (
+                    "attempt_id",
+                    "bundle_path",
+                    "settings_fingerprint",
+                    "status",
+                ):
+                    if key in run_manifest:
+                        run_config[key] = run_manifest[key]
+        except json.JSONDecodeError:
+            pass
     results: dict[str, object] = {
         "exported_at": datetime.now(tz=UTC).isoformat(),
         "stages_completed": [stage for stage, done in stages.items() if done],

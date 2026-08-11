@@ -55,19 +55,28 @@ uv run python scripts/build_generation_corpus.py human_eval \
        --workers 16 --timeout-seconds 120
    ```
 
-   The evaluator verifies the selected interpreter and a NumPy-dependent
-   ground-truth HumanEval case before accepting checkpoints or executing the
-   sample. `--workers` controls concurrent task workers and
-   `--timeout-seconds` bounds each candidate execution budget. The final log
-   line reports both end-to-end and evaluation-only seconds per selected
-   generation.
-   Before spawning workers, the evaluator raises its own soft open-file limit
-   to a worker-scaled minimum when the process hard limit permits it. If that
-   is impossible, it exits before evaluation with the required `ulimit`
-   command.
-   Each workers/timeout combination writes to its own experiment directory,
-   so changing either flag starts an independent run without deleting prior
-   results.
+   Stage 3 runs one monolithic [`evaluate_batch`](../../../src/dr_code/evaluation/batch.py)
+   over the full selected sample. Candidate parallelism comes from dr-exec's
+   `ExecutionPool`; `--workers` sets the pool capacity and
+   `--timeout-seconds` bounds each candidate execution budget.
+
+   Artifacts for a workers/timeout combination live under
+   `explicit-runtime/workers-<N>_timeout-<T>/`:
+
+   | Path | Role |
+   |---|---|
+   | `evaluation_bundles/run/` | Terminal evaluation bundle |
+   | `execution_cache.sqlite3` | Persistent execution-cache checkpoints |
+   | `evaluation_object_store.sqlite3` | Object store for sample records |
+   | `run_manifest.json` | Recovery pins (settings fingerprint, bundle path) |
+   | `candidate_results.parquet` | Flat projection export for summarizer |
+
+   **Partial recovery:** if stage 3 stops before publishing a complete bundle,
+   re-run the same command without changing workers, timeout, or corpus pins.
+   The persistent execution cache skips candidates for samples that already
+   finished in a prior attempt.
+
+   Changing workers or timeout starts an independent experiment directory.
 4. Run the summarizer with the same flags:
 
    ```bash
@@ -75,8 +84,8 @@ uv run python scripts/build_generation_corpus.py human_eval \
      --workers 16 --timeout-seconds 120
    ```
 
-   It combines the matching completed task parts and reports generation- and
-   task-level success rates.
+   It reads `candidate_results.parquet` and reports generation- and task-level
+   success rates.
 
 All inputs, outputs, and sampling choices are fixed in `workflow_settings.py`.
 Heavy run artifacts and preprocessing caches are written under
