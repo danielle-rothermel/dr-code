@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from _humaneval_builders import _row
 from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
-from dr_code.humaneval.runner import require_parsed_tests
+from dr_code.humaneval.metric_operator import _validate_task_payload
 from dr_code.humaneval.sampling import (
     HumanEvalRawRowsSnapshot,
     load_humaneval_rows,
@@ -14,6 +15,7 @@ from dr_code.humaneval.sampling import (
     validate_snapshot_header,
 )
 from dr_code.humaneval.task import HUMANEVAL_OVERRIDE_SET
+from dr_code.trace import JsonArtifact
 
 
 SNAPSHOT_PATH = (
@@ -32,7 +34,7 @@ def raw_snapshot() -> HumanEvalRawRowsSnapshot:
 
 
 def _check_payload_bytes(task: HumanEvalTask) -> list[bytes]:
-    parsed_tests = require_parsed_tests(task)
+    parsed_tests = task.parsed_tests
     return [
         case.as_check(
             candidate_name="candidate",
@@ -170,3 +172,25 @@ def test_raw_row_snapshot_rejects_provenance_mismatch(
         )
 
     assert str(exc_info.value) == expected
+
+
+def test_every_snapshot_task_validates_after_an_artifact_round_trip(
+    raw_snapshot: HumanEvalRawRowsSnapshot,
+) -> None:
+    rows = [row.model_dump(mode="json") for row in raw_snapshot.rows]
+    tasks = parse_humaneval_dataset(rows)
+
+    restored = [
+        _validate_task_payload(
+            JsonArtifact(payload=json.loads(task.model_dump_json()))
+        )
+        for task in tasks
+    ]
+
+    assert [task.task_id for task in restored] == [
+        task.task_id for task in tasks
+    ]
+    assert all(
+        after.parsed_tests == before.parsed_tests
+        for before, after in zip(tasks, restored, strict=True)
+    )

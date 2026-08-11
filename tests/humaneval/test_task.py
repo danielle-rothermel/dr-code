@@ -7,11 +7,18 @@ from pydantic import ValidationError
 
 from _humaneval_builders import _input_result_test, _row, _task
 from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
+from dr_code.humaneval.metric_operator import _validate_task_payload
+from dr_code.humaneval.parsed_code import parse_code
+from dr_code.humaneval.parsed_tests import (
+    InputResultTestCase,
+    parse_humaneval_tests,
+)
 from dr_code.humaneval.task import (
     HumanEvalOverride,
     HumanEvalTestReplacement,
     _apply_humaneval_override,
 )
+from dr_code.trace import JsonArtifact
 
 
 def test_apply_humaneval_override_passthrough() -> None:
@@ -52,65 +59,35 @@ def test_parse_humaneval_dataset_builds_tasks() -> None:
     assert tasks[0].parsed_tests is not None
 
 
-def test_task_recomputes_parses_instead_of_trusting_them() -> None:
-    derived = _task()
-    supplied = HumanEvalTask(
-        task_id=derived.task_id,
-        prompt=derived.prompt,
-        canonical_solution=derived.canonical_solution,
-        entry_point=derived.entry_point,
-        test=derived.test,
-        parsed=derived.parsed,
-        parsed_tests=derived.parsed_tests,
+def test_task_derives_its_parses_from_its_source_and_test_fields() -> None:
+    task = _task()
+
+    assert task.parsed == parse_code(
+        display_title=task.task_id,
+        code_str=task.ground_truth_code,
     )
+    assert task.parsed_tests == parse_humaneval_tests(task.test)
 
-    assert supplied == derived
 
-
-def test_task_rejects_a_parse_disagreeing_with_its_source() -> None:
-    other = HumanEvalTask(
-        task_id="HumanEval/other",
-        prompt="def subtract_one(x):\n",
-        canonical_solution="    return x - 1\n",
-        entry_point="subtract_one",
-        test=_input_result_test(),
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="parsed code must match prompt and canonical_solution",
-    ):
-        HumanEvalTask(
-            task_id="HumanEval/fixture",
-            prompt="def add_one(x):\n",
-            canonical_solution="    return x + 1\n",
-            entry_point="add_one",
-            test=_input_result_test(),
-            parsed=other.parsed,
+def test_task_rejects_supplied_parses() -> None:
+    other = _task(
+        test=(
+            "def check(candidate):\n"
+            "    inputs = [(9,)]\n"
+            "    results = [10]\n"
+            "    for inp, expected in zip(inputs, results):\n"
+            "        assertion(candidate(*inp), expected)\n"
         )
-
-
-def test_task_rejects_parsed_tests_disagreeing_with_the_test_field() -> None:
-    other_test = (
-        "def check(candidate):\n"
-        "    inputs = [(9,)]\n"
-        "    results = [10]\n"
-        "    for inp, expected in zip(inputs, results):\n"
-        "        assertion(candidate(*inp), expected)\n"
     )
-    other = _task(test=other_test)
 
-    with pytest.raises(
-        ValueError,
-        match="parsed tests must match the raw test field",
-    ):
+    with pytest.raises(ValidationError, match="parsed_tests"):
         HumanEvalTask(
             task_id="HumanEval/fixture",
             prompt="def add_one(x):\n",
             canonical_solution="    return x + 1\n",
             entry_point="add_one",
             test=_input_result_test(),
-            parsed_tests=other.parsed_tests,
+            parsed_tests=other.parsed_tests,  # type: ignore[call-arg]
         )
 
 
@@ -137,6 +114,58 @@ def test_task_round_trips_through_its_field_payload() -> None:
     assert restored == task
     assert restored.parsed == task.parsed
     assert restored.parsed_tests == task.parsed_tests
+
+
+_TUPLE_EXPECTATION_TEST = (
+    "def check(candidate):\n"
+    "    inputs = [(1,), (2,)]\n"
+    "    results = [(0, 1), (1, 2)]\n"
+    "    for inp, exp in zip(inputs, results):\n"
+    "        assertion(candidate(*inp), exp, 0)\n"
+)
+
+_NESTED_TUPLE_EXPECTATION_TEST = (
+    "def check(candidate):\n"
+    "    inputs = [(1,), (2,)]\n"
+    "    results = [((0, 1), (2, 3)), ((4, 5), (6, 7))]\n"
+    "    for inp, exp in zip(inputs, results):\n"
+    "        assertion(candidate(*inp), exp, 0)\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("test", "expected_first"),
+    [
+        (_TUPLE_EXPECTATION_TEST, (0, 1)),
+        (_NESTED_TUPLE_EXPECTATION_TEST, ((0, 1), (2, 3))),
+    ],
+    ids=["tuple_expectations", "nested_tuple_expectations"],
+)
+def test_tuple_expectations_survive_the_task_artifact_boundary(
+    test: str,
+    expected_first: object,
+) -> None:
+    task = _task(test=test)
+    payload = json.loads(task.model_dump_json())
+
+    restored = _validate_task_payload(JsonArtifact(payload=payload))
+
+    cases = restored.parsed_tests.cases
+    assert all(isinstance(case, InputResultTestCase) for case in cases)
+    first = cases[0]
+    assert isinstance(first, InputResultTestCase)
+    assert first.expected == expected_first
+    assert isinstance(first.expected, tuple)
+    assert restored.parsed_tests == task.parsed_tests
+
+
+def test_task_artifact_payload_omits_the_derived_parses() -> None:
+    task = _task(test=_TUPLE_EXPECTATION_TEST)
+
+    payload = json.loads(task.model_dump_json())
+
+    assert "parsed_tests" not in payload
+    assert "parsed" not in payload
 
 
 def test_override_notes_reach_the_task_as_an_immutable_tuple() -> None:

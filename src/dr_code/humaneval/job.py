@@ -167,13 +167,6 @@ def _evaluate_suite(
     candidate_functions: Mapping[str, object],
 ) -> HumanEvalSuiteResult:
     parsed_tests = suite.task.parsed_tests
-    if parsed_tests is None:
-        return HumanEvalSuiteHarnessFailure(
-            question=suite.question,
-            failure_type="ValueError",
-            message="HumanEvalTask.parsed_tests is required",
-            completed_groups=(),
-        )
 
     try:
         exec(parsed_tests.support_code, candidate_namespace)
