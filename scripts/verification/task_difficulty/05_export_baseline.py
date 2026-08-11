@@ -81,7 +81,7 @@ def _preprocessing_results() -> dict[str, object] | None:
     eligible_rows = int(totals["eligible_rows"])
     nonblank_rows = int(totals["nonblank_rows"])
     return {
-        "task_count": summary.height,
+        "task_count": summary.get_column("task_id").n_unique(),
         "nonblank_rows": nonblank_rows,
         "eligible_rows": eligible_rows,
         "eligible_rate": eligible_rows / nonblank_rows

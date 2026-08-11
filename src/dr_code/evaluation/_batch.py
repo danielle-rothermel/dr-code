@@ -494,8 +494,6 @@ async def _place_prepared_inputs(
             aggregation_slots=aggregation_slots,
             score_values=score_values,
         )
-        if exhaustion is not None:
-            break
 
     await placement_sink.finish()
     members.extend(

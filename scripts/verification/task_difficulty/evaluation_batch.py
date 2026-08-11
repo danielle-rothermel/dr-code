@@ -595,7 +595,7 @@ def evaluation_read_limits(
             max_bytes_per_artifact=1 << 30,
             max_total_artifact_bytes=4 << 30,
         ),
-        max_sample_records=max(1, sample_count),
+        max_sample_records=max(1, sample_count, candidate_count),
         max_object_reads=max(1, sample_count),
         max_reference_depth=10,
     )

@@ -325,6 +325,16 @@ def test_evaluation_paths_are_scoped_to_effective_settings() -> None:
     assert different_timeout.root != first.root
 
 
+def test_read_limits_admit_one_projection_row_per_candidate() -> None:
+    limits = _BATCH.evaluation_read_limits(
+        sample_count=326,
+        candidate_count=460,
+    )
+
+    assert limits.max_sample_records >= 460
+    assert limits.max_object_reads >= 326
+
+
 def test_candidate_job_budget_scales_with_timeout() -> None:
     budget = _BATCH.candidate_job_budget(45.5)
 

@@ -231,6 +231,40 @@ async def test_retained_evidence_exhaustion_preserves_only_completed_prefix() ->
     await execution_cache.close()
 
 
+async def test_admission_exhaustion_publishes_every_completed_sample() -> None:
+    batch_request = request(
+        3,
+        attempt_limits=AttemptLimits(
+            max_slots=3,
+            max_materialized_candidates=6,
+            max_admitted_jobs=2,
+            max_retained_evidence_bytes=10_000_000,
+            max_projection_rows=30,
+        ),
+    )
+    execution_cache = cache(BatchStore())
+
+    placement = MemoryPlacement()
+    result = await _evaluate_batch_assembly(
+        batch_request,
+        executor=importable_json_executor(),
+        execution_cache=execution_cache,
+        pool_config=ExecutionPoolConfig(),
+        placement_sink=placement,
+    )
+
+    assert result.limit_exhaustion is not None
+    assert result.limit_exhaustion.limit is AttemptLimitKind.ADMITTED_JOBS
+    assert [
+        record.sample.identity.sample_id for record in placement.records
+    ] == [
+        "sample-0",
+        "sample-1",
+    ]
+    assert result.completeness is AttemptCompleteness.PARTIAL
+    await execution_cache.close()
+
+
 async def test_known_request_and_window_limit_violations_fail_model_validation() -> (
     None
 ):
