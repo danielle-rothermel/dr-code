@@ -136,6 +136,7 @@ def test_all_sample_provenance_variants_round_trip_by_kind() -> None:
             source_reference=bundle_reference(),
             coordinate=SyntheticSampleCoordinate(
                 humaneval_task_id="HumanEval/0",
+                ground_truth_source_sha256="c" * 64,
                 generation_seed=7,
                 recipe=RecipeCoordinate(
                     recipe_name="clean", version="0", corruptions=()
