@@ -591,7 +591,9 @@ def evaluation_read_limits(
         bundle=BundleReadLimits(
             manifest_max_bytes=1 << 20,
             manifest_max_depth=64,
-            max_artifacts=max(32, sample_count // 50 + 16),
+            # The record writer emits one reference shard per sample; the
+            # margin covers the manifest-adjacent fixed artifacts.
+            max_artifacts=sample_count + 32,
             max_bytes_per_artifact=1 << 30,
             max_total_artifact_bytes=4 << 30,
         ),

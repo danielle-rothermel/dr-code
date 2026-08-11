@@ -333,6 +333,8 @@ def test_read_limits_admit_one_projection_row_per_candidate() -> None:
 
     assert limits.max_sample_records >= 460
     assert limits.max_object_reads >= 326
+    # One reference shard per sample plus fixed manifest-adjacent artifacts.
+    assert limits.bundle.max_artifacts >= 326 + 1
 
 
 def test_candidate_job_budget_scales_with_timeout() -> None:
