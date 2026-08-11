@@ -40,15 +40,6 @@ jobs:
         if: matrix.python-version == '3.13'
         run: uvx tombi@1.2.5 lint --offline .defs/terms.toml .defs/contracts.toml
       - run: uv run pytest
-      - name: Build distributions
-        if: matrix.python-version == '3.13'
-        run: uv build
-      - name: Check distribution metadata
-        if: matrix.python-version == '3.13'
-        run: uvx --from twine==7.0.0 twine check --strict dist/*
-      - name: Smoke-test installed wheel
-        if: matrix.python-version == '3.13'
-        run: uv run python scripts/check_built_wheel.py
 
   viewer:
     name: Viewer

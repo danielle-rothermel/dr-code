@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pull-request CI runs lint, type, and test checks only. Distribution build,
+  metadata, and installed-wheel qualification run at publication time in the
+  tag-triggered release workflow.
 - HumanEval scoring profiles declare a candidate reduction. `first_candidate`
   scores candidate zero alone; `any_candidate_passes` scores a pass when any
   candidate passes the complete suite, matching the whetstone correctness
