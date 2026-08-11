@@ -352,6 +352,12 @@ Scoring is a projection over authoritative sample evaluation records; it never
 starts a second candidate execution route. Results distinguish completed
 benchmark outcomes from harness failure.
 
+A scoring profile declares how the projection reduces a sample's candidates to
+one outcome. `FIRST_CANDIDATE` scores candidate zero alone; `ANY_CANDIDATE_PASSES`
+scores a pass when any candidate passes the complete suite, and reports a
+harness or operator failure — never a measured zero — when no candidate passes
+but some candidate's measurement is broken.
+
 ```python
 class HumanEvalTask(FrozenModel):
     task_id: str
@@ -360,6 +366,11 @@ class HumanEvalTask(FrozenModel):
     entry_point: str
     test: str
     ...
+
+
+class CandidateReduction(StrEnum):
+    FIRST_CANDIDATE = "first_candidate"
+    ANY_CANDIDATE_PASSES = "any_candidate_passes"
 
 
 class SubmissionOutcome(StrEnum):

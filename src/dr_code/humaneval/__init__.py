@@ -14,10 +14,14 @@ from dr_code.humaneval.plus_dataset import (
     load_humaneval_plus,
 )
 from dr_code.humaneval.profiles import (
+    ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
     DEFAULT_HUMANEVAL_SCORING_PROFILE,
+    HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_ID,
+    HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_VERSION,
     HUMANEVAL_METRICS_PROFILE,
     HUMANEVAL_SCORING_PROFILE_ID,
     HUMANEVAL_SCORING_PROFILE_VERSION,
+    CandidateReduction,
     HumanEvalScoringProfile,
     HumanEvalMetricsProfile,
     resolve_humaneval_scoring_profile,
@@ -106,6 +110,8 @@ def __dir__() -> list[str]:
 
 
 __all__ = (
+    "ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE",
+    "CandidateReduction",
     "CodeExtractionResult",
     "CandidateNamespaceFailure",
     "CandidateNamespaceLoaded",
@@ -115,6 +121,8 @@ __all__ = (
     "EvaluationCaseStatus",
     "EvaluationCaseSummary",
     "EvaluationTaskSummary",
+    "HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_ID",
+    "HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_VERSION",
     "HUMANEVAL_SCORING_PROFILE_ID",
     "HUMANEVAL_SCORING_PROFILE_VERSION",
     "HUMANEVAL_METRICS_PROFILE",

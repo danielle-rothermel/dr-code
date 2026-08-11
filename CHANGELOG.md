@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- HumanEval scoring profiles declare a candidate reduction. `first_candidate`
+  scores candidate zero alone; `any_candidate_passes` scores a pass when any
+  candidate passes the complete suite, matching the whetstone correctness
+  score, and reports harness or operator failure rather than a measured zero
+  when no candidate passes but some candidate's measurement is broken. Blank
+  and unextractable submissions stay distinct zero-scoring outcomes under both.
+
 - Generation corpus adapters extract HumanEval, MBPP Pro, HumanEval Pro,
   ClassEval, BigCodeBench Lite Pro, and NL Latents archived model activity into
   five validated Parquet grains with atomic publication and content-addressed
