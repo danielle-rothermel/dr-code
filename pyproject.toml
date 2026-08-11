@@ -50,14 +50,6 @@ dev = [
 [tool.uv]
 required-version = ">=0.12.0"
 
-# MERGE BLOCKER: dr-exec 0.1.9 is unreleased (PyPI latest is 0.1.8), so this
-# editable path override is the only way the `dr-exec==0.1.9` pin resolves.
-# The path exists on Danielle's machine alone: no other machine or CI runner
-# can install this branch while the override is here. Cut the dr-exec 0.1.9
-# release, delete this section, and re-lock before merging.
-[tool.uv.sources]
-dr-exec = { path = "/Users/daniellerothermel/drotherm/worktrees/dr-exec-worker-pool", editable = true }
-
 # Development mode pins every component to initial-version. Only repository
 # contract tests read this marker; runtime code does not, and persisted
 # artifacts do not record it.
