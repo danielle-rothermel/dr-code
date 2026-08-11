@@ -128,7 +128,7 @@ def _parse_or_none(text: str) -> ast.Module | None:
         warnings.simplefilter("ignore", SyntaxWarning)
         try:
             return ast.parse(text)
-        except (SyntaxError, ValueError):
+        except (SyntaxError, ValueError, MemoryError, RecursionError):
             return None
 
 

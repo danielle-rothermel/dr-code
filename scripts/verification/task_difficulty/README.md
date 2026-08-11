@@ -85,13 +85,13 @@ uv run python scripts/build_generation_corpus.py human_eval \
 All inputs, outputs, and sampling choices are fixed in `workflow_settings.py`.
 Heavy run artifacts and preprocessing caches are written under
 `~/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/<baseline-name>/`
-(override with `DR_CODE_TASK_DIFFICULTY_RUN_DIR`). Git-tracked baseline logs
-and summaries live under
+(override with `DR_CODE_TASK_DIFFICULTY_RUN_DIR`). Git-tracked baseline run
+config and results live under
 [`baseline/`](baseline/README.md).
 
 ## Baseline runner
 
-Run the full workflow and export git-tracked logs in one command:
+Run the full workflow and export git-tracked run config and results in one command:
 
 ```bash
 DR_CODE_DISPOSABLE_WORKER=1 \
@@ -99,7 +99,8 @@ DR_CODE_DISPOSABLE_WORKER=1 \
 ```
 
 See [`baseline/README.md`](baseline/README.md) for the pinned production corpus,
-fixture smoke run, and exported artifact layout.
+fixture smoke run, and exported artifact layout. Verbose stage logs stay in the
+run directory outside the repository.
 
 Test success is conditional on nonblank output and successful preprocessing.
 The preprocessing summary preserves the eligibility denominator. Observed

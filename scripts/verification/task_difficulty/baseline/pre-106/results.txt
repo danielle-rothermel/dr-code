@@ -1,9 +1,8 @@
 baseline: pre-106
-exported_at: 2026-08-11T02:15:10.632574+00:00
-git_rev: ec3f3be97b9e5e3c749d2036bbabcff9aff49146
+exported_at: pending
+git_rev: 098170539b9e5e3c749d2036bbabcff9aff49146
 git_branch: 08-06-directional-humaneval
 corpus_bundle: /Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval
 manifest_sha256: fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728
 run_directory: /Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/pre-106
-stages_completed: 
-logs: run.log, 01_preprocess.log
+stages_completed:

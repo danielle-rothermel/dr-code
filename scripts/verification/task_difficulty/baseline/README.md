@@ -1,7 +1,8 @@
 # Task-difficulty baselines
 
-Git-tracked logs and summaries for directional HumanEval baseline runs. Heavy
-parquet outputs and preprocessing caches stay outside the repository under
+Git-tracked **run config** and **results** for directional HumanEval baseline
+runs. Heavy parquet outputs, preprocessing caches, and verbose stage logs stay
+outside the repository under
 `~/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/`.
 
 ## One-command baseline
@@ -14,7 +15,15 @@ DR_CODE_DISPOSABLE_WORKER=1 \
 ```
 
 This runs stages 01–04 against the reviewed production HumanEval bundle, then
-exports logs and summaries into `baseline/pre-106/`.
+exports into `baseline/pre-106/`:
+
+| File | Contents |
+|---|---|
+| `run_config.json` | Pinned corpus, manifest hash, git rev, workers/timeout |
+| `results.json` | Stage completion and headline preprocessing/sampling/eval metrics |
+| `results.txt` | Human-readable summary of `results.json` |
+
+Stage logs are written only under the run directory (not git-tracked).
 
 ## Pinned production corpus
 
@@ -26,15 +35,6 @@ exports logs and summaries into `baseline/pre-106/`.
 
 Override the bundle or manifest pin with `DR_CODE_GENERATION_CORPUS_BUNDLE` and
 `DR_CODE_EXPECTED_MANIFEST_SHA256`.
-
-## Exported artifacts
-
-Each baseline directory contains:
-
-- `corpus_identity.json` — pinned bundle path and manifest hash
-- `summary.json` — structured stage status and headline metrics
-- `summary.txt` — human-readable summary
-- `logs/` — stage logs plus the combined `run.log`
 
 ## Fixture smoke run
 

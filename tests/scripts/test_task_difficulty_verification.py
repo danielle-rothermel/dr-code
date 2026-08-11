@@ -169,6 +169,38 @@ def test_preprocessing_retains_compilable_function_candidates(
     )
 
 
+def test_preprocessing_continues_after_distinct_output_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good_source = "```python\ndef f(x):\n    return x + 1\n```"
+    bad_source = "def broken():\n    return 1\n"
+    logger = logging.getLogger("test_preprocessing_failure_tolerance")
+    original = _BUILD.run_preprocessing_cached
+
+    async def _run_preprocessing_cached(text, runner, cache):  # noqa: ANN001
+        if text == bad_source:
+            raise MemoryError(
+                "Parser stack overflowed - Python source too complex to parse"
+            )
+        return await original(text, runner, cache)
+
+    monkeypatch.setattr(
+        _BUILD, "run_preprocessing_cached", _run_preprocessing_cached
+    )
+
+    results = asyncio.run(
+        _BUILD.preprocess_distinct_outputs(
+            [bad_source, good_source],
+            cache_path=tmp_path / "cache.sqlite3",
+            logger=logger,
+        )
+    )
+
+    assert results[bad_source] == ()
+    assert len(results[good_source]) >= 1
+
+
 def test_sampling_selects_one_stable_row_per_cell() -> None:
     rows = []
     for task_id in ("HumanEval/0", "HumanEval/1"):

@@ -153,6 +153,21 @@ def test_infer_necessary_imports_passthrough_on_syntax_error() -> None:
     assert "import numpy" not in result
 
 
+def test_parse_or_none_treats_parser_overflow_as_unparseable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.preprocessing import import_inference
+
+    def _overflow(*_args: object, **_kwargs: object) -> object:
+        raise MemoryError(
+            "Parser stack overflowed - Python source too complex to parse"
+        )
+
+    monkeypatch.setattr(import_inference.ast, "parse", _overflow)
+
+    assert import_inference._parse_or_none("def f():\n    return 1\n") is None
+
+
 def test_infer_necessary_imports_ignores_unmapped_names() -> None:
     source = "def f():\n    return random.randint(0, 1)\n"
     result = infer_necessary_imports(source)

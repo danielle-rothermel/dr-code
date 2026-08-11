@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the full directional HumanEval baseline workflow and export git-tracked logs.
+# Run the full directional HumanEval baseline workflow and export git-tracked results.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,8 +29,9 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [baseline-name]
 
-Run stages 01-04 of the directional HumanEval workflow, then export logs and
-summaries into a git-tracked baseline directory.
+Run stages 01-04 of the directional HumanEval workflow, then export run config and
+results into a git-tracked baseline directory. Verbose stage logs are written
+only under the run directory.
 
 Defaults:
   baseline name: pre-106
@@ -70,8 +71,8 @@ else
   unset DR_CODE_EXPECTED_MANIFEST_SHA256
 fi
 
-mkdir -p "${RUN_DIR}" "${EXPORT_DIR}/logs"
-RUN_LOG="${EXPORT_DIR}/logs/run.log"
+mkdir -p "${RUN_DIR}/logs" "${EXPORT_DIR}"
+RUN_LOG="${RUN_DIR}/logs/run.log"
 
 cd "${REPO_ROOT}"
 

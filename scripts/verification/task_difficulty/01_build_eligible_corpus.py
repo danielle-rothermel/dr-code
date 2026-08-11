@@ -153,17 +153,42 @@ async def preprocess_distinct_outputs(
 ) -> dict[str, tuple[str, ...]]:
     runner = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
     results: dict[str, tuple[str, ...]] = {}
+    distinct_outputs = list(dict.fromkeys(outputs))
     started = perf_counter()
+    failed_count = 0
     async with await SqliteRecordCache.open(cache_path) as cache:
-        for index, output in enumerate(dict.fromkeys(outputs), start=1):
-            trace = await run_preprocessing_cached(output, runner, cache)
-            results[output] = _candidate_sources(trace.value(OUTPUT_KEY))
+        for index, output in enumerate(distinct_outputs, start=1):
+            try:
+                trace = await run_preprocessing_cached(output, runner, cache)
+                results[output] = _candidate_sources(trace.value(OUTPUT_KEY))
+            except Exception as exc:
+                failed_count += 1
+                if failed_count <= 5:
+                    logger.warning(
+                        "Preprocessing failed for distinct output %d/%d: %s: %s",
+                        index,
+                        len(distinct_outputs),
+                        type(exc).__name__,
+                        exc,
+                    )
+                elif failed_count == 6:
+                    logger.warning(
+                        "Further preprocessing failures will not be logged "
+                        "individually"
+                    )
+                results[output] = ()
             if index % 500 == 0:
                 logger.info(
                     "Preprocessed %d distinct outputs in %.1f seconds",
                     index,
                     perf_counter() - started,
                 )
+    if failed_count:
+        logger.info(
+            "Preprocessing failed for %d/%d distinct outputs",
+            failed_count,
+            len(distinct_outputs),
+        )
     return results
 
 
