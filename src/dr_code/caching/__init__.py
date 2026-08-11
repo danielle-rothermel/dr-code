@@ -10,7 +10,9 @@ from dr_code.caching.execution_cache import (
     WindowedExecutionCache,
 )
 from dr_code.caching.preprocess_batch import (
+    CandidateSourcesObserver,
     TraceObserver,
+    candidate_sources_batch,
     preprocess_batch,
 )
 from dr_code.caching.trace_cache import (
@@ -23,12 +25,14 @@ __all__ = [
     "BatchRecordStore",
     "CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION",
     "CachedExecutionObservation",
+    "CandidateSourcesObserver",
     "EXECUTION_CACHE_NAMESPACE",
     "EXECUTION_CACHE_RECORD_SCHEMA",
     "ExecutionCacheStats",
     "TRACE_RECORD_SCHEMA",
     "TraceObserver",
     "WindowedExecutionCache",
+    "candidate_sources_batch",
     "preprocess_batch",
     "preprocessing_trace_cache_key",
     "run_preprocessing_cached",

@@ -15,7 +15,9 @@ from dr_serialize import Jsonable
 
 from dr_code.preprocessing.definition import PreprocessingDefinition
 from dr_code.preprocessing.job import (
+    CANDIDATE_SOURCES_ENTRY_POINT,
     PREPROCESS_TEXT_ENTRY_POINT,
+    CandidateSourcesJobResult,
     PreprocessTextJobRequest,
     PreprocessTextJobResult,
 )
@@ -50,7 +52,40 @@ def build_preprocess_text_job(
     )
 
 
+def build_candidate_sources_job(
+    job_id: JobId,
+    request: PreprocessTextJobRequest,
+    /,
+) -> ExecutionJob:
+    return build_in_process_importable_json_job(
+        job_id,
+        CANDIDATE_SOURCES_ENTRY_POINT,
+        _request_payload(request),
+    )
+
+
 def parse_preprocess_text_result(completed: CompletedExecution, /) -> Trace:
+    payload = _clean_result_payload(completed)
+    try:
+        result = PreprocessTextJobResult.model_validate(payload)
+    except Exception as error:
+        raise PreprocessTextExecutionError(str(error)) from error
+    return deserialize_trace(result.trace)
+
+
+def parse_candidate_sources_result(
+    completed: CompletedExecution,
+    /,
+) -> tuple[str, ...]:
+    payload = _clean_result_payload(completed)
+    try:
+        result = CandidateSourcesJobResult.model_validate(payload)
+    except Exception as error:
+        raise PreprocessTextExecutionError(str(error)) from error
+    return result.sources
+
+
+def _clean_result_payload(completed: CompletedExecution, /) -> Jsonable:
     outcome = completed.result.outcome
     if isinstance(outcome, ProtocolFailedOutcome):
         raise PreprocessTextExecutionError(outcome.failure_detail or outcome)
@@ -59,14 +94,9 @@ def parse_preprocess_text_result(completed: CompletedExecution, /) -> Trace:
             "preprocessing job did not exit cleanly with code zero"
         )
     try:
-        payload = parse_importable_json_result(completed)
+        return parse_importable_json_result(completed)
     except Exception as error:
         raise PreprocessTextExecutionError(str(error)) from error
-    try:
-        result = PreprocessTextJobResult.model_validate(payload)
-    except Exception as error:
-        raise PreprocessTextExecutionError(str(error)) from error
-    return deserialize_trace(result.trace)
 
 
 def _request_payload(request: PreprocessTextJobRequest) -> Jsonable:
@@ -78,7 +108,9 @@ def _request_payload(request: PreprocessTextJobRequest) -> Jsonable:
 
 __all__ = [
     "PreprocessTextExecutionError",
+    "build_candidate_sources_job",
     "build_preprocess_text_job",
+    "parse_candidate_sources_result",
     "parse_preprocess_text_result",
     "preprocess_text_request",
 ]

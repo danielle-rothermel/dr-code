@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from dr_code.caching.preprocess_batch import preprocess_batch
+from dr_code.caching.preprocess_batch import (
+    candidate_sources_batch,
+    preprocess_batch,
+)
 from dr_code.preprocessing import EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
 from dr_code.trace import OUTPUT_KEY, InspectedCodeCandidateSetArtifact, Trace
 
@@ -69,3 +72,35 @@ async def test_preprocess_batch_returns_empty_for_no_texts() -> None:
         )
         == {}
     )
+
+
+async def test_candidate_sources_batch_returns_sources_per_text() -> None:
+    texts = [_FENCED, "Just an explanation, no code at all.\n"]
+
+    results = await candidate_sources_batch(
+        texts,
+        definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+        worker_count=2,
+    )
+
+    assert results[_FENCED] == ("def f(x):\n    return x + 1",)
+    assert results[texts[1]] == ()
+
+
+async def test_candidate_sources_batch_streams_without_retaining() -> None:
+    texts = [
+        f"```python\ndef f_{index}(x):\n    return x + {index}\n```"
+        for index in range(4)
+    ]
+    observed: dict[str, tuple[str, ...] | None] = {}
+
+    results = await candidate_sources_batch(
+        texts,
+        definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+        worker_count=2,
+        on_sources=observed.__setitem__,
+    )
+
+    assert results == {}
+    assert set(observed) == set(texts)
+    assert all(sources for sources in observed.values())

@@ -325,25 +325,35 @@ exported_symbols = [
 name = "preprocessing batch"
 definition = """
 A parallel preprocessing path that runs each distinct text once as one trusted
-importable JSON job on a dr-exec worker pool, either returning every trace or
-streaming each result to a caller-supplied observer."""
+importable JSON job on a dr-exec worker pool, returning either every result or
+streaming each one to a caller-supplied observer. It returns whole traces or
+candidate sources alone, so a caller consuming sources never carries traces
+across the worker boundary."""
 exported_symbols = [
   "dr_code.caching.preprocess_batch",
+  "dr_code.caching.candidate_sources_batch",
   "dr_code.caching.TraceObserver",
+  "dr_code.caching.CandidateSourcesObserver",
 ]
 
 [[terms]]
 name = "preprocessing text job"
 definition = """
-A trusted in-process importable JSON entry point that runs one preprocessing
-definition over one text input and returns one serialized trace."""
+A trusted importable JSON entry point that runs one preprocessing definition
+over one text input and returns either one serialized trace or that trace's
+candidate sources alone."""
 exported_symbols = [
   "dr_code.preprocessing.job.PREPROCESS_TEXT_ENTRY_POINT",
+  "dr_code.preprocessing.job.CANDIDATE_SOURCES_ENTRY_POINT",
   "dr_code.preprocessing.job.preprocess_text_job",
+  "dr_code.preprocessing.job.candidate_sources_job",
   "dr_code.preprocessing.job.PreprocessTextJobRequest",
   "dr_code.preprocessing.job.PreprocessTextJobResult",
+  "dr_code.preprocessing.job.CandidateSourcesJobResult",
   "dr_code.preprocessing.execution.build_preprocess_text_job",
+  "dr_code.preprocessing.execution.build_candidate_sources_job",
   "dr_code.preprocessing.execution.parse_preprocess_text_result",
+  "dr_code.preprocessing.execution.parse_candidate_sources_result",
 ]
 
 [[terms]]

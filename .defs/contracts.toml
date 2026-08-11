@@ -186,20 +186,25 @@ check = "uv run pytest tests/caching/test_trace_cache.py"
 [[contracts]]
 title = "Parallel preprocessing runs on the dr-exec worker pool"
 statement = """
-`preprocess_batch` deduplicates requested texts and runs each distinct text
-once as one trusted importable JSON job on a dr-exec worker pool, which imports
-the preprocessing entry point once per worker. A completion that does not carry
-one valid trace is that text's failure and never aborts unrelated inputs.
-Without an observer every trace is returned keyed by text; with an observer each
-result is handed over as it completes and no trace is retained, so a caller that
-consumes results per text does not hold the batch in memory. `evaluate_batch`
-sample prepare and the eligible-corpus stage delegate to this path."""
+`preprocess_batch` and `candidate_sources_batch` deduplicate requested texts and
+run each distinct text once as one trusted importable JSON job on a dr-exec
+worker pool, which imports the preprocessing entry point once per worker. A
+completion that does not carry one valid result is that text's failure and never
+aborts unrelated inputs. Without an observer every result is returned keyed by
+text; with an observer each result is handed over as it completes and nothing is
+retained. A caller that consumes candidate sources runs the candidate-sources
+entry point, which returns the sources alone rather than the trace carrying
+them. `evaluate_batch` sample prepare uses the trace path; the eligible-corpus
+stage uses the candidate-sources path."""
 rationale = """
 Preprocessing is trusted, CPU-bound, milliseconds-per-item work, so it needs
 real cores without paying interpreter startup per item, and it makes no
 containment claim. Streaming results to an observer keeps corpus-scale batches
-from retaining every trace, which candidate execution — untrusted and therefore
-spawn-per-job — must not share."""
+from retaining every result. Result size is the throughput term that matters:
+the caller decodes and validates every byte a worker returns, single-threaded,
+so returning a whole serialized trace where only its sources are wanted costs
+about two orders of magnitude in payload and collapses pool throughput to the
+caller's parse rate no matter how many workers run."""
 date = "2026-08-11"
 check = "uv run pytest tests/caching/test_preprocess_batch.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
 
