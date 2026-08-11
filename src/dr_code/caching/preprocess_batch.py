@@ -111,61 +111,65 @@ async def preprocess_batch(
         for key_window in _windows(
             cache_keys, effective_limits.max_prefetch_keys
         ):
-            await trace_cache.prefetch(key_window)
-            misses: list[_PreprocessWork] = []
-            for index, cache_key in enumerate(key_window):
-                text = work_by_key[cache_key]
-                input_value = TextArtifact(text=text)
-                cached = trace_cache.get(cache_key)
-                if cached is None:
-                    misses.append(
-                        _PreprocessWork(
-                            text=text,
-                            cache_key=cache_key,
-                            index=index,
-                        )
-                    )
-                    continue
-                restored = trace_from_cached_record(
-                    cached,
-                    input_value=input_value,
-                    runner=runner,
-                )
-                if restored is None:
-                    misses.append(
-                        _PreprocessWork(
-                            text=text,
-                            cache_key=cache_key,
-                            index=index,
-                        )
-                    )
-                else:
-                    results[text] = restored
-                    if on_trace_completed is not None:
-                        on_trace_completed(text, restored)
-
-            for admission_window in _windows(
-                misses,
-                effective_limits.max_admitted_jobs,
-            ):
-                async with executor.open_pool(config=pool_config) as pool:
-                    async for completion in pool.run_stream(
-                        _submissions(admission_window, definition)
-                    ):
-                        item = completion.context
-                        try:
-                            trace = parse_preprocess_text_result(
-                                completion.completed_execution
+            try:
+                await trace_cache.prefetch(key_window)
+                misses: list[_PreprocessWork] = []
+                for index, cache_key in enumerate(key_window):
+                    text = work_by_key[cache_key]
+                    input_value = TextArtifact(text=text)
+                    cached = trace_cache.get(cache_key)
+                    if cached is None:
+                        misses.append(
+                            _PreprocessWork(
+                                text=text,
+                                cache_key=cache_key,
+                                index=index,
                             )
-                        except PreprocessTextExecutionError:
-                            continue
-                        results[item.text] = trace
-                        if on_trace_completed is not None:
-                            on_trace_completed(item.text, trace)
-                        await trace_cache.put(
-                            item.cache_key,
-                            serialize_trace(trace),
                         )
+                        continue
+                    restored = trace_from_cached_record(
+                        cached,
+                        input_value=input_value,
+                        runner=runner,
+                    )
+                    if restored is None:
+                        misses.append(
+                            _PreprocessWork(
+                                text=text,
+                                cache_key=cache_key,
+                                index=index,
+                            )
+                        )
+                    else:
+                        results[text] = restored
+                        if on_trace_completed is not None:
+                            on_trace_completed(text, restored)
+
+                for admission_window in _windows(
+                    misses,
+                    effective_limits.max_admitted_jobs,
+                ):
+                    async with executor.open_pool(config=pool_config) as pool:
+                        async for completion in pool.run_stream(
+                            _submissions(admission_window, definition)
+                        ):
+                            item = completion.context
+                            try:
+                                trace = parse_preprocess_text_result(
+                                    completion.completed_execution
+                                )
+                            except PreprocessTextExecutionError:
+                                continue
+                            results[item.text] = trace
+                            if on_trace_completed is not None:
+                                on_trace_completed(item.text, trace)
+                            await trace_cache.put(
+                                item.cache_key,
+                                serialize_trace(trace),
+                            )
+            finally:
+                for cache_key in key_window:
+                    trace_cache.discard(cache_key)
 
     return results
 

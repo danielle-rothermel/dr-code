@@ -122,3 +122,25 @@ async def test_preprocess_batch_respects_worker_limit() -> None:
 
     assert max_active <= 2
     assert max_active >= 2
+
+
+async def test_preprocess_batch_discards_resident_entries_between_windows() -> (
+    None
+):
+    cache = RecordCache(ObjectStore(MemoryBackend()))
+    sources = [
+        f"```python\ndef f_{index}(x):\n    return x + {index}\n```"
+        for index in range(9)
+    ]
+    results = await preprocess_batch(
+        sources,
+        definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+        store=cache,
+        pool_config=ExecutionPoolConfig(
+            capacity=FixedPoolCapacity(max_active_jobs=2)
+        ),
+        limits=default_preprocess_batch_limits(worker_count=2),
+    )
+
+    assert len(results) == len(sources)
+    assert set(results) == set(sources)
