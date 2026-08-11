@@ -1,0 +1,12 @@
+baseline: post-106
+exported_at: 2026-08-11T22:57:26.296208+00:00
+git_rev: 013478e76dc57c0e2ffb6f04dd19628e809d9267
+git_branch: 08-08-dr-code-adversarial-review-fixes
+corpus_bundle: /Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval
+manifest_sha256: fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728
+run_directory: /Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/post-106
+stages_completed: preprocess, sample, evaluate, summarize
+preprocessing: 201050 eligible / 203406 nonblank (163 tasks)
+sampling: 326 selected generations across 163 tasks
+evaluation: 326/326 complete generations, mean task success rate 0.8344
+observed task extremes: {'mixed': 42, 'all_passed': 115, 'all_failed': 6}

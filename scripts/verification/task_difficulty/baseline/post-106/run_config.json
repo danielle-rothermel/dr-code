@@ -1,0 +1,26 @@
+{
+  "attempt_id": "097bc899-5a74-50a6-8c6a-6125a39e1c88",
+  "baseline_name": "post-106",
+  "bundle_path": "/Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/post-106/explicit-runtime/workers-32_timeout-120/evaluation_bundles/run/evaluation-20260811T225249563858Z-64b3cde4-9946-415a-afa1-dbc9ec48bf4d",
+  "corpus_bundle": "/Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval",
+  "evaluation_settings": {
+    "evaluation_root": "/Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/post-106/explicit-runtime/workers-32_timeout-120",
+    "timeout_seconds": 120.0,
+    "worker_count": 32
+  },
+  "git_branch": "08-08-dr-code-adversarial-review-fixes",
+  "git_rev": "013478e76dc57c0e2ffb6f04dd19628e809d9267",
+  "manifest_sha256": "fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728",
+  "manifest_summary": {
+    "adapter_name": "legacy_human_eval",
+    "adapter_version": 1,
+    "format": "generation-corpus-v1",
+    "generations": 203407,
+    "manifest_sha256": "fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728",
+    "requests": 203407,
+    "source_manifest_sha256": "6f4dad5e709e3c45616143e1a201ed1f3135abd3354858bbee2c533c09cd967b"
+  },
+  "run_directory": "/Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/post-106",
+  "settings_fingerprint": "ccffdd1032a5e6919129afdc2f522c2ccec8eefdac54ad26e93f99a7dbb86c9f",
+  "status": "complete"
+}
