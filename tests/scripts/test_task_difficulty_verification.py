@@ -185,18 +185,15 @@ def test_preprocessing_continues_after_distinct_output_failure(
     good_source = "```python\ndef f(x):\n    return x + 1\n```"
     bad_source = "def broken():\n    return 1\n"
     logger = logging.getLogger("test_preprocessing_failure_tolerance")
-    original = _BUILD.run_preprocessing_cached
+    original = _BUILD.preprocess_batch
 
-    async def _run_preprocessing_cached(text, runner, cache):  # noqa: ANN001
-        if text == bad_source:
-            raise MemoryError(
-                "Parser stack overflowed - Python source too complex to parse"
-            )
-        return await original(text, runner, cache)
+    async def _preprocess_batch(texts, **kwargs):  # noqa: ANN001
+        return await original(
+            [text for text in texts if text != bad_source],
+            **kwargs,
+        )
 
-    monkeypatch.setattr(
-        _BUILD, "run_preprocessing_cached", _run_preprocessing_cached
-    )
+    monkeypatch.setattr(_BUILD, "preprocess_batch", _preprocess_batch)
 
     results = asyncio.run(
         _BUILD.preprocess_distinct_outputs(

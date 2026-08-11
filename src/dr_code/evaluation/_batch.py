@@ -24,10 +24,16 @@ from dr_exec import (
     Executor,
     JobId,
 )
+from dr_store import MemoryBackend, ObjectStore, RecordCache
 from dr_serialize import Sha256Digest, canonical_json_bytes
 
 from dr_code.caching import WindowedExecutionCache
 from dr_code.caching.execution_cache import CachedExecutionObservation
+from dr_code.caching.preprocess_batch import (
+    default_preprocess_batch_limits,
+    preprocess_batch,
+    resolved_pool_worker_count,
+)
 from dr_code.evaluation.aggregation import (
     AggregationInput,
     AggregationOk,
@@ -215,6 +221,7 @@ async def _evaluate_batch_assembly(
             execution_cache=execution_cache,
             run_window=run_window,
             placement_sink=placement_sink,
+            pool_config=pool_config,
         )
 
 
@@ -244,6 +251,7 @@ async def _evaluate_durable_partition_assembly(
         execution_cache=execution_cache,
         run_window=run_window,
         placement_sink=placement_sink,
+        pool_config=ExecutionPoolConfig(),
     )
 
 
@@ -279,6 +287,7 @@ async def _assemble(
     execution_cache: WindowedExecutionCache,
     run_window: _RunWindow,
     placement_sink: _RecordPlacementSink,
+    pool_config: ExecutionPoolConfig,
 ) -> _EvaluationBatchAssembly:
     runner = (
         bind_preprocessing(request.plan.procedure.preprocessing)
@@ -287,9 +296,28 @@ async def _assemble(
         )
         else None
     )
+    traces_by_text: dict[str, Trace] = {}
+    if runner is not None:
+        sample_texts = [
+            item.sample.raw_input.text
+            for item in request.inputs
+            if isinstance(item, SampleEvaluationInput)
+        ]
+        if sample_texts:
+            preprocessing_cache = RecordCache(ObjectStore(MemoryBackend()))
+            traces_by_text = await preprocess_batch(
+                sample_texts,
+                definition=request.plan.procedure.preprocessing,
+                store=preprocessing_cache,
+                pool_config=pool_config,
+                limits=default_preprocess_batch_limits(
+                    worker_count=resolved_pool_worker_count(pool_config),
+                ),
+            )
     prepared_inputs, prepare_exhaustion = _prepare_inputs(
         request,
         runner=runner,
+        traces_by_text=traces_by_text,
     )
     execution_result = _GlobalExecutionResult(by_sample={}, exhaustion=None)
     if prepare_exhaustion is None:
@@ -314,18 +342,25 @@ def _prepare_inputs(
     request: EvaluationBatchRequest,
     *,
     runner: BoundPreprocessingRunner | None,
+    traces_by_text: Mapping[str, Trace] | None = None,
 ) -> tuple[tuple[_PreparedInput, ...], AttemptLimitExhaustion | None]:
     prepared_inputs: list[_PreparedInput] = []
     materialized_count = 0
     projected_rows = _terminal_projection_reserve(request)
     exhaustion: AttemptLimitExhaustion | None = None
+    precomputed_traces = traces_by_text or {}
 
     for input_window in _windows(
         request.inputs,
         request.window_limits.max_preprocessing_slots,
     ):
         prepared_window = tuple(
-            _prepare_input(request, item, runner=runner)
+            _prepare_input(
+                request,
+                item,
+                runner=runner,
+                traces_by_text=precomputed_traces,
+            )
             for item in input_window
         )
         for prepared in prepared_window:
@@ -504,6 +539,7 @@ def _prepare_input(
     item: EvaluationInput,
     *,
     runner: BoundPreprocessingRunner | None,
+    traces_by_text: Mapping[str, Trace] | None = None,
 ) -> _PreparedInput:
     if isinstance(item, FrozenCandidateEvaluationInput):
         trace = _frozen_candidate_trace(item)
@@ -511,7 +547,13 @@ def _prepare_input(
         absence = None
     else:
         assert runner is not None
-        raw_trace = runner.run(item.sample.raw_input)
+        text = item.sample.raw_input.text
+        precomputed = (traces_by_text or {}).get(text)
+        raw_trace = (
+            precomputed
+            if precomputed is not None
+            else runner.run(item.sample.raw_input)
+        )
         trace = Trace(
             values={
                 **dict(raw_trace.values),

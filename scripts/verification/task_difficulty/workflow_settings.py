@@ -132,7 +132,10 @@ def parse_evaluation_args(
         "--workers",
         type=_positive_worker_count,
         default=EVALUATION_WORKERS,
-        help=f"concurrent candidate execution workers (global pool capacity; default: {EVALUATION_WORKERS})",
+        help=(
+            "concurrent workers for preprocessing (stage 1) and candidate "
+            f"execution (stage 3 global pool capacity; default: {EVALUATION_WORKERS})"
+        ),
     )
     parser.add_argument(
         "--timeout-seconds",

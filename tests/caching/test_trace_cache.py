@@ -49,6 +49,10 @@ class _CountingRunner:
     def producer(self) -> TraceProducer:
         return self._runner.producer
 
+    @property
+    def definition(self):
+        return self._runner.definition
+
     def run(self, input_value: Artifact) -> Trace:
         self.runs += 1
         return self._runner.run(input_value)

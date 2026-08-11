@@ -89,6 +89,7 @@ cd "${REPO_ROOT}"
 
 echo "Stage 1: build eligible corpus" | tee -a "${RUN_LOG}"
 uv run python scripts/verification/task_difficulty/01_build_eligible_corpus.py \
+  --workers "${WORKERS}" \
   2>&1 | tee -a "${RUN_LOG}"
 
 echo "Stage 2: select balanced sample" | tee -a "${RUN_LOG}"

@@ -318,6 +318,47 @@ input and resolved producer coordinate."""
 exported_symbols = [
   "dr_code.caching.run_preprocessing_cached",
   "dr_code.caching.preprocessing_trace_cache_key",
+  "dr_code.caching.trace_from_cached_record",
+  "dr_code.caching.TRACE_RECORD_SCHEMA",
+]
+
+[[terms]]
+name = "windowed trace cache"
+definition = """
+A preprocessing-trace memoization layer that reads planned cache keys in bounded
+windows, retains bounded resident and checkpoint state, and validates restored
+traces before reuse."""
+exported_symbols = [
+  "dr_code.caching.WindowedTraceCache",
+  "dr_code.caching.TraceCacheStats",
+]
+
+[[terms]]
+name = "preprocessing batch"
+definition = """
+A bounded parallel preprocessing path that window-prefetches trace cache keys,
+schedules misses through dr-exec's in-process importable JSON pool, and
+checkpoints serialized traces through dr-store batch writes."""
+exported_symbols = [
+  "dr_code.caching.preprocess_batch",
+  "dr_code.caching.preprocess_batch_cached",
+  "dr_code.caching.PreprocessBatchLimits",
+  "dr_code.caching.default_preprocess_batch_limits",
+  "dr_code.caching.DEFAULT_WORKER_COUNT",
+]
+
+[[terms]]
+name = "preprocessing text job"
+definition = """
+A trusted in-process importable JSON entry point that runs one preprocessing
+definition over one text input and returns one serialized trace."""
+exported_symbols = [
+  "dr_code.preprocessing.job.PREPROCESS_TEXT_ENTRY_POINT",
+  "dr_code.preprocessing.job.preprocess_text_job",
+  "dr_code.preprocessing.job.PreprocessTextJobRequest",
+  "dr_code.preprocessing.job.PreprocessTextJobResult",
+  "dr_code.preprocessing.execution.build_preprocess_text_job",
+  "dr_code.preprocessing.execution.parse_preprocess_text_result",
 ]
 
 [[terms]]

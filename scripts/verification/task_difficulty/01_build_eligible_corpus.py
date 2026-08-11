@@ -12,14 +12,17 @@ from pathlib import Path
 from time import perf_counter
 
 import polars as pl
+from dr_exec import ExecutionPoolConfig, FixedPoolCapacity
 from dr_store import SqliteRecordCache
 
-from dr_code.caching import run_preprocessing_cached
+from dr_code.caching import (
+    default_preprocess_batch_limits,
+    preprocess_batch,
+)
 from dr_code.preprocessing import (
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_ID,
     EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION_VERSION,
-    bind_preprocessing,
 )
 from dr_code.trace import (
     OUTPUT_KEY,
@@ -34,10 +37,12 @@ from corpus_loader import (
 )
 from workflow_settings import (
     ELIGIBLE_CORPUS,
+    EVALUATION_WORKERS,
     PREPROCESSING_CACHE,
     PREPROCESS_LOG,
     PREPROCESSING_SUMMARY,
     SETTINGS,
+    _positive_worker_count,
     expected_manifest_sha256,
     generation_corpus_bundle_path,
     prepare_run_directory,
@@ -150,39 +155,80 @@ async def preprocess_distinct_outputs(
     *,
     cache_path: Path,
     logger: logging.Logger,
+    worker_count: int = EVALUATION_WORKERS,
 ) -> dict[str, tuple[str, ...]]:
-    runner = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
+    if worker_count < 1:
+        raise ValueError("worker_count must be positive")
+
     results: dict[str, tuple[str, ...]] = {}
     distinct_outputs = list(dict.fromkeys(outputs))
     started = perf_counter()
     failed_count = 0
+    completed_count = 0
+    logger.info(
+        "Preprocessing %d distinct outputs with workers=%d",
+        len(distinct_outputs),
+        worker_count,
+    )
+
+    def _record_completion(_text: str, _trace: object) -> None:
+        nonlocal completed_count
+        completed_count += 1
+        if completed_count % 500 == 0:
+            logger.info(
+                "Preprocessed %d distinct outputs in %.1f seconds",
+                completed_count,
+                perf_counter() - started,
+            )
+
     async with await SqliteRecordCache.open(cache_path) as cache:
-        for index, output in enumerate(distinct_outputs, start=1):
-            try:
-                trace = await run_preprocessing_cached(output, runner, cache)
-                results[output] = _candidate_sources(trace.value(OUTPUT_KEY))
-            except Exception as exc:
-                failed_count += 1
-                if failed_count <= 5:
-                    logger.warning(
-                        "Preprocessing failed for distinct output %d/%d: %s: %s",
-                        index,
-                        len(distinct_outputs),
-                        type(exc).__name__,
-                        exc,
-                    )
-                elif failed_count == 6:
-                    logger.warning(
-                        "Further preprocessing failures will not be logged "
-                        "individually"
-                    )
-                results[output] = ()
-            if index % 500 == 0:
-                logger.info(
-                    "Preprocessed %d distinct outputs in %.1f seconds",
+        traces = await preprocess_batch(
+            distinct_outputs,
+            definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+            store=cache,
+            pool_config=ExecutionPoolConfig(
+                capacity=FixedPoolCapacity(max_active_jobs=worker_count)
+            ),
+            limits=default_preprocess_batch_limits(worker_count=worker_count),
+            on_trace_completed=_record_completion,
+        )
+
+    for index, output in enumerate(distinct_outputs, start=1):
+        trace = traces.get(output)
+        if trace is None:
+            failed_count += 1
+            if failed_count <= 5:
+                logger.warning(
+                    "Preprocessing failed for distinct output %d/%d",
                     index,
-                    perf_counter() - started,
+                    len(distinct_outputs),
                 )
+            elif failed_count == 6:
+                logger.warning(
+                    "Further preprocessing failures will not be logged "
+                    "individually"
+                )
+            results[output] = ()
+            continue
+        try:
+            results[output] = _candidate_sources(trace.value(OUTPUT_KEY))
+        except Exception as exc:
+            failed_count += 1
+            if failed_count <= 5:
+                logger.warning(
+                    "Preprocessing failed for distinct output %d/%d: %s: %s",
+                    index,
+                    len(distinct_outputs),
+                    type(exc).__name__,
+                    exc,
+                )
+            elif failed_count == 6:
+                logger.warning(
+                    "Further preprocessing failures will not be logged "
+                    "individually"
+                )
+            results[output] = ()
+
     if failed_count:
         logger.info(
             "Preprocessing failed for %d/%d distinct outputs",
@@ -258,6 +304,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             f"(default: {generation_corpus_bundle_path()})"
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=_positive_worker_count,
+        default=EVALUATION_WORKERS,
+        help=(
+            f"concurrent preprocessing workers (default: {EVALUATION_WORKERS})"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -295,6 +349,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             outputs,
             cache_path=PREPROCESSING_CACHE,
             logger=logger,
+            worker_count=arguments.workers,
         )
     )
     eligible, summary = attach_preprocessing_results(rows, candidates)

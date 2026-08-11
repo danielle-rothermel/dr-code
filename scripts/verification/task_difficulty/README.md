@@ -39,9 +39,9 @@ uv run python scripts/build_generation_corpus.py human_eval \
 
 1. `uv run python scripts/verification/task_difficulty/01_build_eligible_corpus.py`
    loads the pinned generation corpus bundle, keeps the three comparable
-   `(generation_mode, budget_mode)` settings, runs exhaustive preprocessing,
-   and stores generations with at least one compilable top-level-function
-   candidate.
+   `(generation_mode, budget_mode)` settings, runs exhaustive preprocessing
+   with `--workers` concurrent tasks (default 16), and stores generations with
+   at least one compilable top-level-function candidate.
 2. `uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py`
    selects one deterministic generation for each available task, setting, and
    model in the fixed model roster.

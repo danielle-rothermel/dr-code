@@ -52,7 +52,7 @@ def other(value):
     assert "no_candidate_survived_filtering: 1 (100.00% of failures)" in (
         completed.stdout
     )
-    assert "cache" not in script.read_text().lower()
+    assert "preprocess_batch" in script.read_text()
 
 
 def test_bootstraps_preprocessing_success_across_tasks(

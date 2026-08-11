@@ -125,6 +125,27 @@ async with await SqliteRecordCache.open("traces.sqlite3") as cache:
     trace = await run_preprocessing_cached(text, runner, cache)
 ```
 
+Parallel batch preprocessing uses dr-exec 0.1.8's in-process importable JSON
+executor with the same `ExecutionPool` scheduling contract as candidate
+execution. `preprocess_batch` window-prefetches trace keys through dr-store
+`get_many`, runs misses through the pool, and checkpoints with bounded
+`put_many` via `WindowedTraceCache`. See [docs/windowed_trace_cache.md](docs/windowed_trace_cache.md).
+
+```python
+from dr_exec import ExecutionPoolConfig, FixedPoolCapacity, ImportableJsonExecutor
+from dr_code.caching import default_preprocess_batch_limits, preprocess_batch
+
+await preprocess_batch(
+    texts,
+    definition=definition,
+    store=batch_record_store,
+    pool_config=ExecutionPoolConfig(
+        capacity=FixedPoolCapacity(max_active_jobs=16),
+    ),
+    limits=default_preprocess_batch_limits(worker_count=16),
+)
+```
+
 ### [Windowed execution caching](docs/windowed_execution_cache.md)
 
 `WindowedExecutionCache` bulk-prefetches planned execution observations into a
