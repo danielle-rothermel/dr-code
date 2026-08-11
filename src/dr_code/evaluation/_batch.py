@@ -7,6 +7,7 @@ from collections.abc import (
     Awaitable,
     Callable,
     Iterator,
+    Mapping,
     Sequence,
 )
 from dataclasses import dataclass
@@ -155,6 +156,19 @@ class _ExecutionWindow:
     exhaustion: AttemptLimitExhaustion | None
 
 
+@dataclass(frozen=True, slots=True)
+class _GlobalCandidateWork:
+    sample_index: int
+    candidate_index: int
+    work: _CandidateWork
+
+
+@dataclass(frozen=True, slots=True)
+class _GlobalExecutionResult:
+    by_sample: dict[int, _ExecutionWindow]
+    exhaustion: AttemptLimitExhaustion | None
+
+
 _RunWindow: TypeAlias = Callable[
     [Sequence[_CandidateWork]],
     Awaitable[dict[int, CompletedExecution]],
@@ -273,13 +287,36 @@ async def _assemble(
         )
         else None
     )
-    members: list[EvaluationMemberRecord] = []
-    aggregation_slots: list[AggregationSlot] = []
-    score_values: list[MetricValue] = []
-    invalid = False
+    prepared_inputs, prepare_exhaustion = _prepare_inputs(
+        request,
+        runner=runner,
+    )
+    execution_result = _GlobalExecutionResult(by_sample={}, exhaustion=None)
+    if prepare_exhaustion is None:
+        execution_result = await _execute_batch_candidates_globally(
+            request,
+            prepared_inputs,
+            execution_cache=execution_cache,
+            run_window=run_window,
+        )
+    exhaustion = prepare_exhaustion or execution_result.exhaustion
+    return await _place_prepared_inputs(
+        request,
+        prepared_inputs,
+        execution_result.by_sample,
+        exhaustion=exhaustion,
+        execution_cache=execution_cache,
+        placement_sink=placement_sink,
+    )
+
+
+def _prepare_inputs(
+    request: EvaluationBatchRequest,
+    *,
+    runner: BoundPreprocessingRunner | None,
+) -> tuple[tuple[_PreparedInput, ...], AttemptLimitExhaustion | None]:
+    prepared_inputs: list[_PreparedInput] = []
     materialized_count = 0
-    admitted_count = 0
-    retained_bytes = 0
     projected_rows = _terminal_projection_reserve(request)
     exhaustion: AttemptLimitExhaustion | None = None
 
@@ -318,97 +355,113 @@ async def _assemble(
                 break
 
             materialized_count = observed_materialized
-            if prepared.absence is not None:
-                record: SampleEvaluationRecord = (
-                    PreprocessingAbsentSampleRecord(
-                        slot=prepared.input.slot,
-                        sample=prepared.input.sample.metadata,
-                        trace=serialize_trace(prepared.trace),
-                        absence=prepared.absence,
-                    )
-                )
-                execution = _ExecutionWindow((), (), 0, None)
-            elif not prepared.candidates:
-                record = NoCandidatesSampleRecord(
-                    slot=prepared.input.slot,
-                    sample=prepared.input.sample.metadata,
-                    trace=serialize_trace(prepared.trace),
-                )
-                execution = _ExecutionWindow((), (), 0, None)
-            else:
-                execution = await _execute_candidates(
-                    request,
-                    prepared,
-                    execution_cache=execution_cache,
-                    admitted_so_far=admitted_count,
-                    run_window=run_window,
-                )
-                if execution.exhaustion is not None:
-                    exhaustion = execution.exhaustion
-                    break
-                metric_records = tuple(
-                    metric
-                    for plan, candidate_record in zip(
-                        prepared.metric_plans,
-                        execution.records,
-                        strict=True,
-                    )
-                    for metric in plan.records(candidate_record.outcome)
-                )
-                record = EvaluatedSampleRecord(
-                    slot=prepared.input.slot,
-                    sample=prepared.input.sample.metadata,
-                    trace=serialize_trace(prepared.trace),
-                    candidates=prepared.candidates,
-                    executions=execution.records,
-                    metrics=metric_records,
-                )
-
-            encoded_size = len(
-                canonical_json_bytes(record.model_dump(mode="json"))
-            )
-            observed_bytes = retained_bytes + encoded_size
-            if (
-                observed_bytes
-                > request.attempt_limits.max_retained_evidence_bytes
-            ):
-                exhaustion = AttemptLimitExhaustion(
-                    limit=AttemptLimitKind.RETAINED_EVIDENCE_BYTES,
-                    configured=request.attempt_limits.max_retained_evidence_bytes,
-                    observed=observed_bytes,
-                )
-                break
-
-            reference = await placement_sink.place(record)
-            members.append(
-                EvaluationMemberRecord(
-                    slot=record.slot,
-                    sample=record.sample.identity,
-                    record=reference,
-                )
-            )
-            if isinstance(reference, StoredRecordReference):
-                for item in execution.pending:
-                    try:
-                        await execution_cache.put(
-                            item.request_key,
-                            CachedExecutionObservation(
-                                source_record=reference,
-                                outcome=item.outcome,
-                            ),
-                        )
-                    finally:
-                        execution_cache.discard(item.request_key)
-            admitted_count += execution.admitted_jobs
-            retained_bytes = observed_bytes
             projected_rows += contribution
-            invalid = invalid or _record_is_invalid(record)
-            _extend_aggregate_state(
-                request,
-                record,
-                aggregation_slots=aggregation_slots,
-                score_values=score_values,
+            prepared_inputs.append(prepared)
+        if exhaustion is not None:
+            break
+
+    return tuple(prepared_inputs), exhaustion
+
+
+async def _place_prepared_inputs(
+    request: EvaluationBatchRequest,
+    prepared_inputs: Sequence[_PreparedInput],
+    execution_by_sample: Mapping[int, _ExecutionWindow],
+    *,
+    exhaustion: AttemptLimitExhaustion | None,
+    execution_cache: WindowedExecutionCache,
+    placement_sink: _RecordPlacementSink,
+) -> _EvaluationBatchAssembly:
+    members: list[EvaluationMemberRecord] = []
+    aggregation_slots: list[AggregationSlot] = []
+    score_values: list[MetricValue] = []
+    invalid = False
+    retained_bytes = 0
+
+    for sample_index, prepared in enumerate(prepared_inputs):
+        if prepared.absence is not None:
+            record: SampleEvaluationRecord = PreprocessingAbsentSampleRecord(
+                slot=prepared.input.slot,
+                sample=prepared.input.sample.metadata,
+                trace=serialize_trace(prepared.trace),
+                absence=prepared.absence,
             )
+            execution = _ExecutionWindow((), (), 0, None)
+        elif not prepared.candidates:
+            record = NoCandidatesSampleRecord(
+                slot=prepared.input.slot,
+                sample=prepared.input.sample.metadata,
+                trace=serialize_trace(prepared.trace),
+            )
+            execution = _ExecutionWindow((), (), 0, None)
+        else:
+            if (
+                exhaustion is not None
+                and sample_index not in execution_by_sample
+            ):
+                break
+            execution = execution_by_sample[sample_index]
+            if execution.exhaustion is not None:
+                exhaustion = execution.exhaustion
+                break
+            metric_records = tuple(
+                metric
+                for plan, candidate_record in zip(
+                    prepared.metric_plans,
+                    execution.records,
+                    strict=True,
+                )
+                for metric in plan.records(candidate_record.outcome)
+            )
+            record = EvaluatedSampleRecord(
+                slot=prepared.input.slot,
+                sample=prepared.input.sample.metadata,
+                trace=serialize_trace(prepared.trace),
+                candidates=prepared.candidates,
+                executions=execution.records,
+                metrics=metric_records,
+            )
+
+        encoded_size = len(
+            canonical_json_bytes(record.model_dump(mode="json"))
+        )
+        observed_bytes = retained_bytes + encoded_size
+        if observed_bytes > request.attempt_limits.max_retained_evidence_bytes:
+            exhaustion = AttemptLimitExhaustion(
+                limit=AttemptLimitKind.RETAINED_EVIDENCE_BYTES,
+                configured=request.attempt_limits.max_retained_evidence_bytes,
+                observed=observed_bytes,
+            )
+            break
+
+        reference = await placement_sink.place(record)
+        members.append(
+            EvaluationMemberRecord(
+                slot=record.slot,
+                sample=record.sample.identity,
+                record=reference,
+            )
+        )
+        if isinstance(reference, StoredRecordReference):
+            for item in execution.pending:
+                try:
+                    await execution_cache.put(
+                        item.request_key,
+                        CachedExecutionObservation(
+                            source_record=reference,
+                            outcome=item.outcome,
+                        ),
+                    )
+                finally:
+                    execution_cache.discard(item.request_key)
+        retained_bytes = observed_bytes
+        invalid = invalid or _record_is_invalid(record)
+        _extend_aggregate_state(
+            request,
+            record,
+            aggregation_slots=aggregation_slots,
+            score_values=score_values,
+        )
         if exhaustion is not None:
             break
 
@@ -560,82 +613,131 @@ def _materialize_candidates(
     )
 
 
-async def _execute_candidates(
+async def _execute_batch_candidates_globally(
     request: EvaluationBatchRequest,
-    prepared: _PreparedInput,
+    prepared_inputs: Sequence[_PreparedInput],
     *,
     execution_cache: WindowedExecutionCache,
-    admitted_so_far: int,
     run_window: _RunWindow,
-) -> _ExecutionWindow:
-    work = tuple(
-        _candidate_work(request, candidate, plan, index)
-        for index, (candidate, plan) in enumerate(
+) -> _GlobalExecutionResult:
+    flat_work: list[_GlobalCandidateWork] = []
+    candidates_per_sample: dict[int, int] = {}
+    global_index = 0
+    for sample_index, prepared in enumerate(prepared_inputs):
+        if prepared.absence is not None or not prepared.candidates:
+            continue
+        candidates_per_sample[sample_index] = len(prepared.candidates)
+        for candidate_index, (candidate, plan) in enumerate(
             zip(prepared.candidates, prepared.metric_plans, strict=True)
-        )
-    )
-    records: dict[int, CandidateExecutionRecord] = {}
-    pending: list[_PendingCacheObservation] = []
+        ):
+            flat_work.append(
+                _GlobalCandidateWork(
+                    sample_index=sample_index,
+                    candidate_index=candidate_index,
+                    work=_candidate_work(
+                        request,
+                        candidate,
+                        plan,
+                        global_index,
+                    ),
+                )
+            )
+            global_index += 1
+
+    records_by_sample: dict[int, dict[int, CandidateExecutionRecord]] = {}
+    pending_by_sample: dict[int, list[_PendingCacheObservation]] = {}
+    admitted_by_sample: dict[int, int] = {}
     admitted = 0
-    for window in _windows(work, request.window_limits.max_cache_keys):
-        await execution_cache.prefetch(item.request_key for item in window)
+    exhaustion: AttemptLimitExhaustion | None = None
+
+    for window in _windows(flat_work, request.window_limits.max_cache_keys):
+        await execution_cache.prefetch(
+            item.work.request_key for item in window
+        )
         try:
-            misses: list[_CandidateWork] = []
+            misses: list[_GlobalCandidateWork] = []
             for item in window:
-                observation = execution_cache.get(item.request_key)
+                observation = execution_cache.get(item.work.request_key)
                 if observation is None:
                     misses.append(item)
                 else:
-                    records[item.index] = reused_candidate_record(
-                        item.request,
-                        observation.source_record,
-                        observation.outcome,
-                        budget=request.job_budget,
-                        runtime=request.runtime,
-                        cache_namespace=request.cache_namespace,
+                    sample_records = records_by_sample.setdefault(
+                        item.sample_index,
+                        {},
                     )
-            observed_admissions = admitted_so_far + admitted + len(misses)
+                    sample_records[item.candidate_index] = (
+                        reused_candidate_record(
+                            item.work.request,
+                            observation.source_record,
+                            observation.outcome,
+                            budget=request.job_budget,
+                            runtime=request.runtime,
+                            cache_namespace=request.cache_namespace,
+                        )
+                    )
+            observed_admissions = admitted + len(misses)
             if observed_admissions > request.attempt_limits.max_admitted_jobs:
-                return _ExecutionWindow(
-                    records=(),
-                    pending=(),
-                    admitted_jobs=admitted,
-                    exhaustion=AttemptLimitExhaustion(
-                        limit=AttemptLimitKind.ADMITTED_JOBS,
-                        configured=request.attempt_limits.max_admitted_jobs,
-                        observed=observed_admissions,
-                    ),
+                exhaustion = AttemptLimitExhaustion(
+                    limit=AttemptLimitKind.ADMITTED_JOBS,
+                    configured=request.attempt_limits.max_admitted_jobs,
+                    observed=observed_admissions,
                 )
+                break
             for admitted_window in _windows(
                 misses,
                 request.window_limits.max_admitted_jobs,
             ):
-                completed = await run_window(admitted_window)
+                work_items = tuple(item.work for item in admitted_window)
+                completed = await run_window(work_items)
                 for item in admitted_window:
                     record = executed_candidate_record(
-                        item.request,
-                        completed[item.index],
+                        item.work.request,
+                        completed[item.work.index],
                         budget=request.job_budget,
                         runtime=request.runtime,
                         cache_namespace=request.cache_namespace,
                     )
-                    records[item.index] = record
-                    pending.append(
+                    sample_records = records_by_sample.setdefault(
+                        item.sample_index,
+                        {},
+                    )
+                    sample_records[item.candidate_index] = record
+                    pending_by_sample.setdefault(item.sample_index, []).append(
                         _PendingCacheObservation(
-                            request_key=item.request_key,
+                            request_key=item.work.request_key,
                             outcome=record.outcome,
                         )
+                    )
+                    admitted_by_sample[item.sample_index] = (
+                        admitted_by_sample.get(item.sample_index, 0) + 1
                     )
                 admitted += len(admitted_window)
         finally:
             for item in window:
-                execution_cache.discard(item.request_key)
-    return _ExecutionWindow(
-        records=tuple(records[index] for index in range(len(work))),
-        pending=tuple(pending),
-        admitted_jobs=admitted,
-        exhaustion=None,
-    )
+                execution_cache.discard(item.work.request_key)
+        if exhaustion is not None:
+            break
+
+    by_sample: dict[int, _ExecutionWindow] = {}
+    for sample_index, candidate_count in candidates_per_sample.items():
+        sample_records = records_by_sample.get(sample_index, {})
+        if len(sample_records) != candidate_count:
+            if exhaustion is not None:
+                continue
+            raise RuntimeError(
+                "global candidate execution left a sample incomplete"
+            )
+        by_sample[sample_index] = _ExecutionWindow(
+            records=tuple(
+                sample_records[candidate_index]
+                for candidate_index in range(candidate_count)
+            ),
+            pending=tuple(pending_by_sample.get(sample_index, ())),
+            admitted_jobs=admitted_by_sample.get(sample_index, 0),
+            exhaustion=None,
+        )
+
+    return _GlobalExecutionResult(by_sample=by_sample, exhaustion=exhaustion)
 
 
 def _candidate_work(
@@ -802,4 +904,3 @@ def _windows(
     return (
         values[start : start + size] for start in range(0, len(values), size)
     )
-    (EvaluationMemberRecord,)

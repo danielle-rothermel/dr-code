@@ -13,9 +13,11 @@
 - The task-difficulty workflow reads validated generation corpus bundles from
   the #108 extraction format and projects `generations.parquet` plus
   `requests.parquet` into the workflow frame.
-- Directional HumanEval evaluation accepts task-worker and candidate-timeout
+- Directional HumanEval evaluation accepts worker and candidate-timeout
   flags, isolates resumable artifacts by the effective settings, and reports
   end-to-end and evaluation-only time per selected generation.
+- `evaluate_batch` schedules candidate execution across all samples through one
+  global plan-order queue bounded by worker count and attempt limits.
 - The directional evaluator raises a low per-process open-file soft limit to a
   worker-scaled minimum before parallel execution, or fails early with an
   actionable shell command when the hard limit prevents it.

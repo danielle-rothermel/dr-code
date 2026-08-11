@@ -7,8 +7,9 @@ stage logs stay outside the repository under
 
 Stage 3 publishes one terminal evaluation bundle under
 `explicit-runtime/workers-<N>_timeout-<T>/evaluation_bundles/run/` and exports
-`candidate_results.parquet` for the summarizer. Re-run stage 3 with the same
-workers, timeout, and corpus pins to resume after an interrupted evaluation.
+`candidate_results.parquet` for the summarizer. `--workers` bounds concurrent
+candidate subprocesses across the full selected sample. Re-run stage 3 with the
+same workers, timeout, and corpus pins to resume after an interrupted evaluation.
 
 ## One-command baseline
 

@@ -57,8 +57,9 @@ uv run python scripts/build_generation_corpus.py human_eval \
 
    Stage 3 runs one monolithic [`evaluate_batch`](../../../src/dr_code/evaluation/batch.py)
    over the full selected sample. Candidate parallelism comes from dr-exec's
-   `ExecutionPool`; `--workers` sets the pool capacity and
-   `--timeout-seconds` bounds each candidate execution budget.
+   `ExecutionPool` scheduling jobs across the whole batch; `--workers` sets the
+   global pool capacity and `--timeout-seconds` bounds each candidate execution
+   budget.
 
    Artifacts for a workers/timeout combination live under
    `explicit-runtime/workers-<N>_timeout-<T>/`:

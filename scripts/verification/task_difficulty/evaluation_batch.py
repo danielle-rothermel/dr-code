@@ -393,7 +393,7 @@ def _compute_limits(
         max_preprocessing_slots=1,
         max_cache_keys=min(
             attempt.max_materialized_candidates,
-            max(admitted * 4, 1),
+            max(admitted * 4, admitted, 1),
         ),
         max_admitted_jobs=admitted,
         max_record_assemblies=1,
