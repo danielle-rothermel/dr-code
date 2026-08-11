@@ -47,9 +47,6 @@ dev = [
     "ty>=0.0.51",
 ]
 
-[tool.uv]
-required-version = "==0.11.25"
-
 # Development mode pins every component to initial-version. Only repository
 # contract tests read this marker; runtime code does not, and persisted
 # artifacts do not record it.
