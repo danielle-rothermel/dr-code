@@ -19,6 +19,8 @@
 - The directional evaluator raises a low per-process open-file soft limit to a
   worker-scaled minimum before parallel execution, or fails early with an
   actionable shell command when the hard limit prevents it.
+- A one-command baseline runner exports git-tracked logs and summaries for
+  before/after comparisons against the reviewed HumanEval generation corpus.
 
 ## 0.1.6 - 2026-08-06
 

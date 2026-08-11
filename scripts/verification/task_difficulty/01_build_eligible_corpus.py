@@ -34,11 +34,11 @@ from corpus_loader import (
 )
 from workflow_settings import (
     ELIGIBLE_CORPUS,
-    EXPECTED_MANIFEST_SHA256,
     PREPROCESSING_CACHE,
     PREPROCESS_LOG,
     PREPROCESSING_SUMMARY,
     SETTINGS,
+    expected_manifest_sha256,
     generation_corpus_bundle_path,
     prepare_run_directory,
 )
@@ -254,7 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     corpus = load_workflow_frame(
         bundle_dir,
-        expected_manifest_sha256=EXPECTED_MANIFEST_SHA256,
+        expected_manifest_sha256=expected_manifest_sha256(),
     )
     logger.info("Loaded %d rows and %d columns", corpus.height, corpus.width)
 

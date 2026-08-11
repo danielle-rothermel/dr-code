@@ -1,0 +1,113 @@
+baseline=pre-106
+corpus_bundle=/Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval
+run_dir=/Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/pre-106
+export_dir=/Users/daniellerothermel/drotherm/repos/dr-code/scripts/verification/task_difficulty/baseline/pre-106
+manifest_sha256=fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728
+workers=16
+timeout_seconds=120
+git_rev=ec3f3be97b9e5e3c749d2036bbabcff9aff49146
+git_branch=08-06-directional-humaneval
+started_at=2026-08-11T02:14:59Z
+Stage 1: build eligible corpus
+/Users/daniellerothermel/drotherm/repos/dr-code/src/dr_code/evaluation/references.py:13: UserWarning: Field name "schema" in "BundleRecordReference" shadows an attribute in parent "FrozenModel"
+  class BundleRecordReference(FrozenModel):
+2026-08-10 22:15:00,658 Loading generation corpus bundle /Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval ({"adapter_name":"legacy_human_eval","adapter_version":1,"format":"generation-corpus-v1","generations":203407,"manifest_sha256":"fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728","requests":203407,"source_manifest_sha256":"6f4dad5e709e3c45616143e1a201ed1f3135abd3354858bbee2c533c09cd967b"})
+2026-08-10 22:15:01,841 Loaded 203407 rows and 11 columns
+2026-08-10 22:15:02,730 Classified 203406 complete nonblank rows with 172448 distinct outputs
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\,'
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+2026-08-10 22:15:07,710 Preprocessed 500 distinct outputs in 5.0 seconds
+2026-08-10 22:15:12,533 Preprocessed 1000 distinct outputs in 9.8 seconds
+2026-08-10 22:15:17,606 Preprocessed 1500 distinct outputs in 14.9 seconds
+2026-08-10 22:15:22,627 Preprocessed 2000 distinct outputs in 19.9 seconds
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:4: SyntaxWarning: invalid escape sequence '\ '
+2026-08-10 22:15:27,483 Preprocessed 2500 distinct outputs in 24.8 seconds
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+<unknown>:2: SyntaxWarning: invalid escape sequence '\ '
+2026-08-10 22:15:32,314 Preprocessed 3000 distinct outputs in 29.6 seconds
+Traceback (most recent call last):
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/scripts/verification/task_difficulty/01_build_eligible_corpus.py", line 292, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/scripts/verification/task_difficulty/01_build_eligible_corpus.py", line 268, in main
+    candidates = asyncio.run(
+        preprocess_distinct_outputs(
+    ...<3 lines>...
+        )
+    )
+  File "/Users/daniellerothermel/.local/share/uv/python/cpython-3.13.2-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/daniellerothermel/.local/share/uv/python/cpython-3.13.2-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/daniellerothermel/.local/share/uv/python/cpython-3.13.2-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/scripts/verification/task_difficulty/01_build_eligible_corpus.py", line 159, in preprocess_distinct_outputs
+    trace = await run_preprocessing_cached(output, runner, cache)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/src/dr_code/caching/trace_cache.py", line 62, in run_preprocessing_cached
+    trace = runner.run(input_value)
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/src/dr_code/preprocessing/runner.py", line 146, in run
+    output = bound.step.apply(current)
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/src/dr_code/preprocessing/steps/base.py", line 86, in apply
+    result = self.apply_to_candidate(candidate.source)
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/src/dr_code/preprocessing/steps/infer_missing_imports.py", line 15, in apply_to_candidate
+    return infer_missing_imports(source)
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/src/dr_code/preprocessing/import_inference.py", line 47, in infer_missing_imports
+    tree = _parse_or_none(source)
+  File "/Users/daniellerothermel/drotherm/repos/dr-code/src/dr_code/preprocessing/import_inference.py", line 130, in _parse_or_none
+    return ast.parse(text)
+           ~~~~~~~~~^^^^^^
+  File "/Users/daniellerothermel/.local/share/uv/python/cpython-3.13.2-macos-aarch64-none/lib/python3.13/ast.py", line 54, in parse
+    return compile(source, filename, mode, flags,
+                   _feature_version=feature_version, optimize=optimize)
+MemoryError: Parser stack overflowed - Python source too complex to parse

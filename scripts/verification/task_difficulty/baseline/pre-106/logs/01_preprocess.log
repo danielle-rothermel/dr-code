@@ -1,0 +1,4 @@
+2026-08-10 22:15:00,658 Loading generation corpus bundle /Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval ({"adapter_name":"legacy_human_eval","adapter_version":1,"format":"generation-corpus-v1","generations":203407,"manifest_sha256":"fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728","requests":203407,"source_manifest_sha256":"6f4dad5e709e3c45616143e1a201ed1f3135abd3354858bbee2c533c09cd967b"})
+2026-08-10 22:15:01,841 Loaded 203407 rows and 11 columns
+2026-08-10 22:15:02,730 Classified 203406 complete nonblank rows with 172448 distinct outputs
+2026-08-10 22:15:07,710 Preprocessed 500 distinct outputs in 5.0 seconds

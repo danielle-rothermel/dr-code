@@ -9,30 +9,26 @@ from pathlib import Path
 from typing import Final
 
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[3]
+BASELINE_ROOT: Final = Path(__file__).resolve().parent / "baseline"
 GENERATION_CORPUS_BUNDLE: Final = (
     REPOSITORY_ROOT / "tests" / "fixtures" / "generation_corpus" / "human_eval"
 )
 GENERATION_CORPUS_BUNDLE_ENV: Final = "DR_CODE_GENERATION_CORPUS_BUNDLE"
-EXPECTED_MANIFEST_SHA256: Final[str | None] = None
-HUMANEVAL_SNAPSHOT: Final = (
-    REPOSITORY_ROOT / "tests" / "corpus" / "humanevalplus_snapshot.json"
-)
-RUN_DIRECTORY: Final = (
+EXPECTED_MANIFEST_SHA256_ENV: Final = "DR_CODE_EXPECTED_MANIFEST_SHA256"
+RUN_DIRECTORY_ENV: Final = "DR_CODE_TASK_DIFFICULTY_RUN_DIR"
+DEFAULT_RUN_DIRECTORY: Final = (
     Path.home()
     / "drotherm"
     / "data"
     / ".codex"
     / "dr-code"
-    / "2026-08-06"
     / "task-difficulty-directional"
+    / "runs"
+    / "default"
 )
-EVALUATION_RUN_ROOT: Final = RUN_DIRECTORY / "explicit-runtime"
-
-ELIGIBLE_CORPUS: Final = RUN_DIRECTORY / "eligible_generations.parquet"
-PREPROCESSING_SUMMARY: Final = RUN_DIRECTORY / "preprocessing_summary.parquet"
-PREPROCESSING_CACHE: Final = RUN_DIRECTORY / "preprocessing_cache.sqlite3"
-SELECTED_SAMPLE: Final = RUN_DIRECTORY / "selected_sample.parquet"
-SAMPLING_COVERAGE: Final = RUN_DIRECTORY / "sampling_coverage.parquet"
+HUMANEVAL_SNAPSHOT: Final = (
+    REPOSITORY_ROOT / "tests" / "corpus" / "humanevalplus_snapshot.json"
+)
 SAMPLING_SEED: Final = 42
 EVALUATION_WORKERS: Final = 16
 EVALUATION_TIMEOUT_SECONDS: Final = 120.0
@@ -47,8 +43,42 @@ MODEL_ROSTER: Final = (
     "qwen/qwen3-coder-flash",
 )
 
-PREPROCESS_LOG: Final = RUN_DIRECTORY / "01_preprocess.log"
-SAMPLING_LOG: Final = RUN_DIRECTORY / "02_sample.log"
+
+def run_directory_path() -> Path:
+    override = os.environ.get(RUN_DIRECTORY_ENV)
+    if override:
+        return Path(override).expanduser().resolve()
+    return DEFAULT_RUN_DIRECTORY
+
+
+def generation_corpus_bundle_path() -> Path:
+    override = os.environ.get(GENERATION_CORPUS_BUNDLE_ENV)
+    if override:
+        return Path(override).expanduser().resolve()
+    return GENERATION_CORPUS_BUNDLE
+
+
+def expected_manifest_sha256() -> str | None:
+    override = os.environ.get(EXPECTED_MANIFEST_SHA256_ENV)
+    if override:
+        return override
+    return None
+
+
+def baseline_directory(name: str) -> Path:
+    return BASELINE_ROOT / name
+
+
+_RUN_DIRECTORY = run_directory_path()
+RUN_DIRECTORY: Final = _RUN_DIRECTORY
+EVALUATION_RUN_ROOT: Final = _RUN_DIRECTORY / "explicit-runtime"
+ELIGIBLE_CORPUS: Final = _RUN_DIRECTORY / "eligible_generations.parquet"
+PREPROCESSING_SUMMARY: Final = _RUN_DIRECTORY / "preprocessing_summary.parquet"
+PREPROCESSING_CACHE: Final = _RUN_DIRECTORY / "preprocessing_cache.sqlite3"
+SELECTED_SAMPLE: Final = _RUN_DIRECTORY / "selected_sample.parquet"
+SAMPLING_COVERAGE: Final = _RUN_DIRECTORY / "sampling_coverage.parquet"
+PREPROCESS_LOG: Final = _RUN_DIRECTORY / "01_preprocess.log"
+SAMPLING_LOG: Final = _RUN_DIRECTORY / "02_sample.log"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,13 +98,6 @@ class EvaluationPaths:
     task_results: Path
     evaluation_log: Path
     summary_log: Path
-
-
-def generation_corpus_bundle_path() -> Path:
-    override = os.environ.get(GENERATION_CORPUS_BUNDLE_ENV)
-    if override:
-        return Path(override).expanduser().resolve()
-    return GENERATION_CORPUS_BUNDLE
 
 
 def _positive_worker_count(value: str) -> int:

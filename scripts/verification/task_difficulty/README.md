@@ -17,9 +17,10 @@ By default, stage 1 uses the repo fixture at
 - `DR_CODE_GENERATION_CORPUS_BUNDLE=/path/to/human_eval/bundle`, or
 - `--corpus-bundle /path/to/human_eval/bundle` on stage 1.
 
-For baseline runs that will be compared before and after other changes, pin the
-bundle manifest SHA-256 in `workflow_settings.EXPECTED_MANIFEST_SHA256` and
-record the manifest summary emitted in the stage-1 log.
+For baseline runs that will be compared before and after other changes, use
+[`run_baseline.sh`](run_baseline.sh) or pin the bundle manifest SHA-256 with
+`DR_CODE_EXPECTED_MANIFEST_SHA256` and record the manifest summary emitted in
+the stage-1 log.
 
 Example production build:
 
@@ -82,11 +83,23 @@ uv run python scripts/build_generation_corpus.py human_eval \
    task-level success rates.
 
 All inputs, outputs, and sampling choices are fixed in `workflow_settings.py`.
-Artifacts and per-stage logs are written under
-`~/drotherm/data/.codex/dr-code/2026-08-06/task-difficulty-directional/`.
-Evaluation artifacts use the fresh `explicit-runtime/` subdirectory so prior
-results remain intact and cannot be mistaken for results from the configured
-runtime.
+Heavy run artifacts and preprocessing caches are written under
+`~/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/<baseline-name>/`
+(override with `DR_CODE_TASK_DIFFICULTY_RUN_DIR`). Git-tracked baseline logs
+and summaries live under
+[`baseline/`](baseline/README.md).
+
+## Baseline runner
+
+Run the full workflow and export git-tracked logs in one command:
+
+```bash
+DR_CODE_DISPOSABLE_WORKER=1 \
+  scripts/verification/task_difficulty/run_baseline.sh pre-106
+```
+
+See [`baseline/README.md`](baseline/README.md) for the pinned production corpus,
+fixture smoke run, and exported artifact layout.
 
 Test success is conditional on nonblank output and successful preprocessing.
 The preprocessing summary preserves the eligibility denominator. Observed
