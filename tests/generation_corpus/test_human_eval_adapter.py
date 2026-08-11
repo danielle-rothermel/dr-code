@@ -26,7 +26,7 @@ from dr_code.generation_corpus.tasks.base import TaskAdapter
 from dr_code.generation_corpus.tasks.human_eval import HumanEvalTaskAdapter
 from dr_code.generation_corpus.writer import CorpusWriter
 
-_SNAPSHOT = (
+_HUMANEVAL_SNAPSHOT = (
     Path(__file__).parents[1] / "corpus" / "humanevalplus_snapshot.json"
 )
 _DESCRIPTION = "Returns True when a sufficiently close pair exists."
@@ -235,10 +235,15 @@ def _dump(
     return tmp_path, read_manifest(manifest_path)
 
 
-def _extract(tmp_path: Path, pools: list[list[dict[str, Any]]]) -> _Sink:
+def _extract(
+    tmp_path: Path,
+    pools: list[list[dict[str, Any]]],
+    *,
+    task_adapter: HumanEvalTaskAdapter,
+) -> _Sink:
     dump_directory, manifest = _dump(tmp_path, pools)
     sink = _Sink()
-    adapter = HumanEvalAdapter(HumanEvalTaskAdapter(_SNAPSHOT))
+    adapter = HumanEvalAdapter(task_adapter)
     adapter_contract: CorpusAdapter = adapter
     adapter_contract.populate(
         dump_directory=dump_directory,
@@ -248,9 +253,10 @@ def _extract(tmp_path: Path, pools: list[list[dict[str, Any]]]) -> _Sink:
     return sink
 
 
-def test_loads_content_addressed_snapshot_tasks() -> None:
-    tasks = HumanEvalTaskAdapter(_SNAPSHOT)
-    task_contract: TaskAdapter = tasks
+def test_loads_content_addressed_snapshot_tasks(
+    humaneval_task_adapter: HumanEvalTaskAdapter,
+) -> None:
+    task_contract: TaskAdapter = humaneval_task_adapter
 
     records = tuple(task_contract.records())
     resolved = task_contract.resolve(
@@ -275,7 +281,7 @@ def test_loads_content_addressed_snapshot_tasks() -> None:
 
 
 def test_rejects_modified_human_eval_snapshot(tmp_path: Path) -> None:
-    payload = json.loads(_SNAPSHOT.read_text(encoding="utf-8"))
+    payload = json.loads(_HUMANEVAL_SNAPSHOT.read_text(encoding="utf-8"))
     payload["rows"][0]["canonical_solution"] = "\n    return False\n"
     modified = tmp_path / "modified-snapshot.json"
     modified.write_text(json.dumps(payload), encoding="utf-8")
@@ -286,22 +292,33 @@ def test_rejects_modified_human_eval_snapshot(tmp_path: Path) -> None:
 
 def test_extracts_direct_exact_and_recovered_prompts_without_deduplicating(
     tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
 ) -> None:
     recovered = _direct_row(
         "recovered",
         request={"reason": "historical_migration", "unavailable": True},
     )
+    unknown_finish = _direct_row("unknown-finish")
+    unknown_finish["response_json"].pop("finish_reason")
     sink = _extract(
         tmp_path,
-        [[_direct_row("direct-1"), _direct_row("direct-2"), recovered]],
+        [
+            [
+                _direct_row("direct-1"),
+                _direct_row("direct-2"),
+                recovered,
+                unknown_finish,
+            ]
+        ],
+        task_adapter=humaneval_task_adapter,
     )
 
     assert (
-        len(sink.sources) == len(sink.generations) == len(sink.requests) == 3
+        len(sink.sources) == len(sink.generations) == len(sink.requests) == 4
     )
     assert len(sink.tasks) == 164
     assert not sink.encoders
-    assert len({row.generation_id for row in sink.generations}) == 3
+    assert len({row.generation_id for row in sink.generations}) == 4
     assert len({row.decoder_output for row in sink.generations}) == 1
     exact = sink.generations[0]
     assert exact.generation_mode is GenerationMode.DIRECT
@@ -317,10 +334,12 @@ def test_extracts_direct_exact_and_recovered_prompts_without_deduplicating(
     assert recovered_generation.decoder_user_prompt.startswith(
         "from typing import List"
     )
+    assert sink.generations[3].is_partial is True
 
 
 def test_resolves_explicit_encoder_lineage_and_keeps_grains_separate(
     tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
 ) -> None:
     sink = _extract(
         tmp_path,
@@ -331,6 +350,7 @@ def test_resolves_explicit_encoder_lineage_and_keeps_grains_separate(
             ],
             [_enc_dec_row()],
         ],
+        task_adapter=humaneval_task_adapter,
     )
 
     assert len(sink.sources) == 3
@@ -347,16 +367,20 @@ def test_resolves_explicit_encoder_lineage_and_keeps_grains_separate(
     assert request.decoder_max_tokens == 512
 
 
-def test_rejects_missing_encoder_lineage(tmp_path: Path) -> None:
+def test_rejects_missing_encoder_lineage(
+    tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
+) -> None:
     row = _direct_row("missing-lineage")
     row["metadata_json"] = {"source_kind": "encoder_sample"}
 
     with pytest.raises(ValueError, match="without source_sample_id"):
-        _extract(tmp_path, [[row]])
+        _extract(tmp_path, [[row]], task_adapter=humaneval_task_adapter)
 
 
 def test_direct_prompt_source_reference_is_not_encoder_lineage(
     tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
 ) -> None:
     row = _direct_row("direct-docstring")
     source_reference = (
@@ -369,7 +393,7 @@ def test_direct_prompt_source_reference_is_not_encoder_lineage(
         "source_sample_id": source_reference,
     }
 
-    sink = _extract(tmp_path, [[row]])
+    sink = _extract(tmp_path, [[row]], task_adapter=humaneval_task_adapter)
 
     assert len(sink.generations) == len(sink.requests) == 1
     assert sink.generations[0].generation_mode is GenerationMode.DIRECT
@@ -378,11 +402,12 @@ def test_direct_prompt_source_reference_is_not_encoder_lineage(
 
 def test_preserves_unqualified_task_identity_for_encoder(
     tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
 ) -> None:
     row = _encoder_row("unqualified-encoder", linked=False)
     row["key_values"]["data_sample_id"] = "human_eval/HumanEval/0"
 
-    sink = _extract(tmp_path, [[row]])
+    sink = _extract(tmp_path, [[row]], task_adapter=humaneval_task_adapter)
 
     assert len(sink.encoders) == 1
     assert sink.encoders[0].source_variant == "unqualified_task"
@@ -390,6 +415,7 @@ def test_preserves_unqualified_task_identity_for_encoder(
 
 def test_preserves_audited_unresolved_encoder_candidate(
     tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
 ) -> None:
     row = _direct_row("dca9c9034e234318b9e1b5a13703bf7b")
     row["project_name"] = "code_comp_v0"
@@ -404,7 +430,7 @@ def test_preserves_audited_unresolved_encoder_candidate(
         }
     )
 
-    sink = _extract(tmp_path, [[row]])
+    sink = _extract(tmp_path, [[row]], task_adapter=humaneval_task_adapter)
 
     assert sink.generations[0].generation_mode is (
         GenerationMode.UNRESOLVED_ENCODER
@@ -415,7 +441,10 @@ def test_preserves_audited_unresolved_encoder_candidate(
     )
 
 
-def test_rejects_conflicting_encoder_lineage(tmp_path: Path) -> None:
+def test_rejects_conflicting_encoder_lineage(
+    tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
+) -> None:
     with pytest.raises(ValueError, match="embeds encoder output"):
         _extract(
             tmp_path,
@@ -423,17 +452,21 @@ def test_rejects_conflicting_encoder_lineage(tmp_path: Path) -> None:
                 [_encoder_row("linked-encoder", linked=True)],
                 [_enc_dec_row(embedded_output="conflicting description")],
             ],
+            task_adapter=humaneval_task_adapter,
         )
 
 
-def test_decoder_pool_owns_stage_for_blank_seed_row(tmp_path: Path) -> None:
+def test_decoder_pool_owns_stage_for_blank_seed_row(
+    tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
+) -> None:
     row = _direct_row("blank-decoder")
     row["response_json"] = None
     row["finish_reason"] = None
     row["key_values"]["status"] = "active"
     row["hints"] = _hints("HumanEval/0", encoder=True)
 
-    sink = _extract(tmp_path, [[row]])
+    sink = _extract(tmp_path, [[row]], task_adapter=humaneval_task_adapter)
 
     assert not sink.generations
     assert sink.sources[0].stage is Stage.DECODER
@@ -441,19 +474,13 @@ def test_decoder_pool_owns_stage_for_blank_seed_row(tmp_path: Path) -> None:
     assert sink.sources[0].lifecycle_state is LifecycleState.SEEDED
 
 
-def test_rejects_conflicting_status_locations(tmp_path: Path) -> None:
+def test_rejects_conflicting_status_locations(
+    tmp_path: Path,
+    humaneval_task_adapter: HumanEvalTaskAdapter,
+) -> None:
     row = _direct_row("conflicting-status")
     row["key_values"]["status"] = "active"
     row["metadata_json"]["status"] = "failed"
 
     with pytest.raises(ValueError, match="conflicting status values"):
-        _extract(tmp_path, [[row]])
-
-
-def test_missing_finish_reason_is_partial(tmp_path: Path) -> None:
-    row = _direct_row("unknown-finish")
-    row["response_json"].pop("finish_reason")
-
-    sink = _extract(tmp_path, [[row]])
-
-    assert sink.generations[0].is_partial is True
+        _extract(tmp_path, [[row]], task_adapter=humaneval_task_adapter)

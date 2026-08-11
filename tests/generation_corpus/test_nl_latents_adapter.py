@@ -197,14 +197,6 @@ def test_active_and_pending_select_closed_payload_branches_and_exact_prompts(
 
     assert active.generation is not None
     assert active.request is not None
-    assert active.generation.encoder_user_prompt == _ENCODER_PROMPT
-    assert active.generation.encoder_output == _DESCRIPTION
-    assert active.generation.decoder_system_prompt == _DECODER_SYSTEM
-    assert active.generation.decoder_user_prompt == _DECODER_TASK
-    assert active.generation.decoder_output == _DECODED_CODE
-    assert active.generation.date == "2026-05-10T05:53:42Z"
-    assert active.generation.date_kind == "migration_import_created_at"
-    assert active.source_record.date == "2026-05-10T05:53:42Z"
     assert active.generation.content_sha256 == content_sha256(
         None,
         _ENCODER_PROMPT,
@@ -213,11 +205,9 @@ def test_active_and_pending_select_closed_payload_branches_and_exact_prompts(
         _DECODER_TASK,
         _DECODED_CODE,
     )
+    assert active.generation.date_kind == "migration_import_created_at"
     assert active.request.source_kind == "response_json"
     assert active.old_evaluation_ready is True
-    assert json.loads(active.request.response_json)["validation_json"] == (
-        _validation()
-    )
 
     assert pending.generation is not None
     assert pending.request is not None

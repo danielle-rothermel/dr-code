@@ -106,7 +106,7 @@ def test_strict_models_reject_unknown_manifest_and_row_fields(
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_payload), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="extra_forbidden"):
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         read_manifest(manifest_path)
 
     manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
@@ -115,7 +115,7 @@ def test_strict_models_reject_unknown_manifest_and_row_fields(
     row["unexpected"] = True
     dump_path = tmp_path / manifest.pools[0].file_name
     _write_dump(dump_path, [row])
-    with pytest.raises(ValueError, match="extra_forbidden"):
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         list(iter_pool_rows(dump_path, manifest.pools[0]))
 
 

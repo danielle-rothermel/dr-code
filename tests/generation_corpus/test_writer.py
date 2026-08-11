@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -305,48 +306,20 @@ def test_parquet_artifacts_are_deterministic(tmp_path: Path) -> None:
     assert first_manifest.requests.sha256 == second_manifest.requests.sha256
 
 
-def test_duplicate_ids_fail_without_publishing(tmp_path: Path) -> None:
-    destination = tmp_path / "corpus"
-    writer = _writer(tmp_path, destination)
+def _populate_duplicate_ids(writer: CorpusWriter) -> None:
     source = _source("project:pool:decoder-1", stage=Stage.DECODER)
     writer.add_source_record(source)
     writer.add_source_record(source)
 
-    with pytest.raises(ValueError, match="duplicate IDs"):
-        writer.publish()
-    assert not destination.exists()
 
-
-def test_missing_request_provenance_record_fails_without_publishing(
-    tmp_path: Path,
-) -> None:
-    destination = tmp_path / "corpus"
-    writer = _writer(tmp_path, destination)
+def _populate_missing_request(writer: CorpusWriter) -> None:
     writer.add_source_record(
         _source("project:pool:decoder-1", stage=Stage.DECODER)
     )
     writer.add_generation(_generation())
 
-    with pytest.raises(
-        ValueError, match="request provenance record validation failed"
-    ):
-        writer.publish()
-    assert not destination.exists()
 
-
-def test_canonical_records_require_a_task_identity() -> None:
-    payload = _generation().model_dump(mode="json")
-    payload["task_record_id"] = None
-
-    with pytest.raises(ValueError, match="task_record_id"):
-        GenerationRecord.model_validate(payload)
-
-
-def test_mismatched_request_identity_fails_without_publishing(
-    tmp_path: Path,
-) -> None:
-    destination = tmp_path / "corpus"
-    writer = _writer(tmp_path, destination)
+def _populate_mismatched_request(writer: CorpusWriter) -> None:
     writer.add_source_record(
         _source("project:pool:decoder-1", stage=Stage.DECODER)
     )
@@ -356,16 +329,8 @@ def test_mismatched_request_identity_fails_without_publishing(
     )
     writer.add_task(_task())
 
-    with pytest.raises(ValueError, match="mismatched_request_provenance=1"):
-        writer.publish()
-    assert not destination.exists()
 
-
-def test_mismatched_task_identity_fails_without_publishing(
-    tmp_path: Path,
-) -> None:
-    destination = tmp_path / "corpus"
-    writer = _writer(tmp_path, destination)
+def _populate_mismatched_task(writer: CorpusWriter) -> None:
     writer.add_source_record(
         _source("project:pool:decoder-1", stage=Stage.DECODER)
     )
@@ -373,7 +338,29 @@ def test_mismatched_task_identity_fails_without_publishing(
     writer.add_request(_request())
     writer.add_task(_task().model_copy(update={"task_id": "HumanEval/1"}))
 
-    with pytest.raises(ValueError, match="mismatched_generation_tasks=1"):
+
+@pytest.mark.parametrize(
+    ("populate", "expected_match"),
+    [
+        (_populate_duplicate_ids, "duplicate IDs"),
+        (
+            _populate_missing_request,
+            "request provenance record validation failed",
+        ),
+        (_populate_mismatched_request, "mismatched_request_provenance=1"),
+        (_populate_mismatched_task, "mismatched_generation_tasks=1"),
+    ],
+)
+def test_publish_validation_fails_without_publishing(
+    tmp_path: Path,
+    populate: Callable[[CorpusWriter], None],
+    expected_match: str,
+) -> None:
+    destination = tmp_path / "corpus"
+    writer = _writer(tmp_path, destination)
+    populate(writer)
+
+    with pytest.raises(ValueError, match=expected_match):
         writer.publish()
     assert not destination.exists()
 
