@@ -279,8 +279,10 @@ def _evaluate_case(
         status = EvaluationCaseStatus.PASSED
         message = ""
         metadata = {
-            "input_repr": check.input_repr,
-            "expected_output_repr": check.expected_output_repr,
+            "input_repr": _clip(check.input_repr, field_limit),
+            "expected_output_repr": _clip(
+                check.expected_output_repr, field_limit
+            ),
             "actual_output_repr": "",
         }
     return EvaluationCaseResult(
@@ -318,8 +320,10 @@ def _failure_metadata(
     # re-evaluating it here.
     if check.expected_output_expr is not None:
         expected = _clip(expected_output, field_limit)
+    else:
+        expected = _clip(expected, field_limit)
     return {
-        "input_repr": check.input_repr,
+        "input_repr": _clip(check.input_repr, field_limit),
         "expected_output_repr": expected,
         "actual_output_repr": actual,
     }

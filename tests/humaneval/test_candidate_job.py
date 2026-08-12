@@ -278,3 +278,64 @@ def test_field_limit_defaults_to_the_raised_library_value() -> None:
         HumanEvalCandidateJobRequest.model_fields["field_limit"].default
         == DEFAULT_FIELD_LIMIT
     )
+
+
+def _large_repr_task() -> HumanEvalTask:
+    huge = "E" * 100_000
+    return HumanEvalTask(
+        task_id="HumanEval/large-repr",
+        prompt="def observed_load_count(x):\n",
+        canonical_solution="    return x\n",
+        entry_point="observed_load_count",
+        test=(
+            "def check(candidate):\n"
+            f"    inputs = [({huge!r},)]\n"
+            f"    results = [{huge!r}]\n"
+            "    for inp, expected in zip(inputs, results):\n"
+            "        assertion(candidate(*inp), expected)\n"
+        ),
+    )
+
+
+def _first_case(result: HumanEvalCandidateJobResult):
+    suite = result.suites[0]
+    assert isinstance(suite, HumanEvalSuiteCompleted)
+    return suite.groups[0].cases[0]
+
+
+def test_field_limit_clips_input_and_expected_repr_on_passed_cases() -> None:
+    raw = evaluate_humaneval_candidate_job(
+        HumanEvalCandidateJobRequest(
+            candidate=_candidate(
+                "def observed_load_count(x):\n    return x\n"
+            ),
+            suites=(_suite("candidate", task=_large_repr_task()),),
+            field_limit=64,
+        ).model_dump(mode="json", exclude_computed_fields=True)
+    )
+    case = _first_case(HumanEvalCandidateJobResult.model_validate(raw))
+
+    assert case.status.value == "passed"
+    assert case.input_repr.endswith(FIELD_TRUNCATION_MARKER)
+    assert case.expected_output_repr.endswith(FIELD_TRUNCATION_MARKER)
+    assert len(case.input_repr) == 64 + len(FIELD_TRUNCATION_MARKER)
+    assert len(case.expected_output_repr) == 64 + len(FIELD_TRUNCATION_MARKER)
+
+
+def test_field_limit_clips_input_and_expected_repr_on_failed_cases() -> None:
+    raw = evaluate_humaneval_candidate_job(
+        HumanEvalCandidateJobRequest(
+            candidate=_candidate(
+                "def observed_load_count(x):\n    return 0\n"
+            ),
+            suites=(_suite("candidate", task=_large_repr_task()),),
+            field_limit=64,
+        ).model_dump(mode="json", exclude_computed_fields=True)
+    )
+    case = _first_case(HumanEvalCandidateJobResult.model_validate(raw))
+
+    assert case.status.value == "failed"
+    assert case.input_repr.endswith(FIELD_TRUNCATION_MARKER)
+    assert case.expected_output_repr.endswith(FIELD_TRUNCATION_MARKER)
+    assert len(case.input_repr) == 64 + len(FIELD_TRUNCATION_MARKER)
+    assert len(case.expected_output_repr) == 64 + len(FIELD_TRUNCATION_MARKER)

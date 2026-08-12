@@ -97,6 +97,12 @@ def commit_evaluation_evidence(
     Publishing the generation artifact bundle before calling this is the
     caller's obligation; nothing here enforces the ordering.
 
+    ``samples`` carries one record for each attempt member whose
+    ``record`` reference is present, in member order. Members omitted by
+    admission or retained-evidence limits carry no sample record and receive
+    no binding, but their original ordinals are preserved for the members
+    that do commit.
+
     ``put_many_enlisted`` is first-writer-wins: an occupied member key keeps
     its existing reference instead of raising. Any member key whose winner is
     not the record written here raises :class:`BindingConflictError`, so a
@@ -111,11 +117,18 @@ def commit_evaluation_evidence(
     behalf.
     """
 
-    if len(samples) != len(attempt.members):
+    referenced_members = tuple(
+        (ordinal, member)
+        for ordinal, member in enumerate(attempt.members)
+        if member.record is not None
+    )
+    if len(samples) != len(referenced_members):
         raise ValueError(
-            "evidence sample records must match the attempt's members"
+            "evidence sample records must match the attempt's referenced members"
         )
-    for member, sample in zip(attempt.members, samples, strict=True):
+    for (ordinal, member), sample in zip(
+        referenced_members, samples, strict=True
+    ):
         validate_sample_record_graph(
             sample,
             slot=member.slot,
@@ -129,7 +142,9 @@ def commit_evaluation_evidence(
             SAMPLE_RECORD_OBJECT_SCHEMA,
             sample.model_dump(mode="json"),
         )
-        for ordinal, sample in enumerate(samples)
+        for (ordinal, _member), sample in zip(
+            referenced_members, samples, strict=True
+        )
     }
     if entries:
         winners = object_store.put_many_enlisted(connection, entries)

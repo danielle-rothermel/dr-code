@@ -13,7 +13,7 @@ from dr_store import (
     PutStatus,
 )
 
-from _builders import sample_identity
+from _builders import evaluation_slot, sample_identity
 from _evidence_builders import (
     _ATTEMPT_ID,
     attempt_record,
@@ -22,6 +22,10 @@ from _evidence_builders import (
 )
 from dr_code.evaluation import (
     ATTEMPT_RECORD_OBJECT_SCHEMA,
+    AttemptCompleteness,
+    AttemptLimitExhaustion,
+    AttemptLimitKind,
+    AttemptValidity,
     EnlistedObjectStore,
     EvaluationAttemptIdentity,
     EvaluationAttemptRecord,
@@ -418,7 +422,7 @@ def test_evidence_requires_one_sample_record_per_member() -> None:
     connection = FakeConnection()
     store = FakeEnlistedObjectStore(connection=connection)
 
-    with pytest.raises(ValueError, match="match the attempt's members"):
+    with pytest.raises(ValueError, match="referenced members"):
         commit_evaluation_evidence(
             store.connection,  # ty: ignore[invalid-argument-type]
             object_store=store,
@@ -426,6 +430,46 @@ def test_evidence_requires_one_sample_record_per_member() -> None:
             samples=(),
         )
     assert store.calls == []
+
+
+def test_evidence_commits_only_referenced_member_records() -> None:
+    connection = FakeConnection()
+    store = FakeEnlistedObjectStore(connection=connection)
+    first_slot = evaluation_slot()
+    second_slot = evaluation_slot(sample_index=1)
+    attempt = attempt_record(
+        members=(
+            EvaluationMemberRecord(
+                slot=first_slot,
+                sample=sample_identity(),
+                record=reference(0),
+            ),
+            EvaluationMemberRecord(
+                slot=second_slot,
+                sample=sample_identity(sample_id="sample-1"),
+                record=None,
+            ),
+        ),
+        completeness=AttemptCompleteness.PARTIAL,
+        validity=AttemptValidity.INVALID,
+        limit_exhaustion=AttemptLimitExhaustion(
+            limit=AttemptLimitKind.ADMITTED_JOBS,
+            configured=1,
+            observed=2,
+        ),
+    )
+
+    commit_evaluation_evidence(
+        connection,  # ty: ignore[invalid-argument-type]
+        object_store=store,
+        attempt=attempt,
+        samples=(sample_record(),),
+    )
+
+    member_key = sample_record_binding_key(attempt.identity, ordinal=0)
+    missing_key = sample_record_binding_key(attempt.identity, ordinal=1)
+    assert member_key in connection.staged_bindings
+    assert missing_key not in connection.staged_bindings
 
 
 def test_evidence_rejects_misaligned_sample_records() -> None:

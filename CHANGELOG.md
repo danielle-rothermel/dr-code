@@ -34,6 +34,10 @@
   override neutralizing released dr-exec 0.1.9's pin on 0.2.0, and
   `sqlalchemy>=2.0` is a direct dependency because the evidence path types
   against `sqlalchemy.engine.Connection`.
+- `commit_evaluation_evidence` accepts one sample record per attempt member
+  whose bundle reference is present, preserving each member's ordinal and
+  writing no binding for members omitted by admission or retained-evidence
+  limits.
 
 - Evaluation sampling plans declare a sample count per selected task
   (`task_num_samples`, positionally aligned with the ordered selection) instead
@@ -128,11 +132,13 @@
   library values.
 - `HumanEvalCandidateJobRequest.field_limit` bounds every rendered evidence
   field the importable job reports, defaulting to 32,000 characters and still
-  clipping with the pinned `...[truncated]` marker. The knob travels on the
-  request wire payload, so `HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION` is 2 and
-  the candidate request identity digest changes with it. Every previously
-  persisted candidate execution cache key is therefore stale: the first run
-  after this change misses on every key and re-executes each candidate.
+  clipping with the pinned `...[truncated]` marker. The limit now applies to
+  `input_repr` and non-oracle `expected_output_repr` as well as messages and
+  evaluated outputs. The knob travels on the request wire payload, so
+  `HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION` is 2 and the candidate request
+  identity digest changes with it. Every previously persisted candidate
+  execution cache key is therefore stale: the first run after this change
+  misses on every key and re-executes each candidate.
 - The preprocessing AST cache holds 2048 trees, sized from the reality that
   each worker process carries its own copy.
 - The evaluation package carries the settled sampling vocabulary. `RepeatPlan`
