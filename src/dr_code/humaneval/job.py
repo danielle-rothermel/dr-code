@@ -27,7 +27,7 @@ from dr_code.humaneval.parsed_tests import ParsedTests, SingleCaseCheck
 from dr_code.metrics import MetricName, MetricQuestionCoordinate
 from dr_code.metrics.coordinates import question_settings
 
-HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION: Final = 1
+HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION: Final = 2
 HUMANEVAL_CANDIDATE_ENTRY_POINT: Final = ImportableEntryPoint(
     module_name="dr_code.humaneval.job",
     attribute_name="evaluate_humaneval_candidate_job",
@@ -53,7 +53,7 @@ class HumanEvalEvaluatorSuite(FrozenModel):
 
 
 class HumanEvalCandidateJobRequest(FrozenModel):
-    schema_version: Literal[1] = HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION
+    schema_version: Literal[2] = HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION
     candidate: MaterializedEvaluationCandidate
     suites: tuple[HumanEvalEvaluatorSuite, ...] = Field(min_length=1)
     # Bounds every rendered evidence field this job reports. The default
@@ -105,7 +105,7 @@ HumanEvalSuiteResult: TypeAlias = Annotated[
 
 
 class HumanEvalCandidateJobResult(FrozenModel):
-    schema_version: Literal[1] = HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION
+    schema_version: Literal[2] = HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION
     candidate: EvaluationCandidateIdentity
     namespace: CandidateNamespaceOutcome
     suites: tuple[HumanEvalSuiteResult, ...]

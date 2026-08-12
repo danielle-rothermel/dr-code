@@ -74,14 +74,18 @@
 
 - The execution cache holds only candidate-owned outcomes. A completed job and
   a candidate-owned termination are written and later reused; a harness failure
-  and an infrastructure failure are never written, so a repeat of the same
+  and an infrastructure failure are never written, so an identical later
   request re-executes it instead of replaying an environment fault as the
-  candidate's behavior. `outcome_is_cacheable` derives the decision from the
-  typed outcome's failure class and adds no second vocabulary.
+  candidate's behavior. `outcome_is_cacheable`, exported from
+  `dr_code.evaluation`, derives the decision from the typed outcome's failure
+  class and adds no second vocabulary.
 - `EvaluationBatchRequest.fresh` skips execution-cache lookup for a request's
   generations, so every candidate re-executes and the fresh outcome is the one
-  recorded and offered to persistence. It is the library half of a deliberate
-  re-run: dr-code provides the switch and never re-attempts on its own.
+  recorded and offered to persistence. Persisted bindings are append-only and
+  first-writer-wins, so a fresh run does not replace an entry already stored
+  under the same key: a later non-fresh request for that key still reads the
+  original binding. It is the library half of a deliberate re-run: dr-code
+  provides the switch and never re-attempts on its own.
 - `CandidateJobBudget` carries the ratified output-retention defaults —
   `CANDIDATE_STREAM_HEAD_BYTES` of 512 MiB per stream head and
   `CANDIDATE_PAYLOAD_OUTPUT_BYTES` of 1 GiB — so a failing candidate's evidence
@@ -92,7 +96,10 @@
 - `HumanEvalCandidateJobRequest.field_limit` bounds every rendered evidence
   field the importable job reports, defaulting to 32,000 characters and still
   clipping with the pinned `...[truncated]` marker. The knob travels on the
-  request wire payload.
+  request wire payload, so `HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION` is 2 and
+  the candidate request identity digest changes with it. Every previously
+  persisted candidate execution cache key is therefore stale: the first run
+  after this change misses on every key and re-executes each candidate.
 - The preprocessing AST cache holds 2048 trees, sized from the reality that
   each worker process carries its own copy.
 - The evaluation package carries the settled sampling vocabulary. `RepeatPlan`

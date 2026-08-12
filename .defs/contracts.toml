@@ -294,14 +294,16 @@ title = "Only candidate-owned outcomes enter the execution cache"
 statement = """
 The execution cache holds outcomes that describe the candidate and no others.
 A completed job and a candidate-owned termination are written and later reused;
-a harness failure and an infrastructure failure are never written, so a repeat
-of the same request re-executes it. The decision reads the failure class
+a harness failure and an infrastructure failure are never written, so an
+identical later request re-executes it. The decision reads the failure class
 derived from the typed outcome and adds no second vocabulary. An evaluation
 batch request may additionally declare itself fresh, which skips cache lookup
 for that request's generations so every candidate re-executes and the fresh
-outcome is the one recorded and offered to persistence. dr-code decides
-cacheability and provides the fresh switch; it never re-attempts a request on
-its own."""
+outcome is the one recorded and offered to persistence. Persisted bindings are
+append-only and first-writer-wins, so fresh bypasses lookup without replacing
+an entry already stored under the same key, and a later non-fresh request for
+that key reads the original binding. dr-code decides cacheability and provides
+the fresh switch; it never re-attempts a request on its own."""
 rationale = """
 Caching a run-owned failure replays an environment fault to every later reader
 as though the candidate had produced it, which is the one thing attribution

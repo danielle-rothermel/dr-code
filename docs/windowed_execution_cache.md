@@ -28,13 +28,20 @@ its own `schema` and `record`.
 - Candidate execution keys bind the complete evaluator request, job budget,
   caller cache namespace, and runtime identity.
 - A caller prefetches at most one declared cache window. Hits and explicit
-  misses occupy bounded resident entries until the caller discards them.
+  misses occupy bounded resident entries until the caller discards them. An
+  evaluation batch request that declares itself fresh skips both prefetch and
+  lookup for its generations, so every candidate re-executes. Because
+  persisted bindings are first-writer-wins, a fresh outcome does not replace
+  an entry already stored under the same key.
 - Cached observations retain the interpreted candidate outcome and a portable
   reference to the source executed record. A cache hit produces reused
   provenance; it never claims that a new process ran.
-- Newly computed observations enter at most one bounded pending checkpoint
-  batch. At most one other batch is in flight. Entries beyond the pending
-  bound remain memory-only.
+- Only candidate-owned outcomes are written: a completed job and a
+  candidate-owned termination. Harness and infrastructure failures describe
+  the run rather than the candidate and never enter the cache.
+- Newly computed observations eligible for persistence enter at most one
+  bounded pending checkpoint batch. At most one other batch is in flight.
+  Entries beyond the pending bound remain memory-only.
 - Checkpoints are triggered by state, not elapsed time. Normal close drains the
   pending batch.
 - Persistent read and write failures are observable but do not fail an

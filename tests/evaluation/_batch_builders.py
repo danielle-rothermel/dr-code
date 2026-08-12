@@ -86,11 +86,13 @@ class BatchStore:
         self,
         entries: Mapping[str, CacheEntry],
     ) -> dict[str, ObjectReference]:
+        # Bindings are append-only first-writer-wins, matching dr-store: a
+        # later entry for a bound key keeps the stored winner and returns it.
         for key, entry in entries.items():
-            self.records[key] = (entry.schema, entry.record)
+            self.records.setdefault(key, (entry.schema, entry.record))
         return {
-            key: ObjectReference.for_record(entry.schema, entry.record)
-            for key, entry in entries.items()
+            key: ObjectReference.for_record(*self.records[key])
+            for key in entries
         }
 
 

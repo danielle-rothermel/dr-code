@@ -136,6 +136,7 @@ if TYPE_CHECKING:
         SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION,
         SampleEvaluationRecord,
         failure_class_of,
+        outcome_is_cacheable,
     )
     from dr_code.evaluation.replay import (
         ReplayPreflight,
@@ -175,6 +176,7 @@ _RECORD_EXPORTS = frozenset(
         "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
         "SampleEvaluationRecord",
         "failure_class_of",
+        "outcome_is_cacheable",
     }
 )
 
@@ -361,6 +363,7 @@ __all__ = [
     "aggregate",
     "derive_work_key",
     "failure_class_of",
+    "outcome_is_cacheable",
     "audit_evaluation_bundle",
     "compare_evaluation_attempts",
     "evaluate_batch",

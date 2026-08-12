@@ -38,7 +38,7 @@ def test_candidate_entry_point_literals_are_pinned() -> None:
         HUMANEVAL_CANDIDATE_ENTRY_POINT.attribute_name
         == "evaluate_humaneval_candidate_job"
     )
-    assert HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION == 1
+    assert HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION == 2
 
 
 def test_candidate_job_result_wire_keys_and_discriminators_are_exact() -> None:
@@ -56,7 +56,7 @@ def test_candidate_job_result_wire_keys_and_discriminators_are_exact() -> None:
         "namespace",
         "suites",
     ]
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     namespace = payload["namespace"]
     assert isinstance(namespace, dict)
     assert list(namespace) == ["kind", "function_names"]

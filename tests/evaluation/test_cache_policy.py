@@ -29,6 +29,12 @@ def _infrastructure_executor() -> object:
     )
 
 
+def _harness_executor() -> object:
+    """Return an executor that exits cleanly without the required result."""
+
+    return scripted_executor()
+
+
 async def _run(
     batch_request: object,
     *,
@@ -50,6 +56,20 @@ async def test_executor_failure_is_never_persisted_and_re_executes() -> None:
     batch_request = request(projections=())
     store = BatchStore()
     executor = CountingExecutor(_infrastructure_executor())  # type: ignore[arg-type]
+
+    await _run(batch_request, executor=executor, store=store)
+
+    assert store.records == {}
+
+    await _run(batch_request, executor=executor, store=store)
+
+    assert executor.call_count == 2
+
+
+async def test_harness_failure_is_never_persisted_and_re_executes() -> None:
+    batch_request = request(projections=())
+    store = BatchStore()
+    executor = CountingExecutor(_harness_executor())  # type: ignore[arg-type]
 
     await _run(batch_request, executor=executor, store=store)
 
@@ -124,7 +144,7 @@ async def test_fresh_request_never_reads_the_persistent_cache() -> None:
     assert len(store.get_calls) == read_calls
 
 
-async def test_fresh_outcome_is_the_one_offered_to_persistence() -> None:
+async def test_fresh_run_persists_its_outcome_when_no_entry_is_bound() -> None:
     batch_request = request(projections=())
     store = BatchStore()
 
@@ -143,3 +163,25 @@ async def test_fresh_outcome_is_the_one_offered_to_persistence() -> None:
     )
 
     assert len(store.records) == 1
+
+
+async def test_fresh_run_does_not_replace_an_already_bound_entry() -> None:
+    batch_request = request(projections=())
+    store = BatchStore()
+
+    await _run(
+        batch_request,
+        executor=timeout_executor(),
+        store=store,
+    )
+
+    assert len(store.records) == 1
+    bound = dict(store.records)
+
+    await _run(
+        batch_request.model_copy(update={"fresh": True}),
+        executor=importable_json_executor(),
+        store=store,
+    )
+
+    assert store.records == bound

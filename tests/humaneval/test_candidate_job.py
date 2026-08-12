@@ -273,6 +273,7 @@ def test_field_limit_knob_overrides_the_default_clip_length() -> None:
 
 def test_field_limit_defaults_to_the_raised_library_value() -> None:
     assert DEFAULT_FIELD_LIMIT == 32_000
+    assert FIELD_TRUNCATION_MARKER == "...[truncated]"
     assert (
         HumanEvalCandidateJobRequest.model_fields["field_limit"].default
         == DEFAULT_FIELD_LIMIT

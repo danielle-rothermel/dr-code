@@ -178,7 +178,9 @@ class EvaluationBatchRequest(FrozenModel):
     job_budget: CandidateJobBudget
     # The caller's deliberate re-run: skip execution-cache lookup for this
     # request's generations so every candidate re-executes and the fresh
-    # outcome is the one recorded and offered to persistence.
+    # outcome is the one recorded and offered to persistence. Persisted
+    # bindings are first-writer-wins, so this bypasses lookup without
+    # replacing an entry already stored under the same key.
     fresh: bool = False
 
     @model_validator(mode="after")
