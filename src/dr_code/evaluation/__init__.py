@@ -147,7 +147,7 @@ if TYPE_CHECKING:
         outcome_is_cacheable,
     )
     from dr_code.evaluation.flows import (
-        AttemptVerdict,
+        PreprocessingCoverage,
         PreprocessingValidation,
         TestingValidation,
         validate_preprocessing,
@@ -240,7 +240,7 @@ _COMPARISON_EXPORTS = frozenset(
 
 _FLOW_EXPORTS = frozenset(
     {
-        "AttemptVerdict",
+        "PreprocessingCoverage",
         "PreprocessingValidation",
         "TestingValidation",
         "validate_preprocessing",
@@ -320,7 +320,6 @@ __all__ = [
     "AttemptLimitExhaustion",
     "AttemptLimitKind",
     "AttemptValidity",
-    "AttemptVerdict",
     "BundleRecordReference",
     "CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION",
     "CANDIDATE_PAYLOAD_OUTPUT_BYTES",
@@ -375,6 +374,7 @@ __all__ = [
     "NoCandidatesSampleRecord",
     "NotApplicablePolicy",
     "PreprocessingAbsentSampleRecord",
+    "PreprocessingCoverage",
     "PreprocessingValidation",
     "ProjectionKind",
     "ProjectionArtifactHeader",

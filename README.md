@@ -350,14 +350,18 @@ tuples and yield either denominated comparable results or a typed
 
 `validate_preprocessing` and `validate_testing` are the standalone validation
 flows over that machinery. Both run one caller-supplied request through
-`evaluate_batch` and report the attempt's own completeness, validity, and limit
-exhaustion; `validate_preprocessing` first runs the request's corpus through
-`candidate_sources_batch` under the definition being validated and reports how
-many texts keep candidates. A reference attempt plus an evidence resolver turns
-either flow structural, returning the `compare_evaluation_attempts` result.
-The `dr-code-validate-preprocessing` and `dr-code-validate-testing` verbs wrap
-those calls: they read one request document, run the flow against a
-caller-named run root and Python runtime, and print the verdict.
+`evaluate_batch` and return its result, whose attempt carries the completeness,
+validity, and limit-exhaustion verdicts. `validate_preprocessing` first runs the
+request's distinct corpus texts through `preprocess_batch` under the plan's own
+preprocessing definition and hands those traces to `evaluate_batch`, so the
+corpus is preprocessed once and its `PreprocessingCoverage` — texts with
+candidates, texts without candidates, texts whose preprocessing failed —
+partitions the corpus under the definition actually evaluated. A reference
+attempt plus an evidence resolver turns either flow structural, returning the
+`compare_evaluation_attempts` result. The `dr-code-validate-preprocessing` and
+`dr-code-validate-testing` verbs wrap those calls: they read one request
+document, run the flow against a caller-named run root and a Python runtime
+whose identity must match the request's, and print the verdict.
 
 ### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
 

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from dr_exec import ExecutionPoolConfig, Executor
+from dr_exec import ExecutionPoolConfig, Executor, resolve_pool_capacity
 from dr_store import ArtifactBundlePublication, ObjectStore
 
-from dr_code.caching.preprocess_batch import candidate_sources_batch
+from dr_code.caching.preprocess_batch import preprocess_batch
+from dr_code.evaluation._batch import trace_candidate_sources
 from dr_code.evaluation.batch import (
     EvaluationBatchRequest,
     EvaluationBatchResult,
@@ -19,32 +19,31 @@ from dr_code.evaluation.comparison import (
     StructuralEvaluationComparison,
     compare_evaluation_attempts,
 )
-from dr_code.evaluation.records import (
-    AttemptCompleteness,
-    AttemptLimitExhaustion,
-    AttemptValidity,
-    EvaluationAttemptRecord,
-)
-from dr_code.preprocessing.definition import PreprocessingDefinition
+from dr_code.evaluation.records import EvaluationAttemptRecord
 
 if TYPE_CHECKING:
     from dr_code.caching import WindowedExecutionCache
 
 
 @dataclass(frozen=True, slots=True)
-class AttemptVerdict:
-    """The attempt-level verdicts one validation flow observed."""
+class PreprocessingCoverage:
+    """How one preprocessing definition treated a corpus of distinct texts.
 
-    completeness: AttemptCompleteness
-    validity: AttemptValidity
-    limit_exhaustion: AttemptLimitExhaustion | None
+    The three counters partition the corpus: every distinct text is counted
+    exactly once, and a text whose preprocessing job failed is its own count
+    rather than an omission.
+    """
 
-    @classmethod
-    def of(cls, attempt: EvaluationAttemptRecord, /) -> AttemptVerdict:
-        return cls(
-            completeness=attempt.completeness,
-            validity=attempt.validity,
-            limit_exhaustion=attempt.limit_exhaustion,
+    texts_with_candidates: int
+    texts_without_candidates: int
+    texts_failed: int
+
+    @property
+    def corpus_size(self) -> int:
+        return (
+            self.texts_with_candidates
+            + self.texts_without_candidates
+            + self.texts_failed
         )
 
 
@@ -52,10 +51,8 @@ class AttemptVerdict:
 class PreprocessingValidation:
     """One preprocessing-change validation over a corpus and a plan."""
 
-    texts_with_candidates: int
-    texts_without_candidates: int
+    coverage: PreprocessingCoverage
     result: EvaluationBatchResult
-    verdict: AttemptVerdict
     comparison: StructuralEvaluationComparison | None
 
 
@@ -64,7 +61,6 @@ class TestingValidation:
     """One testing-change validation over a plan."""
 
     result: EvaluationBatchResult
-    verdict: AttemptVerdict
     comparison: StructuralEvaluationComparison | None
 
 
@@ -72,33 +68,40 @@ async def validate_preprocessing(
     request: EvaluationBatchRequest,
     /,
     *,
-    definition: PreprocessingDefinition,
     executor: Executor,
     execution_cache: WindowedExecutionCache,
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
     pool_config: ExecutionPoolConfig,
-    worker_count: int | None = None,
     reference: EvaluationAttemptRecord | None = None,
     evidence_resolver: EvaluationEvidenceResolver | None = None,
 ) -> PreprocessingValidation:
     """Validate a preprocessing change over the pooled preprocessing leg.
 
-    The request's sample inputs are the corpus: their raw text runs through
-    `candidate_sources_batch` under `definition` to report which texts the
-    change leaves with candidates, then the same request runs through
-    `evaluate_batch` for its attempt verdicts. A reference attempt makes the
-    flow structural: the new attempt is compared against it, resolving both
-    sides' evidence through the caller's resolver.
+    The request's sample inputs are the corpus. Their distinct raw texts run
+    once through `preprocess_batch` under `request.plan.procedure.preprocessing`
+    — the definition the attempt is evaluated under — and those traces both
+    report the coverage and feed `evaluate_batch`, so the corpus is
+    preprocessed once and the coverage describes the evaluated definition. A
+    reference attempt makes the flow structural: the new attempt is compared
+    against it, resolving both sides' evidence through the caller's resolver.
     """
 
     _validate_comparison_pair(reference, evidence_resolver)
-    sources_by_text = await candidate_sources_batch(
-        _corpus_texts(request),
-        definition=definition,
-        worker_count=worker_count,
+    corpus = _corpus_texts(request)
+    traces_by_text = await preprocess_batch(
+        corpus,
+        definition=request.plan.procedure.preprocessing,
+        worker_count=resolve_pool_capacity(
+            pool_config.capacity
+        ).max_active_jobs,
     )
-    with_candidates = sum(1 for sources in sources_by_text.values() if sources)
+    with_candidates = sum(
+        1
+        for text in corpus
+        if (trace := traces_by_text.get(text)) is not None
+        and trace_candidate_sources(trace)
+    )
     result = await evaluate_batch(
         request,
         executor=executor,
@@ -106,12 +109,15 @@ async def validate_preprocessing(
         object_store=object_store,
         publication=publication,
         pool_config=pool_config,
+        preprocessed_traces=traces_by_text,
     )
     return PreprocessingValidation(
-        texts_with_candidates=with_candidates,
-        texts_without_candidates=len(sources_by_text) - with_candidates,
+        coverage=PreprocessingCoverage(
+            texts_with_candidates=with_candidates,
+            texts_without_candidates=len(traces_by_text) - with_candidates,
+            texts_failed=len(corpus) - len(traces_by_text),
+        ),
         result=result,
-        verdict=AttemptVerdict.of(result.attempt),
         comparison=await _compare(
             result.attempt, reference, evidence_resolver
         ),
@@ -148,18 +154,21 @@ async def validate_testing(
     )
     return TestingValidation(
         result=result,
-        verdict=AttemptVerdict.of(result.attempt),
         comparison=await _compare(
             result.attempt, reference, evidence_resolver
         ),
     )
 
 
-def _corpus_texts(request: EvaluationBatchRequest) -> Iterable[str]:
+def _corpus_texts(request: EvaluationBatchRequest) -> tuple[str, ...]:
+    """Give the distinct sample texts the preprocessing leg runs over."""
+
     return tuple(
-        item.sample.raw_input.text
-        for item in request.inputs
-        if isinstance(item, SampleEvaluationInput)
+        dict.fromkeys(
+            item.sample.raw_input.text
+            for item in request.inputs
+            if isinstance(item, SampleEvaluationInput)
+        )
     )
 
 
@@ -189,7 +198,7 @@ async def _compare(
 
 
 __all__ = [
-    "AttemptVerdict",
+    "PreprocessingCoverage",
     "PreprocessingValidation",
     "TestingValidation",
     "validate_preprocessing",

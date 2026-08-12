@@ -111,13 +111,17 @@
 
 - `validate_preprocessing` and `validate_testing` are dr-code's standalone
   validation flows. Both run one caller-supplied request through
-  `evaluate_batch` and report the attempt's own completeness, validity, and
-  limit exhaustion; `validate_preprocessing` additionally runs the request's
-  corpus through `candidate_sources_batch` under the definition being validated
-  and reports how many texts keep candidates. Supplying a reference attempt and
-  an evidence resolver returns the `compare_evaluation_attempts` result as
-  well. They compose the existing pooled machinery and add no execution
-  machinery or verdict vocabulary.
+  `evaluate_batch` and return its result, whose attempt carries the
+  completeness, validity, and limit-exhaustion verdicts.
+  `validate_preprocessing` runs the request's distinct corpus texts once
+  through `preprocess_batch` under `request.plan.procedure.preprocessing` at the
+  width `pool_config` declares, hands those traces to `evaluate_batch` so the
+  corpus is preprocessed once, and reports a `PreprocessingCoverage` whose
+  texts-with-candidates, texts-without-candidates, and texts-failed counts
+  partition the corpus. Supplying a reference attempt and an evidence resolver
+  returns the `compare_evaluation_attempts` result as well. They compose the
+  existing pooled machinery and add no execution machinery or verdict
+  vocabulary.
 - The wheel declares four verbs in `[project.scripts]`:
   `dr-code-validate-preprocessing` and `dr-code-validate-testing` wrap the
   validation flows, and `dr-code-synthetic` and `dr-code-humaneval-schema`
@@ -129,10 +133,20 @@
   point, `evaluate_batch` is the standalone pooled leg the validation flows use,
   and dr-code contains no durable orchestration.
 - Legacy HumanEval snapshot parsing runs through
-  `load_humaneval_snapshot_rows`, the one loader for the pinned schema-version-2
-  snapshot. The corpus task adapter keeps what is its own: the whole-file
-  sha256 pin verified before parsing, legacy identity resolution,
-  source-digest computation and matching, and `TaskRecord` mapping.
+  `load_humaneval_raw_snapshot`, the one parser for the pinned
+  schema-version-2 snapshot document; `load_humaneval_snapshot_rows` reads it
+  and additionally requires the header's override set to be the registered one.
+  The corpus task adapter records the rows as pinned material and applies no
+  overrides, so it reads the raw snapshot and keeps what is its own: the
+  whole-file sha256 pin verified before parsing, its own dataset and revision
+  header check, the nonempty-string guard on each row's recorded fields, legacy
+  identity resolution, source-digest computation and matching, and `TaskRecord`
+  mapping.
+- dr-code states no sustained-throughput qualification posture and no deferred
+  projection-comparison-evidence note: `docs/future-improvements.md` is deleted
+  and the remaining throughput prose in `README.md`,
+  `scripts/verification/task_difficulty/README.md`, and `docs/verif_exps.md` is
+  swept. Payload size, not rate, is the term the pooled legs are described by.
 - The execution cache holds only candidate-owned outcomes. A completed job and
   a candidate-owned termination are written and later reused; a harness failure
   and an infrastructure failure are never written, so an identical later

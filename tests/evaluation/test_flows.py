@@ -19,7 +19,7 @@ from dr_code.evaluation import (
     validate_preprocessing,
     validate_testing,
 )
-from dr_code.preprocessing import EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
+from dr_code.evaluation import flows
 
 from ._batch_builders import BatchStore, cache, request
 from ._bundle_builders import read_limits, stored_source_request
@@ -83,11 +83,12 @@ async def test_validate_testing_reports_attempt_verdicts(
     finally:
         await execution_cache.close()
 
-    assert validation.verdict.completeness is AttemptCompleteness.COMPLETE
-    assert validation.verdict.validity is AttemptValidity.VALID
-    assert validation.verdict.limit_exhaustion is None
+    attempt = validation.result.attempt
+    assert attempt.completeness is AttemptCompleteness.COMPLETE
+    assert attempt.validity is AttemptValidity.VALID
+    assert attempt.limit_exhaustion is None
     assert validation.comparison is None
-    assert len(validation.result.attempt.members) == 2
+    assert len(attempt.members) == 2
 
 
 async def test_validate_preprocessing_reports_corpus_coverage(
@@ -100,23 +101,100 @@ async def test_validate_preprocessing_reports_corpus_coverage(
     try:
         validation = await validate_preprocessing(
             request(2),
-            definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
             executor=importable_json_executor(),
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
             publication=publication,
             pool_config=ExecutionPoolConfig(),
-            worker_count=1,
         )
     finally:
         await execution_cache.close()
 
     # Every sample in the fixture corpus carries the same one candidate text.
-    assert validation.texts_with_candidates == 1
-    assert validation.texts_without_candidates == 0
-    assert validation.verdict.completeness is AttemptCompleteness.COMPLETE
-    assert validation.verdict.validity is AttemptValidity.VALID
+    coverage = validation.coverage
+    assert coverage.texts_with_candidates == 1
+    assert coverage.texts_without_candidates == 0
+    assert coverage.texts_failed == 0
+    assert coverage.corpus_size == 1
+    attempt = validation.result.attempt
+    assert attempt.completeness is AttemptCompleteness.COMPLETE
+    assert attempt.validity is AttemptValidity.VALID
     assert validation.comparison is None
+
+
+async def test_preprocessing_coverage_counters_partition_the_corpus(
+    tmp_path: Path,
+) -> None:
+    """Every distinct corpus text lands in exactly one coverage counter."""
+
+    corpus = (
+        "def observed_load_count(_x):\n    return 1\n",
+        "this is not python source\n",
+        "x = 1\n",
+    )
+    publication = ArtifactBundlePublication.allocate(
+        tmp_path, prefix="preprocessing"
+    )
+    execution_cache = cache(BatchStore())
+    try:
+        validation = await validate_preprocessing(
+            request(len(corpus), texts=corpus),
+            executor=importable_json_executor(),
+            execution_cache=execution_cache,
+            object_store=ObjectStore(MemoryBackend()),
+            publication=publication,
+            pool_config=ExecutionPoolConfig(),
+        )
+    finally:
+        await execution_cache.close()
+
+    coverage = validation.coverage
+    assert coverage.texts_with_candidates == 1
+    assert coverage.texts_without_candidates == 2
+    assert coverage.texts_failed == 0
+    assert coverage.corpus_size == len(corpus)
+
+
+async def test_preprocessing_coverage_counts_a_failed_text(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A text whose preprocessing job failed is counted, never dropped."""
+
+    corpus = (
+        "def observed_load_count(_x):\n    return 1\n",
+        "def wedged(_x):\n    return 2\n",
+    )
+    real_preprocess_batch = flows.preprocess_batch
+
+    async def drop_the_second_text(texts, **keywords):  # type: ignore[no-untyped-def]
+        traces = await real_preprocess_batch(texts, **keywords)
+        return {
+            text: trace for text, trace in traces.items() if text != corpus[1]
+        }
+
+    monkeypatch.setattr(flows, "preprocess_batch", drop_the_second_text)
+    publication = ArtifactBundlePublication.allocate(
+        tmp_path, prefix="preprocessing"
+    )
+    execution_cache = cache(BatchStore())
+    try:
+        validation = await validate_preprocessing(
+            request(len(corpus), texts=corpus),
+            executor=importable_json_executor(),
+            execution_cache=execution_cache,
+            object_store=ObjectStore(MemoryBackend()),
+            publication=publication,
+            pool_config=ExecutionPoolConfig(),
+        )
+    finally:
+        await execution_cache.close()
+
+    coverage = validation.coverage
+    assert coverage.texts_with_candidates == 1
+    assert coverage.texts_without_candidates == 0
+    assert coverage.texts_failed == 1
+    assert coverage.corpus_size == len(corpus)
 
 
 async def test_structural_comparison_needs_a_reference_and_a_resolver(

@@ -179,10 +179,11 @@ orchestration and emits no experiment or protocol accounting."""
 exported_symbols = [
   "dr_code.evaluation.validate_preprocessing",
   "dr_code.evaluation.validate_testing",
-  "dr_code.evaluation.AttemptVerdict",
+  "dr_code.evaluation.PreprocessingCoverage",
+  "dr_code.evaluation.PreprocessingValidation",
+  "dr_code.evaluation.TestingValidation",
 ]
 categories = ["evaluation execution", "evaluation analysis"]
-part_of = ["evaluation batch"]
 
 [[terms]]
 name = "evaluation batch"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from enum import StrEnum, UNIQUE, verify
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Annotated, Final, Literal, Self, TypeAlias
@@ -19,7 +19,7 @@ from dr_code.evaluation.identity import (
     MaterializedEvaluationCandidate,
 )
 from dr_code.evaluation.plan import EvaluationPlan
-from dr_code.trace import PreprocessingDefinitionCoordinate
+from dr_code.trace import PreprocessingDefinitionCoordinate, Trace
 
 if TYPE_CHECKING:
     from dr_code.caching import WindowedExecutionCache
@@ -326,8 +326,16 @@ async def evaluate_batch(
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
     pool_config: ExecutionPoolConfig,
+    preprocessed_traces: Mapping[str, Trace] | None = None,
 ) -> EvaluationBatchResult:
-    """Evaluate one bounded standalone attempt and optionally publish it."""
+    """Evaluate one bounded standalone attempt and optionally publish it.
+
+    `preprocessed_traces` lets a caller that already ran the pooled
+    preprocessing leg over this request's sample texts hand those traces in, so
+    the corpus is preprocessed once per attempt instead of twice. The traces
+    must come from `request.plan.procedure.preprocessing`; a sample text absent
+    from the mapping is preprocessed in process while the batch prepares it.
+    """
 
     return await _evaluate_batch_with_replay(
         request,
@@ -336,6 +344,7 @@ async def evaluate_batch(
         object_store=object_store,
         publication=publication,
         pool_config=pool_config,
+        preprocessed_traces=preprocessed_traces,
         replay=None,
     )
 
@@ -349,6 +358,7 @@ async def _evaluate_batch_with_replay(
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
     pool_config: ExecutionPoolConfig,
+    preprocessed_traces: Mapping[str, Trace] | None = None,
     replay: ReplaySource | None,
 ) -> EvaluationBatchResult:
     """Run the standalone path with attempt provenance fixed before publish."""
@@ -364,6 +374,7 @@ async def _evaluate_batch_with_replay(
             execution_cache=execution_cache,
             pool_config=pool_config,
             placement_sink=placement,
+            preprocessed_traces=preprocessed_traces,
         )
 
     return await _evaluate(

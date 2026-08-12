@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from dr_exec import ExecutionPoolConfig, Executor, FixedPoolCapacity
+from dr_exec import (
+    ExecutionPoolConfig,
+    Executor,
+    FixedPoolCapacity,
+    ProcessExecutor,
+)
 from dr_store import (
     ArtifactBundlePublication,
     ObjectStore,
@@ -21,10 +26,12 @@ from dr_code.caching import WindowedExecutionCache
 from dr_code.core.execution.executor import host_process_executor
 from dr_code.evaluation.batch import EvaluationBatchRequest
 from dr_code.evaluation.flows import (
-    AttemptVerdict,
+    PreprocessingCoverage,
     validate_preprocessing,
     validate_testing,
 )
+from dr_code.evaluation.identity import EvaluationRuntimeIdentity
+from dr_code.evaluation.records import EvaluationAttemptRecord
 
 CACHE_RESIDENT_ENTRIES = 4096
 CACHE_PENDING_ENTRIES = 4096
@@ -62,7 +69,10 @@ _RUNTIME_OPTION = typer.Option(
     exists=True,
     dir_okay=False,
     resolve_path=True,
-    help="Python executable that runs candidate jobs.",
+    help=(
+        "Python executable that runs candidate jobs. Its runtime identity must "
+        "match the request's, which keys the execution cache."
+    ),
 )
 _WORKERS_OPTION = typer.Option(
     ...,
@@ -102,7 +112,7 @@ def validate_preprocessing_command(
     """Run the preprocessing validation flow and print its verdict."""
 
     batch_request = _load_request(request)
-    verdict, coverage = asyncio.run(
+    attempt, coverage = asyncio.run(
         _run_preprocessing(
             batch_request,
             run_root=run_root,
@@ -111,10 +121,11 @@ def validate_preprocessing_command(
         )
     )
     typer.echo(
-        f"texts_with_candidates={coverage[0]} "
-        f"texts_without_candidates={coverage[1]}"
+        f"texts_with_candidates={coverage.texts_with_candidates} "
+        f"texts_without_candidates={coverage.texts_without_candidates} "
+        f"texts_failed={coverage.texts_failed}"
     )
-    _echo_verdict(verdict)
+    _echo_verdict(attempt)
 
 
 @validate_testing_app.command()
@@ -127,7 +138,7 @@ def validate_testing_command(
     """Run the testing validation flow and print its verdict."""
 
     batch_request = _load_request(request)
-    verdict = asyncio.run(
+    attempt = asyncio.run(
         _run_testing(
             batch_request,
             run_root=run_root,
@@ -135,7 +146,7 @@ def validate_testing_command(
             workers=workers,
         )
     )
-    _echo_verdict(verdict)
+    _echo_verdict(attempt)
 
 
 async def _run_preprocessing(
@@ -144,23 +155,18 @@ async def _run_preprocessing(
     run_root: Path,
     runtime: Path,
     workers: int,
-) -> tuple[AttemptVerdict, tuple[int, int]]:
+) -> tuple[EvaluationAttemptRecord, PreprocessingCoverage]:
     paths = _RunPaths.under(run_root)
     async with _resources(request, paths, runtime=runtime) as resources:
         validation = await validate_preprocessing(
             request,
-            definition=request.plan.procedure.preprocessing,
             executor=resources.executor,
             execution_cache=resources.execution_cache,
             object_store=resources.object_store,
             publication=resources.publication,
             pool_config=_pool_config(workers),
-            worker_count=workers,
         )
-    return validation.verdict, (
-        validation.texts_with_candidates,
-        validation.texts_without_candidates,
-    )
+    return validation.result.attempt, validation.coverage
 
 
 async def _run_testing(
@@ -169,7 +175,7 @@ async def _run_testing(
     run_root: Path,
     runtime: Path,
     workers: int,
-) -> AttemptVerdict:
+) -> EvaluationAttemptRecord:
     paths = _RunPaths.under(run_root)
     async with _resources(request, paths, runtime=runtime) as resources:
         validation = await validate_testing(
@@ -180,7 +186,7 @@ async def _run_testing(
             publication=resources.publication,
             pool_config=_pool_config(workers),
         )
-    return validation.verdict
+    return validation.result.attempt
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +204,11 @@ async def _resources(
     *,
     runtime: Path,
 ) -> AsyncIterator[_FlowResources]:
+    executor = host_process_executor(
+        paths.record_root,
+        runtime_executable=runtime,
+    )
+    _require_declared_runtime(request, executor)
     backend = await SqliteBackend.open(paths.object_store)
     try:
         async with await SqliteRecordCache.open(
@@ -211,10 +222,7 @@ async def _resources(
             )
             try:
                 yield _FlowResources(
-                    executor=host_process_executor(
-                        paths.record_root,
-                        runtime_executable=runtime,
-                    ),
+                    executor=executor,
                     execution_cache=execution_cache,
                     object_store=ObjectStore(backend),
                     publication=ArtifactBundlePublication.allocate(
@@ -226,6 +234,27 @@ async def _resources(
                 await execution_cache.close()
     finally:
         await backend.aclose()
+
+
+def _require_declared_runtime(
+    request: EvaluationBatchRequest,
+    executor: ProcessExecutor,
+) -> None:
+    """Refuse to run jobs on an interpreter the request does not declare.
+
+    `request.runtime` keys the execution cache and lands on the attempt, so an
+    interpreter that disagrees with it would serve and record another runtime's
+    outcomes under this one's digest.
+    """
+
+    observed = EvaluationRuntimeIdentity(
+        document=executor.runtime.describe().id_doc
+    )
+    if observed != request.runtime:
+        raise typer.BadParameter(
+            "--runtime identity does not match the request's declared runtime",
+            param_hint="--runtime",
+        )
 
 
 def _pool_config(workers: int) -> ExecutionPoolConfig:
@@ -240,12 +269,12 @@ def _load_request(path: Path) -> EvaluationBatchRequest:
     )
 
 
-def _echo_verdict(verdict: AttemptVerdict) -> None:
+def _echo_verdict(attempt: EvaluationAttemptRecord) -> None:
     typer.echo(
-        f"completeness={verdict.completeness.value} "
-        f"validity={verdict.validity.value}"
+        f"completeness={attempt.completeness.value} "
+        f"validity={attempt.validity.value}"
     )
-    exhaustion = verdict.limit_exhaustion
+    exhaustion = attempt.limit_exhaustion
     if exhaustion is not None:
         typer.echo(
             f"limit_exhaustion={exhaustion.limit.value} "
