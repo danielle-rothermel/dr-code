@@ -32,12 +32,16 @@ from _executor_stubs import completed_execution
 from dr_code.evaluation import (
     BundleRecordReference,
     CandidateJobBudget,
+    CandidateJobCompleted,
     CandidateJobTerminated,
     CandidateTerminationReason,
     EvaluationRuntimeIdentity,
     ExecutedCandidateProvenance,
     ExecutorExecutionFailure,
+    FailureClass,
+    HarnessExecutionFailure,
     ReusedCandidateProvenance,
+    failure_class_of,
 )
 from dr_code.evaluation.execution import (
     build_candidate_execution_job,
@@ -45,7 +49,12 @@ from dr_code.evaluation.execution import (
     interpret_candidate_execution,
     reused_candidate_record,
 )
-from _candidate_job_builders import candidate_job_budget, candidate_job_request
+from _candidate_job_builders import (
+    candidate_job_budget,
+    candidate_job_request,
+    candidate_job_suite,
+)
+from dr_code.humaneval.job import evaluate_humaneval_candidate_job
 
 
 def _runtime() -> EvaluationRuntimeIdentity:
@@ -268,3 +277,97 @@ def test_reused_record_points_to_source_and_claims_no_receipt() -> None:
     assert isinstance(reused.provenance, ReusedCandidateProvenance)
     assert reused.provenance.source_record == source
     assert not hasattr(reused.provenance, "record_receipt")
+
+
+def _completed_candidate_execution() -> CompletedExecution:
+    request = candidate_job_request(
+        "def observed_load_count(_x):\n    return 1\n",
+        candidate_job_suite("output"),
+    )
+    payload = evaluate_humaneval_candidate_job(
+        request.model_dump(mode="json", exclude_computed_fields=True)
+    )
+    return completed_execution(
+        build_candidate_execution_job(
+            JobId(UUID("00000000-0000-0000-0000-000000000003")),
+            request,
+            candidate_job_budget(),
+        ),
+        outcome=ExitedOutcome(exit_code=0),
+        protocol_outputs=(
+            build_identity_document(
+                schema="dr_exec.importable_json",
+                schema_version=1,
+                payload=payload,
+            ),
+        ),
+    )
+
+
+def test_failure_class_literals_are_pinned() -> None:
+    assert FailureClass.HARNESS.value == "harness"
+    assert FailureClass.CANDIDATE.value == "candidate"
+    assert FailureClass.INFRASTRUCTURE.value == "infrastructure"
+    assert len(FailureClass) == 3
+
+
+def test_completed_candidate_execution_attributes_no_failure() -> None:
+    request = candidate_job_request(
+        "def observed_load_count(_x):\n    return 1\n",
+        candidate_job_suite("output"),
+    )
+    interpreted = interpret_candidate_execution(
+        request, _completed_candidate_execution()
+    )
+    assert isinstance(interpreted, CandidateJobCompleted)
+    assert failure_class_of(interpreted) is None
+
+
+def test_terminated_candidate_execution_attributes_the_candidate() -> None:
+    interpreted = interpret_candidate_execution(
+        candidate_job_request("def observed_load_count(_x):\n    return 1\n"),
+        completed_execution(_job(), outcome=SignaledOutcome(signal_number=9)),
+    )
+    assert isinstance(interpreted, CandidateJobTerminated)
+    assert failure_class_of(interpreted) is FailureClass.CANDIDATE
+
+
+def test_wall_time_termination_stays_candidate_owned() -> None:
+    interpreted = interpret_candidate_execution(
+        candidate_job_request("def observed_load_count(_x):\n    return 1\n"),
+        completed_execution(
+            _job(),
+            outcome=BudgetExceededOutcome(axis=BudgetAxis.WALL_TIME),
+        ),
+    )
+    assert isinstance(interpreted, CandidateJobTerminated)
+    assert interpreted.reason is CandidateTerminationReason.WALL_TIME
+    assert failure_class_of(interpreted) is FailureClass.CANDIDATE
+
+
+def test_harness_execution_failure_attributes_the_harness() -> None:
+    request = candidate_job_request(
+        "def observed_load_count(_x):\n    return 1\n",
+        candidate_job_suite("output"),
+    )
+    unmatched = candidate_job_request(
+        "def observed_load_count(_x):\n    return 1\n",
+        candidate_job_suite("other-output"),
+    )
+    interpreted = interpret_candidate_execution(
+        unmatched, _completed_candidate_execution()
+    )
+    assert request.suites != unmatched.suites
+    assert isinstance(interpreted, HarnessExecutionFailure)
+    assert failure_class_of(interpreted) is FailureClass.HARNESS
+
+
+def test_executor_execution_failure_attributes_infrastructure() -> None:
+    interpreted = interpret_candidate_execution(
+        candidate_job_request("def observed_load_count(_x):\n    return 1\n"),
+        completed_execution(
+            _job(), outcome=SpawnAbsentOutcome(executable="missing-python")
+        ),
+    )
+    assert isinstance(interpreted, ExecutorExecutionFailure)
+    assert failure_class_of(interpreted) is FailureClass.INFRASTRUCTURE

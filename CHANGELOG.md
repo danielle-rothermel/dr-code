@@ -17,6 +17,11 @@
   of pinned literal keys. It is a pure derivation with no storage and no
   registry, so dr-code slots bind to the platform's work key by construction
   instead of through a mapping table.
+- `HarnessFailure.failure_class` carries the named `FailureClass` vocabulary of
+  `harness`, `candidate`, and `infrastructure`, derived once from the typed
+  candidate execution outcome by `failure_class_of`. The exception-type string
+  stays in `HarnessFailureCause.exception_type` rather than standing in for the
+  class.
 - Persisted evaluation identity churns once for this wave. The evaluation
   attempt record schema version is now 3, the sample evaluation record and
   candidate execution record schema versions are now 2, and the evaluation

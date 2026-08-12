@@ -264,6 +264,22 @@ date = "2026-08-09"
 check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py tests/evaluation/test_batch.py"
 
 [[contracts]]
+title = "Failure attribution is a named three-way class"
+statement = """
+Failure attribution travels as the closed vocabulary harness, candidate, and
+infrastructure, derived once from the typed candidate execution outcome. A
+completed job attributes no failure class. Candidate termination is
+candidate-owned, a harness execution failure is harness-owned, and an executor
+execution failure is infrastructure-owned. Exception-type strings stay in the
+failure cause they describe and never stand in for the class."""
+rationale = """
+The union arms already separate the three owners structurally; naming them
+gives the shared attribution channel typed domain values that survive
+serialization instead of a free-form string that only a reader can interpret."""
+date = "2026-08-12"
+check = "uv run pytest tests/evaluation/test_candidate_execution.py tests/humaneval/test_projection_wire_format.py"
+
+[[contracts]]
 title = "Evaluation batches bound resident and aggregate work"
 statement = """
 Every evaluation request declares finite attempt, processing-window, and shard

@@ -103,6 +103,37 @@ CandidateExecutionOutcome: TypeAlias = Annotated[
 ]
 
 
+@verify(UNIQUE)
+class FailureClass(StrEnum):
+    # Never build payloads by iterating this closed persisted vocabulary.
+
+    HARNESS = "harness"
+    CANDIDATE = "candidate"
+    INFRASTRUCTURE = "infrastructure"
+
+
+def failure_class_of(
+    outcome: CandidateExecutionOutcome,
+    /,
+) -> FailureClass | None:
+    """Name which party owns a candidate execution outcome's failure.
+
+    A completed job has no failure to attribute and returns ``None``. Wall-time
+    termination stays candidate-owned at dr-exec 0.1.9, which attributes it to
+    the payload.
+    """
+
+    match outcome:
+        case CandidateJobCompleted():
+            return None
+        case CandidateJobTerminated():
+            return FailureClass.CANDIDATE
+        case HarnessExecutionFailure():
+            return FailureClass.HARNESS
+        case ExecutorExecutionFailure():
+            return FailureClass.INFRASTRUCTURE
+
+
 class CandidateExecutionRecord(FrozenModel):
     schema_version: Literal[2] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
     candidate: EvaluationCandidateIdentity
@@ -315,12 +346,14 @@ __all__ = [
     "EvaluatedSampleRecord",
     "ExecutedCandidateProvenance",
     "ExecutorExecutionFailure",
+    "FailureClass",
     "HarnessExecutionFailure",
     "NoCandidatesSampleRecord",
     "PreprocessingAbsentSampleRecord",
     "ReplayMode",
     "ReplaySource",
     "ReusedCandidateProvenance",
+    "failure_class_of",
     "SAMPLE_EVALUATION_RECORD_ADAPTER",
     "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
     "SampleEvaluationRecord",

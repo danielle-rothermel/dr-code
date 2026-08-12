@@ -126,6 +126,7 @@ if TYPE_CHECKING:
         EvaluatedSampleRecord,
         ExecutedCandidateProvenance,
         ExecutorExecutionFailure,
+        FailureClass,
         HarnessExecutionFailure,
         NoCandidatesSampleRecord,
         PreprocessingAbsentSampleRecord,
@@ -135,6 +136,7 @@ if TYPE_CHECKING:
         SAMPLE_EVALUATION_RECORD_ADAPTER,
         SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION,
         SampleEvaluationRecord,
+        failure_class_of,
     )
     from dr_code.evaluation.replay import (
         ReplayPreflight,
@@ -163,6 +165,7 @@ _RECORD_EXPORTS = frozenset(
         "EvaluatedSampleRecord",
         "ExecutedCandidateProvenance",
         "ExecutorExecutionFailure",
+        "FailureClass",
         "HarnessExecutionFailure",
         "NoCandidatesSampleRecord",
         "PreprocessingAbsentSampleRecord",
@@ -172,6 +175,7 @@ _RECORD_EXPORTS = frozenset(
         "SAMPLE_EVALUATION_RECORD_ADAPTER",
         "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
         "SampleEvaluationRecord",
+        "failure_class_of",
     }
 )
 
@@ -311,6 +315,7 @@ __all__ = [
     "EvidenceReference",
     "ExecutedCandidateProvenance",
     "ExecutorExecutionFailure",
+    "FailureClass",
     "GeneratedSampleProvenance",
     "HarnessExecutionFailure",
     "FrozenCandidateEvaluationInput",
@@ -355,6 +360,7 @@ __all__ = [
     "WindowLimits",
     "aggregate",
     "derive_work_key",
+    "failure_class_of",
     "audit_evaluation_bundle",
     "compare_evaluation_attempts",
     "evaluate_batch",

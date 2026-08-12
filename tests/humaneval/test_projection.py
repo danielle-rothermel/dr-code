@@ -6,7 +6,11 @@ import pytest
 from dr_exec import ExecutionPoolConfig
 
 from _executor_stubs import importable_json_executor
-from dr_code.evaluation import BundleRecordReference, EvaluatedSampleRecord
+from dr_code.evaluation import (
+    BundleRecordReference,
+    EvaluatedSampleRecord,
+    FailureClass,
+)
 from dr_code.evaluation._batch import _evaluate_batch_assembly
 from dr_code.humaneval import (
     ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
@@ -278,7 +282,8 @@ async def test_any_candidate_reduction_scores_a_broken_measurement_as_failure() 
     # sample is a harness failure rather than a measured zero.
     projected = _project(unmeasured, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
     assert isinstance(projected, HarnessFailure)
-    assert projected.failure_class == "BrokenCandidateMeasurement"
+    assert projected.failure_class is FailureClass.HARNESS
+    assert projected.cause.exception_type == "BrokenCandidateMeasurement"
 
     # Every ordinal validly measured and none passing is a clean zero.
     measured = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
@@ -511,7 +516,10 @@ async def test_projection_requires_full_profile_coordinate_and_question() -> (
         sample_record=_reference(),
     )
     assert isinstance(projected, HarnessFailure)
-    assert projected.failure_class == "UnsupportedPreprocessingDefinition"
+    assert projected.failure_class is FailureClass.HARNESS
+    assert (
+        projected.cause.exception_type == "UnsupportedPreprocessingDefinition"
+    )
 
     wrong_question = DEFAULT_HUMANEVAL_SCORING_PROFILE.question.model_copy(
         update={"on_key": "other-output"}
@@ -528,5 +536,6 @@ async def test_projection_requires_full_profile_coordinate_and_question() -> (
         sample_record=_reference(),
     )
     assert isinstance(projected, HarnessFailure)
-    assert projected.failure_class == "UnsupportedMetricQuestion"
+    assert projected.failure_class is FailureClass.HARNESS
+    assert projected.cause.exception_type == "UnsupportedMetricQuestion"
     await execution_cache.close()

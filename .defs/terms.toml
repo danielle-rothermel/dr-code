@@ -197,6 +197,18 @@ exported_symbols = [
 categories = ["evaluation publication"]
 
 [[terms]]
+name = "failure class"
+definition = """
+The named party that owns a candidate execution failure: the harness, the
+candidate, or the infrastructure. It is derived once from the typed candidate
+execution outcome, and a completed job carries no failure class at all."""
+exported_symbols = [
+  "dr_code.evaluation.FailureClass",
+  "dr_code.evaluation.failure_class_of",
+]
+categories = ["evaluation execution", "evaluation evidence"]
+
+[[terms]]
 name = "evaluation execution path"
 definition = """
 The canonical bounded path that turns one materialized candidate and its
