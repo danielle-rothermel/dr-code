@@ -317,9 +317,13 @@ async def test_evict_drops_a_pending_checkpoint_entry() -> None:
     await started.wait()
     await cache.put("drop", _observation("drop"))
 
-    assert await cache.evict(("drop",)) == {"drop": EvictStatus.ABSENT}
+    evict_task = asyncio.create_task(cache.evict(("drop",)))
+    await asyncio.sleep(0)
+    assert not evict_task.done()
 
     release.set()
+    assert await evict_task == {"drop": EvictStatus.ABSENT}
+
     await cache.close()
 
     persisted_messages = {
@@ -328,3 +332,26 @@ async def test_evict_drops_a_pending_checkpoint_entry() -> None:
         for entry in batch.values()
     }
     assert persisted_messages == {"keep"}
+
+
+async def test_evict_waits_for_in_flight_checkpoint() -> None:
+    store = _Store()
+    started, release = store.gate_next_write()
+    cache = _cache(store, pending=1)
+
+    await cache.put("stale", _observation("stale"))
+    await started.wait()
+
+    evict_task = asyncio.create_task(cache.evict(("stale",)))
+    await asyncio.sleep(0)
+    assert not evict_task.done()
+
+    release.set()
+    assert await evict_task == {"stale": EvictStatus.EVICTED}
+
+    await cache.close()
+
+    cache = _cache(store)
+    await cache.prefetch(("stale",))
+    assert cache.get("stale") is None
+    await cache.close()

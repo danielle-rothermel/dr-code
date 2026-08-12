@@ -98,6 +98,9 @@ class WindowedExecutionCache:
             None
         )
         self._checkpoint_event = asyncio.Event()
+        self._writer_idle = asyncio.Event()
+        self._writer_idle.set()
+        self._evict_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
         self._prefetched_entries = 0
@@ -225,20 +228,23 @@ class WindowedExecutionCache:
         persistent_to_request = {
             self._persistent_key(key): key for key in keys
         }
-        for request_key in keys:
-            self._resident.pop(request_key, None)
-            self._pending.pop(request_key, None)
-            if self._in_flight_batch is not None:
-                self._in_flight_batch.pop(request_key, None)
+        async with self._evict_lock:
+            for request_key in keys:
+                self._resident.pop(request_key, None)
+                self._pending.pop(request_key, None)
+                if self._in_flight_batch is not None:
+                    self._in_flight_batch.pop(request_key, None)
 
-        if not isinstance(self._store, EvictableBatchRecordStore):
-            raise TypeError(
-                "execution cache eviction requires a store that implements "
-                "evict_bindings"
+            await self._writer_idle.wait()
+
+            if not isinstance(self._store, EvictableBatchRecordStore):
+                raise TypeError(
+                    "execution cache eviction requires a store that implements "
+                    "evict_bindings"
+                )
+            statuses = await self._store.evict_bindings(
+                persistent_to_request.keys()
             )
-        statuses = await self._store.evict_bindings(
-            persistent_to_request.keys()
-        )
         return {
             persistent_to_request[persistent_key]: status
             for persistent_key, status in statuses.items()
@@ -307,13 +313,17 @@ class WindowedExecutionCache:
                 batch = self._pending
                 self._pending = {}
                 self._in_flight_batch = batch
-                persisted = await self._persist_batch(batch)
-                self._checkpoint_batches += 1
-                if persisted:
-                    self._checkpoint_entries += len(batch)
-                else:
-                    self._checkpoint_failures += 1
-                self._in_flight_batch = None
+                self._writer_idle.clear()
+                try:
+                    persisted = await self._persist_batch(batch)
+                    self._checkpoint_batches += 1
+                    if persisted:
+                        self._checkpoint_entries += len(batch)
+                    else:
+                        self._checkpoint_failures += 1
+                finally:
+                    self._in_flight_batch = None
+                    self._writer_idle.set()
             if self._closing:
                 if self._pending:
                     self._checkpoint_event.set()

@@ -308,8 +308,9 @@ outcome is the one recorded and offered to persistence. Persisted bindings are
 append-only and first-writer-wins, so fresh bypasses lookup without replacing
 an entry already stored under the same key, and a later non-fresh request for
 that key reads the original binding unless the caller evicts it first through
-``WindowedExecutionCache.evict``, which removes persisted bindings via
-``evict_bindings`` and clears resident state. dr-code decides cacheability and
+``WindowedExecutionCache.evict``, which waits for any in-flight checkpoint to
+finish, then removes persisted bindings via ``evict_bindings`` and clears
+resident state. dr-code decides cacheability and
 provides the fresh switch and eviction entry point; it never re-attempts a
 request on its own."""
 rationale = """

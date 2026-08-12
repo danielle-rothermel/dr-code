@@ -38,7 +38,9 @@ for the given keys.
   lookup for its generations, so every candidate re-executes. Because
   persisted bindings are first-writer-wins, a fresh outcome does not replace
   an entry already stored under the same key unless the caller evicts it first
-  through ``WindowedExecutionCache.evict``.
+  through ``WindowedExecutionCache.evict``. Eviction waits for any in-flight
+  checkpoint write to finish before deleting persisted bindings, so a
+  materialized batch cannot recreate a binding after eviction returns.
 - Cached observations retain the interpreted candidate outcome and a portable
   reference to the source executed record. A cache hit produces reused
   provenance; it never claims that a new process ran.
