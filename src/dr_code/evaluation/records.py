@@ -134,6 +134,19 @@ def failure_class_of(
             return FailureClass.INFRASTRUCTURE
 
 
+def outcome_is_cacheable(outcome: CandidateExecutionOutcome, /) -> bool:
+    """Say whether an outcome describes the candidate rather than the run.
+
+    Only candidate-owned outcomes are reusable evidence: a completed job and a
+    candidate-owned termination both describe the candidate itself, so a later
+    identical request may reuse them. Harness and infrastructure failures
+    describe the run that observed the candidate, so caching them would replay
+    an environment fault as if it were the candidate's behavior.
+    """
+
+    return failure_class_of(outcome) in {None, FailureClass.CANDIDATE}
+
+
 class CandidateExecutionRecord(FrozenModel):
     schema_version: Literal[2] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
     candidate: EvaluationCandidateIdentity
@@ -357,4 +370,5 @@ __all__ = [
     "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
     "SampleEvaluationRecord",
     "failure_class_of",
+    "outcome_is_cacheable",
 ]

@@ -6,7 +6,10 @@ from typing import Final
 
 CODE_REPRESENTATION_NAME: Final[str] = "code"
 
-_TREE_CACHE_SIZE: Final[int] = 512
+# Preprocessing runs one worker process per core and each worker carries its
+# own copy of this cache, so the resident cost is this size times the worker
+# count rather than once per run.
+_TREE_CACHE_SIZE: Final[int] = 2048
 
 
 @lru_cache(maxsize=_TREE_CACHE_SIZE)

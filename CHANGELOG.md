@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- Evidence writes can join a caller-owned transaction.
+  `commit_evaluation_evidence` takes the caller's open sync SQLAlchemy Core
+  connection and writes the member sample records, the attempt record, and the
+  `output_reference` binding through dr-store's enlisted operations, so they
+  become visible exactly when the caller commits and leave nothing behind when
+  it rolls back. The entry point never commits, rolls back, or closes the
+  connection. Publishing the artifact bundle first is a caller obligation the
+  entry point does not enforce, and no in-tree production caller wires it yet.
+  The enlisted writes never overwrite: a member key or an `output_reference`
+  already holding a different reference raises `BindingConflictError`, and any
+  exception leaves the issued writes staged for the caller to roll back. The
+  separate best-effort publication path takes no connection and is unchanged,
+  and the windowed execution cache stays cache-grade and fail-open. Transaction
+  visibility is covered against a real PostgreSQL-backed dr-store by the
+  opt-in `postgres` tests below, alongside the fake that covers the call seam.
+
+- Added opt-in `postgres`-marked tests that drive `commit_evaluation_evidence`
+  against a real PostgreSQL-backed dr-store, since matching call signatures do
+  not establish matching behavior: committed evidence visible to a later
+  transaction, rollback leaving nothing behind, a member key held by a
+  different record refused through the first-writer-wins winner comparison, a
+  changed attempt refused under an existing `attempt_id` while leaving the
+  original evidence intact, identical re-commit idempotent, and a failure
+  leaving writes staged for the caller to roll back. The marker is deselected
+  by default so the standard suite stays offline; run them with dr-store's
+  scratch server (`../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m
+  postgres`). Attempt and sample record builders moved to a shared
+  `tests/evaluation/_evidence_builders.py` used by both evidence modules.
+- dr-store resolves from PyPI at 0.2.3, with a `dr-store==0.2.3`
+  override neutralizing released dr-exec 0.1.9's pin on 0.2.0, and
+  `sqlalchemy>=2.0` is a direct dependency because the evidence path types
+  against `sqlalchemy.engine.Connection`.
+- `commit_evaluation_evidence` accepts one sample record per attempt member
+  whose bundle reference is present, preserving each member's ordinal and
+  writing no binding for members omitted by admission or retained-evidence
+  limits.
+
 - Evaluation sampling plans declare a sample count per selected task
   (`task_num_samples`, positionally aligned with the ordered selection) instead
   of one count shared by every task. Slot ordinals are prefix sums over those
@@ -72,6 +109,38 @@
 
 ### 2026-08-12
 
+- The execution cache holds only candidate-owned outcomes. A completed job and
+  a candidate-owned termination are written and later reused; a harness failure
+  and an infrastructure failure are never written, so an identical later
+  request re-executes it instead of replaying an environment fault as the
+  candidate's behavior. `outcome_is_cacheable`, exported from
+  `dr_code.evaluation`, derives the decision from the typed outcome's failure
+  class and adds no second vocabulary.
+- `EvaluationBatchRequest.fresh` skips execution-cache lookup for a request's
+  generations, so every candidate re-executes and the fresh outcome is the one
+  recorded and offered to persistence. Persisted bindings are append-only and
+  first-writer-wins, so a fresh run does not replace an entry already stored
+  under the same key: a later non-fresh request for that key still reads the
+  original binding. It is the library half of a deliberate re-run: dr-code
+  provides the switch and never re-attempts on its own.
+- `CandidateJobBudget` carries the ratified output-retention defaults —
+  `CANDIDATE_STREAM_HEAD_BYTES` of 512 MiB per stream head and
+  `CANDIDATE_PAYLOAD_OUTPUT_BYTES` of 1 GiB — so a failing candidate's evidence
+  survives by default rather than because a caller named a bound. `wall_time_ns`
+  and `input_bytes` stay required with no default, and the heads must still sum
+  to the payload-output bound. The task-difficulty workflow consumes these
+  library values.
+- `HumanEvalCandidateJobRequest.field_limit` bounds every rendered evidence
+  field the importable job reports, defaulting to 32,000 characters and still
+  clipping with the pinned `...[truncated]` marker. The limit now applies to
+  `input_repr` and non-oracle `expected_output_repr` as well as messages and
+  evaluated outputs. The knob travels on the request wire payload, so
+  `HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION` is 2 and the candidate request
+  identity digest changes with it. Every previously persisted candidate
+  execution cache key is therefore stale: the first run after this change
+  misses on every key and re-executes each candidate.
+- The preprocessing AST cache holds 2048 trees, sized from the reality that
+  each worker process carries its own copy.
 - The evaluation package carries the settled sampling vocabulary. `RepeatPlan`
   and `RepeatPlanCoordinate` are now `SamplingPlan` and
   `SamplingPlanCoordinate`; `repeat_plan_id` is `sampling_plan_id`;

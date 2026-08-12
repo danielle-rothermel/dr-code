@@ -12,11 +12,12 @@ dependencies = [
     "datasets>=3.0,<4",
     "dr-exec==0.1.9",
     "dr-serialize==0.1.2",
-    "dr-store==0.2.0",
+    "dr-store==0.2.3",
     "numpy>=2.1,<3",
     "polars>=1.43.2",
     "pydantic>=2.13.4",
     "python-minifier==3.2.0",
+    "sqlalchemy>=2.0",
     "typer>=0.26.7",
     "zstandard>=0.25.0",
 ]
@@ -49,6 +50,9 @@ dev = [
 
 [tool.uv]
 required-version = ">=0.12.0"
+# Released dr-exec 0.1.9 pins dr-store==0.2.0; the override resolves the
+# dependency graph against dr-store 0.2.3 from PyPI.
+override-dependencies = ["dr-store==0.2.3"]
 
 # Development mode pins every component to initial-version. Only repository
 # contract tests read this marker; runtime code does not, and persisted
@@ -62,7 +66,13 @@ testpaths = ["tests"]
 # Test directories carry no package markers, so mirrored basenames
 # (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
 # need importlib import mode rather than sys.path insertion.
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib -m 'not postgres'"
+markers = [
+    # Opt-in: needs a live PostgreSQL server via DR_STORE_POSTGRES_DSN. Run
+    # with dr-store's scratch server, which supplies both:
+    #   ../dr-store/scripts/test-postgres.sh -- uv run pytest -m postgres
+    "postgres: requires a PostgreSQL-backed dr-store",
+]
 
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]

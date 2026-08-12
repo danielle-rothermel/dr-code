@@ -30,8 +30,12 @@ from dr_serialize import build_identity_document
 from dr_store import derive_cache_key
 
 from _executor_stubs import completed_execution
+from pydantic import ValidationError
+
 from dr_code.evaluation import (
     BundleRecordReference,
+    CANDIDATE_PAYLOAD_OUTPUT_BYTES,
+    CANDIDATE_STREAM_HEAD_BYTES,
     CandidateJobBudget,
     CandidateJobCompleted,
     CandidateJobTerminated,
@@ -58,7 +62,10 @@ from _candidate_job_builders import (
     candidate_job_request,
     candidate_job_suite,
 )
-from dr_code.humaneval.job import evaluate_humaneval_candidate_job
+from dr_code.humaneval.job import (
+    DEFAULT_FIELD_LIMIT,
+    evaluate_humaneval_candidate_job,
+)
 
 
 def _runtime() -> EvaluationRuntimeIdentity:
@@ -116,7 +123,9 @@ def test_candidate_job_budget_and_declaration_wire_shape_are_fixed() -> None:
         "schema_version",
         "candidate",
         "suites",
+        "field_limit",
     }
+    assert job.target.request.payload["field_limit"] == DEFAULT_FIELD_LIMIT
 
 
 def test_candidate_job_budget_rejects_mismatched_retention() -> None:
@@ -435,3 +444,23 @@ def test_trial_and_selection_grades_never_share_a_cache_key() -> None:
         request, budget, "tests/execution", run_grade=RunGrade.SELECTION
     )
     assert trial != selection
+
+
+def test_candidate_retention_defaults_are_the_library_values() -> None:
+    budget = CandidateJobBudget(
+        wall_time_ns=5_000_000_000,
+        input_bytes=2_097_152,
+    )
+
+    assert budget.stdout_head_bytes == 536_870_912
+    assert budget.stderr_head_bytes == 536_870_912
+    assert budget.payload_output_bytes == 1_073_741_824
+    assert budget.stdout_head_bytes == CANDIDATE_STREAM_HEAD_BYTES
+    assert budget.payload_output_bytes == CANDIDATE_PAYLOAD_OUTPUT_BYTES
+
+
+def test_wall_time_and_input_bytes_carry_no_default() -> None:
+    with pytest.raises(ValidationError):
+        CandidateJobBudget(input_bytes=2_097_152)  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        CandidateJobBudget(wall_time_ns=5_000_000_000)  # type: ignore[call-arg]

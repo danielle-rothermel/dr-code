@@ -158,11 +158,14 @@ Normal close attempts one final checkpoint. Persistent read, validation, and
 write failures are logged and degrade to misses or dropped retry state rather
 than failing evaluation.
 
-Fresh execution observations become eligible for persistence only after the
-owning sample evaluation record has a portable evidence reference. Batch
-assembly publishes that reference with the observation, then releases the
-resident cache key; reuse therefore never fabricates a source record or keeps
-attempt-wide pending cache state.
+A candidate-owned execution observation becomes eligible for persistence once
+the owning sample evaluation record has a portable evidence reference; harness
+and infrastructure outcomes are never persisted. Batch assembly publishes that
+reference with the observation, then releases the resident cache key; reuse
+therefore never fabricates a source record or keeps attempt-wide pending cache
+state. An evaluation batch request declaring itself `fresh` skips lookup for
+its generations and re-executes every candidate, without replacing entries
+already bound under the same keys.
 
 Persistent keys combine the opaque execution-request key with the full digest
 of a mandatory, caller-owned runtime identity. The identity must cover the
@@ -541,6 +544,17 @@ CI remains serial so its ordering and resource use stay reproducible:
 
 ```console
 uv run --with pytest-xdist pytest -n 4
+```
+
+Tests marked `postgres` need a live PostgreSQL-backed dr-store and are
+deselected by default, so the command above stays offline. They cover the
+evidence write path against a real database, where a fake cannot establish that
+a rollback leaves nothing behind or that a first-writer-wins collision
+surfaces. dr-store's scratch-server script provides both the server and the
+DSN, and runs the command in this checkout:
+
+```console
+../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m postgres
 ```
 
 The [viewer verification guide](viewer/README.md#verification) documents its

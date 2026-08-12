@@ -172,17 +172,24 @@ statement = """
 Every candidate execution job declares finite wall-clock, input, and
 payload-output budgets and a fixed environment grant, and production executor
 construction requires an explicit Python executable. Trusted non-candidate
-jobs may run unbudgeted. Exited, signaled, wall-time, and
-payload-output outcomes have fixed mappings; payload-owned protocol failures
-map to candidate-attributable kills; every other outcome fails closed as an
-executor failure. Candidate execution records preserve this closed
-interpretation."""
+jobs may run unbudgeted. The library supplies the output-retention half of
+that budget: 512 MiB per stream head and a 1 GiB payload-output bound, with
+the two heads always summing to the payload-output bound. Wall time and input
+bytes carry no default and every caller names them. Overflow keeps failing the
+job, which yields a retained typed outcome rather than voided evidence.
+Exited, signaled, wall-time, and payload-output outcomes have fixed mappings;
+payload-owned protocol failures map to candidate-attributable kills; every
+other outcome fails closed as an executor failure. Candidate execution records
+preserve this closed interpretation."""
 rationale = """
 Evaluating model-produced source remains an adversarial boundary. Under
 dr-exec the subprocess retains the invoking worker's permissions and worker
 isolation is the deployment boundary, so bounded budgets and one closed
 mapping are what keep candidate execution records separate from broken
-infrastructure."""
+infrastructure. Retention defaults live in the library because a failing
+candidate's evidence is what later reflection reads, and it should survive by
+default rather than because one script happened to name a bound; wall time and
+input size stay explicit because only the caller knows its workload."""
 date = "2026-08-09"
 check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
 
@@ -281,6 +288,29 @@ requiring the caller to name the grade keeps the choice visible at every
 entry point."""
 date = "2026-08-12"
 check = "uv run pytest tests/evaluation/test_candidate_execution.py"
+
+[[contracts]]
+title = "Only candidate-owned outcomes enter the execution cache"
+statement = """
+The execution cache holds outcomes that describe the candidate and no others.
+A completed job and a candidate-owned termination are written and later reused;
+a harness failure and an infrastructure failure are never written, so an
+identical later request re-executes it. The decision reads the failure class
+derived from the typed outcome and adds no second vocabulary. An evaluation
+batch request may additionally declare itself fresh, which skips cache lookup
+for that request's generations so every candidate re-executes and the fresh
+outcome is the one recorded and offered to persistence. Persisted bindings are
+append-only and first-writer-wins, so fresh bypasses lookup without replacing
+an entry already stored under the same key, and a later non-fresh request for
+that key reads the original binding. dr-code decides cacheability and provides
+the fresh switch; it never re-attempts a request on its own."""
+rationale = """
+Caching a run-owned failure replays an environment fault to every later reader
+as though the candidate had produced it, which is the one thing attribution
+exists to prevent, and a caller who wants a deliberate re-run needs a way to
+say so that does not depend on guessing key structure."""
+date = "2026-08-12"
+check = "uv run pytest tests/evaluation/test_cache_policy.py"
 
 [[contracts]]
 title = "Failure attribution is a named three-way class"
@@ -564,3 +594,39 @@ versions into one row grain invents joins and corrupts analysis denominators;
 derived retry identities similarly overstate flattened historical evidence."""
 date = "2026-08-08"
 check = "uv run pytest tests/generation_corpus"
+
+[[contracts]]
+title = "Evidence writes join the caller's transaction"
+statement = """
+dr-code persists at two grades. Cache-grade writes are fail-open: the windowed
+execution cache checkpoints outcomes best-effort, and a failed checkpoint never
+fails evaluation. Evidence-grade writes are transaction-participating: an
+explicit evaluation entry point accepts the caller's open sync SQLAlchemy Core
+connection and writes the member sample records, the attempt record, and the
+output_reference binding through dr-store's enlisted operations on that
+connection. It never commits, rolls back, or closes the connection it is
+handed, so the evidence becomes visible exactly when the caller commits and
+leaves nothing behind when the caller rolls back. Publishing the generation
+artifact bundle before calling the entry point is a caller obligation that
+dr-code does not enforce; the entry point has no in-tree production caller yet,
+and whetstone's durable leg wires it. The enlisted writes are first-writer-wins
+and never overwrite: a member key or an output_reference already occupied by a
+different reference raises BindingConflictError, which is what re-committing a
+changed attempt under an existing attempt_id does. Any exception leaves the
+writes already issued staged in the caller's transaction and obligates the
+caller to roll it back. The separate best-effort publication path takes no
+connection and is unchanged."""
+rationale = """
+Reusable execution outcomes are an optimization whose loss costs only time,
+while evidence is the record a later analysis reads: partially visible evidence
+would misstate what ran. Joining the caller's transaction makes the records and
+the reference that resolves them commit as one unit without dr-code owning a
+transaction it did not open. Surfacing a first-writer-wins collision as an
+error keeps another writer's record from committing as if it were this
+attempt's evidence, and leaving rollback to the caller keeps dr-code from
+discarding work in a transaction it does not own. Transaction visibility and
+collision refusal are properties of the database rather than of the call shape,
+so they are pinned against a real PostgreSQL-backed store in addition to the
+fake that covers the call seam."""
+date = "2026-08-12"
+check = "uv run pytest tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py && ../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m postgres tests/evaluation/test_evidence_postgres.py"
