@@ -24,9 +24,10 @@ def derive_work_key(
 ) -> Sha256Digest:
     """Derive the content-addressed work key for one planned generation.
 
-    The key binds an experiment configuration to the generation index — the
-    task index and sample index the slot occupies — so the same generation
-    under the same configuration always addresses the same work.
+    The key binds an experiment configuration to the slot's addressing
+    coordinates — its task set coordinate, its sampling plan coordinate, its
+    task id, and its sample index — so the same configuration addresses the
+    same work under the same task set and sampling plan coordinates.
     """
 
     if not experiment_config_hash:
@@ -48,8 +49,4 @@ def derive_work_key(
     )
 
 
-__all__ = [
-    "WORK_KEY_SCHEMA",
-    "WORK_KEY_SCHEMA_VERSION",
-    "derive_work_key",
-]
+__all__ = ["derive_work_key"]

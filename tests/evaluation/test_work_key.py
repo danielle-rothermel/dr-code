@@ -4,10 +4,10 @@ import pytest
 from _builders import evaluation_slot
 from dr_serialize import build_identity_document, identity_document_hash
 
-from dr_code.evaluation import (
+from dr_code.evaluation import derive_work_key
+from dr_code.evaluation.work_key import (
     WORK_KEY_SCHEMA,
     WORK_KEY_SCHEMA_VERSION,
-    derive_work_key,
 )
 
 _CONFIG_HASH = (

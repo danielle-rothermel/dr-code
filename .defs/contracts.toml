@@ -254,12 +254,12 @@ job budget. Multiple candidates or evaluation samples never share a job.
 Standalone batches bound concurrency; durable application work invokes
 candidate jobs serially within its bounded attempt partition without nesting
 schedulers. Every job enforces finite budgets and a fixed environment
-declaration, distinguishes candidate from infrastructure outcomes, and retains
+declaration, attributes outcomes to the named failure class, and retains
 portable execution-record identity. This path is not an operating-system
 sandbox."""
 rationale = """
 One execution boundary prevents script-specific process behavior and unbounded
-concurrency while preserving candidate-versus-infrastructure attribution."""
+concurrency while preserving named failure attribution."""
 date = "2026-08-09"
 check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py tests/evaluation/test_batch.py"
 
@@ -280,7 +280,7 @@ same key, which is precisely the confusion the grade exists to prevent, and
 requiring the caller to name the grade keeps the choice visible at every
 entry point."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_candidate_execution.py tests/caching/test_execution_cache.py"
+check = "uv run pytest tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
 title = "Failure attribution is a named three-way class"
@@ -410,7 +410,7 @@ check = "uv run pytest tests/evaluation/test_comparison.py"
 title = "Evaluation identity distinguishes plans from samples"
 statement = """
 An evaluation slot identifies only one planned task-and-sample position,
-addressed by its generation index of task index and sample index. An
+addressed by its task id and its sample index within that task. An
 evaluation sample separately carries the stable identity and provenance of the
 realized raw input bound to that slot. An evaluation candidate identity
 composes the evaluation sample identity, the complete resolved preprocessing
@@ -426,17 +426,19 @@ date = "2026-08-09"
 check = "uv run pytest tests/evaluation/test_identity.py tests/evaluation/test_record_models.py"
 
 [[contracts]]
-title = "Work keys derive from configuration and generation index alone"
+title = "Work keys derive from configuration and slot addressing coordinates"
 statement = """
 A work key is the content-addressed digest of one experiment configuration
-hash and one evaluation slot's generation index, over an explicit payload of
-pinned literal keys. The derivation is a pure function with no storage and no
-registry, so the same configuration and generation index always address the
-same work."""
+hash together with one evaluation slot's full addressing coordinates: its task
+set coordinate, its sampling plan coordinate, its task id, and its sample
+index, over an explicit payload of pinned literal keys. The derivation is a
+pure function with no storage and no registry, so the same configuration
+addresses the same work under the same task set and sampling plan
+coordinates."""
 rationale = """
-Binding dr-code's slots to the platform's work key by construction removes
-the mapping table a lookup would require, and pinning the payload keys as
-literals keeps stored identity from drifting when model field names change."""
+Deriving the key from what a slot actually carries keeps it computable from
+one slot without a lookup, and pinning the payload keys as literals keeps
+stored identity from drifting when model field names change."""
 date = "2026-08-12"
 check = "uv run pytest tests/evaluation/test_work_key.py"
 

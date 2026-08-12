@@ -353,8 +353,8 @@ __all__ = [
     "ReplayMode",
     "ReplaySource",
     "ReusedCandidateProvenance",
-    "failure_class_of",
     "SAMPLE_EVALUATION_RECORD_ADAPTER",
     "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
     "SampleEvaluationRecord",
+    "failure_class_of",
 ]

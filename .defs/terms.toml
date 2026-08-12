@@ -24,9 +24,9 @@ categories = ["evaluation evidence"]
 name = "evaluation slot"
 definition = """
 One planned task-and-sample position in an evaluation plan, addressed by its
-generation index. It establishes
-expected membership and order without claiming that an input was observed or
-evaluated at that position."""
+task id and its sample index within that task. It establishes expected
+membership and order without claiming that an input was observed or evaluated
+at that position."""
 exported_symbols = ["dr_code.evaluation.EvaluationSlotIdentity"]
 categories = ["evaluation identity", "evaluation planning"]
 part_of = ["evaluation plan"]
@@ -805,11 +805,13 @@ part_of = ["generation"]
 name = "work key"
 definition = """
 The content-addressed digest of one experiment configuration hash together
-with one generation index, derived from an evaluation slot. It addresses the
-work of producing one generation without naming any run, attempt, or record."""
+with one evaluation slot's addressing coordinates: its task set coordinate,
+its sampling plan coordinate, its task id, and its sample index. It addresses
+the work of producing one generation without naming any run, attempt, or
+record."""
 exported_symbols = ["dr_code.evaluation.derive_work_key"]
 categories = ["evaluation identity", "experiment design"]
-part_of = ["generation index"]
+part_of = ["generation"]
 
 [[terms]]
 name = "generation output"
