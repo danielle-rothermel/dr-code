@@ -44,6 +44,10 @@ uv run python scripts/build_generation_corpus.py human_eval \
    with at least one compilable top-level-function candidate. Workers return
    each output's candidate sources rather than its whole trace, and stage 1
    consumes them as they complete rather than retaining them.
+   `--preprocess-timeout-seconds` (default 600, override with
+   `DR_CODE_PREPROCESS_TIMEOUT_SECONDS`) is a per-item wall-time watchdog: an
+   output that exceeds it fails alone and the batch continues. Pass `0` or
+   `none` to run unbudgeted.
 2. `uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py`
    selects one deterministic generation for each available task, setting, and
    model in the fixed model roster.
@@ -125,7 +129,11 @@ explains the modes in full.
   untrusted. Workers return only the candidate sources stage 1 consumes: the
   parent decodes and validates every returned byte single-threaded, so
   returning whole traces would cost about a hundred times the payload and cap
-  throughput at the parent's parse rate regardless of worker count.
+  throughput at the parent's parse rate regardless of worker count. Each item
+  carries a wall-time watchdog set far above any healthy output's cost, so a
+  worker that wedges on one pathological input is killed and respawned
+  instead of stalling the run; the wedged item is one item's failure, logged
+  as a timeout so it stays distinguishable from an unparseable output.
 
 All inputs, outputs, and sampling choices are fixed in `workflow_settings.py`.
 Heavy run artifacts and evaluation caches are written under

@@ -190,6 +190,56 @@ def test_preprocessing_continues_after_distinct_output_failure() -> None:
     assert len(results[good_source]) >= 1
 
 
+def test_preprocess_timeout_flag_defaults_to_ten_minutes() -> None:
+    """Stage 1 carries the workflow's watchdog default, not the library's."""
+
+    arguments = _BUILD._parse_args([])
+
+    assert arguments.preprocess_timeout_seconds == 600.0
+
+
+@pytest.mark.parametrize("opt_out", ["0", "none", "None", " none "])
+def test_preprocess_timeout_flag_accepts_an_explicit_opt_out(
+    opt_out: str,
+) -> None:
+    arguments = _BUILD._parse_args(["--preprocess-timeout-seconds", opt_out])
+
+    assert arguments.preprocess_timeout_seconds is None
+
+
+def test_preprocess_timeout_flag_accepts_a_positive_budget() -> None:
+    arguments = _BUILD._parse_args(["--preprocess-timeout-seconds", "12.5"])
+
+    assert arguments.preprocess_timeout_seconds == 12.5
+
+
+@pytest.mark.parametrize("rejected", ["-1", "nan", "inf", "abc"])
+def test_preprocess_timeout_flag_rejects_unusable_values(
+    rejected: str,
+) -> None:
+    with pytest.raises(SystemExit):
+        _BUILD._parse_args(["--preprocess-timeout-seconds", rejected])
+
+
+def test_preprocess_timeout_env_override_reaches_the_flag_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        _SETTINGS.PREPROCESS_TIMEOUT_SECONDS_ENV,
+        "45",
+    )
+
+    assert _SETTINGS.preprocess_timeout_seconds() == 45.0
+
+
+def test_preprocess_timeout_env_override_can_disable_the_watchdog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(_SETTINGS.PREPROCESS_TIMEOUT_SECONDS_ENV, "none")
+
+    assert _SETTINGS.preprocess_timeout_seconds() is None
+
+
 def test_sampling_selects_one_stable_row_per_cell() -> None:
     rows = []
     for task_id in ("HumanEval/0", "HumanEval/1"):

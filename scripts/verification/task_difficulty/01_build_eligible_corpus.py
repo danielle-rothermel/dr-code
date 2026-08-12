@@ -29,12 +29,16 @@ from workflow_settings import (
     ELIGIBLE_CORPUS,
     EVALUATION_WORKERS,
     PREPROCESS_LOG,
+    PREPROCESS_TIMEOUT_SECONDS,
+    PREPROCESS_TIMEOUT_SECONDS_ENV,
     PREPROCESSING_SUMMARY,
     SETTINGS,
     _positive_worker_count,
     expected_manifest_sha256,
     generation_corpus_bundle_path,
+    parse_preprocess_timeout_seconds,
     prepare_run_directory,
+    preprocess_timeout_seconds,
 )
 
 _REQUIRED_COLUMNS = frozenset(
@@ -127,20 +131,27 @@ def preprocess_distinct_outputs(
     *,
     logger: logging.Logger,
     worker_count: int = EVALUATION_WORKERS,
+    timeout_seconds: float | None = PREPROCESS_TIMEOUT_SECONDS,
 ) -> dict[str, tuple[str, ...]]:
     if worker_count < 1:
         raise ValueError("worker_count must be positive")
 
     results: dict[str, tuple[str, ...]] = {}
+    timed_out: set[str] = set()
     distinct_outputs = list(dict.fromkeys(outputs))
     started = perf_counter()
     completed_count = 0
     failed_count = 0
     logger.info(
-        "Preprocessing %d distinct outputs with %d worker processes",
+        "Preprocessing %d distinct outputs with %d worker processes, "
+        "timeout %ss",
         len(distinct_outputs),
         worker_count,
+        "unbudgeted" if timeout_seconds is None else f"{timeout_seconds:g}",
     )
+
+    def _record_timeout(text: str) -> None:
+        timed_out.add(text)
 
     def _record(text: str, sources: tuple[str, ...] | None) -> None:
         nonlocal completed_count, failed_count
@@ -149,7 +160,8 @@ def preprocess_distinct_outputs(
             failed_count += 1
             if failed_count <= 5:
                 logger.warning(
-                    "Preprocessing failed for distinct output %d/%d",
+                    "Preprocessing %s for distinct output %d/%d",
+                    ("timed out" if text in timed_out else "failed"),
                     completed_count,
                     len(distinct_outputs),
                 )
@@ -173,15 +185,18 @@ def preprocess_distinct_outputs(
             distinct_outputs,
             definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
             worker_count=worker_count,
+            wall_time_seconds=timeout_seconds,
             on_sources=_record,
+            on_timeout=_record_timeout,
         )
     )
 
     if failed_count:
         logger.info(
-            "Preprocessing failed for %d/%d distinct outputs",
+            "Preprocessing failed for %d/%d distinct outputs (%d timed out)",
             failed_count,
             len(distinct_outputs),
+            len(timed_out),
         )
     return results
 
@@ -261,6 +276,18 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             f"(default: {EVALUATION_WORKERS})"
         ),
     )
+    parser.add_argument(
+        "--preprocess-timeout-seconds",
+        type=parse_preprocess_timeout_seconds,
+        default=preprocess_timeout_seconds(),
+        help=(
+            "per-item preprocessing wall-time watchdog in seconds; an item "
+            "that exceeds it fails alone while the batch continues. Pass 0 "
+            "or 'none' to run unbudgeted "
+            f"(default: {PREPROCESS_TIMEOUT_SECONDS:g}, override with "
+            f"{PREPROCESS_TIMEOUT_SECONDS_ENV})"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -297,6 +324,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         outputs,
         logger=logger,
         worker_count=arguments.workers,
+        timeout_seconds=arguments.preprocess_timeout_seconds,
     )
     eligible, summary = attach_preprocessing_results(rows, candidates)
     eligible.write_parquet(ELIGIBLE_CORPUS)
