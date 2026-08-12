@@ -61,8 +61,9 @@ from dr_code.evaluation import (
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
-    RepeatPlan,
-    RepeatPlanCoordinate,
+    RunGrade,
+    SamplingPlan,
+    SamplingPlanCoordinate,
     StoredRecordReference,
     TaskSet,
     TaskSetCoordinate,
@@ -106,7 +107,7 @@ _WORKFLOW_CACHE_NAMESPACE: Final = "directional-humaneval-task-difficulty"
 _WORKFLOW_PLAN_ID: Final = "directional-humaneval-task-difficulty"
 _WORKFLOW_PLAN_VERSION: Final = "1"
 _TASK_SET_ID: Final = "directional-humaneval-balanced"
-_REPEAT_PLAN_ID: Final = "directional-humaneval-balanced"
+_SAMPLING_PLAN_ID: Final = "directional-humaneval-balanced"
 _DATASET_ID: Final = "directional-humaneval-generation-corpus"
 _DATASET_VERSION: Final = "1"
 _CORPUS_ROW_SCHEMA: Final = "dr-code/generation-corpus-row-v1"
@@ -294,9 +295,9 @@ def _materialized_candidates(
 def build_evaluation_plan(
     task_ids: tuple[str, ...],
     *,
-    task_repeats: tuple[int, ...],
+    task_num_samples: tuple[int, ...],
 ) -> EvaluationPlan:
-    """Build the workflow plan declaring each task's own repeat count.
+    """Build the workflow plan declaring each task's own sample count.
 
     Tasks appear in however many setting groups retained them, so the sample
     is ragged; the plan declares exactly the slots each task occupies.
@@ -326,19 +327,19 @@ def build_evaluation_plan(
         population=task_ids,
         selected=task_ids,
     )
-    repeat_plan = RepeatPlan(
-        coordinate=RepeatPlanCoordinate(
-            repeat_plan_id=_REPEAT_PLAN_ID,
+    sampling_plan = SamplingPlan(
+        coordinate=SamplingPlanCoordinate(
+            sampling_plan_id=_SAMPLING_PLAN_ID,
             version=_WORKFLOW_PLAN_VERSION,
         ),
         task_count=len(task_ids),
-        task_repeats=task_repeats,
+        task_num_samples=task_num_samples,
     )
     return EvaluationPlan(
         plan_id=_WORKFLOW_PLAN_ID,
         version=_WORKFLOW_PLAN_VERSION,
         task_set=task_set,
-        repeat_plan=repeat_plan,
+        sampling_plan=sampling_plan,
         procedure=EvaluationProcedure(
             preprocessing=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
             metrics=MetricsDefinition(
@@ -408,11 +409,11 @@ def build_task_difficulty_batch_request(
     task_ids = tuple(
         dict.fromkeys(str(row["task_id"]) for row in ordered_rows)
     )
-    task_repeats = tuple(
+    task_num_samples = tuple(
         sum(1 for row in ordered_rows if str(row["task_id"]) == task_id)
         for task_id in task_ids
     )
-    plan = build_evaluation_plan(task_ids, task_repeats=task_repeats)
+    plan = build_evaluation_plan(task_ids, task_num_samples=task_num_samples)
     tasks = load_humaneval_tasks(snapshot_path, task_ids)
     preprocessing = _exhaustive_preprocessing_coordinate()
 
@@ -423,7 +424,7 @@ def build_task_difficulty_batch_request(
         task_rows = [
             row for row in ordered_rows if str(row["task_id"]) == task_id
         ]
-        for repeat_index, row in enumerate(task_rows):
+        for sample_index, row in enumerate(task_rows):
             decoder_output = row.get("decoder_output")
             raw_text = (
                 decoder_output
@@ -460,9 +461,9 @@ def build_task_difficulty_batch_request(
                 FrozenCandidateEvaluationInput(
                     slot=EvaluationSlotIdentity(
                         task_set=plan.task_set.coordinate,
-                        repeat_plan=plan.repeat_plan.coordinate,
+                        sampling_plan=plan.sampling_plan.coordinate,
                         task_id=task_id,
-                        repeat_index=repeat_index,
+                        sample_index=sample_index,
                     ),
                     sample=sample,
                     preprocessing=preprocessing,
@@ -480,6 +481,7 @@ def build_task_difficulty_batch_request(
         plan=plan,
         runtime=runtime,
         cache_namespace=_WORKFLOW_CACHE_NAMESPACE,
+        run_grade=RunGrade.SELECTION,
         inputs=tuple(inputs),
         record_placement=RecordPlacement.OBJECT_STORE,
         projections=(ProjectionRequest(kind=ProjectionKind.METRIC_RECORDS),),
@@ -500,7 +502,7 @@ def build_preflight_batch_request_for_task(
     """Build a one-sample batch for runtime preflight on a known task."""
 
     preprocessing = _exhaustive_preprocessing_coordinate()
-    plan = build_evaluation_plan((task.task_id,), task_repeats=(1,))
+    plan = build_evaluation_plan((task.task_id,), task_num_samples=(1,))
     sample = EvaluationSample(
         metadata=EvaluationSampleMetadata(
             identity=EvaluationSampleIdentity(sample_id="runtime-preflight"),
@@ -532,13 +534,14 @@ def build_preflight_batch_request_for_task(
         plan=plan,
         runtime=runtime,
         cache_namespace=_WORKFLOW_CACHE_NAMESPACE,
+        run_grade=RunGrade.SELECTION,
         inputs=(
             FrozenCandidateEvaluationInput(
                 slot=EvaluationSlotIdentity(
                     task_set=plan.task_set.coordinate,
-                    repeat_plan=plan.repeat_plan.coordinate,
+                    sampling_plan=plan.sampling_plan.coordinate,
                     task_id=task.task_id,
-                    repeat_index=0,
+                    sample_index=0,
                 ),
                 sample=sample,
                 preprocessing=preprocessing,

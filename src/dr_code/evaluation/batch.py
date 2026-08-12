@@ -129,6 +129,14 @@ class RecordPlacement(StrEnum):
 
 
 @verify(UNIQUE)
+class RunGrade(StrEnum):
+    # Never build persisted payloads by iterating this closed vocabulary.
+
+    TRIAL = "trial"
+    SELECTION = "selection"
+
+
+@verify(UNIQUE)
 class ProjectionKind(StrEnum):
     # Never build persisted payloads by iterating this closed vocabulary.
 
@@ -141,7 +149,7 @@ class ProjectionKind(StrEnum):
 
 class ProjectionRequest(FrozenModel):
     kind: ProjectionKind
-    definition_version: Literal[1] = 1
+    definition_version: Literal[2] = 2
 
 
 class EvaluationBatchRequest(FrozenModel):
@@ -149,6 +157,9 @@ class EvaluationBatchRequest(FrozenModel):
     plan: EvaluationPlan
     runtime: EvaluationRuntimeIdentity
     cache_namespace: str = Field(min_length=1)
+    # Required, never defaulted: a silent grade would let a trial outcome
+    # serve a selection-grade run from the same cache key.
+    run_grade: RunGrade
     inputs: tuple[EvaluationInput, ...] = Field(min_length=1)
     record_placement: RecordPlacement
     projections: tuple[ProjectionRequest, ...]
@@ -254,7 +265,7 @@ class EvaluationBatchRequest(FrozenModel):
 
 class EvaluationProjectionReference(FrozenModel):
     kind: ProjectionKind
-    definition_version: Literal[1] = 1
+    definition_version: Literal[2] = 2
     source_attempt: EvaluationAttemptIdentity
     artifact_name: str
 
@@ -561,6 +572,7 @@ __all__ = [
     "ProjectionKind",
     "ProjectionRequest",
     "RecordPlacement",
+    "RunGrade",
     "SampleEvaluationInput",
     "ShardLimits",
     "WindowLimits",

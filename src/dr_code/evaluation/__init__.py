@@ -25,6 +25,7 @@ from dr_code.evaluation.batch import (
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
+    RunGrade,
     SampleEvaluationInput,
     ShardLimits,
     WindowLimits,
@@ -33,8 +34,8 @@ from dr_code.evaluation.batch import (
 )
 from dr_code.evaluation.coordinates import (
     DatasetCoordinate,
-    RepeatPlan,
-    RepeatPlanCoordinate,
+    SamplingPlan,
+    SamplingPlanCoordinate,
     TaskSet,
     TaskSetCoordinate,
 )
@@ -75,6 +76,7 @@ from dr_code.evaluation.references import (
     EvidenceReference,
     StoredRecordReference,
 )
+from dr_code.evaluation.work_key import derive_work_key
 
 if TYPE_CHECKING:
     from dr_code.evaluation.bundle import (
@@ -121,6 +123,7 @@ if TYPE_CHECKING:
         EvaluatedSampleRecord,
         ExecutedCandidateProvenance,
         ExecutorExecutionFailure,
+        FailureClass,
         HarnessExecutionFailure,
         NoCandidatesSampleRecord,
         PreprocessingAbsentSampleRecord,
@@ -130,6 +133,7 @@ if TYPE_CHECKING:
         SAMPLE_EVALUATION_RECORD_ADAPTER,
         SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION,
         SampleEvaluationRecord,
+        failure_class_of,
     )
     from dr_code.evaluation.replay import (
         ReplayPreflight,
@@ -158,6 +162,7 @@ _RECORD_EXPORTS = frozenset(
         "EvaluatedSampleRecord",
         "ExecutedCandidateProvenance",
         "ExecutorExecutionFailure",
+        "FailureClass",
         "HarnessExecutionFailure",
         "NoCandidatesSampleRecord",
         "PreprocessingAbsentSampleRecord",
@@ -167,6 +172,7 @@ _RECORD_EXPORTS = frozenset(
         "SAMPLE_EVALUATION_RECORD_ADAPTER",
         "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
         "SampleEvaluationRecord",
+        "failure_class_of",
     }
 )
 
@@ -306,6 +312,7 @@ __all__ = [
     "EvidenceReference",
     "ExecutedCandidateProvenance",
     "ExecutorExecutionFailure",
+    "FailureClass",
     "GeneratedSampleProvenance",
     "HarnessExecutionFailure",
     "FrozenCandidateEvaluationInput",
@@ -314,8 +321,6 @@ __all__ = [
     "MetricRecordProjectionRow",
     "NoCandidatesSampleRecord",
     "NotApplicablePolicy",
-    "RepeatPlan",
-    "RepeatPlanCoordinate",
     "PreprocessingAbsentSampleRecord",
     "ProjectionKind",
     "ProjectionArtifactHeader",
@@ -336,7 +341,10 @@ __all__ = [
     "Score",
     "ScoreProjectionRow",
     "RecordPlacement",
+    "RunGrade",
     "SampleEvaluationInput",
+    "SamplingPlan",
+    "SamplingPlanCoordinate",
     "ShardLimits",
     "StoredRecordReference",
     "StructuralEvaluationComparison",
@@ -347,6 +355,8 @@ __all__ = [
     "TaskSetCoordinate",
     "WindowLimits",
     "aggregate",
+    "derive_work_key",
+    "failure_class_of",
     "audit_evaluation_bundle",
     "compare_evaluation_attempts",
     "evaluate_batch",

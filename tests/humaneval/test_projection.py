@@ -6,7 +6,12 @@ import pytest
 from dr_exec import ExecutionPoolConfig
 
 from _executor_stubs import importable_json_executor
-from dr_code.evaluation import BundleRecordReference, EvaluatedSampleRecord
+from dr_code.evaluation import (
+    BundleRecordReference,
+    EvaluatedSampleRecord,
+    ExecutorExecutionFailure,
+    FailureClass,
+)
 from dr_code.evaluation._batch import _evaluate_batch_assembly
 from dr_code.humaneval import (
     ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
@@ -278,13 +283,68 @@ async def test_any_candidate_reduction_scores_a_broken_measurement_as_failure() 
     # sample is a harness failure rather than a measured zero.
     projected = _project(unmeasured, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
     assert isinstance(projected, HarnessFailure)
-    assert projected.failure_class == "BrokenCandidateMeasurement"
+    assert projected.failure_class is FailureClass.HARNESS
+    assert projected.cause.exception_type == "BrokenCandidateMeasurement"
 
     # Every ordinal validly measured and none passing is a clean zero.
     measured = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
     assert isinstance(measured, CompletedSubmissionResult)
     assert measured.outcome is SubmissionOutcome.TESTS_FAILED
     assert measured.score == 0.0
+    await execution_cache.close()
+
+
+def _executor_failed(
+    record: EvaluatedSampleRecord,
+) -> EvaluatedSampleRecord:
+    """Rewrite one measured record into the shape an executor failure leaves.
+
+    An executor failure raises out of the metric operator, so the sample record
+    carries an operator-failure metric beside the failed execution outcome.
+    """
+
+    (execution,) = record.executions
+    return record.model_copy(
+        update={
+            "executions": (
+                execution.model_copy(
+                    update={
+                        "outcome": ExecutorExecutionFailure(
+                            failure_type="ExecutionPoolFailure",
+                            message="the executor never ran the candidate",
+                            execution_outcome=None,
+                            attribution=None,
+                            measurements=None,
+                        )
+                    }
+                ),
+            ),
+            "metrics": (
+                OperatorFailureRecord(
+                    identity=record.metrics[0].identity,
+                    failure=OperatorFailure(
+                        failure_type="EvaluationHarnessError",
+                        failure_message="candidate execution did not complete",
+                    ),
+                ),
+            ),
+        }
+    )
+
+
+async def test_executor_failure_projects_as_infrastructure() -> None:
+    record, execution_cache = await _one_candidate_record(
+        "def observed_load_count(_x): return 1"
+    )
+    failed = _executor_failed(record)
+
+    for profile in (
+        DEFAULT_HUMANEVAL_SCORING_PROFILE,
+        ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
+    ):
+        projected = _project(failed, profile)
+        assert isinstance(projected, HarnessFailure)
+        assert projected.failure_class is FailureClass.INFRASTRUCTURE
     await execution_cache.close()
 
 
@@ -511,7 +571,10 @@ async def test_projection_requires_full_profile_coordinate_and_question() -> (
         sample_record=_reference(),
     )
     assert isinstance(projected, HarnessFailure)
-    assert projected.failure_class == "UnsupportedPreprocessingDefinition"
+    assert projected.failure_class is FailureClass.HARNESS
+    assert (
+        projected.cause.exception_type == "UnsupportedPreprocessingDefinition"
+    )
 
     wrong_question = DEFAULT_HUMANEVAL_SCORING_PROFILE.question.model_copy(
         update={"on_key": "other-output"}
@@ -528,5 +591,6 @@ async def test_projection_requires_full_profile_coordinate_and_question() -> (
         sample_record=_reference(),
     )
     assert isinstance(projected, HarnessFailure)
-    assert projected.failure_class == "UnsupportedMetricQuestion"
+    assert projected.failure_class is FailureClass.HARNESS
+    assert projected.cause.exception_type == "UnsupportedMetricQuestion"
     await execution_cache.close()

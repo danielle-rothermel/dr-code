@@ -6,7 +6,7 @@ from typing import Self
 from pydantic import model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.coordinates import RepeatPlan, TaskSet
+from dr_code.evaluation.coordinates import SamplingPlan, TaskSet
 from dr_code.evaluation.identity import EvaluationSlotIdentity
 from dr_code.metrics import MetricQuestionCoordinate, MetricsDefinition
 from dr_code.preprocessing import PreprocessingDefinition
@@ -60,7 +60,7 @@ class EvaluationPlan(FrozenModel):
     plan_id: str
     version: str
     task_set: TaskSet
-    repeat_plan: RepeatPlan
+    sampling_plan: SamplingPlan
     procedure: EvaluationProcedure
     aggregation: AggregationPolicy
     __hash__ = None
@@ -68,20 +68,20 @@ class EvaluationPlan(FrozenModel):
     def ordered_slots(self) -> tuple[EvaluationSlotIdentity, ...]:
         """Return every slot the plan declares, in plan order.
 
-        Each selected task contributes exactly the repeats the plan declares
+        Each selected task contributes exactly the samples the plan declares
         for it, so the slot sequence is the plan's exact expected membership.
         """
 
         return tuple(
             EvaluationSlotIdentity(
                 task_set=self.task_set.coordinate,
-                repeat_plan=self.repeat_plan.coordinate,
+                sampling_plan=self.sampling_plan.coordinate,
                 task_id=task_id,
-                repeat_index=repeat_index,
+                sample_index=sample_index,
             )
-            for task_position, task_id in enumerate(self.task_set.selected)
-            for repeat_index in range(
-                self.repeat_plan.repeats_for(task_position)
+            for task_index, task_id in enumerate(self.task_set.selected)
+            for sample_index in range(
+                self.sampling_plan.num_samples_for(task_index)
             )
         )
 
@@ -90,23 +90,23 @@ class EvaluationPlan(FrozenModel):
 
         if (
             slot.task_set != self.task_set.coordinate
-            or slot.repeat_plan != self.repeat_plan.coordinate
+            or slot.sampling_plan != self.sampling_plan.coordinate
         ):
             return False
         try:
-            task_position = self.task_set.selected.index(slot.task_id)
+            task_index = self.task_set.selected.index(slot.task_id)
         except ValueError:
             return False
-        repeats = self.repeat_plan.repeats_for(task_position)
-        return 0 <= slot.repeat_index < repeats
+        num_samples = self.sampling_plan.num_samples_for(task_index)
+        return 0 <= slot.sample_index < num_samples
 
     @model_validator(mode="after")
     def validate_plan_covers_the_selection(self) -> Self:
         selected = len(self.task_set.selected)
-        if self.repeat_plan.task_count != selected:
+        if self.sampling_plan.task_count != selected:
             raise ValueError(
-                "the repeat plan must cover exactly the selected tasks: "
-                f"plan covers {self.repeat_plan.task_count}, task set "
+                "the sampling plan must cover exactly the selected tasks: "
+                f"plan covers {self.sampling_plan.task_count}, task set "
                 f"selects {selected}"
             )
         return self

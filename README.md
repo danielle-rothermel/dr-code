@@ -300,7 +300,7 @@ class EvaluationPlan(FrozenModel):
     plan_id: str
     version: str
     task_set: TaskSet
-    repeat_plan: RepeatPlan
+    sampling_plan: SamplingPlan
     procedure: EvaluationProcedure
     aggregation: AggregationPolicy
 

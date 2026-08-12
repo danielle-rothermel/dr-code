@@ -710,6 +710,7 @@ async def _execute_batch_candidates_globally(
                             budget=request.job_budget,
                             runtime=request.runtime,
                             cache_namespace=request.cache_namespace,
+                            run_grade=request.run_grade,
                         )
                     )
             observed_admissions = admitted + len(misses)
@@ -733,6 +734,7 @@ async def _execute_batch_candidates_globally(
                         budget=request.job_budget,
                         runtime=request.runtime,
                         cache_namespace=request.cache_namespace,
+                        run_grade=request.run_grade,
                     )
                     sample_records = records_by_sample.setdefault(
                         item.sample_index,
@@ -791,6 +793,7 @@ def _candidate_work(
         job_request,
         request.job_budget,
         request.cache_namespace,
+        run_grade=request.run_grade,
     )
     return _CandidateWork(
         index=index,
@@ -923,7 +926,7 @@ def _score_from_aggregation(
             plan_id=request.plan.plan_id,
             version=request.plan.version,
             task_set=request.plan.task_set.coordinate,
-            repeat_plan=request.plan.repeat_plan.coordinate,
+            sampling_plan=request.plan.sampling_plan.coordinate,
         ),
         sources=(
             MetricValueCoordinate(

@@ -57,7 +57,7 @@ class StructuralRecordComparison(FrozenModel):
 class ComparableProjectionComparison(FrozenModel):
     kind: Literal["comparable"] = "comparable"
     projection: ProjectionKind
-    definition_version: Literal[1] = 1
+    definition_version: Literal[2] = 2
     population: int = Field(ge=0)
     available_denominator: int = Field(ge=0)
     changed: int = Field(ge=0)
@@ -269,7 +269,7 @@ def _compare_projection(
             right_definition_version=right_version,
             reason="projection definition is missing from one attempt",
         )
-    if left_version != right_version or left_version != 1:
+    if left_version != right_version or left_version != 2:
         return ProjectionNotComparable(
             projection=kind,
             left_definition_version=left_version,

@@ -10,7 +10,7 @@ from pydantic import Field, model_validator
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import (
     DatasetCoordinate,
-    RepeatPlanCoordinate,
+    SamplingPlanCoordinate,
     TaskSetCoordinate,
 )
 from dr_code.evaluation.references import EvidenceReference
@@ -25,9 +25,9 @@ from dr_code.trace import (
 
 class EvaluationSlotIdentity(FrozenModel):
     task_set: TaskSetCoordinate
-    repeat_plan: RepeatPlanCoordinate
+    sampling_plan: SamplingPlanCoordinate
     task_id: str
-    repeat_index: int = Field(ge=0)
+    sample_index: int = Field(ge=0)
 
 
 class EvaluationSourceIdentity(FrozenModel):

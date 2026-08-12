@@ -23,9 +23,10 @@ categories = ["evaluation evidence"]
 [[terms]]
 name = "evaluation slot"
 definition = """
-One planned task-and-repeat position in an evaluation plan. It establishes
-expected membership and order without claiming that an input was observed or
-evaluated at that position."""
+One planned task-and-sample position in an evaluation plan, addressed by its
+task id and its sample index within that task. It establishes expected
+membership and order without claiming that an input was observed or evaluated
+at that position."""
 exported_symbols = ["dr_code.evaluation.EvaluationSlotIdentity"]
 categories = ["evaluation identity", "evaluation planning"]
 part_of = ["evaluation plan"]
@@ -194,6 +195,28 @@ exported_symbols = [
   "dr_code.evaluation.audit_evaluation_bundle",
 ]
 categories = ["evaluation publication"]
+
+[[terms]]
+name = "run grade"
+definition = """
+The declared standing of an evaluation run's outcomes: a trial run explores,
+a selection run decides. It is a required part of every evaluation batch
+request and joins the candidate execution cache key."""
+exported_symbols = ["dr_code.evaluation.RunGrade"]
+categories = ["evaluation execution", "evaluation caching"]
+part_of = ["evaluation batch"]
+
+[[terms]]
+name = "failure class"
+definition = """
+The named party that owns a candidate execution failure: the harness, the
+candidate, or the infrastructure. It is derived once from the typed candidate
+execution outcome, and a completed job carries no failure class at all."""
+exported_symbols = [
+  "dr_code.evaluation.FailureClass",
+  "dr_code.evaluation.failure_class_of",
+]
+categories = ["evaluation execution", "evaluation evidence"]
 
 [[terms]]
 name = "evaluation execution path"
@@ -420,12 +443,12 @@ part_of = ["evaluation plan"]
 [[terms]]
 name = "evaluation plan"
 definition = """
-A versioned composition of an ordered task selection, repeat structure,
+A versioned composition of an ordered task selection, sampling structure,
 evaluation procedure, and aggregation policy."""
 exported_symbols = [
   "dr_code.evaluation.EvaluationPlan",
   "dr_code.evaluation.TaskSet",
-  "dr_code.evaluation.RepeatPlan",
+  "dr_code.evaluation.SamplingPlan",
 ]
 
 [[terms]]
@@ -776,6 +799,18 @@ name = "generation index"
 definition = """
 A task index and sample index pair that defines one planned generation slot."""
 categories = ["experiment design"]
+part_of = ["generation"]
+
+[[terms]]
+name = "work key"
+definition = """
+The content-addressed digest of one experiment configuration hash together
+with one evaluation slot's addressing coordinates: its task set coordinate,
+its sampling plan coordinate, its task id, and its sample index. It addresses
+the work of producing one generation without naming any run, attempt, or
+record."""
+exported_symbols = ["dr_code.evaluation.derive_work_key"]
+categories = ["evaluation identity", "experiment design"]
 part_of = ["generation"]
 
 [[terms]]

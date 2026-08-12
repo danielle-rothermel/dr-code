@@ -53,35 +53,35 @@ class TaskSet(FrozenModel):
         return self
 
 
-class RepeatPlanCoordinate(FrozenModel):
-    repeat_plan_id: str
+class SamplingPlanCoordinate(FrozenModel):
+    sampling_plan_id: str
     version: str
 
 
-class RepeatPlan(FrozenModel):
-    """Declares how many repeats each selected task is planned to receive.
+class SamplingPlan(FrozenModel):
+    """Declares how many samples each selected task is planned to receive.
 
-    ``task_repeats`` is positionally aligned with the plan's ordered task
+    ``task_num_samples`` is positionally aligned with the plan's ordered task
     selection, so a plan declares exactly the slots its tasks occupy even
-    when different tasks carry different repeat counts.
+    when different tasks carry different sample counts.
     """
 
-    coordinate: RepeatPlanCoordinate
+    coordinate: SamplingPlanCoordinate
     task_count: int
-    task_repeats: tuple[int, ...]
+    task_num_samples: tuple[int, ...]
     seeds: tuple[int, ...] | None = None
 
     @model_validator(mode="after")
     def validate_slot_structure(self) -> Self:
         if self.task_count < 1:
-            raise ValueError("a repeat plan must cover at least one task")
-        if len(self.task_repeats) != self.task_count:
+            raise ValueError("a sampling plan must cover at least one task")
+        if len(self.task_num_samples) != self.task_count:
             raise ValueError(
-                "a repeat plan needs one repeat count per task: expected "
-                f"{self.task_count}, got {len(self.task_repeats)}"
+                "a sampling plan needs one sample count per task: expected "
+                f"{self.task_count}, got {len(self.task_num_samples)}"
             )
-        if any(repeats < 1 for repeats in self.task_repeats):
-            raise ValueError("every task must have at least one repeat")
+        if any(num_samples < 1 for num_samples in self.task_num_samples):
+            raise ValueError("every task must have at least one sample")
         return self
 
     @model_validator(mode="after")
@@ -90,37 +90,37 @@ class RepeatPlan(FrozenModel):
             return self
         if len(self.seeds) != self.slot_count:
             raise ValueError(
-                f"a seeded repeat plan needs one seed per slot: expected "
+                f"a seeded sampling plan needs one seed per slot: expected "
                 f"{self.slot_count}, got {len(self.seeds)}"
             )
         return self
 
     @property
     def slot_count(self) -> int:
-        return sum(self.task_repeats)
+        return sum(self.task_num_samples)
 
-    def repeats_for(self, task_position: int) -> int:
-        if not 0 <= task_position < self.task_count:
+    def num_samples_for(self, task_index: int) -> int:
+        if not 0 <= task_index < self.task_count:
             raise ValueError(
-                f"task position {task_position} is outside the plan's "
+                f"task index {task_index} is outside the plan's "
                 f"{self.task_count} tasks"
             )
-        return self.task_repeats[task_position]
+        return self.task_num_samples[task_index]
 
-    def slot_index(self, task_position: int, repeat_index: int) -> int:
-        repeats = self.repeats_for(task_position)
-        if not 0 <= repeat_index < repeats:
+    def slot_index(self, task_index: int, sample_index: int) -> int:
+        num_samples = self.num_samples_for(task_index)
+        if not 0 <= sample_index < num_samples:
             raise ValueError(
-                f"repeat index {repeat_index} is outside the {repeats} "
-                f"repeats planned for task position {task_position}"
+                f"sample index {sample_index} is outside the {num_samples} "
+                f"samples planned for task index {task_index}"
             )
-        return sum(self.task_repeats[:task_position]) + repeat_index
+        return sum(self.task_num_samples[:task_index]) + sample_index
 
 
 __all__ = [
     "DatasetCoordinate",
-    "RepeatPlan",
-    "RepeatPlanCoordinate",
+    "SamplingPlan",
+    "SamplingPlanCoordinate",
     "TaskSet",
     "TaskSetCoordinate",
 ]

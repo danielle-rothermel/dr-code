@@ -67,12 +67,12 @@ def test_attempt_rejects_members_out_of_plan_order() -> None:
         attempt(
             members=(
                 EvaluationMemberRecord(
-                    slot=evaluation_slot(repeat_index=1),
+                    slot=evaluation_slot(sample_index=1),
                     sample=sample_identity(sample_id="sample-1"),
                     record=reference(1),
                 ),
                 EvaluationMemberRecord(
-                    slot=evaluation_slot(repeat_index=0),
+                    slot=evaluation_slot(sample_index=0),
                     sample=sample_identity(sample_id="sample-0"),
                     record=reference(0),
                 ),

@@ -57,6 +57,7 @@ def _preflight(
         attempt=EvaluationAttemptIdentity(attempt_id=UUID(int=attempt_int)),
         runtime=context.runtime,
         cache_namespace="tests/replay",
+        run_grade=context.run_grade,
         record_placement=context.record_placement,
         projections=context.projections,
         attempt_limits=context.attempt_limits,

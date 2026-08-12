@@ -20,10 +20,12 @@ from dr_code.evaluation.records import (
     CandidateTerminationReason,
     EvaluatedSampleRecord,
     ExecutorExecutionFailure,
+    FailureClass,
     HarnessExecutionFailure,
     NoCandidatesSampleRecord,
     PreprocessingAbsentSampleRecord,
     SampleEvaluationRecord,
+    failure_class_of,
 )
 from dr_code.evaluation.references import EvidenceReference
 from dr_code.humaneval.job import (
@@ -80,7 +82,7 @@ class HarnessFailure(FrozenModel):
     sample: EvaluationSampleIdentity
     evaluation: EvaluationTaskResult | None
     cause: HarnessFailureCause
-    failure_class: str
+    failure_class: FailureClass
     scoring_profile: HumanEvalScoringProfile
     sample_record: EvidenceReference
 
@@ -145,6 +147,7 @@ class _CandidateHarnessFailure:
 
     failure_type: str
     message: str
+    failure_class: FailureClass = FailureClass.HARNESS
 
 
 def project_humaneval_submission(
@@ -299,6 +302,7 @@ def _project_record(
             reference,
             failure_type=metric_slice.failure_type,
             message=metric_slice.message,
+            failure_class=_slice_failure_class(execution),
         )
     classified = _classify_candidate(candidate, execution, request)
     if isinstance(classified, _CandidateHarnessFailure):
@@ -307,6 +311,7 @@ def _project_record(
             reference,
             failure_type=classified.failure_type,
             message=classified.message,
+            failure_class=classified.failure_class,
         )
     return _completed(request, reference, classified.outcome)
 
@@ -365,6 +370,7 @@ def _project_any_candidate(
                 first_broken = _CandidateHarnessFailure(
                     failure_type=metric_slice.failure_type,
                     message=metric_slice.message,
+                    failure_class=_slice_failure_class(execution),
                 )
             continue
 
@@ -389,6 +395,7 @@ def _project_any_candidate(
             reference,
             failure_type=first_broken.failure_type,
             message=first_broken.message,
+            failure_class=first_broken.failure_class,
         )
     assert first_outcome is not None
     return _completed(request, reference, first_outcome)
@@ -480,6 +487,17 @@ def _validated_metric_slice(
     return _SliceValid()
 
 
+def _slice_failure_class(execution: CandidateExecutionRecord) -> FailureClass:
+    """Attribute a broken metric slice to the party that owns the execution.
+
+    The operator that measures a candidate fails whenever the execution itself
+    failed, so the slice's failure carries the execution outcome's attribution
+    rather than the measuring harness's.
+    """
+
+    return failure_class_of(execution.outcome) or FailureClass.HARNESS
+
+
 def _classify_candidate(
     candidate: MaterializedEvaluationCandidate,
     execution: CandidateExecutionRecord,
@@ -499,9 +517,12 @@ def _classify_candidate(
 
     outcome = execution.outcome
     if isinstance(outcome, HarnessExecutionFailure | ExecutorExecutionFailure):
+        attributed = failure_class_of(outcome)
+        assert attributed is not None
         return _CandidateHarnessFailure(
             failure_type=outcome.failure_type,
             message=outcome.message,
+            failure_class=attributed,
         )
     if isinstance(outcome, CandidateJobTerminated):
         return _CandidateOutcome(
@@ -596,6 +617,7 @@ def _harness_failure(
     *,
     failure_type: str,
     message: str,
+    failure_class: FailureClass = FailureClass.HARNESS,
 ) -> HarnessFailure:
     return HarnessFailure(
         sample=request.sample,
@@ -604,7 +626,7 @@ def _harness_failure(
             exception_type=failure_type,
             message=message,
         ),
-        failure_class=failure_type,
+        failure_class=failure_class,
         scoring_profile=request.scoring_profile,
         sample_record=reference,
     )

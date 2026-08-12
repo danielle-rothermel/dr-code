@@ -2,15 +2,12 @@
 
 ## Unreleased
 
-- Evaluation repeat plans declare a repeat count per selected task
-  (`task_repeats`, positionally aligned with the ordered selection) instead of
-  one count shared by every task. Slot ordinals are prefix sums over those
+- Evaluation sampling plans declare a sample count per selected task
+  (`task_num_samples`, positionally aligned with the ordered selection) instead
+  of one count shared by every task. Slot ordinals are prefix sums over those
   counts and bounds are checked per task, so a plan over tasks with unequal
-  repeat counts declares exactly the slots its members fill. `EvaluationPlan`
+  sample counts declares exactly the slots its members fill. `EvaluationPlan`
   owns slot expansion and validity through `ordered_slots` and `declares_slot`.
-  The evaluation attempt record schema version is now 2; bundles recorded
-  under version 1 no longer load, and replay preflight reports them as
-  unavailable.
 
 - Pull-request CI runs lint, type, and test checks only. Distribution build,
   metadata, and installed-wheel qualification run at publication time in the
@@ -72,6 +69,40 @@
   before/after comparisons against the reviewed HumanEval generation corpus.
 - Directional HumanEval evaluation no longer requires a separate environment
   flag before stage 3; the explicit evaluation Python runtime remains required.
+
+### 2026-08-12
+
+- The evaluation package carries the settled sampling vocabulary. `RepeatPlan`
+  and `RepeatPlanCoordinate` are now `SamplingPlan` and
+  `SamplingPlanCoordinate`; `repeat_plan_id` is `sampling_plan_id`;
+  `repeat_plan` fields are `sampling_plan`; `task_repeats` is
+  `task_num_samples`; `repeats_for` is `num_samples_for`; and `repeat_index` is
+  `sample_index` on every field, parameter, and loop, so an evaluation slot is
+  addressed by its task id and its sample index within that task. The rename
+  is a hard cutover on persisted models: no aliases and no dual read.
+- `derive_work_key` computes a generation's work key from an experiment
+  configuration hash and an evaluation slot's addressing coordinates — its task
+  set coordinate, its sampling plan coordinate, its task id, and its sample
+  index — over a payload of pinned literal keys. It is a pure derivation with
+  no storage and no registry.
+- `HarnessFailure.failure_class` carries the named `FailureClass` vocabulary of
+  `harness`, `candidate`, and `infrastructure`, derived once from the typed
+  candidate execution outcome by `failure_class_of`. The exception-type string
+  stays in `HarnessFailureCause.exception_type` rather than standing in for the
+  class.
+- `EvaluationBatchRequest.run_grade` declares the run's standing as `trial` or
+  `selection` and joins `candidate_execution_cache_key`, so a trial outcome and
+  a selection-grade outcome for identical source never collide. The field is
+  required with no default, and `evaluate_batch`, `evaluate_durable_partition`,
+  and `preflight_replay` thread it through. The task-difficulty workflow runs
+  at `selection` grade.
+- Persisted evaluation identity churns once for this wave. The evaluation
+  attempt record schema version is now 3, the sample evaluation record and
+  candidate execution record schema versions are now 2, and the evaluation
+  projection schema version and projection definition version are now 2.
+  Records and bundles written under the previous versions no longer load,
+  projections at an earlier definition version are not comparable, and replay
+  preflight reports them as unavailable.
 
 ## 0.1.6 - 2026-08-06
 

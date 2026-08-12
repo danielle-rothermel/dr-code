@@ -66,7 +66,7 @@ def _reference(
 
 def _record(index: int, *, output: str = "same") -> NoCandidatesSampleRecord:
     return NoCandidatesSampleRecord(
-        slot=evaluation_slot(repeat_index=index),
+        slot=evaluation_slot(sample_index=index),
         sample=metadata(identity=sample_identity(sample_id=f"sample-{index}")),
         trace=SerializedTrace(
             schema_version=3,
@@ -83,7 +83,7 @@ def _member(
     index: int, reference: BundleRecordReference
 ) -> EvaluationMemberRecord:
     return EvaluationMemberRecord(
-        slot=evaluation_slot(repeat_index=index),
+        slot=evaluation_slot(sample_index=index),
         sample=sample_identity(sample_id=f"sample-{index}"),
         record=reference,
     )
@@ -93,8 +93,8 @@ def _attempt(identity: int, members: tuple[EvaluationMemberRecord, ...]):
     base = attempt()
     plan = base.plan.model_copy(
         update={
-            "repeat_plan": base.plan.repeat_plan.model_copy(
-                update={"task_repeats": (4, 4)}
+            "sampling_plan": base.plan.sampling_plan.model_copy(
+                update={"task_num_samples": (4, 4)}
             )
         }
     )
@@ -227,10 +227,10 @@ async def test_projection_comparison_reports_denominators_and_not_comparable() -
         _attempt(11, (_member(0, right_reference),)),
         resolver=resolver,
         projections=(
-            (ProjectionKind.EVALUATION_SAMPLES, 1, 1),
-            (ProjectionKind.MATERIALIZED_CANDIDATES, 1, 1),
-            (ProjectionKind.METRIC_RECORDS, 1, None),
-            (ProjectionKind.SCORES, 1, 2),
+            (ProjectionKind.EVALUATION_SAMPLES, 2, 2),
+            (ProjectionKind.MATERIALIZED_CANDIDATES, 2, 2),
+            (ProjectionKind.METRIC_RECORDS, 2, None),
+            (ProjectionKind.SCORES, 2, 3),
         ),
     )
 

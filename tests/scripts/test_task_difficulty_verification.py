@@ -277,17 +277,17 @@ _SAMPLING_GROUPS = (
 )
 
 
-def _eligible_grid(task_count: int, *, repeats: int = 2) -> pl.DataFrame:
+def _eligible_grid(task_count: int, *, num_samples: int = 2) -> pl.DataFrame:
     rows = []
     for task_index in range(task_count):
         task_id = f"HumanEval/{task_index}"
         for generation_mode, budget_mode, model in _SAMPLING_GROUPS:
-            for repeat in range(repeats):
+            for sample in range(num_samples):
                 rows.append(
                     {
                         "sample_id": (
                             f"{task_id}-{generation_mode}-{budget_mode}-"
-                            f"{model}-{repeat}"
+                            f"{model}-{sample}"
                         ),
                         "task_id": task_id,
                         "generation_mode": generation_mode,
@@ -446,7 +446,7 @@ def test_batch_request_preserves_slot_order_and_limits() -> None:
         attempt=attempt,
     )
 
-    assert request.plan.repeat_plan.task_repeats == (2,)
+    assert request.plan.sampling_plan.task_num_samples == (2,)
     assert len(request.inputs) == 2
     assert request.inputs[0].sample.metadata.identity.sample_id == "sample-a"
     assert request.inputs[1].sample.metadata.identity.sample_id == "sample-b"
@@ -488,14 +488,14 @@ def test_batch_request_admits_a_ragged_per_task_sample() -> None:
         attempt=attempt,
     )
 
-    # Each task declares exactly the repeats its own sample rows fill.
-    assert request.plan.repeat_plan.task_repeats == (2, 1)
-    assert request.plan.repeat_plan.slot_count == len(request.inputs)
+    # Each task declares exactly the samples its own sample rows fill.
+    assert request.plan.sampling_plan.task_num_samples == (2, 1)
+    assert request.plan.sampling_plan.slot_count == len(request.inputs)
     assert len(request.inputs) == 3
     slots = [
         (
             evaluation_input.slot.task_id,
-            evaluation_input.slot.repeat_index,
+            evaluation_input.slot.sample_index,
         )
         for evaluation_input in request.inputs
     ]

@@ -28,9 +28,9 @@ from dr_code.humaneval.job import HumanEvalCandidateJobResult
 from dr_code.metrics import MetricRecord
 from dr_code.trace import Absent, SerializedTrace
 
-EVALUATION_ATTEMPT_SCHEMA_VERSION: Final = 2
-SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION: Final = 1
-CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION: Final = 1
+EVALUATION_ATTEMPT_SCHEMA_VERSION: Final = 3
+SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION: Final = 2
+CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION: Final = 2
 
 
 class ExecutedCandidateProvenance(FrozenModel):
@@ -103,8 +103,39 @@ CandidateExecutionOutcome: TypeAlias = Annotated[
 ]
 
 
+@verify(UNIQUE)
+class FailureClass(StrEnum):
+    # Never build payloads by iterating this closed persisted vocabulary.
+
+    HARNESS = "harness"
+    CANDIDATE = "candidate"
+    INFRASTRUCTURE = "infrastructure"
+
+
+def failure_class_of(
+    outcome: CandidateExecutionOutcome,
+    /,
+) -> FailureClass | None:
+    """Name which party owns a candidate execution outcome's failure.
+
+    A completed job has no failure to attribute and returns ``None``. Wall-time
+    termination stays candidate-owned at dr-exec 0.1.9, which attributes it to
+    the payload.
+    """
+
+    match outcome:
+        case CandidateJobCompleted():
+            return None
+        case CandidateJobTerminated():
+            return FailureClass.CANDIDATE
+        case HarnessExecutionFailure():
+            return FailureClass.HARNESS
+        case ExecutorExecutionFailure():
+            return FailureClass.INFRASTRUCTURE
+
+
 class CandidateExecutionRecord(FrozenModel):
-    schema_version: Literal[1] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
     candidate: EvaluationCandidateIdentity
     request_identity: Sha256Digest
     runtime: EvaluationRuntimeIdentity
@@ -115,7 +146,7 @@ class CandidateExecutionRecord(FrozenModel):
 
 
 class PreprocessingAbsentSampleRecord(FrozenModel):
-    schema_version: Literal[1] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
     status: Literal["preprocessing_absent"] = "preprocessing_absent"
     slot: EvaluationSlotIdentity
     sample: EvaluationSampleMetadata
@@ -129,7 +160,7 @@ class PreprocessingAbsentSampleRecord(FrozenModel):
 
 
 class NoCandidatesSampleRecord(FrozenModel):
-    schema_version: Literal[1] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
     status: Literal["no_candidates"] = "no_candidates"
     slot: EvaluationSlotIdentity
     sample: EvaluationSampleMetadata
@@ -142,7 +173,7 @@ class NoCandidatesSampleRecord(FrozenModel):
 
 
 class EvaluatedSampleRecord(FrozenModel):
-    schema_version: Literal[1] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
     status: Literal["evaluated"] = "evaluated"
     slot: EvaluationSlotIdentity
     sample: EvaluationSampleMetadata
@@ -251,7 +282,7 @@ class ReplaySource(FrozenModel):
 
 
 class EvaluationAttemptRecord(FrozenModel):
-    schema_version: Literal[2] = EVALUATION_ATTEMPT_SCHEMA_VERSION
+    schema_version: Literal[3] = EVALUATION_ATTEMPT_SCHEMA_VERSION
     identity: EvaluationAttemptIdentity
     plan: EvaluationPlan
     runtime: EvaluationRuntimeIdentity
@@ -315,6 +346,7 @@ __all__ = [
     "EvaluatedSampleRecord",
     "ExecutedCandidateProvenance",
     "ExecutorExecutionFailure",
+    "FailureClass",
     "HarnessExecutionFailure",
     "NoCandidatesSampleRecord",
     "PreprocessingAbsentSampleRecord",
@@ -324,4 +356,5 @@ __all__ = [
     "SAMPLE_EVALUATION_RECORD_ADAPTER",
     "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
     "SampleEvaluationRecord",
+    "failure_class_of",
 ]

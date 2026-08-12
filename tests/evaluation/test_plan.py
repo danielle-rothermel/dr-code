@@ -10,8 +10,8 @@ from _builders import (
     preprocessing_definition,
     procedure,
     question_coordinate,
-    repeat_plan,
-    repeat_plan_coordinate,
+    sampling_plan,
+    sampling_plan_coordinate,
     task_set,
 )
 from dr_code.evaluation import (
@@ -37,7 +37,7 @@ def evaluation_plan(**overrides: object) -> EvaluationPlan:
             "plan_id": "plan",
             "version": "1",
             "task_set": task_set(),
-            "repeat_plan": repeat_plan(),
+            "sampling_plan": sampling_plan(),
             "procedure": procedure(),
             "aggregation": policy(),
             **overrides,
@@ -110,53 +110,55 @@ def test_policy_rejects_an_unknown_knob() -> None:
         policy(threshold=0.5)
 
 
-def test_plan_accepts_a_repeat_plan_covering_the_selection() -> None:
+def test_plan_accepts_a_sampling_plan_covering_the_selection() -> None:
     built = evaluation_plan()
-    assert built.repeat_plan.task_count == len(built.task_set.selected)
+    assert built.sampling_plan.task_count == len(built.task_set.selected)
 
 
-def test_plan_rejects_a_repeat_plan_covering_too_few_tasks() -> None:
+def test_plan_rejects_a_sampling_plan_covering_too_few_tasks() -> None:
     with pytest.raises(ValidationError, match="exactly the selected tasks"):
         evaluation_plan(
-            repeat_plan=repeat_plan(task_count=1, task_repeats=(2,))
+            sampling_plan=sampling_plan(task_count=1, task_num_samples=(2,))
         )
 
 
-def test_plan_rejects_a_repeat_plan_covering_too_many_tasks() -> None:
+def test_plan_rejects_a_sampling_plan_covering_too_many_tasks() -> None:
     with pytest.raises(ValidationError, match="exactly the selected tasks"):
         evaluation_plan(
-            repeat_plan=repeat_plan(task_count=3, task_repeats=(2, 2, 2))
+            sampling_plan=sampling_plan(
+                task_count=3, task_num_samples=(2, 2, 2)
+            )
         )
 
 
-def test_ordered_slots_expand_each_task_by_its_own_repeat_count() -> None:
+def test_ordered_slots_expand_each_task_by_its_own_sample_count() -> None:
     built = evaluation_plan(
-        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+        sampling_plan=sampling_plan(task_count=2, task_num_samples=(3, 1))
     )
     assert [
-        (slot.task_id, slot.repeat_index) for slot in built.ordered_slots()
+        (slot.task_id, slot.sample_index) for slot in built.ordered_slots()
     ] == [("t0", 0), ("t0", 1), ("t0", 2), ("t2", 0)]
 
 
 def test_ordered_slots_count_equals_the_declared_slot_count() -> None:
     built = evaluation_plan(
-        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+        sampling_plan=sampling_plan(task_count=2, task_num_samples=(3, 1))
     )
-    assert len(built.ordered_slots()) == built.repeat_plan.slot_count == 4
+    assert len(built.ordered_slots()) == built.sampling_plan.slot_count == 4
 
 
 def test_plan_declares_every_slot_it_orders() -> None:
     built = evaluation_plan(
-        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+        sampling_plan=sampling_plan(task_count=2, task_num_samples=(3, 1))
     )
     assert all(built.declares_slot(slot) for slot in built.ordered_slots())
 
 
-def test_plan_does_not_declare_a_repeat_beyond_its_own_task() -> None:
+def test_plan_does_not_declare_a_sample_beyond_its_own_task() -> None:
     built = evaluation_plan(
-        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+        sampling_plan=sampling_plan(task_count=2, task_num_samples=(3, 1))
     )
-    beyond = evaluation_slot(task_id="t2", repeat_index=1)
+    beyond = evaluation_slot(task_id="t2", sample_index=1)
     assert not built.declares_slot(beyond)
 
 
@@ -165,10 +167,10 @@ def test_plan_does_not_declare_a_slot_for_an_unselected_task() -> None:
     assert not built.declares_slot(evaluation_slot(task_id="t1"))
 
 
-def test_plan_does_not_declare_a_slot_naming_another_repeat_plan() -> None:
+def test_plan_does_not_declare_a_slot_naming_another_sampling_plan() -> None:
     built = evaluation_plan()
     foreign = evaluation_slot(
-        repeat_plan=repeat_plan_coordinate(repeat_plan_id="other")
+        sampling_plan=sampling_plan_coordinate(sampling_plan_id="other")
     )
     assert not built.declares_slot(foreign)
 

@@ -8,8 +8,8 @@ from _builders import (
     dataset,
     evaluation_slot,
     preprocessing_coordinate,
-    repeat_plan,
-    repeat_plan_coordinate,
+    sampling_plan,
+    sampling_plan_coordinate,
     sample_identity,
     task_set,
     task_set_coordinate,
@@ -19,8 +19,8 @@ from dr_code.evaluation import (
     EvaluationCandidateIdentity,
     EvaluationSampleIdentity,
     EvaluationSlotIdentity,
-    RepeatPlan,
-    RepeatPlanCoordinate,
+    SamplingPlan,
+    SamplingPlanCoordinate,
     TaskSet,
     TaskSetCoordinate,
 )
@@ -66,126 +66,128 @@ def test_task_set_rejects_a_selection_that_reorders_the_population() -> None:
         task_set(population=("a", "b", "c"), selected=("c", "a"))
 
 
-def test_repeat_plan_slot_count_sums_the_per_task_repeats() -> None:
-    plan = repeat_plan(task_count=3, task_repeats=(4, 1, 2))
+def test_sampling_plan_slot_count_sums_the_per_task_samples() -> None:
+    plan = sampling_plan(task_count=3, task_num_samples=(4, 1, 2))
     assert plan.slot_count == 7
 
 
-def test_repeat_plan_slot_count_matches_a_uniform_rectangle() -> None:
-    assert repeat_plan(task_count=3, task_repeats=(4,) * 3).slot_count == 12
+def test_sampling_plan_slot_count_matches_a_uniform_rectangle() -> None:
+    assert (
+        sampling_plan(task_count=3, task_num_samples=(4,) * 3).slot_count == 12
+    )
 
 
 @pytest.mark.parametrize(
-    ("task_position", "repeat_index", "expected"),
+    ("task_index", "sample_index", "expected"),
     [(0, 0, 0), (0, 2, 2), (1, 0, 3), (2, 2, 8)],
 )
 def test_slot_index_flattens_task_major(
-    task_position: int, repeat_index: int, expected: int
+    task_index: int, sample_index: int, expected: int
 ) -> None:
-    plan = repeat_plan(task_count=3, task_repeats=(3, 3, 3))
-    assert plan.slot_index(task_position, repeat_index) == expected
+    plan = sampling_plan(task_count=3, task_num_samples=(3, 3, 3))
+    assert plan.slot_index(task_index, sample_index) == expected
 
 
 @pytest.mark.parametrize(
-    ("task_position", "repeat_index", "expected"),
+    ("task_index", "sample_index", "expected"),
     [(0, 0, 0), (0, 2, 2), (1, 0, 3), (2, 0, 4), (2, 1, 5)],
 )
-def test_slot_index_prefix_sums_ragged_repeats(
-    task_position: int, repeat_index: int, expected: int
+def test_slot_index_prefix_sums_ragged_samples(
+    task_index: int, sample_index: int, expected: int
 ) -> None:
-    plan = repeat_plan(task_count=3, task_repeats=(3, 1, 2))
-    assert plan.slot_index(task_position, repeat_index) == expected
+    plan = sampling_plan(task_count=3, task_num_samples=(3, 1, 2))
+    assert plan.slot_index(task_index, sample_index) == expected
 
 
 def test_slot_index_covers_every_ragged_slot_exactly_once() -> None:
-    plan = repeat_plan(task_count=3, task_repeats=(3, 1, 2))
+    plan = sampling_plan(task_count=3, task_num_samples=(3, 1, 2))
     indices = [
-        plan.slot_index(task, repeat)
+        plan.slot_index(task, sample)
         for task in range(plan.task_count)
-        for repeat in range(plan.repeats_for(task))
+        for sample in range(plan.num_samples_for(task))
     ]
     assert indices == list(range(plan.slot_count))
 
 
-@pytest.mark.parametrize("task_position", [-1, 3])
+@pytest.mark.parametrize("task_index", [-1, 3])
 def test_slot_index_rejects_a_task_outside_the_plan(
-    task_position: int,
+    task_index: int,
 ) -> None:
-    plan = repeat_plan(task_count=3, task_repeats=(2, 2, 2))
-    with pytest.raises(ValueError, match="task position"):
-        plan.slot_index(task_position, 0)
+    plan = sampling_plan(task_count=3, task_num_samples=(2, 2, 2))
+    with pytest.raises(ValueError, match="task index"):
+        plan.slot_index(task_index, 0)
 
 
-@pytest.mark.parametrize("repeat_index", [-1, 2])
-def test_slot_index_rejects_a_repeat_outside_its_own_task(
-    repeat_index: int,
+@pytest.mark.parametrize("sample_index", [-1, 2])
+def test_slot_index_rejects_a_sample_outside_its_own_task(
+    sample_index: int,
 ) -> None:
-    plan = repeat_plan(task_count=3, task_repeats=(2, 2, 2))
-    with pytest.raises(ValueError, match="repeat index"):
-        plan.slot_index(0, repeat_index)
+    plan = sampling_plan(task_count=3, task_num_samples=(2, 2, 2))
+    with pytest.raises(ValueError, match="sample index"):
+        plan.slot_index(0, sample_index)
 
 
-def test_slot_index_bounds_each_task_by_its_own_repeat_count() -> None:
-    plan = repeat_plan(task_count=2, task_repeats=(3, 1))
+def test_slot_index_bounds_each_task_by_its_own_sample_count() -> None:
+    plan = sampling_plan(task_count=2, task_num_samples=(3, 1))
     assert plan.slot_index(0, 2) == 2
-    with pytest.raises(ValueError, match="repeat index"):
+    with pytest.raises(ValueError, match="sample index"):
         plan.slot_index(1, 1)
 
 
-def test_repeat_plan_rejects_a_zero_task_count() -> None:
+def test_sampling_plan_rejects_a_zero_task_count() -> None:
     with pytest.raises(ValidationError, match="at least one task"):
-        repeat_plan(task_count=0, task_repeats=())
+        sampling_plan(task_count=0, task_num_samples=())
 
 
-def test_repeat_plan_rejects_a_zero_repeat_count() -> None:
-    with pytest.raises(ValidationError, match="at least one repeat"):
-        repeat_plan(task_count=2, task_repeats=(2, 0))
+def test_sampling_plan_rejects_a_zero_sample_count() -> None:
+    with pytest.raises(ValidationError, match="at least one sample"):
+        sampling_plan(task_count=2, task_num_samples=(2, 0))
 
 
-@pytest.mark.parametrize("task_repeats", [(2,), (2, 2, 2)])
-def test_repeat_plan_rejects_repeats_misaligned_with_the_task_count(
-    task_repeats: tuple[int, ...],
+@pytest.mark.parametrize("task_num_samples", [(2,), (2, 2, 2)])
+def test_sampling_plan_rejects_samples_misaligned_with_the_task_count(
+    task_num_samples: tuple[int, ...],
 ) -> None:
-    with pytest.raises(ValidationError, match="one repeat count per task"):
-        repeat_plan(task_count=2, task_repeats=task_repeats)
+    with pytest.raises(ValidationError, match="one sample count per task"):
+        sampling_plan(task_count=2, task_num_samples=task_num_samples)
 
 
-def test_repeat_plan_seeds_are_optional() -> None:
-    assert repeat_plan().seeds is None
+def test_sampling_plan_seeds_are_optional() -> None:
+    assert sampling_plan().seeds is None
 
 
-def test_repeat_plan_accepts_one_seed_per_slot() -> None:
-    plan = repeat_plan(
-        task_count=2, task_repeats=(3, 3), seeds=tuple(range(6))
+def test_sampling_plan_accepts_one_seed_per_slot() -> None:
+    plan = sampling_plan(
+        task_count=2, task_num_samples=(3, 3), seeds=tuple(range(6))
     )
     assert plan.seeds is not None
     assert len(plan.seeds) == plan.slot_count
 
 
-def test_repeat_plan_seeds_count_follows_ragged_slots() -> None:
-    plan = repeat_plan(
-        task_count=2, task_repeats=(3, 1), seeds=tuple(range(4))
+def test_sampling_plan_seeds_count_follows_ragged_slots() -> None:
+    plan = sampling_plan(
+        task_count=2, task_num_samples=(3, 1), seeds=tuple(range(4))
     )
     assert plan.seeds is not None
     assert len(plan.seeds) == plan.slot_count == 4
 
 
 @pytest.mark.parametrize("seeds", [(1, 2), (1,) * 5])
-def test_repeat_plan_rejects_a_seed_count_that_misses_slots(
+def test_sampling_plan_rejects_a_seed_count_that_misses_slots(
     seeds: tuple[int, ...],
 ) -> None:
     with pytest.raises(ValidationError, match="one seed per slot"):
-        repeat_plan(task_count=2, task_repeats=(2, 2), seeds=seeds)
+        sampling_plan(task_count=2, task_num_samples=(2, 2), seeds=seeds)
 
 
-def test_repeat_plan_rejects_empty_seeds_when_slots_exist() -> None:
+def test_sampling_plan_rejects_empty_seeds_when_slots_exist() -> None:
     with pytest.raises(ValidationError, match="one seed per slot"):
-        repeat_plan(task_count=2, task_repeats=(2, 2), seeds=())
+        sampling_plan(task_count=2, task_num_samples=(2, 2), seeds=())
 
 
-def test_evaluation_slot_rejects_a_negative_repeat_index() -> None:
-    with pytest.raises(ValidationError, match="repeat_index"):
-        evaluation_slot(repeat_index=-1)
+def test_evaluation_slot_rejects_a_negative_sample_index() -> None:
+    with pytest.raises(ValidationError, match="sample_index"):
+        evaluation_slot(sample_index=-1)
 
 
 def test_candidate_rejects_a_negative_ordinal() -> None:
@@ -215,9 +217,9 @@ def test_candidate_nests_sample_identity_and_preprocessing() -> None:
         (DatasetCoordinate, dataset()),
         (TaskSetCoordinate, task_set_coordinate()),
         (TaskSet, task_set()),
-        (RepeatPlanCoordinate, repeat_plan_coordinate()),
-        (RepeatPlan, repeat_plan()),
-        (RepeatPlan, repeat_plan(seeds=(1, 2, 3, 4))),
+        (SamplingPlanCoordinate, sampling_plan_coordinate()),
+        (SamplingPlan, sampling_plan()),
+        (SamplingPlan, sampling_plan(seeds=(1, 2, 3, 4))),
         (EvaluationSlotIdentity, evaluation_slot()),
         (EvaluationSampleIdentity, sample_identity()),
         (EvaluationCandidateIdentity, candidate()),

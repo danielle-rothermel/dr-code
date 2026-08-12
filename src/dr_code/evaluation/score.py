@@ -7,7 +7,7 @@ from pydantic import model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import (
-    RepeatPlanCoordinate,
+    SamplingPlanCoordinate,
     TaskSetCoordinate,
 )
 from dr_code.metrics import MetricValueCoordinate, MetricValueUnit
@@ -17,7 +17,7 @@ class EvaluationCoordinate(FrozenModel):
     plan_id: str
     version: str
     task_set: TaskSetCoordinate
-    repeat_plan: RepeatPlanCoordinate
+    sampling_plan: SamplingPlanCoordinate
 
 
 class Score(FrozenModel):
