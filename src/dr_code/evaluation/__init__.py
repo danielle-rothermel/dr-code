@@ -78,7 +78,11 @@ from dr_code.evaluation.references import (
     EvidenceReference,
     StoredRecordReference,
 )
-from dr_code.evaluation.work_key import derive_work_key
+from dr_code.evaluation.work_key import (
+    WORK_KEY_SCHEMA,
+    WORK_KEY_SCHEMA_VERSION,
+    derive_work_key,
+)
 
 if TYPE_CHECKING:
     from dr_code.evaluation.bundle import (
@@ -409,6 +413,8 @@ __all__ = [
     "TaskSetCoordinate",
     "TestingValidation",
     "WindowLimits",
+    "WORK_KEY_SCHEMA",
+    "WORK_KEY_SCHEMA_VERSION",
     "aggregate",
     "derive_work_key",
     "failure_class_of",

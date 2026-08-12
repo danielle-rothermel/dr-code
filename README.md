@@ -565,11 +565,11 @@ Tests marked `postgres` need a live PostgreSQL-backed dr-store and are
 deselected by default, so the command above stays offline. They cover the
 evidence write path against a real database, where a fake cannot establish that
 a rollback leaves nothing behind or that a first-writer-wins collision
-surfaces. dr-store's scratch-server script provides both the server and the
-DSN, and runs the command in this checkout:
+surfaces. Set `DR_STORE_ROOT` to a dr-store checkout root and run:
 
 ```console
-../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m postgres
+export DR_STORE_ROOT=/path/to/dr-store
+scripts/run_postgres_tests.sh
 ```
 
 The [viewer verification guide](viewer/README.md#verification) documents its
