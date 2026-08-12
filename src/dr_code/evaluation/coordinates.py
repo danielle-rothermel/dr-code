@@ -59,17 +59,29 @@ class RepeatPlanCoordinate(FrozenModel):
 
 
 class RepeatPlan(FrozenModel):
+    """Declares how many repeats each selected task is planned to receive.
+
+    ``task_repeats`` is positionally aligned with the plan's ordered task
+    selection, so a plan declares exactly the slots its tasks occupy even
+    when different tasks carry different repeat counts.
+    """
+
     coordinate: RepeatPlanCoordinate
     task_count: int
-    repeats: int
+    task_repeats: tuple[int, ...]
     seeds: tuple[int, ...] | None = None
 
     @model_validator(mode="after")
     def validate_slot_structure(self) -> Self:
         if self.task_count < 1:
             raise ValueError("a repeat plan must cover at least one task")
-        if self.repeats < 1:
-            raise ValueError("a repeat plan must have at least one repeat")
+        if len(self.task_repeats) != self.task_count:
+            raise ValueError(
+                "a repeat plan needs one repeat count per task: expected "
+                f"{self.task_count}, got {len(self.task_repeats)}"
+            )
+        if any(repeats < 1 for repeats in self.task_repeats):
+            raise ValueError("every task must have at least one repeat")
         return self
 
     @model_validator(mode="after")
@@ -85,20 +97,24 @@ class RepeatPlan(FrozenModel):
 
     @property
     def slot_count(self) -> int:
-        return self.task_count * self.repeats
+        return sum(self.task_repeats)
 
-    def slot_index(self, task_position: int, repeat_index: int) -> int:
+    def repeats_for(self, task_position: int) -> int:
         if not 0 <= task_position < self.task_count:
             raise ValueError(
                 f"task position {task_position} is outside the plan's "
                 f"{self.task_count} tasks"
             )
-        if not 0 <= repeat_index < self.repeats:
+        return self.task_repeats[task_position]
+
+    def slot_index(self, task_position: int, repeat_index: int) -> int:
+        repeats = self.repeats_for(task_position)
+        if not 0 <= repeat_index < repeats:
             raise ValueError(
-                f"repeat index {repeat_index} is outside the plan's "
-                f"{self.repeats} repeats"
+                f"repeat index {repeat_index} is outside the {repeats} "
+                f"repeats planned for task position {task_position}"
             )
-        return task_position * self.repeats + repeat_index
+        return sum(self.task_repeats[:task_position]) + repeat_index
 
 
 __all__ = [

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Evaluation repeat plans declare a repeat count per selected task
+  (`task_repeats`, positionally aligned with the ordered selection) instead of
+  one count shared by every task. Slot ordinals are prefix sums over those
+  counts and bounds are checked per task, so a plan over tasks with unequal
+  repeat counts declares exactly the slots its members fill. `EvaluationPlan`
+  owns slot expansion and validity through `ordered_slots` and `declares_slot`.
+  The evaluation attempt record schema version is now 2; bundles recorded
+  under version 1 no longer load, and replay preflight reports them as
+  unavailable.
+
 - Pull-request CI runs lint, type, and test checks only. Distribution build,
   metadata, and installed-wheel qualification run at publication time in the
   tag-triggered release workflow.

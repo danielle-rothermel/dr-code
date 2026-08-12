@@ -98,10 +98,14 @@ title = "Evaluation plans are internally complete"
 statement = """
 An evaluation plan nests its complete preprocessing and metrics definitions,
 covers exactly its selected tasks with its repeat plan, and aggregates only a
-question declared by its metrics definition."""
+question declared by its metrics definition. The repeat plan declares a repeat
+count per selected task, so a plan whose tasks carry unequal repeat counts
+still declares exactly the slots its tasks occupy and never more."""
 rationale = """
 A persisted plan remains interpretable as one coherent declaration rather
-than a set of references resolved against mutable registries."""
+than a set of references resolved against mutable registries. Per-task repeat
+counts keep declared membership equal to real membership, so a plan cannot
+declare slots that no member can ever fill."""
 date = "2026-08-05"
 check = "uv run pytest tests/evaluation/test_plan.py tests/evaluation/test_wire_format.py"
 

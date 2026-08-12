@@ -1,0 +1,26 @@
+{
+  "attempt_id": "5ac39f21-a8e0-508a-bd2c-9b1f76f59b2d",
+  "baseline_name": "main-2026-08-12",
+  "bundle_path": "/Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/main-2026-08-12/explicit-runtime/workers-32_timeout-120/evaluation_bundles/run/evaluation-20260812T053557911325Z-db6b378a-e713-467b-bc5f-5693879518f3",
+  "corpus_bundle": "/Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval",
+  "evaluation_settings": {
+    "evaluation_root": "/Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/main-2026-08-12/explicit-runtime/workers-32_timeout-120",
+    "timeout_seconds": 120.0,
+    "worker_count": 32
+  },
+  "git_branch": "wide-probe-sampling",
+  "git_rev": "2e66badea1db7208abfb31392e90ae3e8313de67",
+  "manifest_sha256": "fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728",
+  "manifest_summary": {
+    "adapter_name": "legacy_human_eval",
+    "adapter_version": 1,
+    "format": "generation-corpus-v1",
+    "generations": 203407,
+    "manifest_sha256": "fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728",
+    "requests": 203407,
+    "source_manifest_sha256": "6f4dad5e709e3c45616143e1a201ed1f3135abd3354858bbee2c533c09cd967b"
+  },
+  "run_directory": "/Users/daniellerothermel/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/main-2026-08-12",
+  "settings_fingerprint": "baf7584bed5e5d7aff735ef10dfb3b013c5bb53993cc011c4c7a4190309d3a4f",
+  "status": "complete"
+}

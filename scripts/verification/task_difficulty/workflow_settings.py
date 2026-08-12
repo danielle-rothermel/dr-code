@@ -39,16 +39,14 @@ PREPROCESS_TIMEOUT_SECONDS: Final = 600.0
 Deliberately far above any healthy input's cost: it exists to break a wedged
 worker, not to bound normal work, and should never fire on a healthy corpus.
 """
-SETTINGS: Final = (
-    ("direct", "no_budget"),
-    ("enc_dec", "no_budget"),
-    ("enc_dec", "budget"),
-)
-MODEL_ROSTER: Final = (
-    "deepseek/deepseek-v3.1-terminus",
-    "openai/gpt-5-nano",
-    "qwen/qwen3-coder-flash",
-)
+SAMPLE_TASKS_PER_GROUP_ENV: Final = "DR_CODE_SAMPLE_TASKS_PER_GROUP"
+SAMPLE_TASKS_PER_GROUP: Final = 40
+"""Tasks retained per populated (generation_mode, budget_mode, model_key) group.
+
+This baseline is a PR-versus-PR regression probe, so it needs constant group
+membership rather than a balanced design. Runtime is bounded by seeded
+deterministic task subsetting instead of by narrowing which cells are observed.
+"""
 
 
 def run_directory_path() -> Path:
@@ -104,6 +102,36 @@ def preprocess_timeout_seconds() -> float | None:
     if override:
         return parse_preprocess_timeout_seconds(override)
     return PREPROCESS_TIMEOUT_SECONDS
+
+
+def parse_sample_tasks_per_group(value: str) -> int | None:
+    """Return a positive task budget per group, or `None` for every task.
+
+    `0` and `all` both mean the full task grid.
+    """
+
+    if value.strip().lower() in {"all", "0"}:
+        return None
+    try:
+        tasks_per_group = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be an integer, 0, or 'all'"
+        ) from exc
+    if tasks_per_group < 1:
+        raise argparse.ArgumentTypeError(
+            "must be positive, or 0/'all' for every task"
+        )
+    return tasks_per_group
+
+
+def sample_tasks_per_group() -> int | None:
+    """Return the tasks retained per populated sampling group."""
+
+    override = os.environ.get(SAMPLE_TASKS_PER_GROUP_ENV)
+    if override:
+        return parse_sample_tasks_per_group(override)
+    return SAMPLE_TASKS_PER_GROUP
 
 
 _RUN_DIRECTORY = run_directory_path()

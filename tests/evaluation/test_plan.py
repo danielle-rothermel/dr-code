@@ -4,12 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from _builders import (
+    evaluation_slot,
     metrics_definition,
     policy,
     preprocessing_definition,
     procedure,
     question_coordinate,
     repeat_plan,
+    repeat_plan_coordinate,
     task_set,
 )
 from dr_code.evaluation import (
@@ -115,12 +117,60 @@ def test_plan_accepts_a_repeat_plan_covering_the_selection() -> None:
 
 def test_plan_rejects_a_repeat_plan_covering_too_few_tasks() -> None:
     with pytest.raises(ValidationError, match="exactly the selected tasks"):
-        evaluation_plan(repeat_plan=repeat_plan(task_count=1))
+        evaluation_plan(
+            repeat_plan=repeat_plan(task_count=1, task_repeats=(2,))
+        )
 
 
 def test_plan_rejects_a_repeat_plan_covering_too_many_tasks() -> None:
     with pytest.raises(ValidationError, match="exactly the selected tasks"):
-        evaluation_plan(repeat_plan=repeat_plan(task_count=3))
+        evaluation_plan(
+            repeat_plan=repeat_plan(task_count=3, task_repeats=(2, 2, 2))
+        )
+
+
+def test_ordered_slots_expand_each_task_by_its_own_repeat_count() -> None:
+    built = evaluation_plan(
+        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+    )
+    assert [
+        (slot.task_id, slot.repeat_index) for slot in built.ordered_slots()
+    ] == [("t0", 0), ("t0", 1), ("t0", 2), ("t2", 0)]
+
+
+def test_ordered_slots_count_equals_the_declared_slot_count() -> None:
+    built = evaluation_plan(
+        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+    )
+    assert len(built.ordered_slots()) == built.repeat_plan.slot_count == 4
+
+
+def test_plan_declares_every_slot_it_orders() -> None:
+    built = evaluation_plan(
+        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+    )
+    assert all(built.declares_slot(slot) for slot in built.ordered_slots())
+
+
+def test_plan_does_not_declare_a_repeat_beyond_its_own_task() -> None:
+    built = evaluation_plan(
+        repeat_plan=repeat_plan(task_count=2, task_repeats=(3, 1))
+    )
+    beyond = evaluation_slot(task_id="t2", repeat_index=1)
+    assert not built.declares_slot(beyond)
+
+
+def test_plan_does_not_declare_a_slot_for_an_unselected_task() -> None:
+    built = evaluation_plan()
+    assert not built.declares_slot(evaluation_slot(task_id="t1"))
+
+
+def test_plan_does_not_declare_a_slot_naming_another_repeat_plan() -> None:
+    built = evaluation_plan()
+    foreign = evaluation_slot(
+        repeat_plan=repeat_plan_coordinate(repeat_plan_id="other")
+    )
+    assert not built.declares_slot(foreign)
 
 
 def test_plan_rejects_aggregating_an_undeclared_question() -> None:

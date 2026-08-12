@@ -38,8 +38,9 @@ uv run python scripts/build_generation_corpus.py human_eval \
 ## Workflow
 
 1. `uv run python scripts/verification/task_difficulty/01_build_eligible_corpus.py`
-   loads the pinned generation corpus bundle, keeps the three comparable
-   `(generation_mode, budget_mode)` settings, runs exhaustive preprocessing
+   loads the pinned generation corpus bundle, keeps every complete nonblank
+   generation regardless of its `(generation_mode, budget_mode)` combination,
+   runs exhaustive preprocessing
    across `--workers` worker processes (default 16), and stores generations
    with at least one compilable top-level-function candidate. Workers return
    each output's candidate sources rather than its whole trace, and stage 1
@@ -49,8 +50,19 @@ uv run python scripts/build_generation_corpus.py human_eval \
    output that exceeds it fails alone and the batch continues. Pass `0` or
    `none` to run unbudgeted.
 2. `uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py`
-   selects one deterministic generation for each available task, setting, and
-   model in the fixed model roster.
+   groups the eligible corpus by `(generation_mode, budget_mode, model_key)`,
+   keeps a seeded deterministic subset of `--tasks-per-group` tasks in every
+   populated group (default 40, override with
+   `DR_CODE_SAMPLE_TASKS_PER_GROUP`; `0` or `all` keeps every task), and
+   selects one deterministic generation per retained `(task, group)` cell.
+   Membership is stable for a given seed and eligible corpus, so a pinned
+   baseline observes the same cells across runs. Stage 2 fails only when the
+   eligible corpus has no populated group at all.
+
+   This baseline is a PR-versus-PR regression probe rather than a balanced
+   experiment: it wants constant group membership across pins, so it observes
+   every populated cell and bounds runtime by task subsetting instead of by
+   narrowing which settings and models are eligible.
 3. Provision a copied evaluation interpreter and run the evaluator:
 
    ```shell

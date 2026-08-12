@@ -28,7 +28,7 @@ from dr_code.humaneval.job import HumanEvalCandidateJobResult
 from dr_code.metrics import MetricRecord
 from dr_code.trace import Absent, SerializedTrace
 
-EVALUATION_ATTEMPT_SCHEMA_VERSION: Final = 1
+EVALUATION_ATTEMPT_SCHEMA_VERSION: Final = 2
 SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION: Final = 1
 CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION: Final = 1
 
@@ -251,7 +251,7 @@ class ReplaySource(FrozenModel):
 
 
 class EvaluationAttemptRecord(FrozenModel):
-    schema_version: Literal[1] = EVALUATION_ATTEMPT_SCHEMA_VERSION
+    schema_version: Literal[2] = EVALUATION_ATTEMPT_SCHEMA_VERSION
     identity: EvaluationAttemptIdentity
     plan: EvaluationPlan
     runtime: EvaluationRuntimeIdentity
