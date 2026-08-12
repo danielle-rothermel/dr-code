@@ -34,11 +34,17 @@ def test_declared_scripts_resolve_to_importable_targets() -> None:
         assert callable(getattr(module, attribute)), target
 
 
+# Help rendering adapts to the ambient terminal: CI enables color codes and
+# narrow wrapping that split option names mid-string. Pin the rendering
+# environment so the assertions see the unstyled, unwrapped text.
+_PLAIN_TERMINAL_ENV = {"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"}
+
+
 def test_validation_verbs_declare_their_flow_arguments() -> None:
     runner = CliRunner()
 
     for app in (validate_preprocessing_app, validate_testing_app):
-        result = runner.invoke(app, ["--help"])
+        result = runner.invoke(app, ["--help"], env=_PLAIN_TERMINAL_ENV)
         assert result.exit_code == 0, result.output
         for option in ("--request", "--run-root", "--runtime", "--workers"):
             assert option in result.output
