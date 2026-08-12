@@ -1,6 +1,6 @@
 baseline: main-2026-08-12
-exported_at: 2026-08-12T04:52:17.110363+00:00
-git_rev: febba964bd264b49c46e8117644b0175f3463e8d
+exported_at: 2026-08-12T05:38:39.881970+00:00
+git_rev: 2e66badea1db7208abfb31392e90ae3e8313de67
 git_branch: wide-probe-sampling
 corpus_bundle: /Users/daniellerothermel/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval
 manifest_sha256: fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728
@@ -9,4 +9,4 @@ stages_completed: preprocess, sample, evaluate, summarize
 preprocessing: 201050 eligible / 203407 nonblank (163 tasks)
 sampling: 800 selected generations across 163 tasks and 20 groups (tasks_per_group=40)
 evaluation: 800/800 complete generations, mean task success rate 0.8041
-observed task extremes: {'mixed': 72, 'all_passed': 85, 'all_failed': 6}
+observed task extremes: {'all_failed': 6, 'mixed': 72, 'all_passed': 85}
