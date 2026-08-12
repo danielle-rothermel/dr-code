@@ -130,8 +130,7 @@ def test_cli_build_rejects_more_tasks_than_snapshot_contains(
     )
 
     assert result.returncode != 0
-    assert (
-        "requested task count exceeds available HumanEvalPlus tasks: 2 > 1"
-        in result.stderr
-    )
+    normalized_stderr = " ".join(result.stderr.split())
+    assert "requested task count exceeds available" in normalized_stderr
+    assert "HumanEvalPlus tasks: 2 > 1" in normalized_stderr
     assert not output_path.exists()

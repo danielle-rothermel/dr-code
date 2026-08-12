@@ -8,11 +8,11 @@ collision really surfaces, are properties of the database rather than of the
 call shape. These tests exercise the same entry point against a real
 `ObjectStore` on a live connection.
 
-They need a PostgreSQL server and skip without one. dr-store's scratch-server
-script supplies both the server and the DSN from a consumer checkout:
+They need a PostgreSQL server and skip without one. Set `DR_STORE_ROOT` to a
+dr-store checkout root and run:
 
-    ../dr-store/scripts/test-postgres.sh -- \
-        uv run pytest -q tests/evaluation/test_evidence_postgres.py
+    export DR_STORE_ROOT=/path/to/dr-store
+    scripts/run_postgres_tests.sh
 """
 
 from __future__ import annotations

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import pytest
-from dr_exec import ExecutionPoolConfig, SpawnAbsentOutcome
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig, SpawnAbsentOutcome
 
 from _executor_stubs import (
     CountingExecutor,
     importable_json_executor,
+    output_limit_executor,
     scripted_executor,
     timeout_executor,
 )
@@ -46,7 +47,7 @@ async def _run(
         batch_request,  # type: ignore[arg-type]
         executor=executor,  # type: ignore[arg-type]
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=StoredMemoryPlacement(),
     )
     await execution_cache.close()
@@ -80,18 +81,18 @@ async def test_harness_failure_is_never_persisted_and_re_executes() -> None:
     assert executor.call_count == 2
 
 
-async def test_candidate_failure_is_persisted_and_reused() -> None:
+async def test_wall_time_exhaustion_is_not_cached_and_re_executes() -> None:
     batch_request = request(projections=())
     store = BatchStore()
     executor = CountingExecutor(timeout_executor())
 
     await _run(batch_request, executor=executor, store=store)
 
-    assert len(store.records) == 1
+    assert store.records == {}
 
     await _run(batch_request, executor=executor, store=store)
 
-    assert executor.call_count == 1
+    assert executor.call_count == 2
 
 
 async def test_completed_outcome_is_persisted_and_reused() -> None:
@@ -171,7 +172,7 @@ async def test_fresh_run_does_not_replace_an_already_bound_entry() -> None:
 
     await _run(
         batch_request,
-        executor=timeout_executor(),
+        executor=output_limit_executor(),
         store=store,
     )
 

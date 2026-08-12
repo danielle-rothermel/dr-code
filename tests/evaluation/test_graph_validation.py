@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 from dr_serialize import IdentityDocument
 from pydantic import ValidationError
 
@@ -154,7 +154,7 @@ async def test_graph_rejects_completed_result_candidate_mismatch() -> None:
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
     record = placement.records[0]

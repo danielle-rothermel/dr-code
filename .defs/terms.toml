@@ -825,7 +825,11 @@ with one evaluation slot's addressing coordinates: its task set coordinate,
 its sampling plan coordinate, its task id, and its sample index. It addresses
 the work of producing one generation without naming any run, attempt, or
 record."""
-exported_symbols = ["dr_code.evaluation.derive_work_key"]
+exported_symbols = [
+  "dr_code.evaluation.derive_work_key",
+  "dr_code.evaluation.WORK_KEY_SCHEMA",
+  "dr_code.evaluation.WORK_KEY_SCHEMA_VERSION",
+]
 categories = ["evaluation identity", "experiment design"]
 part_of = ["generation"]
 

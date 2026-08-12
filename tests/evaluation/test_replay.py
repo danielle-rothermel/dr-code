@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from dr_exec import CancelledOutcome, ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, CancelledOutcome, ExecutionPoolConfig
 from dr_store import ArtifactBundlePublication, ObjectStore
 
 from _executor_stubs import importable_json_executor, scripted_executor
@@ -99,7 +99,7 @@ async def test_sample_replay_reconstructs_raw_input_and_auxiliary_artifacts(
             execution_cache=execution_cache,
             object_store=None,
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -135,7 +135,7 @@ async def test_materialized_candidate_replay_bypasses_preprocessing_and_persists
             execution_cache=execution_cache,
             object_store=None,
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -210,7 +210,7 @@ async def test_replay_cancellation_propagates(tmp_path: Path) -> None:
                 execution_cache=execution_cache,
                 object_store=None,
                 publication=publication,
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             )
     finally:
         await execution_cache.close()

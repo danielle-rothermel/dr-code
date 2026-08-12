@@ -9,7 +9,13 @@ from dr_serialize import (
     build_identity_document,
     identity_document_hash,
 )
-from dr_store import CacheEntry, CacheHit, ObjectReference, derive_cache_key
+from dr_store import (
+    CacheEntry,
+    CacheHit,
+    EvictStatus,
+    ObjectReference,
+    derive_cache_key,
+)
 
 from dr_code.caching import (
     EXECUTION_CACHE_NAMESPACE,
@@ -89,6 +95,20 @@ class _Store:
             }
         finally:
             self.write_finished[call_index].set()
+
+    async def evict_bindings(
+        self,
+        keys: Iterable[str],
+    ) -> dict[str, EvictStatus]:
+        distinct = tuple(dict.fromkeys(keys))
+        statuses: dict[str, EvictStatus] = {}
+        for key in distinct:
+            if key in self.records:
+                del self.records[key]
+                statuses[key] = EvictStatus.EVICTED
+            else:
+                statuses[key] = EvictStatus.ABSENT
+        return statuses
 
 
 def _runtime(name: str = "runtime") -> EvaluationRuntimeIdentity:
@@ -258,3 +278,80 @@ async def test_persistent_namespace_schema_keys_and_record_wire_are_golden() -> 
     assert observation.model_dump(mode="json")["source_record"][
         "reference"
     ].keys() == {"schema", "content_hash"}
+
+
+async def test_evict_removes_resident_and_persistent_binding() -> None:
+    store = _Store()
+    cache = _cache(store)
+    observation = _observation("evict-me")
+    await cache.put("request", observation)
+    await cache.close()
+
+    cache = _cache(store)
+    await cache.prefetch(("request",))
+    assert cache.get("request") == observation
+
+    assert await cache.evict(("request",)) == {"request": EvictStatus.EVICTED}
+    assert cache.get("request") is None
+
+    await cache.prefetch(("request",))
+    assert cache.get("request") is None
+    await cache.close()
+
+
+async def test_evict_on_absent_key_is_idempotent() -> None:
+    store = _Store()
+    cache = _cache(store)
+
+    assert await cache.evict(("missing",)) == {"missing": EvictStatus.ABSENT}
+    assert await cache.evict(("missing",)) == {"missing": EvictStatus.ABSENT}
+    await cache.close()
+
+
+async def test_evict_drops_a_pending_checkpoint_entry() -> None:
+    store = _Store()
+    started, release = store.gate_next_write()
+    cache = _cache(store, pending=1)
+
+    await cache.put("keep", _observation("keep"))
+    await started.wait()
+    await cache.put("drop", _observation("drop"))
+
+    evict_task = asyncio.create_task(cache.evict(("drop",)))
+    await asyncio.sleep(0)
+    assert not evict_task.done()
+
+    release.set()
+    assert await evict_task == {"drop": EvictStatus.ABSENT}
+
+    await cache.close()
+
+    persisted_messages = {
+        entry.record["outcome"]["message"]
+        for batch in store.put_calls
+        for entry in batch.values()
+    }
+    assert persisted_messages == {"keep"}
+
+
+async def test_evict_waits_for_in_flight_checkpoint() -> None:
+    store = _Store()
+    started, release = store.gate_next_write()
+    cache = _cache(store, pending=1)
+
+    await cache.put("stale", _observation("stale"))
+    await started.wait()
+
+    evict_task = asyncio.create_task(cache.evict(("stale",)))
+    await asyncio.sleep(0)
+    assert not evict_task.done()
+
+    release.set()
+    assert await evict_task == {"stale": EvictStatus.EVICTED}
+
+    await cache.close()
+
+    cache = _cache(store)
+    await cache.prefetch(("stale",))
+    assert cache.get("stale") is None
+    await cache.close()

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.1.8 - 2026-08-12
+
+- Refreshed all direct `dr-*` dependency pins to their latest releases:
+  `dr-exec` 0.1.10, `dr-store` 0.2.3, and `dr-serialize` 0.1.2. Removed the
+  redundant `dr-store` override that had neutralized dr-exec 0.1.9's stale pin.
+- Wall-time budget exhaustion is infrastructure-owned under dr-exec 0.1.10, so
+  it is no longer cacheable and deliberate re-runs can observe fresh executor
+  behavior rather than replaying a cached timeout as candidate evidence.
+- Added `WindowedExecutionCache.evict` as a cache-grade entry point over
+  dr-store's `evict_bindings`, clearing resident state and persisted bindings
+  for deliberate re-runs.
+- Exported `WORK_KEY_SCHEMA` and `WORK_KEY_SCHEMA_VERSION` from
+  `dr_code.evaluation` for downstream golden tests.
+- Opt-in postgres tests no longer assume a sibling `../dr-store` checkout; set
+  `DR_STORE_ROOT` and run `scripts/run_postgres_tests.sh`.
+
 ## 0.1.7 - 2026-08-12
 
 - Evidence writes can join a caller-owned transaction.

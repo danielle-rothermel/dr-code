@@ -5,7 +5,7 @@ from collections.abc import Iterable, Mapping
 from uuid import UUID
 
 from dr_serialize import Jsonable, Sha256Digest, build_identity_document
-from dr_store import CacheEntry, CacheHit, ObjectReference
+from dr_store import CacheEntry, CacheHit, EvictStatus, ObjectReference
 
 from _candidate_job_builders import candidate_job_task
 from dr_code.caching import WindowedExecutionCache
@@ -94,6 +94,20 @@ class BatchStore:
             key: ObjectReference.for_record(*self.records[key])
             for key in entries
         }
+
+    async def evict_bindings(
+        self,
+        keys: Iterable[str],
+    ) -> dict[str, EvictStatus]:
+        distinct = tuple(dict.fromkeys(keys))
+        statuses: dict[str, EvictStatus] = {}
+        for key in distinct:
+            if key in self.records:
+                del self.records[key]
+                statuses[key] = EvictStatus.EVICTED
+            else:
+                statuses[key] = EvictStatus.ABSENT
+        return statuses
 
 
 class MemoryPlacement:

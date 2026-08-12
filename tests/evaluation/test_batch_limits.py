@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 from pydantic import ValidationError
 
 from _executor_stubs import CountingExecutor, importable_json_executor
@@ -68,7 +68,7 @@ async def test_cache_hits_do_not_consume_admitted_job_limit() -> None:
         batch_request,
         executor=executor,
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=StoredMemoryPlacement(),
     )
     await execution_cache.close()
@@ -78,7 +78,7 @@ async def test_cache_hits_do_not_consume_admitted_job_limit() -> None:
         batch_request,
         executor=executor,
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=StoredMemoryPlacement(),
     )
 
@@ -109,7 +109,7 @@ async def test_every_materialized_candidate_consumes_materialized_limit() -> (
         batch_request,
         executor=executor,
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
 
@@ -137,7 +137,7 @@ async def test_multi_candidate_cache_windows_release_resident_capacity() -> (
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
 
@@ -169,7 +169,7 @@ async def test_admission_exhaustion_after_earlier_window_releases_keys() -> (
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=MemoryPlacement(),
     )
 
@@ -189,7 +189,7 @@ async def test_bundle_local_records_are_not_published_to_persistent_cache() -> (
         request(projections=()),
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=MemoryPlacement(),
     )
     await execution_cache.close()
@@ -217,7 +217,7 @@ async def test_retained_evidence_exhaustion_preserves_only_completed_prefix() ->
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
 
@@ -249,7 +249,7 @@ async def test_admission_exhaustion_publishes_every_completed_sample() -> None:
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dr_code.caching.execution_cache import (
     BatchRecordStore,
     CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION,
+    EvictableBatchRecordStore,
     EXECUTION_CACHE_NAMESPACE,
     EXECUTION_CACHE_RECORD_SCHEMA,
     CachedExecutionObservation,
@@ -21,6 +22,7 @@ __all__ = [
     "CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION",
     "CachedExecutionObservation",
     "CandidateSourcesObserver",
+    "EvictableBatchRecordStore",
     "EXECUTION_CACHE_NAMESPACE",
     "EXECUTION_CACHE_RECORD_SCHEMA",
     "ExecutionCacheStats",

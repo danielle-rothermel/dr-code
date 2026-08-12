@@ -51,4 +51,8 @@ def derive_work_key(
     )
 
 
-__all__ = ["derive_work_key"]
+__all__ = [
+    "WORK_KEY_SCHEMA",
+    "WORK_KEY_SCHEMA_VERSION",
+    "derive_work_key",
+]
