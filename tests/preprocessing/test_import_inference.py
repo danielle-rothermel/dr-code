@@ -5,7 +5,9 @@ import warnings
 import pytest
 
 from dr_code.humaneval.acceptance import extract_humaneval_code
+from dr_code.preprocessing import import_inference
 from dr_code.preprocessing.import_inference import (
+    _continuation_limit,
     dedupe_import_lines,
     infer_necessary_imports,
     repair_import_lines,
@@ -239,6 +241,79 @@ def test_repair_import_lines_preserves_valid_multiline_imports(
     assert repaired == source.rstrip()
     assert not changed
     compile(repaired, "<repaired>", "exec")
+
+
+def test_bracketed_continuation_scan_ends_at_the_closing_bracket() -> None:
+    lines = (
+        "from collections import (\n"
+        "    Counter,\n"
+        "    defaultdict,\n"
+        ")\n"
+        "\n"
+        "def f():\n"
+        "    return Counter()\n"
+    ).splitlines()
+
+    assert _continuation_limit(lines, 0) == 4
+
+
+def test_backslash_continuation_scan_ends_at_the_joined_line() -> None:
+    lines = (
+        "from collections import Counter, \\\n"
+        "    defaultdict\n"
+        "\n"
+        "def f():\n"
+        "    return Counter()\n"
+    ).splitlines()
+
+    assert _continuation_limit(lines, 0) == 2
+
+
+def test_a_non_continuation_line_terminates_the_scan() -> None:
+    lines = ("from collections import\ndef f():\n    return 1\n").splitlines()
+
+    assert _continuation_limit(lines, 0) == 1
+
+
+def test_brackets_inside_strings_and_comments_do_not_extend_the_scan() -> None:
+    lines = (
+        "from collections import  # trailing ( junk\n"
+        'value = "("\n'
+        "def f():\n"
+        "    return 1\n"
+    ).splitlines()
+
+    assert _continuation_limit(lines, 0) == 1
+
+
+def test_repairing_many_broken_imports_scans_a_bounded_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scan is bounded by each statement, not by the rest of the module."""
+
+    parse_calls = 0
+    real_parse = import_inference._parse_or_none
+
+    def counting_parse(text: str):  # noqa: ANN202
+        nonlocal parse_calls
+        parse_calls += 1
+        return real_parse(text)
+
+    monkeypatch.setattr(import_inference, "_parse_or_none", counting_parse)
+
+    broken_line = "from collections import\n"
+    small_source = broken_line * 20
+    large_source = broken_line * 200
+
+    repair_import_lines(small_source)
+    small_calls = parse_calls
+    parse_calls = 0
+    repair_import_lines(large_source)
+    large_calls = parse_calls
+
+    # Ten times the broken lines costs about ten times the parses, not a
+    # hundred times: each line's scan stops at its own non-continuation.
+    assert large_calls <= small_calls * 15
 
 
 def test_inferred_import_follows_and_preserves_module_docstring() -> None:

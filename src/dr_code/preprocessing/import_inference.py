@@ -162,7 +162,14 @@ def _repair_import_line(line: str) -> str | None:
 
 
 def _valid_multiline_import_end(lines: list[str], start: int) -> int | None:
-    for end in range(start + 2, len(lines) + 1):
+    """Return the end of a real multi-line import beginning at `start`.
+
+    The scan stops at the first line that cannot continue the statement, so a
+    broken import line costs work proportional to its own continuation rather
+    than to the rest of the module.
+    """
+
+    for end in range(start + 2, _continuation_limit(lines, start) + 1):
         candidate = textwrap.dedent("\n".join(lines[start:end]))
         tree = _parse_or_none(candidate)
         if tree is None:
@@ -171,6 +178,70 @@ def _valid_multiline_import_end(lines: list[str], start: int) -> int | None:
             return end
         return None
     return None
+
+
+def _continuation_limit(lines: list[str], start: int) -> int:
+    """Return the last index a statement starting at `start` can reach.
+
+    A logical line continues only while a bracket opened by an earlier line is
+    still unclosed or the previous line ends in a backslash. The first line
+    where neither holds is the last line the statement can contain.
+    """
+
+    depth = 0
+    index = start
+    while index < len(lines):
+        line = lines[index]
+        depth = max(depth + _bracket_delta(line), 0)
+        index += 1
+        if depth == 0 and not _ends_with_continuation(line):
+            break
+    return index
+
+
+def _bracket_delta(line: str) -> int:
+    return sum(
+        1 if character in "([{" else -1
+        for character in _outside_strings(line)
+        if character in "([{)]}"
+    )
+
+
+def _ends_with_continuation(line: str) -> bool:
+    stripped = line.rstrip()
+    return stripped.endswith("\\") and not stripped.endswith("\\\\")
+
+
+def _outside_strings(line: str) -> str:
+    """Return `line` with string literals and comments removed.
+
+    Bracket counting only makes sense for real brackets, so quoted and
+    commented text is dropped before counting. Unterminated single-line quotes
+    end at the line break, matching Python's own tokenization.
+    """
+
+    kept: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if quote is not None:
+            if character == "\\":
+                index += 2
+                continue
+            if character == quote:
+                quote = None
+            index += 1
+            continue
+        if character in "\"'":
+            quote = character
+            index += 1
+            continue
+        if character == "#":
+            break
+        kept.append(character)
+        index += 1
+    return "".join(kept)
 
 
 def _collect_unresolved_names(source: str) -> set[str]:
