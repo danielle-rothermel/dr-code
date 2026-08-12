@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Final, cast
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from dr_code.generation_corpus.models import (
     DatasetName,
@@ -16,6 +15,12 @@ from dr_code.generation_corpus.models import (
     TaskRecord,
 )
 from dr_code.generation_corpus.pool_dump import canonical_json, task_record_id
+from dr_code.humaneval.sampling import (
+    DEFAULT_HUMANEVAL_DATASET_NAME,
+    DEFAULT_HUMANEVAL_DATASET_SPLIT,
+    DEFAULT_HUMANEVAL_HF_REVISION,
+    load_humaneval_snapshot_rows,
+)
 
 _TASK_ID_RE: Final = re.compile(r"^HumanEval/(?P<index>\d+)$")
 _DATA_SAMPLE_ID_RE: Final = re.compile(
@@ -23,8 +28,6 @@ _DATA_SAMPLE_ID_RE: Final = re.compile(
     r"(?:/gt_solution(?:@(?P<source_digest>[0-9a-f]{16}))?)?$"
 )
 _EXPECTED_TASK_IDS: Final = tuple(f"HumanEval/{index}" for index in range(164))
-_EXPECTED_DATASET_ID: Final = "evalplus/humanevalplus"
-_EXPECTED_REVISION: Final = "d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
 _EXPECTED_SNAPSHOT_SHA256: Final = (
     "b2daa45795b56b5e73dfc70e9993ef07c7c3bdf4b01ade42beae88387a961377"
 )
@@ -81,52 +84,23 @@ class HumanEvalTaskAdapter:
 def _load_snapshot(
     path: Path,
 ) -> tuple[dict[str, TaskRecord], dict[str, str]]:
+    _verify_snapshot_bytes(path)
     try:
-        snapshot_bytes = path.read_bytes()
-        payload: object = json.loads(snapshot_bytes)
-    except (OSError, json.JSONDecodeError) as exc:
+        rows = load_humaneval_snapshot_rows(snapshot_path=path)
+    except (OSError, ValidationError, ValueError) as exc:
         raise ValueError(f"invalid HumanEval snapshot {path}: {exc}") from exc
-    actual_sha256 = hashlib.sha256(snapshot_bytes).hexdigest()
-    if actual_sha256 != _EXPECTED_SNAPSHOT_SHA256:
-        raise ValueError(
-            "HumanEval snapshot content hash mismatch: "
-            f"expected={_EXPECTED_SNAPSHOT_SHA256}, actual={actual_sha256}"
-        )
-    if not isinstance(payload, dict):
-        raise ValueError(f"invalid HumanEval snapshot {path}: expected object")
-
-    header = payload.get("header")
-    rows = payload.get("rows")
-    if not isinstance(header, dict) or not isinstance(rows, list):
-        raise ValueError(
-            f"invalid HumanEval snapshot {path}: missing header or rows"
-        )
-    if header.get("schema_version") != 2:
-        raise ValueError(
-            f"unsupported HumanEval snapshot schema in {path}: "
-            f"{header.get('schema_version')!r}"
-        )
-    dataset_id = header.get("dataset_id")
-    revision = header.get("hf_revision")
-    if dataset_id != _EXPECTED_DATASET_ID or revision != _EXPECTED_REVISION:
-        raise ValueError(f"invalid HumanEval snapshot identity in {path}")
-    if not isinstance(dataset_id, str):
-        raise AssertionError("validated HumanEval dataset ID is not a string")
-    if not isinstance(revision, str):
-        raise AssertionError("validated HumanEval revision is not a string")
 
     records: dict[str, TaskRecord] = {}
     source_digests: dict[str, str] = {}
-    for index, raw_row in enumerate(rows):
-        if not isinstance(raw_row, dict):
-            raise ValueError(
-                f"invalid HumanEval snapshot row {index}: expected object"
-            )
-        row = _validate_task_row(cast(dict[str, object], raw_row), index=index)
-        task_id_value = row["task_id"]
-        if not isinstance(task_id_value, str):
+    for raw_row in rows:
+        row = cast(dict[str, JsonValue], dict(raw_row))
+        task_id = row["task_id"]
+        if not isinstance(task_id, str):
             raise AssertionError("validated HumanEval task ID is not a string")
-        task_id = task_id_value
+        if _TASK_ID_RE.fullmatch(task_id) is None:
+            raise ValueError(
+                f"invalid HumanEval snapshot task_id {task_id!r} in {path}"
+            )
         if task_id in records:
             raise ValueError(f"duplicate HumanEval snapshot task {task_id}")
         task_json = canonical_json(row)
@@ -138,11 +112,11 @@ def _load_snapshot(
             source_variant="humanevalplus_snapshot",
             task_id=task_id,
             language="python",
-            dataset_id=dataset_id,
-            split="test",
+            dataset_id=DEFAULT_HUMANEVAL_DATASET_NAME,
+            split=DEFAULT_HUMANEVAL_DATASET_SPLIT,
             data_sample_id=None,
             source_digest=source_digest,
-            dataset_revision=revision,
+            dataset_revision=DEFAULT_HUMANEVAL_HF_REVISION,
             evaluator_kind="humaneval_plus",
             material_fidelity=TaskMaterialFidelity.PINNED_SNAPSHOT,
             task_json=task_json,
@@ -159,6 +133,19 @@ def _load_snapshot(
             f"missing={missing!r}, unexpected={unexpected!r}"
         )
     return records, source_digests
+
+
+def _verify_snapshot_bytes(path: Path) -> None:
+    try:
+        snapshot_bytes = path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"invalid HumanEval snapshot {path}: {exc}") from exc
+    actual_sha256 = hashlib.sha256(snapshot_bytes).hexdigest()
+    if actual_sha256 != _EXPECTED_SNAPSHOT_SHA256:
+        raise ValueError(
+            "HumanEval snapshot content hash mismatch: "
+            f"expected={_EXPECTED_SNAPSHOT_SHA256}, actual={actual_sha256}"
+        )
 
 
 def _cleaned_source_digest(row: dict[str, JsonValue]) -> str:
@@ -192,41 +179,6 @@ def _cleaned_source_digest(row: dict[str, JsonValue]) -> str:
     return hashlib.sha256(
         f"gt_solution\0{cleaned_source}".encode("utf-8")
     ).hexdigest()
-
-
-def _validate_task_row(
-    row: dict[str, object], *, index: int
-) -> dict[str, JsonValue]:
-    required_strings = (
-        "task_id",
-        "prompt",
-        "canonical_solution",
-        "entry_point",
-        "test",
-    )
-    for field in required_strings:
-        value = row.get(field)
-        if not isinstance(value, str) or not value:
-            raise ValueError(
-                f"invalid HumanEval snapshot row {index}: "
-                f"{field} must be a nonempty string"
-            )
-    task_id = row["task_id"]
-    if not isinstance(task_id, str) or _TASK_ID_RE.fullmatch(task_id) is None:
-        raise ValueError(
-            f"invalid HumanEval snapshot row {index}: task_id={task_id!r}"
-        )
-    try:
-        # Round-trip through JSON to reject values outside the persisted JSON
-        # boundary and detach task material from the mutable input object.
-        normalized: object = json.loads(canonical_json(cast(JsonValue, row)))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"invalid HumanEval snapshot row {index}: {exc}"
-        ) from exc
-    if not isinstance(normalized, dict):
-        raise AssertionError("canonicalized HumanEval row is not an object")
-    return cast(dict[str, JsonValue], normalized)
 
 
 def _task_index(task_id: str) -> int:
