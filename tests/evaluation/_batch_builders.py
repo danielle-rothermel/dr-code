@@ -33,6 +33,7 @@ from dr_code.evaluation import (
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
+    RunGrade,
     SamplingPlan,
     SamplingPlanCoordinate,
     SampleEvaluationInput,
@@ -247,6 +248,7 @@ def request(
         },
         runtime=runtime(),
         cache_namespace="tests/batch",
+        run_grade=RunGrade.TRIAL,
         inputs=inputs,
         record_placement=RecordPlacement.BUNDLE_LOCAL,
         projections=tuple(

@@ -35,7 +35,7 @@ from dr_serialize import (
 from dr_store import derive_cache_key
 from pydantic import ValidationError
 
-from dr_code.evaluation.batch import CandidateJobBudget
+from dr_code.evaluation.batch import CandidateJobBudget, RunGrade
 from dr_code.evaluation.identity import EvaluationRuntimeIdentity
 from dr_code.evaluation.records import (
     CandidateExecutionOutcome,
@@ -115,13 +115,18 @@ def candidate_execution_cache_key(
     budget: CandidateJobBudget,
     cache_namespace: str,
     /,
+    *,
+    run_grade: RunGrade,
 ) -> str:
+    # Persisted key payload literals are a wire contract. Never derive them
+    # from field names, and never build this payload by iterating an enum.
     return derive_cache_key(
         cache_namespace,
         {
             "request_identity": str(
                 candidate_execution_request_identity(request)
             ),
+            "run_grade": run_grade.value,
             "wall_time_ns": budget.wall_time_ns,
             "input_bytes": budget.input_bytes,
             "payload_output_bytes": budget.payload_output_bytes,
@@ -139,6 +144,7 @@ def execute_candidate_job(
     budget: CandidateJobBudget,
     runtime: EvaluationRuntimeIdentity,
     cache_namespace: str,
+    run_grade: RunGrade,
     executor: Executor,
 ) -> CandidateExecutionRecord:
     completed = executor.run(
@@ -150,6 +156,7 @@ def execute_candidate_job(
         budget=budget,
         runtime=runtime,
         cache_namespace=cache_namespace,
+        run_grade=run_grade,
     )
 
 
@@ -161,6 +168,7 @@ def executed_candidate_record(
     budget: CandidateJobBudget,
     runtime: EvaluationRuntimeIdentity,
     cache_namespace: str,
+    run_grade: RunGrade,
 ) -> CandidateExecutionRecord:
     return CandidateExecutionRecord(
         candidate=request.candidate.identity,
@@ -171,6 +179,7 @@ def executed_candidate_record(
             request,
             budget,
             cache_namespace,
+            run_grade=run_grade,
         ),
         provenance=ExecutedCandidateProvenance(
             record_receipt=completed.record_receipt
@@ -188,6 +197,7 @@ def reused_candidate_record(
     budget: CandidateJobBudget,
     runtime: EvaluationRuntimeIdentity,
     cache_namespace: str,
+    run_grade: RunGrade,
 ) -> CandidateExecutionRecord:
     return CandidateExecutionRecord(
         candidate=request.candidate.identity,
@@ -198,6 +208,7 @@ def reused_candidate_record(
             request,
             budget,
             cache_namespace,
+            run_grade=run_grade,
         ),
         provenance=ReusedCandidateProvenance(source_record=source_record),
         outcome=outcome,

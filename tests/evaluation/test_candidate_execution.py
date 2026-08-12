@@ -27,6 +27,7 @@ from dr_exec import (
     SpawnAbsentOutcome,
 )
 from dr_serialize import build_identity_document
+from dr_store import derive_cache_key
 
 from _executor_stubs import completed_execution
 from dr_code.evaluation import (
@@ -41,10 +42,13 @@ from dr_code.evaluation import (
     FailureClass,
     HarnessExecutionFailure,
     ReusedCandidateProvenance,
+    RunGrade,
     failure_class_of,
 )
 from dr_code.evaluation.execution import (
     build_candidate_execution_job,
+    candidate_execution_cache_key,
+    candidate_execution_request_identity,
     executed_candidate_record,
     interpret_candidate_execution,
     reused_candidate_record,
@@ -228,6 +232,7 @@ def test_real_receipt_reference_is_preserved(receipt_kind: str) -> None:
         budget=candidate_job_budget(),
         runtime=_runtime(),
         cache_namespace="tests/execution",
+        run_grade=RunGrade.TRIAL,
     )
 
     assert isinstance(record.provenance, ExecutedCandidateProvenance)
@@ -248,6 +253,7 @@ def test_fake_receipt_has_no_run_record_reference() -> None:
         budget=candidate_job_budget(),
         runtime=_runtime(),
         cache_namespace="tests/execution",
+        run_grade=RunGrade.TRIAL,
     )
     assert isinstance(record.provenance, ExecutedCandidateProvenance)
     assert not hasattr(record.provenance.record_receipt, "reference")
@@ -263,6 +269,7 @@ def test_reused_record_points_to_source_and_claims_no_receipt() -> None:
         budget=candidate_job_budget(),
         runtime=_runtime(),
         cache_namespace="tests/execution",
+        run_grade=RunGrade.TRIAL,
     )
     source = _source_record()
     reused = reused_candidate_record(
@@ -272,6 +279,7 @@ def test_reused_record_points_to_source_and_claims_no_receipt() -> None:
         budget=candidate_job_budget(),
         runtime=_runtime(),
         cache_namespace="tests/execution",
+        run_grade=RunGrade.TRIAL,
     )
 
     assert isinstance(reused.provenance, ReusedCandidateProvenance)
@@ -371,3 +379,59 @@ def test_executor_execution_failure_attributes_infrastructure() -> None:
     )
     assert isinstance(interpreted, ExecutorExecutionFailure)
     assert failure_class_of(interpreted) is FailureClass.INFRASTRUCTURE
+
+
+# Literal payload keys pin the persisted cache key; deriving them from field
+# names would hide silent drift of stored identity.
+_GOLDEN_CACHE_KEY_PAYLOAD_KEYS = [
+    "request_identity",
+    "run_grade",
+    "wall_time_ns",
+    "input_bytes",
+    "payload_output_bytes",
+    "stdout_head_bytes",
+    "stderr_head_bytes",
+]
+
+
+def test_run_grade_literals_are_pinned() -> None:
+    assert RunGrade.TRIAL.value == "trial"
+    assert RunGrade.SELECTION.value == "selection"
+    assert len(RunGrade) == 2
+
+
+def test_cache_key_hashes_the_golden_payload_including_grade() -> None:
+    request = candidate_job_request(
+        "def observed_load_count(_x):\n    return 1\n"
+    )
+    budget = candidate_job_budget()
+    payload = {
+        "request_identity": str(candidate_execution_request_identity(request)),
+        "run_grade": "selection",
+        "wall_time_ns": budget.wall_time_ns,
+        "input_bytes": budget.input_bytes,
+        "payload_output_bytes": budget.payload_output_bytes,
+        "stdout_head_bytes": budget.stdout_head_bytes,
+        "stderr_head_bytes": budget.stderr_head_bytes,
+    }
+    assert list(payload) == _GOLDEN_CACHE_KEY_PAYLOAD_KEYS
+    assert candidate_execution_cache_key(
+        request,
+        budget,
+        "tests/execution",
+        run_grade=RunGrade.SELECTION,
+    ) == derive_cache_key("tests/execution", payload)
+
+
+def test_trial_and_selection_grades_never_share_a_cache_key() -> None:
+    request = candidate_job_request(
+        "def observed_load_count(_x):\n    return 1\n"
+    )
+    budget = candidate_job_budget()
+    trial = candidate_execution_cache_key(
+        request, budget, "tests/execution", run_grade=RunGrade.TRIAL
+    )
+    selection = candidate_execution_cache_key(
+        request, budget, "tests/execution", run_grade=RunGrade.SELECTION
+    )
+    assert trial != selection

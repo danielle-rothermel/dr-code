@@ -14,6 +14,7 @@ from dr_code.evaluation import (
     EvaluationRuntimeIdentity,
     EvaluationSampleIdentity,
     MaterializedEvaluationCandidate,
+    RunGrade,
 )
 from dr_code.evaluation.execution import execute_candidate_job
 from dr_code.humaneval.job import (
@@ -187,6 +188,7 @@ def test_real_importable_json_candidate_job(
             )
         ),
         cache_namespace="tests/candidate-job",
+        run_grade=RunGrade.TRIAL,
         executor=local_executor,
     )
 
@@ -210,6 +212,7 @@ def test_candidate_nonzero_exit_remains_candidate_owned(
             )
         ),
         cache_namespace="tests/candidate-job",
+        run_grade=RunGrade.TRIAL,
         executor=local_executor,
     )
 

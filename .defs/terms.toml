@@ -197,6 +197,16 @@ exported_symbols = [
 categories = ["evaluation publication"]
 
 [[terms]]
+name = "run grade"
+definition = """
+The declared standing of an evaluation run's outcomes: a trial run explores,
+a selection run decides. It is a required part of every evaluation batch
+request and joins the candidate execution cache key."""
+exported_symbols = ["dr_code.evaluation.RunGrade"]
+categories = ["evaluation execution", "evaluation caching"]
+part_of = ["evaluation batch"]
+
+[[terms]]
 name = "failure class"
 definition = """
 The named party that owns a candidate execution failure: the harness, the

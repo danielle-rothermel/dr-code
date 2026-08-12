@@ -22,6 +22,12 @@
   candidate execution outcome by `failure_class_of`. The exception-type string
   stays in `HarnessFailureCause.exception_type` rather than standing in for the
   class.
+- `EvaluationBatchRequest.run_grade` declares the run's standing as `trial` or
+  `selection` and joins `candidate_execution_cache_key`, so a trial outcome and
+  a selection-grade outcome for identical source never collide. The field is
+  required with no default, and `evaluate_batch`, `evaluate_durable_partition`,
+  and `preflight_replay` thread it through. The task-difficulty workflow runs
+  at `selection` grade.
 - Persisted evaluation identity churns once for this wave. The evaluation
   attempt record schema version is now 3, the sample evaluation record and
   candidate execution record schema versions are now 2, and the evaluation

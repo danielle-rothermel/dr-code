@@ -61,6 +61,7 @@ from dr_code.evaluation import (
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
+    RunGrade,
     SamplingPlan,
     SamplingPlanCoordinate,
     StoredRecordReference,
@@ -480,6 +481,7 @@ def build_task_difficulty_batch_request(
         plan=plan,
         runtime=runtime,
         cache_namespace=_WORKFLOW_CACHE_NAMESPACE,
+        run_grade=RunGrade.SELECTION,
         inputs=tuple(inputs),
         record_placement=RecordPlacement.OBJECT_STORE,
         projections=(ProjectionRequest(kind=ProjectionKind.METRIC_RECORDS),),
@@ -532,6 +534,7 @@ def build_preflight_batch_request_for_task(
         plan=plan,
         runtime=runtime,
         cache_namespace=_WORKFLOW_CACHE_NAMESPACE,
+        run_grade=RunGrade.SELECTION,
         inputs=(
             FrozenCandidateEvaluationInput(
                 slot=EvaluationSlotIdentity(
