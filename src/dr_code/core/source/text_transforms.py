@@ -293,10 +293,11 @@ def drop_if_name(text: str) -> list[str]:
     """Lossily split on module-level ``__name__ == "__main__"`` guards."""
 
     lines = text.split(LINE_SEP)
+    guard_linenos = _module_level_name_guard_linenos(text)
     split_lines = [
         line
         for lineno, line in enumerate(lines, start=1)
-        if lineno in _module_level_name_guard_linenos(text)
+        if lineno in guard_linenos
     ]
     if not split_lines:
         return [text]
