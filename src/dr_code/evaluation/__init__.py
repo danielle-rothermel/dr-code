@@ -146,6 +146,13 @@ if TYPE_CHECKING:
         failure_class_of,
         outcome_is_cacheable,
     )
+    from dr_code.evaluation.flows import (
+        AttemptVerdict,
+        PreprocessingValidation,
+        TestingValidation,
+        validate_preprocessing,
+        validate_testing,
+    )
     from dr_code.evaluation.replay import (
         ReplayPreflight,
         ReplayReady,
@@ -231,6 +238,16 @@ _COMPARISON_EXPORTS = frozenset(
     }
 )
 
+_FLOW_EXPORTS = frozenset(
+    {
+        "AttemptVerdict",
+        "PreprocessingValidation",
+        "TestingValidation",
+        "validate_preprocessing",
+        "validate_testing",
+    }
+)
+
 _REPLAY_EXPORTS = frozenset(
     {
         "ReplayPreflight",
@@ -259,6 +276,10 @@ def __getattr__(name: str) -> object:
         from dr_code.evaluation import comparison
 
         value = getattr(comparison, name)
+    elif name in _FLOW_EXPORTS:
+        from dr_code.evaluation import flows
+
+        value = getattr(flows, name)
     elif name in _REPLAY_EXPORTS:
         from dr_code.evaluation import replay
 
@@ -276,6 +297,7 @@ def __dir__() -> list[str]:
         | _BUNDLE_EXPORTS
         | _EVIDENCE_EXPORTS
         | _COMPARISON_EXPORTS
+        | _FLOW_EXPORTS
         | _REPLAY_EXPORTS
     )
 
@@ -298,6 +320,7 @@ __all__ = [
     "AttemptLimitExhaustion",
     "AttemptLimitKind",
     "AttemptValidity",
+    "AttemptVerdict",
     "BundleRecordReference",
     "CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION",
     "CANDIDATE_PAYLOAD_OUTPUT_BYTES",
@@ -352,6 +375,7 @@ __all__ = [
     "NoCandidatesSampleRecord",
     "NotApplicablePolicy",
     "PreprocessingAbsentSampleRecord",
+    "PreprocessingValidation",
     "ProjectionKind",
     "ProjectionArtifactHeader",
     "ProjectionComparison",
@@ -383,6 +407,7 @@ __all__ = [
     "SyntheticSampleProvenance",
     "TaskSet",
     "TaskSetCoordinate",
+    "TestingValidation",
     "WindowLimits",
     "aggregate",
     "derive_work_key",
@@ -396,6 +421,8 @@ __all__ = [
     "preflight_replay",
     "replay_evaluation_attempt",
     "restore_evaluation_attempt",
+    "validate_preprocessing",
+    "validate_testing",
     "RestoredEvaluationAttempt",
     "EVALUATION_BUNDLE_FORMAT",
     "EVALUATION_BUNDLE_SCHEMA_VERSION",
