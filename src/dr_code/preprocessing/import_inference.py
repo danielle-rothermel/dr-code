@@ -191,18 +191,23 @@ def _continuation_limit(lines: list[str], start: int) -> int:
     depth = 0
     index = start
     while index < len(lines):
-        line = lines[index]
-        depth = max(depth + _bracket_delta(line), 0)
+        # Strings and comments cannot open brackets or continue a logical
+        # line; a trailing backslash inside a comment is comment text.
+        code = _outside_strings(lines[index])
+        depth = max(depth + _bracket_delta(code), 0)
         index += 1
-        if depth == 0 and not _ends_with_continuation(line):
+        if depth == 0 and not _ends_with_continuation(code):
             break
     return index
 
 
-def _bracket_delta(line: str) -> int:
+def _bracket_delta(code: str) -> int:
+    """Count bracket depth change in code already stripped by
+    `_outside_strings`."""
+
     return sum(
         1 if character in "([{" else -1
-        for character in _outside_strings(line)
+        for character in code
         if character in "([{)]}"
     )
 

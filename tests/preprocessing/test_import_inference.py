@@ -286,6 +286,28 @@ def test_brackets_inside_strings_and_comments_do_not_extend_the_scan() -> None:
     assert _continuation_limit(lines, 0) == 1
 
 
+def test_a_backslash_inside_a_comment_does_not_extend_the_scan() -> None:
+    # The tokenizer ignores a backslash that is comment text; treating it as
+    # a continuation would re-open the scan-to-EOF quadratic on inputs made
+    # entirely of such lines.
+    lines = (
+        "from collections import  # \\\n"
+        "from itertools import  # \\\n"
+        "def f():\n"
+        "    return 1\n"
+    ).splitlines()
+
+    assert _continuation_limit(lines, 0) == 1
+
+
+def test_a_backslash_inside_a_string_does_not_extend_the_scan() -> None:
+    lines = (
+        'from collections import  # noqa\nvalue = "\\\\"\ndef f():\n'
+    ).splitlines()
+
+    assert _continuation_limit(lines, 1) == 2
+
+
 def test_repairing_many_broken_imports_scans_a_bounded_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
