@@ -146,8 +146,8 @@ explains the modes in full.
   It makes no containment claim, which is fine because nothing here is
   untrusted. Workers return only the candidate sources stage 1 consumes: the
   parent decodes and validates every returned byte single-threaded, so
-  returning whole traces would cost about a hundred times the payload and cap
-  throughput at the parent's parse rate regardless of worker count. Each item
+  returning whole traces would cost about a hundred times the payload no matter
+  how many workers run. Each item
   carries a wall-time watchdog set far above any healthy output's cost, so a
   worker that wedges on one pathological input is killed and respawned
   instead of stalling the run; the wedged item is one item's failure, logged

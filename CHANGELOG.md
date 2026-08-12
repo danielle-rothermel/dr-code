@@ -109,6 +109,30 @@
 
 ### 2026-08-12
 
+- `validate_preprocessing` and `validate_testing` are dr-code's standalone
+  validation flows. Both run one caller-supplied request through
+  `evaluate_batch` and report the attempt's own completeness, validity, and
+  limit exhaustion; `validate_preprocessing` additionally runs the request's
+  corpus through `candidate_sources_batch` under the definition being validated
+  and reports how many texts keep candidates. Supplying a reference attempt and
+  an evidence resolver returns the `compare_evaluation_attempts` result as
+  well. They compose the existing pooled machinery and add no execution
+  machinery or verdict vocabulary.
+- The wheel declares four verbs in `[project.scripts]`:
+  `dr-code-validate-preprocessing` and `dr-code-validate-testing` wrap the
+  validation flows, and `dr-code-synthetic` and `dr-code-humaneval-schema`
+  declare the packaged CLIs that already existed. The task-difficulty stages,
+  `run_baseline.sh`, and the other repository scripts stay outside the wheel
+  and run from a checkout.
+- The evaluation grain is stated as a contract: one generation is one platform
+  stage attempt, `evaluate_durable_partition` is the serial attempt-body entry
+  point, `evaluate_batch` is the standalone pooled leg the validation flows use,
+  and dr-code contains no durable orchestration.
+- Legacy HumanEval snapshot parsing runs through
+  `load_humaneval_snapshot_rows`, the one loader for the pinned schema-version-2
+  snapshot. The corpus task adapter keeps what is its own: the whole-file
+  sha256 pin verified before parsing, legacy identity resolution,
+  source-digest computation and matching, and `TaskRecord` mapping.
 - The execution cache holds only candidate-owned outcomes. A completed job and
   a candidate-owned termination are written and later reused; a harness failure
   and an infrastructure failure are never written, so an identical later

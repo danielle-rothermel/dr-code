@@ -170,6 +170,21 @@ exported_symbols = [
 categories = ["evaluation analysis"]
 
 [[terms]]
+name = "standalone validation flow"
+definition = """
+A dr-code-owned run that validates a preprocessing or testing change on its own,
+over the pooled legs and the attempt's own verdicts, optionally comparing the
+resulting attempt against a reference attempt. It reaches no durable
+orchestration and emits no experiment or protocol accounting."""
+exported_symbols = [
+  "dr_code.evaluation.validate_preprocessing",
+  "dr_code.evaluation.validate_testing",
+  "dr_code.evaluation.AttemptVerdict",
+]
+categories = ["evaluation execution", "evaluation analysis"]
+part_of = ["evaluation batch"]
+
+[[terms]]
 name = "evaluation batch"
 definition = """
 A finite reusable operation that evaluates ordered membership through

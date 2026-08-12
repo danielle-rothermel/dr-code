@@ -122,10 +122,10 @@ await preprocess_batch(
 
 A caller that wants candidate sources rather than whole traces uses
 `candidate_sources_batch`, which runs an entry point returning the sources
-alone. Result size is the term that decides worker-pool throughput: the caller
+alone. Result size is the term that decides what the pool costs: the caller
 decodes and validates every byte a worker returns, single-threaded, so a whole
 serialized trace costs about a hundred times the payload of the sources it
-carries and no number of workers recovers it.
+carries and no number of workers recovers that difference.
 
 ```python
 from dr_code.caching import candidate_sources_batch

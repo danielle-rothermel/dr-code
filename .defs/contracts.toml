@@ -212,11 +212,11 @@ rationale = """
 Preprocessing is trusted, CPU-bound, milliseconds-per-item work, so it needs
 real cores without paying interpreter startup per item, and it makes no
 containment claim. Streaming results to an observer keeps corpus-scale batches
-from retaining every result. Result size is the throughput term that matters:
-the caller decodes and validates every byte a worker returns, single-threaded,
-so returning a whole serialized trace where only its sources are wanted costs
-about two orders of magnitude in payload and collapses pool throughput to the
-caller's parse rate no matter how many workers run. The wall-time budget is a
+from retaining every result. Result size is the term that matters: the caller
+decodes and validates every byte a worker returns, single-threaded, so
+returning a whole serialized trace where only its sources are wanted costs
+about two orders of magnitude in payload, and no number of workers recovers
+that difference. The wall-time budget is a
 liveness guard, not a performance bound: trusted milliseconds-per-item work has
 no principled runtime ceiling, so the library declares none and each workflow
 sets a value far above any healthy input's cost, where a wedged worker would
@@ -578,6 +578,26 @@ owners preserves reusable evaluation semantics and prevents another experiment
 framework."""
 date = "2026-08-09"
 check = "uv run pytest tests/core/test_package_layout.py"
+
+[[contracts]]
+title = "One generation is one evaluation attempt"
+statement = """
+The evaluation grain is one generation per platform stage attempt.
+`evaluate_durable_partition` is the attempt-body entry point: it evaluates that
+attempt's candidates serially, constructing no pool and holding no scheduler
+state inside the attempt. `evaluate_batch` is the standalone pooled leg, which
+dr-code's own validation flows use and which bounds its concurrency through
+dr-exec's pool resolver. dr-code contains no durable orchestration: the stage
+body, the queue registration, and the generation-to-attempt binding belong to
+the application that owns the durable workflow."""
+rationale = """
+A pool inside a durable attempt would spawn workers per attempt and hold
+non-durable pool state inside a durable workflow, while the parallelism budget
+already lives in the application's queue concurrency across attempts. Naming
+which leg each caller binds keeps the two entry points from drifting into one
+configurable path with a scheduler inside it."""
+date = "2026-08-12"
+check = "uv run pytest tests/evaluation/test_durable_partition.py tests/evaluation/test_flows.py"
 
 [[contracts]]
 title = "Generation corpus evidence keeps its natural grain"
