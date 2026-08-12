@@ -454,6 +454,57 @@ def test_batch_request_preserves_slot_order_and_limits() -> None:
     assert request.attempt_limits.max_materialized_candidates == 2
 
 
+def test_batch_request_admits_a_ragged_per_task_sample() -> None:
+    """Per-group task subsetting gives tasks unequal generation counts."""
+
+    selected = pl.DataFrame(
+        [
+            {
+                "sample_id": sample_id,
+                "task_id": task_id,
+                "generation_mode": "direct",
+                "budget_mode": "no_budget",
+                "model_key": model_key,
+                "decoder_output": "def f():\n    return 1\n",
+                "code_candidates": ["def f():\n    return 1\n"],
+                "candidate_count": 1,
+            }
+            for sample_id, task_id, model_key in (
+                ("a", "HumanEval/0", "model-a"),
+                ("b", "HumanEval/0", "model-b"),
+                ("c", "HumanEval/1", "model-a"),
+            )
+        ]
+    )
+    runtime = _BATCH.runtime_identity_from_executor(importable_json_executor())
+    attempt = _BATCH.attempt_identity("ragged-fingerprint")
+
+    request = _BATCH.build_task_difficulty_batch_request(
+        selected,
+        snapshot_path=_SETTINGS.HUMANEVAL_SNAPSHOT,
+        manifest_sha256="a" * 64,
+        settings=_evaluation_settings(worker_count=2),
+        runtime=runtime,
+        attempt=attempt,
+    )
+
+    # The widest task sets the declared slot width; narrower tasks fill fewer.
+    assert request.plan.repeat_plan.repeats == 2
+    assert len(request.inputs) == 3
+    slots = [
+        (
+            evaluation_input.slot.task_id,
+            evaluation_input.slot.repeat_index,
+        )
+        for evaluation_input in request.inputs
+    ]
+    assert slots == [
+        ("HumanEval/0", 0),
+        ("HumanEval/0", 1),
+        ("HumanEval/1", 0),
+    ]
+
+
 def test_settings_fingerprint_changes_with_workers(
     tmp_path: Path,
 ) -> None:

@@ -221,33 +221,25 @@ def load_humaneval_tasks(
 
 
 def _samples_per_task(selected: pl.DataFrame) -> int:
-    counts = selected.group_by("task_id").len().get_column("len")
-    unique = counts.unique().to_list()
-    if len(unique) != 1:
-        raise ValueError(
-            "selected sample must contain the same number of generations "
-            f"for every task; observed counts {sorted(unique)}"
-        )
-    return int(unique[0])
+    """Return the repeat-slot width the selected sample needs per task.
+
+    Tasks appear in however many setting groups retained them, so the sample
+    is ragged. The plan declares the widest task's slot count and each task
+    fills the leading slots it actually has.
+    """
+
+    counts = selected.group_by("task_id").len().get_column("len").to_list()
+    return max(int(count) for count in counts)
 
 
 def _ordered_rows(selected: pl.DataFrame) -> list[dict[str, object]]:
     task_ids = selected.get_column("task_id").unique().sort().to_list()
-    repeats = _samples_per_task(selected)
-    rows_by_task: dict[str, list[dict[str, object]]] = {}
+    ordered: list[dict[str, object]] = []
     for task_id in task_ids:
         task_rows = selected.filter(pl.col("task_id") == task_id).sort(
             list(_CELL_SORT_COLUMNS)
         )
-        if task_rows.height != repeats:
-            raise ValueError(
-                f"task {task_id!r} has {task_rows.height} rows, expected "
-                f"{repeats}"
-            )
-        rows_by_task[task_id] = list(task_rows.iter_rows(named=True))
-    ordered: list[dict[str, object]] = []
-    for task_id in task_ids:
-        ordered.extend(rows_by_task[task_id])
+        ordered.extend(task_rows.iter_rows(named=True))
     return ordered
 
 
