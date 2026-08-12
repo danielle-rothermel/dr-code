@@ -1,0 +1,34 @@
+{
+  "evaluation": {
+    "complete_generations": 800,
+    "generation_count": 800,
+    "mean_task_success_rate": 0.8041313662479306,
+    "observed_extremes": {
+      "all_failed": 6,
+      "all_passed": 85,
+      "mixed": 72
+    },
+    "passed_generations": 643,
+    "task_count": 163
+  },
+  "exported_at": "2026-08-12T04:52:17.110363+00:00",
+  "preprocessing": {
+    "eligible_rate": 0.9884123948536677,
+    "eligible_rows": 201050,
+    "nonblank_rows": 203407,
+    "task_count": 163
+  },
+  "sampling": {
+    "distinct_tasks": 163,
+    "eligible_tasks": 3165,
+    "populated_groups": 20,
+    "selected_generations": 800,
+    "tasks_per_group": 40
+  },
+  "stages_completed": [
+    "preprocess",
+    "sample",
+    "evaluate",
+    "summarize"
+  ]
+}
