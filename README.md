@@ -348,6 +348,17 @@ projection definitions are explicit `(kind, left_version, right_version)`
 tuples and yield either denominated comparable results or a typed
 `ProjectionNotComparable` result.
 
+`validate_preprocessing` and `validate_testing` are the standalone validation
+flows over that machinery. Both run one caller-supplied request through
+`evaluate_batch` and report the attempt's own completeness, validity, and limit
+exhaustion; `validate_preprocessing` first runs the request's corpus through
+`candidate_sources_batch` under the definition being validated and reports how
+many texts keep candidates. A reference attempt plus an evidence resolver turns
+either flow structural, returning the `compare_evaluation_attempts` result.
+The `dr-code-validate-preprocessing` and `dr-code-validate-testing` verbs wrap
+those calls: they read one request document, run the flow against a
+caller-named run root and Python runtime, and print the verdict.
+
 ### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
 
 HumanEval owns the benchmark-specific task, evaluator job, and scoring policy.

@@ -4,6 +4,12 @@ This workflow estimates which HumanEval tasks appear consistently easy or
 hard in the historical generation corpus without evaluating every generation.
 Run the numbered scripts in order.
 
+These stages and [`run_baseline.sh`](run_baseline.sh) are repository
+apparatus: they run from a checkout with `uv run` and are not packaged in the
+wheel. The wheel's declared verbs are `dr-code-validate-preprocessing`,
+`dr-code-validate-testing`, `dr-code-synthetic`, and
+`dr-code-humaneval-schema`.
+
 ## Corpus input
 
 Stage 1 reads a validated **generation corpus bundle** produced by
