@@ -172,17 +172,24 @@ statement = """
 Every candidate execution job declares finite wall-clock, input, and
 payload-output budgets and a fixed environment grant, and production executor
 construction requires an explicit Python executable. Trusted non-candidate
-jobs may run unbudgeted. Exited, signaled, wall-time, and
-payload-output outcomes have fixed mappings; payload-owned protocol failures
-map to candidate-attributable kills; every other outcome fails closed as an
-executor failure. Candidate execution records preserve this closed
-interpretation."""
+jobs may run unbudgeted. The library supplies the output-retention half of
+that budget: 512 MiB per stream head and a 1 GiB payload-output bound, with
+the two heads always summing to the payload-output bound. Wall time and input
+bytes carry no default and every caller names them. Overflow keeps failing the
+job, which yields a retained typed outcome rather than voided evidence.
+Exited, signaled, wall-time, and payload-output outcomes have fixed mappings;
+payload-owned protocol failures map to candidate-attributable kills; every
+other outcome fails closed as an executor failure. Candidate execution records
+preserve this closed interpretation."""
 rationale = """
 Evaluating model-produced source remains an adversarial boundary. Under
 dr-exec the subprocess retains the invoking worker's permissions and worker
 isolation is the deployment boundary, so bounded budgets and one closed
 mapping are what keep candidate execution records separate from broken
-infrastructure."""
+infrastructure. Retention defaults live in the library because a failing
+candidate's evidence is what later reflection reads, and it should survive by
+default rather than because one script happened to name a bound; wall time and
+input size stay explicit because only the caller knows its workload."""
 date = "2026-08-09"
 check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
 

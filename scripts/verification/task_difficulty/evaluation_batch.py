@@ -40,6 +40,8 @@ from dr_code.evaluation import (
     AggregationStatistic,
     AttemptCompleteness,
     AttemptLimits,
+    CANDIDATE_PAYLOAD_OUTPUT_BYTES,
+    CANDIDATE_STREAM_HEAD_BYTES,
     CandidateJobBudget,
     CorpusSampleProvenance,
     DatasetCoordinate,
@@ -121,7 +123,6 @@ _EXECUTION_ENVIRONMENT: Final[dict[str, str]] = {
 _PROBE_TIMEOUT_SECONDS: Final = 10.0
 _NANOSECONDS_PER_SECOND: Final = 1_000_000_000
 _MAX_INPUT_BYTES: Final = 2_097_152
-_MAX_STREAM_BYTES: Final = 536_870_912
 _RUNTIME_PROBE_SOURCE: Final = """\
 import json
 import platform
@@ -169,9 +170,6 @@ def candidate_job_budget(timeout_seconds: float) -> CandidateJobBudget:
     return CandidateJobBudget(
         wall_time_ns=math.ceil(timeout_nanoseconds),
         input_bytes=_MAX_INPUT_BYTES,
-        payload_output_bytes=2 * _MAX_STREAM_BYTES,
-        stdout_head_bytes=_MAX_STREAM_BYTES,
-        stderr_head_bytes=_MAX_STREAM_BYTES,
     )
 
 
@@ -811,15 +809,15 @@ def _build_python_execution_job(
             ),
             input_bytes=FiniteByteLimit(max_bytes=_MAX_INPUT_BYTES),
             payload_output=FiniteOutput(
-                max_bytes=2 * _MAX_STREAM_BYTES,
+                max_bytes=CANDIDATE_PAYLOAD_OUTPUT_BYTES,
                 overflow_policy=OutputOverflowPolicy.FAIL,
                 retention=PayloadRetentionBudget(
                     stdout=StreamRetentionBudget(
-                        head_bytes=_MAX_STREAM_BYTES,
+                        head_bytes=CANDIDATE_STREAM_HEAD_BYTES,
                         tail_bytes=0,
                     ),
                     stderr=StreamRetentionBudget(
-                        head_bytes=_MAX_STREAM_BYTES,
+                        head_bytes=CANDIDATE_STREAM_HEAD_BYTES,
                         tail_bytes=0,
                     ),
                 ),

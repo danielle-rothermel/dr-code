@@ -16,6 +16,8 @@ from dr_code.evaluation.aggregation import (
 )
 from dr_code.evaluation.batch import (
     AttemptLimits,
+    CANDIDATE_PAYLOAD_OUTPUT_BYTES,
+    CANDIDATE_STREAM_HEAD_BYTES,
     CandidateJobBudget,
     EvaluationBatchRequest,
     EvaluationBatchResult,
@@ -272,6 +274,8 @@ __all__ = [
     "AttemptValidity",
     "BundleRecordReference",
     "CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION",
+    "CANDIDATE_PAYLOAD_OUTPUT_BYTES",
+    "CANDIDATE_STREAM_HEAD_BYTES",
     "CandidateExecutionOutcome",
     "CandidateExecutionProvenance",
     "CandidateExecutionRecord",

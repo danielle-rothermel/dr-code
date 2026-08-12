@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from enum import StrEnum, UNIQUE, verify
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Annotated, Literal, Self, TypeAlias
+from typing import TYPE_CHECKING, Annotated, Final, Literal, Self, TypeAlias
 
 from dr_exec import ExecutionPoolConfig, Executor
 from dr_store import ArtifactBundlePublication, ObjectStore
@@ -53,12 +53,21 @@ class ShardLimits(FrozenModel):
     max_uncompressed_bytes: PositiveInt
 
 
+CANDIDATE_STREAM_HEAD_BYTES: Final = 536_870_912
+CANDIDATE_PAYLOAD_OUTPUT_BYTES: Final = 2 * CANDIDATE_STREAM_HEAD_BYTES
+
+
 class CandidateJobBudget(FrozenModel):
+    # Wall time and input bytes stay required: their right value is the
+    # caller's workload, and a silent default would hide a wedged candidate.
     wall_time_ns: PositiveInt
     input_bytes: PositiveInt
-    payload_output_bytes: PositiveInt
-    stdout_head_bytes: PositiveInt
-    stderr_head_bytes: PositiveInt
+    # Retention defaults keep a failing candidate's evidence readable rather
+    # than clipped, so reading the failure never depends on the caller's
+    # having named a bound.
+    payload_output_bytes: PositiveInt = CANDIDATE_PAYLOAD_OUTPUT_BYTES
+    stdout_head_bytes: PositiveInt = CANDIDATE_STREAM_HEAD_BYTES
+    stderr_head_bytes: PositiveInt = CANDIDATE_STREAM_HEAD_BYTES
 
     @model_validator(mode="after")
     def validate_output_retention(self) -> Self:

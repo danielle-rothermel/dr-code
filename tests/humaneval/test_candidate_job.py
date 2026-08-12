@@ -19,6 +19,8 @@ from dr_code.evaluation import (
 from dr_code.evaluation.execution import execute_candidate_job
 from dr_code.humaneval.job import (
     CandidateNamespaceFailure,
+    DEFAULT_FIELD_LIMIT,
+    FIELD_TRUNCATION_MARKER,
     HumanEvalCandidateJobRequest,
     HumanEvalCandidateJobResult,
     HumanEvalEvaluatorSuite,
@@ -218,3 +220,60 @@ def test_candidate_nonzero_exit_remains_candidate_owned(
 
     assert isinstance(record.outcome, CandidateJobTerminated)
     assert record.outcome.reason is CandidateTerminationReason.NONZERO_EXIT
+
+
+def _long_message_request(
+    field_limit: int | None = None,
+) -> HumanEvalCandidateJobRequest:
+    source = (
+        "def observed_load_count(x):\n    raise RuntimeError('E' * 100_000)\n"
+    )
+    fields: dict[str, object] = {
+        "candidate": _candidate(source),
+        "suites": (_suite("candidate"),),
+    }
+    if field_limit is not None:
+        fields["field_limit"] = field_limit
+    return HumanEvalCandidateJobRequest(**fields)  # type: ignore[arg-type]
+
+
+def _first_case_message(result: HumanEvalCandidateJobResult) -> str:
+    suite = result.suites[0]
+    assert isinstance(suite, HumanEvalSuiteCompleted)
+    return suite.groups[0].cases[0].message
+
+
+def test_default_field_limit_clips_evidence_with_the_pinned_marker() -> None:
+    raw = evaluate_humaneval_candidate_job(
+        _long_message_request().model_dump(
+            mode="json", exclude_computed_fields=True
+        )
+    )
+    result = HumanEvalCandidateJobResult.model_validate(raw)
+
+    message = _first_case_message(result)
+
+    assert message.endswith(FIELD_TRUNCATION_MARKER)
+    assert len(message) == DEFAULT_FIELD_LIMIT + len(FIELD_TRUNCATION_MARKER)
+
+
+def test_field_limit_knob_overrides_the_default_clip_length() -> None:
+    raw = evaluate_humaneval_candidate_job(
+        _long_message_request(field_limit=64).model_dump(
+            mode="json", exclude_computed_fields=True
+        )
+    )
+    result = HumanEvalCandidateJobResult.model_validate(raw)
+
+    message = _first_case_message(result)
+
+    assert message.endswith(FIELD_TRUNCATION_MARKER)
+    assert len(message) == 64 + len(FIELD_TRUNCATION_MARKER)
+
+
+def test_field_limit_defaults_to_the_raised_library_value() -> None:
+    assert DEFAULT_FIELD_LIMIT == 32_000
+    assert (
+        HumanEvalCandidateJobRequest.model_fields["field_limit"].default
+        == DEFAULT_FIELD_LIMIT
+    )
