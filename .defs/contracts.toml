@@ -177,7 +177,8 @@ that budget: 512 MiB per stream head and a 1 GiB payload-output bound, with
 the two heads always summing to the payload-output bound. Wall time and input
 bytes carry no default and every caller names them. Overflow keeps failing the
 job, which yields a retained typed outcome rather than voided evidence.
-Exited, signaled, wall-time, and payload-output outcomes have fixed mappings;
+Exited, signaled, and payload-output outcomes have fixed mappings when
+attributed to the payload; wall-time budget exhaustion is infrastructure-owned;
 payload-owned protocol failures map to candidate-attributable kills; every
 other outcome fails closed as an executor failure. Candidate execution records
 preserve this closed interpretation."""
@@ -306,15 +307,18 @@ for that request's generations so every candidate re-executes and the fresh
 outcome is the one recorded and offered to persistence. Persisted bindings are
 append-only and first-writer-wins, so fresh bypasses lookup without replacing
 an entry already stored under the same key, and a later non-fresh request for
-that key reads the original binding. dr-code decides cacheability and provides
-the fresh switch; it never re-attempts a request on its own."""
+that key reads the original binding unless the caller evicts it first through
+``WindowedExecutionCache.evict``, which removes persisted bindings via
+``evict_bindings`` and clears resident state. dr-code decides cacheability and
+provides the fresh switch and eviction entry point; it never re-attempts a
+request on its own."""
 rationale = """
 Caching a run-owned failure replays an environment fault to every later reader
 as though the candidate had produced it, which is the one thing attribution
 exists to prevent, and a caller who wants a deliberate re-run needs a way to
 say so that does not depend on guessing key structure."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_cache_policy.py"
+check = "uv run pytest tests/evaluation/test_cache_policy.py tests/caching/test_execution_cache.py"
 
 [[contracts]]
 title = "Failure attribution is a named three-way class"
@@ -653,4 +657,4 @@ collision refusal are properties of the database rather than of the call shape,
 so they are pinned against a real PostgreSQL-backed store in addition to the
 fake that covers the call seam."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py && ../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m postgres tests/evaluation/test_evidence_postgres.py"
+check = "uv run pytest tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py && DR_STORE_ROOT=\"${DR_STORE_ROOT:?set DR_STORE_ROOT to a dr-store checkout}\" scripts/run_postgres_tests.sh"

@@ -4,10 +4,16 @@ import asyncio
 import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, Protocol, runtime_checkable
 
 from dr_serialize import canonical_json_bytes, identity_document_hash
-from dr_store import CacheEntry, CacheHit, ObjectReference, derive_cache_key
+from dr_store import (
+    CacheEntry,
+    CacheHit,
+    EvictStatus,
+    ObjectReference,
+    derive_cache_key,
+)
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.identity import EvaluationRuntimeIdentity
@@ -36,6 +42,16 @@ class BatchRecordStore(Protocol):
         self,
         entries: Mapping[str, CacheEntry],
     ) -> dict[str, ObjectReference]: ...
+
+
+@runtime_checkable
+class EvictableBatchRecordStore(BatchRecordStore, Protocol):
+    """Batch record store that also supports cache-grade binding eviction."""
+
+    async def evict_bindings(
+        self,
+        keys: Iterable[str],
+    ) -> dict[str, EvictStatus]: ...
 
 
 class CachedExecutionObservation(FrozenModel):
@@ -194,6 +210,40 @@ class WindowedExecutionCache:
         self._require_open()
         self._resident.pop(request_key, None)
 
+    async def evict(
+        self,
+        request_keys: Iterable[str],
+        /,
+    ) -> dict[str, EvictStatus]:
+        """Remove persisted bindings and in-memory state for request keys."""
+
+        self._require_open()
+        keys = tuple(dict.fromkeys(request_keys))
+        if not keys:
+            return {}
+
+        persistent_to_request = {
+            self._persistent_key(key): key for key in keys
+        }
+        for request_key in keys:
+            self._resident.pop(request_key, None)
+            self._pending.pop(request_key, None)
+            if self._in_flight_batch is not None:
+                self._in_flight_batch.pop(request_key, None)
+
+        if not isinstance(self._store, EvictableBatchRecordStore):
+            raise TypeError(
+                "execution cache eviction requires a store that implements "
+                "evict_bindings"
+            )
+        statuses = await self._store.evict_bindings(
+            persistent_to_request.keys()
+        )
+        return {
+            persistent_to_request[persistent_key]: status
+            for persistent_key, status in statuses.items()
+        }
+
     def stats(self) -> ExecutionCacheStats:
         return ExecutionCacheStats(
             prefetched_entries=self._prefetched_entries,
@@ -304,6 +354,7 @@ __all__ = [
     "BatchRecordStore",
     "CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION",
     "CachedExecutionObservation",
+    "EvictableBatchRecordStore",
     "EXECUTION_CACHE_NAMESPACE",
     "EXECUTION_CACHE_RECORD_SCHEMA",
     "ExecutionCacheStats",

@@ -17,11 +17,16 @@ async def get_many(
 async def put_many(
     entries: Mapping[str, CacheEntry],
 ) -> dict[str, ObjectReference]: ...
+
+async def evict_bindings(
+    keys: Iterable[str],
+) -> dict[str, EvictStatus]: ...
 ```
 
 `get_many` returns every distinct requested key, using `None` for a miss and a
 verified `CacheHit` otherwise. Each `CacheEntry` passed to `put_many` carries
-its own `schema` and `record`.
+its own `schema` and `record`. `evict_bindings` removes cache-grade bindings
+for the given keys.
 
 ## Execution-cache behavior
 
@@ -32,7 +37,8 @@ its own `schema` and `record`.
   evaluation batch request that declares itself fresh skips both prefetch and
   lookup for its generations, so every candidate re-executes. Because
   persisted bindings are first-writer-wins, a fresh outcome does not replace
-  an entry already stored under the same key.
+  an entry already stored under the same key unless the caller evicts it first
+  through ``WindowedExecutionCache.evict``.
 - Cached observations retain the interpreted candidate outcome and a portable
   reference to the source executed record. A cache hit produces reused
   provenance; it never claims that a new process ran.
