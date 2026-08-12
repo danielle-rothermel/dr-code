@@ -391,6 +391,21 @@ date = "2026-08-09"
 check = "uv run pytest tests/evaluation/test_identity.py tests/evaluation/test_record_models.py"
 
 [[contracts]]
+title = "Work keys derive from configuration and generation index alone"
+statement = """
+A work key is the content-addressed digest of one experiment configuration
+hash and one evaluation slot's generation index, over an explicit payload of
+pinned literal keys. The derivation is a pure function with no storage and no
+registry, so the same configuration and generation index always address the
+same work."""
+rationale = """
+Binding dr-code's slots to the platform's work key by construction removes
+the mapping table a lookup would require, and pinning the payload keys as
+literals keeps stored identity from drifting when model field names change."""
+date = "2026-08-12"
+check = "uv run pytest tests/evaluation/test_work_key.py"
+
+[[contracts]]
 title = "Candidate execution records preserve execution provenance"
 statement = """
 Each evaluated materialized candidate produces a record binding its evaluation

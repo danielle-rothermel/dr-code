@@ -75,6 +75,11 @@ from dr_code.evaluation.references import (
     EvidenceReference,
     StoredRecordReference,
 )
+from dr_code.evaluation.work_key import (
+    WORK_KEY_SCHEMA,
+    WORK_KEY_SCHEMA_VERSION,
+    derive_work_key,
+)
 
 if TYPE_CHECKING:
     from dr_code.evaluation.bundle import (
@@ -345,8 +350,11 @@ __all__ = [
     "SyntheticSampleProvenance",
     "TaskSet",
     "TaskSetCoordinate",
+    "WORK_KEY_SCHEMA",
+    "WORK_KEY_SCHEMA_VERSION",
     "WindowLimits",
     "aggregate",
+    "derive_work_key",
     "audit_evaluation_bundle",
     "compare_evaluation_attempts",
     "evaluate_batch",

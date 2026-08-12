@@ -12,6 +12,11 @@
   `sample_index` on every field, parameter, and loop, so an evaluation slot is
   addressed by its generation index of task index and sample index. The rename
   is a hard cutover on persisted models: no aliases and no dual read.
+- `derive_work_key` computes a generation's work key from an experiment
+  configuration hash and an evaluation slot's generation index, over a payload
+  of pinned literal keys. It is a pure derivation with no storage and no
+  registry, so dr-code slots bind to the platform's work key by construction
+  instead of through a mapping table.
 - Persisted evaluation identity churns once for this wave. The evaluation
   attempt record schema version is now 3, the sample evaluation record and
   candidate execution record schema versions are now 2, and the evaluation

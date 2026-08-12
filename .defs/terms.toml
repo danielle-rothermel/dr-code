@@ -780,6 +780,16 @@ categories = ["experiment design"]
 part_of = ["generation"]
 
 [[terms]]
+name = "work key"
+definition = """
+The content-addressed digest of one experiment configuration hash together
+with one generation index, derived from an evaluation slot. It addresses the
+work of producing one generation without naming any run, attempt, or record."""
+exported_symbols = ["dr_code.evaluation.derive_work_key"]
+categories = ["evaluation identity", "experiment design"]
+part_of = ["generation index"]
+
+[[terms]]
 name = "generation output"
 definition = """
 The final output produced by one generation graph run, from which code
