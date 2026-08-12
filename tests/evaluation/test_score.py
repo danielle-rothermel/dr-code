@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from _builders import (
     question_coordinate,
-    repeat_plan_coordinate,
+    sampling_plan_coordinate,
     task_set_coordinate,
 )
 from dr_code.evaluation import EvaluationCoordinate, Score
@@ -18,7 +18,7 @@ def evaluation_coordinate(**overrides: object) -> EvaluationCoordinate:
             "plan_id": "plan",
             "version": "1",
             "task_set": task_set_coordinate(),
-            "repeat_plan": repeat_plan_coordinate(),
+            "sampling_plan": sampling_plan_coordinate(),
             **overrides,
         }
     )

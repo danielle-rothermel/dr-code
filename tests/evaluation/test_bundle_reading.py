@@ -262,7 +262,7 @@ async def test_selected_projection_rejects_unsupported_and_unbound_payloads(
     )
     writer = unsupported.open_artifact("projection-evaluation-samples.jsonl")
     wire = header.model_dump(mode="json")
-    wire["schema_version"] = 2
+    wire["schema_version"] = 3
     writer.write(canonical_json_bytes(wire) + b"\n")
     writer.finalize()
     unsupported.publish({})

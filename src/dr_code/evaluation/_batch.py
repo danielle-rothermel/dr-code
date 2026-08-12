@@ -923,7 +923,7 @@ def _score_from_aggregation(
             plan_id=request.plan.plan_id,
             version=request.plan.version,
             task_set=request.plan.task_set.coordinate,
-            repeat_plan=request.plan.repeat_plan.coordinate,
+            sampling_plan=request.plan.sampling_plan.coordinate,
         ),
         sources=(
             MetricValueCoordinate(

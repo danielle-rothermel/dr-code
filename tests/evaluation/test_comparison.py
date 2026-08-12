@@ -66,7 +66,7 @@ def _reference(
 
 def _record(index: int, *, output: str = "same") -> NoCandidatesSampleRecord:
     return NoCandidatesSampleRecord(
-        slot=evaluation_slot(repeat_index=index),
+        slot=evaluation_slot(sample_index=index),
         sample=metadata(identity=sample_identity(sample_id=f"sample-{index}")),
         trace=SerializedTrace(
             schema_version=3,
@@ -83,7 +83,7 @@ def _member(
     index: int, reference: BundleRecordReference
 ) -> EvaluationMemberRecord:
     return EvaluationMemberRecord(
-        slot=evaluation_slot(repeat_index=index),
+        slot=evaluation_slot(sample_index=index),
         sample=sample_identity(sample_id=f"sample-{index}"),
         record=reference,
     )
@@ -93,8 +93,8 @@ def _attempt(identity: int, members: tuple[EvaluationMemberRecord, ...]):
     base = attempt()
     plan = base.plan.model_copy(
         update={
-            "repeat_plan": base.plan.repeat_plan.model_copy(
-                update={"task_repeats": (4, 4)}
+            "sampling_plan": base.plan.sampling_plan.model_copy(
+                update={"task_num_samples": (4, 4)}
             )
         }
     )

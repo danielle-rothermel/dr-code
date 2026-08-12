@@ -2,15 +2,29 @@
 
 ## Unreleased
 
-- Evaluation repeat plans declare a repeat count per selected task
-  (`task_repeats`, positionally aligned with the ordered selection) instead of
-  one count shared by every task. Slot ordinals are prefix sums over those
-  counts and bounds are checked per task, so a plan over tasks with unequal
-  repeat counts declares exactly the slots its members fill. `EvaluationPlan`
-  owns slot expansion and validity through `ordered_slots` and `declares_slot`.
-  The evaluation attempt record schema version is now 2; bundles recorded
-  under version 1 no longer load, and replay preflight reports them as
+### 2026-08-12
+
+- The evaluation package carries the settled sampling vocabulary. `RepeatPlan`
+  and `RepeatPlanCoordinate` are now `SamplingPlan` and
+  `SamplingPlanCoordinate`; `repeat_plan_id` is `sampling_plan_id`;
+  `repeat_plan` fields are `sampling_plan`; `task_repeats` is
+  `task_num_samples`; `repeats_for` is `num_samples_for`; and `repeat_index` is
+  `sample_index` on every field, parameter, and loop, so an evaluation slot is
+  addressed by its generation index of task index and sample index. The rename
+  is a hard cutover on persisted models: no aliases and no dual read.
+- Persisted evaluation identity churns once for this wave. The evaluation
+  attempt record schema version is now 3, the sample evaluation record and
+  candidate execution record schema versions are now 2, and the evaluation
+  projection schema version is now 2. Records and bundles written under the
+  previous versions no longer load, and replay preflight reports them as
   unavailable.
+
+- Evaluation sampling plans declare a sample count per selected task
+  (`task_num_samples`, positionally aligned with the ordered selection) instead
+  of one count shared by every task. Slot ordinals are prefix sums over those
+  counts and bounds are checked per task, so a plan over tasks with unequal
+  sample counts declares exactly the slots its members fill. `EvaluationPlan`
+  owns slot expansion and validity through `ordered_slots` and `declares_slot`.
 
 - Pull-request CI runs lint, type, and test checks only. Distribution build,
   metadata, and installed-wheel qualification run at publication time in the

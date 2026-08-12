@@ -3,16 +3,33 @@ from __future__ import annotations
 import json
 
 from _builders import (
+    evaluation_slot,
     policy,
     procedure,
     question_coordinate,
-    repeat_plan,
-    repeat_plan_coordinate,
+    sampling_plan,
+    sampling_plan_coordinate,
     task_set,
     task_set_coordinate,
 )
-from dr_code.evaluation import EvaluationCoordinate, EvaluationPlan, Score
+from dr_code.evaluation import (
+    EvaluationCoordinate,
+    EvaluationPlan,
+    EvaluationSlotIdentity,
+    Score,
+)
 from dr_code.metrics import MetricValueCoordinate, MetricValueUnit
+
+_GOLDEN_EVALUATION_SLOT = {
+    "task_set": {
+        "task_set_id": "task-set",
+        "version": "1",
+        "dataset": {"dataset_id": "dataset", "version": "1"},
+    },
+    "sampling_plan": {"sampling_plan_id": "sampling-plan", "version": "1"},
+    "task_id": "t0",
+    "sample_index": 0,
+}
 
 # Literal keys pin persisted evaluation shapes; deriving them would hide drift.
 _GOLDEN_EVALUATION_PLAN = {
@@ -27,10 +44,10 @@ _GOLDEN_EVALUATION_PLAN = {
         "population": ["t0", "t1", "t2"],
         "selected": ["t0", "t2"],
     },
-    "repeat_plan": {
-        "coordinate": {"repeat_plan_id": "repeat-plan", "version": "1"},
+    "sampling_plan": {
+        "coordinate": {"sampling_plan_id": "sampling-plan", "version": "1"},
         "task_count": 2,
-        "task_repeats": [2, 2],
+        "task_num_samples": [2, 2],
         "seeds": [11, 12, 13, 14],
     },
     "procedure": {
@@ -78,7 +95,7 @@ _GOLDEN_SCORE = {
             "version": "1",
             "dataset": {"dataset_id": "dataset", "version": "1"},
         },
-        "repeat_plan": {"repeat_plan_id": "repeat-plan", "version": "1"},
+        "sampling_plan": {"sampling_plan_id": "sampling-plan", "version": "1"},
     },
     "sources": [
         {
@@ -98,7 +115,7 @@ def _golden_plan() -> EvaluationPlan:
         plan_id="plan",
         version="1",
         task_set=task_set(),
-        repeat_plan=repeat_plan(seeds=(11, 12, 13, 14)),
+        sampling_plan=sampling_plan(seeds=(11, 12, 13, 14)),
         procedure=procedure(),
         aggregation=policy(),
     )
@@ -113,7 +130,7 @@ def _golden_score() -> Score:
             plan_id="plan",
             version="1",
             task_set=task_set_coordinate(),
-            repeat_plan=repeat_plan_coordinate(),
+            sampling_plan=sampling_plan_coordinate(),
         ),
         sources=(
             MetricValueCoordinate(
@@ -121,6 +138,18 @@ def _golden_score() -> Score:
             ),
         ),
     )
+
+
+def test_evaluation_slot_serializes_to_the_golden_literals() -> None:
+    assert (
+        json.loads(evaluation_slot().model_dump_json())
+        == _GOLDEN_EVALUATION_SLOT
+    )
+
+
+def test_golden_slot_literals_load_back_to_an_equal_slot() -> None:
+    restored = EvaluationSlotIdentity.model_validate(_GOLDEN_EVALUATION_SLOT)
+    assert restored == evaluation_slot()
 
 
 def test_evaluation_plan_serializes_to_the_golden_literals() -> None:

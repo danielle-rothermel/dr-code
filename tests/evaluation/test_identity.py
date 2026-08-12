@@ -72,9 +72,9 @@ def test_slot_and_sample_identities_are_distinct_models() -> None:
     assert sample.sample_id == "sample-0"
     assert set(type(slot).model_fields) == {
         "task_set",
-        "repeat_plan",
+        "sampling_plan",
         "task_id",
-        "repeat_index",
+        "sample_index",
     }
     assert set(type(sample).model_fields) == {"sample_id"}
 

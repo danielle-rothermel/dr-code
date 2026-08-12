@@ -33,8 +33,8 @@ from dr_code.evaluation import (
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
-    RepeatPlan,
-    RepeatPlanCoordinate,
+    SamplingPlan,
+    SamplingPlanCoordinate,
     SampleEvaluationInput,
     ShardLimits,
     StoredRecordReference,
@@ -203,22 +203,22 @@ def request(
         population=(TASK_ID,),
         selected=(TASK_ID,),
     )
-    repeat_plan = RepeatPlan(
-        coordinate=RepeatPlanCoordinate(
-            repeat_plan_id="batch",
+    sampling_plan = SamplingPlan(
+        coordinate=SamplingPlanCoordinate(
+            sampling_plan_id="batch",
             version="1",
         ),
         task_count=1,
-        task_repeats=(count,),
+        task_num_samples=(count,),
     )
     if inputs is None:
         inputs = tuple(
             SampleEvaluationInput(
                 slot=EvaluationSlotIdentity(
                     task_set=task_set.coordinate,
-                    repeat_plan=repeat_plan.coordinate,
+                    sampling_plan=sampling_plan.coordinate,
                     task_id=TASK_ID,
-                    repeat_index=index,
+                    sample_index=index,
                 ),
                 sample=sample(index),
             )
@@ -230,7 +230,7 @@ def request(
             "plan_id": "batch",
             "version": "1",
             "task_set": task_set,
-            "repeat_plan": repeat_plan,
+            "sampling_plan": sampling_plan,
             "procedure": EvaluationProcedure(
                 preprocessing=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
                 metrics=MetricsDefinition(

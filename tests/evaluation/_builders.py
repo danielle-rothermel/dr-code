@@ -11,8 +11,8 @@ from dr_code.evaluation import (
     EvaluationSlotIdentity,
     DatasetCoordinate,
     EvaluationProcedure,
-    RepeatPlan,
-    RepeatPlanCoordinate,
+    SamplingPlan,
+    SamplingPlanCoordinate,
     TaskSet,
     TaskSetCoordinate,
 )
@@ -40,7 +40,7 @@ from dr_code.trace import (
 )
 
 TASK_SET_ID = "task-set"
-REPEAT_PLAN_ID = "repeat-plan"
+SAMPLING_PLAN_ID = "sampling-plan"
 PLAN_ID = "plan"
 VALUE_NAME = "char_count"
 
@@ -73,18 +73,18 @@ def task_set(**overrides: object) -> TaskSet:
     )
 
 
-def repeat_plan_coordinate(**overrides: object) -> RepeatPlanCoordinate:
-    return RepeatPlanCoordinate(
-        **{"repeat_plan_id": REPEAT_PLAN_ID, "version": "1", **overrides}
+def sampling_plan_coordinate(**overrides: object) -> SamplingPlanCoordinate:
+    return SamplingPlanCoordinate(
+        **{"sampling_plan_id": SAMPLING_PLAN_ID, "version": "1", **overrides}
     )
 
 
-def repeat_plan(**overrides: object) -> RepeatPlan:
-    return RepeatPlan(
+def sampling_plan(**overrides: object) -> SamplingPlan:
+    return SamplingPlan(
         **{
-            "coordinate": repeat_plan_coordinate(),
+            "coordinate": sampling_plan_coordinate(),
             "task_count": 2,
-            "task_repeats": (2, 2),
+            "task_num_samples": (2, 2),
             **overrides,
         }
     )
@@ -94,9 +94,9 @@ def evaluation_slot(**overrides: object) -> EvaluationSlotIdentity:
     return EvaluationSlotIdentity(
         **{
             "task_set": task_set_coordinate(),
-            "repeat_plan": repeat_plan_coordinate(),
+            "sampling_plan": sampling_plan_coordinate(),
             "task_id": "t0",
-            "repeat_index": 0,
+            "sample_index": 0,
             **overrides,
         }
     )

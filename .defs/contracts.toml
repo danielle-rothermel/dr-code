@@ -97,13 +97,13 @@ check = "uv run pytest tests/metrics/test_definition.py tests/metrics/records te
 title = "Evaluation plans are internally complete"
 statement = """
 An evaluation plan nests its complete preprocessing and metrics definitions,
-covers exactly its selected tasks with its repeat plan, and aggregates only a
-question declared by its metrics definition. The repeat plan declares a repeat
-count per selected task, so a plan whose tasks carry unequal repeat counts
-still declares exactly the slots its tasks occupy and never more."""
+covers exactly its selected tasks with its sampling plan, and aggregates only a
+question declared by its metrics definition. The sampling plan declares a
+sample count per selected task, so a plan whose tasks carry unequal sample
+counts still declares exactly the slots its tasks occupy and never more."""
 rationale = """
 A persisted plan remains interpretable as one coherent declaration rather
-than a set of references resolved against mutable registries. Per-task repeat
+than a set of references resolved against mutable registries. Per-task sample
 counts keep declared membership equal to real membership, so a plan cannot
 declare slots that no member can ever fill."""
 date = "2026-08-05"
@@ -374,7 +374,8 @@ check = "uv run pytest tests/evaluation/test_comparison.py"
 [[contracts]]
 title = "Evaluation identity distinguishes plans from samples"
 statement = """
-An evaluation slot identifies only one planned task-and-repeat position. An
+An evaluation slot identifies only one planned task-and-sample position,
+addressed by its generation index of task index and sample index. An
 evaluation sample separately carries the stable identity and provenance of the
 realized raw input bound to that slot. An evaluation candidate identity
 composes the evaluation sample identity, the complete resolved preprocessing

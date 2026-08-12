@@ -40,15 +40,15 @@ def _multi_frozen_request(
         window_limits=window_limits,
     )
     task_set = base.plan.task_set.coordinate
-    repeat_plan = base.plan.repeat_plan.coordinate
+    sampling_plan = base.plan.sampling_plan.coordinate
     inputs = tuple(
         frozen_input(
             index,
             EvaluationSlotIdentity(
                 task_set=task_set,
-                repeat_plan=repeat_plan,
+                sampling_plan=sampling_plan,
                 task_id=TASK_ID,
-                repeat_index=index,
+                sample_index=index,
             ),
         )
         for index in range(count)

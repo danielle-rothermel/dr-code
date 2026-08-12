@@ -23,7 +23,8 @@ categories = ["evaluation evidence"]
 [[terms]]
 name = "evaluation slot"
 definition = """
-One planned task-and-repeat position in an evaluation plan. It establishes
+One planned task-and-sample position in an evaluation plan, addressed by its
+generation index. It establishes
 expected membership and order without claiming that an input was observed or
 evaluated at that position."""
 exported_symbols = ["dr_code.evaluation.EvaluationSlotIdentity"]
@@ -420,12 +421,12 @@ part_of = ["evaluation plan"]
 [[terms]]
 name = "evaluation plan"
 definition = """
-A versioned composition of an ordered task selection, repeat structure,
+A versioned composition of an ordered task selection, sampling structure,
 evaluation procedure, and aggregation policy."""
 exported_symbols = [
   "dr_code.evaluation.EvaluationPlan",
   "dr_code.evaluation.TaskSet",
-  "dr_code.evaluation.RepeatPlan",
+  "dr_code.evaluation.SamplingPlan",
 ]
 
 [[terms]]

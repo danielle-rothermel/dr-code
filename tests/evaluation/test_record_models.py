@@ -14,7 +14,7 @@ from _builders import (
     policy,
     procedure,
     record_identity,
-    repeat_plan,
+    sampling_plan,
     sample_identity,
     task_set,
 )
@@ -151,7 +151,7 @@ def evaluation_plan() -> EvaluationPlan:
         plan_id="plan",
         version="1",
         task_set=task_set(),
-        repeat_plan=repeat_plan(),
+        sampling_plan=sampling_plan(),
         procedure=procedure(),
         aggregation=policy(),
     )

@@ -28,9 +28,9 @@ from dr_code.humaneval.job import HumanEvalCandidateJobResult
 from dr_code.metrics import MetricRecord
 from dr_code.trace import Absent, SerializedTrace
 
-EVALUATION_ATTEMPT_SCHEMA_VERSION: Final = 2
-SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION: Final = 1
-CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION: Final = 1
+EVALUATION_ATTEMPT_SCHEMA_VERSION: Final = 3
+SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION: Final = 2
+CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION: Final = 2
 
 
 class ExecutedCandidateProvenance(FrozenModel):
@@ -104,7 +104,7 @@ CandidateExecutionOutcome: TypeAlias = Annotated[
 
 
 class CandidateExecutionRecord(FrozenModel):
-    schema_version: Literal[1] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
     candidate: EvaluationCandidateIdentity
     request_identity: Sha256Digest
     runtime: EvaluationRuntimeIdentity
@@ -115,7 +115,7 @@ class CandidateExecutionRecord(FrozenModel):
 
 
 class PreprocessingAbsentSampleRecord(FrozenModel):
-    schema_version: Literal[1] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
     status: Literal["preprocessing_absent"] = "preprocessing_absent"
     slot: EvaluationSlotIdentity
     sample: EvaluationSampleMetadata
@@ -129,7 +129,7 @@ class PreprocessingAbsentSampleRecord(FrozenModel):
 
 
 class NoCandidatesSampleRecord(FrozenModel):
-    schema_version: Literal[1] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
     status: Literal["no_candidates"] = "no_candidates"
     slot: EvaluationSlotIdentity
     sample: EvaluationSampleMetadata
@@ -142,7 +142,7 @@ class NoCandidatesSampleRecord(FrozenModel):
 
 
 class EvaluatedSampleRecord(FrozenModel):
-    schema_version: Literal[1] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
     status: Literal["evaluated"] = "evaluated"
     slot: EvaluationSlotIdentity
     sample: EvaluationSampleMetadata
@@ -251,7 +251,7 @@ class ReplaySource(FrozenModel):
 
 
 class EvaluationAttemptRecord(FrozenModel):
-    schema_version: Literal[2] = EVALUATION_ATTEMPT_SCHEMA_VERSION
+    schema_version: Literal[3] = EVALUATION_ATTEMPT_SCHEMA_VERSION
     identity: EvaluationAttemptIdentity
     plan: EvaluationPlan
     runtime: EvaluationRuntimeIdentity

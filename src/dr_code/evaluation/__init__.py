@@ -33,8 +33,8 @@ from dr_code.evaluation.batch import (
 )
 from dr_code.evaluation.coordinates import (
     DatasetCoordinate,
-    RepeatPlan,
-    RepeatPlanCoordinate,
+    SamplingPlan,
+    SamplingPlanCoordinate,
     TaskSet,
     TaskSetCoordinate,
 )
@@ -314,8 +314,8 @@ __all__ = [
     "MetricRecordProjectionRow",
     "NoCandidatesSampleRecord",
     "NotApplicablePolicy",
-    "RepeatPlan",
-    "RepeatPlanCoordinate",
+    "SamplingPlan",
+    "SamplingPlanCoordinate",
     "PreprocessingAbsentSampleRecord",
     "ProjectionKind",
     "ProjectionArtifactHeader",

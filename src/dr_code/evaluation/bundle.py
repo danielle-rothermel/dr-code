@@ -49,7 +49,7 @@ from dr_code.evaluation.validation import (
 )
 
 EVALUATION_BUNDLE_SCHEMA_VERSION: Final = 1
-EVALUATION_PROJECTION_SCHEMA_VERSION: Final = 1
+EVALUATION_PROJECTION_SCHEMA_VERSION: Final = 2
 EVALUATION_BUNDLE_FORMAT: Final = "dr-code-evaluation-bundle-v1"
 EVALUATION_PROJECTION_FORMAT: Final = "dr-code-evaluation-projection-v1"
 SAMPLE_RECORD_OBJECT_SCHEMA: Final = "dr-code/sample-evaluation-record-v1"
@@ -86,7 +86,7 @@ class ProjectionArtifactHeader(FrozenModel):
     format: Literal["dr-code-evaluation-projection-v1"] = (
         EVALUATION_PROJECTION_FORMAT
     )
-    schema_version: Literal[1] = EVALUATION_PROJECTION_SCHEMA_VERSION
+    schema_version: Literal[2] = EVALUATION_PROJECTION_SCHEMA_VERSION
     source_attempt: EvaluationAttemptIdentity
     kind: ProjectionKind
     definition_version: Literal[1] = 1
