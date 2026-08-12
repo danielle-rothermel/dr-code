@@ -126,6 +126,18 @@ A HumanEval submission result is a benchmark projection derived from sample
 evaluation records. Candidate-attributable outcomes remain candidate execution
 evidence; trusted support-code initialization failures and malformed runner
 results remain harness or operator failures rather than candidate failures.
+Every scoring profile declares its candidate reduction, and the projection
+reduces candidates only as declared. Each reduction also fixes the rule applied
+within one candidate, whose evaluation runs the complete suite once per
+top-level function: first-candidate scores candidate zero alone and requires
+every one of its function groups to pass; any-candidate-passes scores a pass
+when any candidate's validated metric slice has any function group passing the
+complete test-case set, so a helper extracted beside a correct solution cannot
+mask it. Under any reduction that reads more than one candidate, an unmeasured
+candidate is a harness or operator failure rather than a measured zero, because
+a candidate whose measurement broke might have passed; likewise a candidate
+whose groups did not finish is reported as timed out rather than as a measured
+failure.
 Batch scoring returns one result per submission in request order;
 single-submission scoring is the one-item convenience. Public scoring reads the
 authoritative records and never invokes a second execution path."""
@@ -133,7 +145,9 @@ rationale = """
 Incorrect or resource-exhausting candidate code is evidence about candidate
 behavior; broken evaluation infrastructure invalidates the measurement.
 Keeping results derivable prevents a score envelope from replacing the complete
-execution record."""
+execution record. Declaring the reduction on the profile keeps the reduction a
+named, versioned part of the scoring identity rather than a wired-in default
+that silently decides what a recorded score means."""
 date = "2026-08-09"
 check = "uv run pytest tests/humaneval/test_projection.py tests/humaneval/test_metric_operator.py"
 
@@ -149,11 +163,12 @@ date = "2026-08-09"
 check = "uv run pytest tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
 
 [[contracts]]
-title = "Execution jobs are bounded and outcome mapping is closed"
+title = "Candidate execution jobs are bounded and outcome mapping is closed"
 statement = """
-Every execution job declares finite wall-clock, input, and payload-output
-budgets and a fixed environment grant, and production executor construction
-requires an explicit Python executable. Exited, signaled, wall-time, and
+Every candidate execution job declares finite wall-clock, input, and
+payload-output budgets and a fixed environment grant, and production executor
+construction requires an explicit Python executable. Trusted non-candidate
+jobs may run unbudgeted. Exited, signaled, wall-time, and
 payload-output outcomes have fixed mappings; payload-owned protocol failures
 map to candidate-attributable kills; every other outcome fails closed as an
 executor failure. Candidate execution records preserve this closed
@@ -168,33 +183,29 @@ date = "2026-08-09"
 check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
-title = "Preprocessing trace cache entries match their requests"
+title = "Parallel preprocessing runs on the dr-exec worker pool"
 statement = """
-A preprocessing trace cache entry is keyed by the raw input text, the
-producing runner's resolved coordinate, and the trace schema version. A hit is
-accepted only when the stored trace validates and its producer and input match
-the request. Caching is opt-in: no existing call site consults a cache. Cache
-reads, validation, and writes degrade to uncached execution on failure."""
+`preprocess_batch` and `candidate_sources_batch` deduplicate requested texts and
+run each distinct text once as one trusted importable JSON job on a dr-exec
+worker pool, which imports the preprocessing entry point once per worker. A
+completion that does not carry one valid result is that text's failure and never
+aborts unrelated inputs. Without an observer every result is returned keyed by
+text; with an observer each result is handed over as it completes and nothing is
+retained. A caller that consumes candidate sources runs the candidate-sources
+entry point, which returns the sources alone rather than the trace carrying
+them. `evaluate_batch` sample prepare uses the trace path; the eligible-corpus
+stage uses the candidate-sources path."""
 rationale = """
-Wrong-input, wrong-producer, and malformed entries are not evidence for the
-current request. Best-effort cache faults must not turn optional memoization
-into a preprocessing failure."""
-date = "2026-08-05"
-check = "uv run pytest tests/caching/test_trace_cache.py"
-
-[[contracts]]
-title = "Preprocessing cache lifecycles follow behavior identity"
-statement = """
-While component versions remain at the initial version, callers discard
-persistent preprocessing caches after source, Python runtime, or dependency
-changes that can alter preprocessing behavior. After development mode, each
-such change bumps every affected component version before its cache is
-reused."""
-rationale = """
-Producer coordinates distinguish declared component versions and settings,
-not ambient runtime or dependency bytes. Reusing an entry after an unrecorded
-behavior change would make the result depend on stale state."""
-date = "2026-08-05"
+Preprocessing is trusted, CPU-bound, milliseconds-per-item work, so it needs
+real cores without paying interpreter startup per item, and it makes no
+containment claim. Streaming results to an observer keeps corpus-scale batches
+from retaining every result. Result size is the throughput term that matters:
+the caller decodes and validates every byte a worker returns, single-threaded,
+so returning a whole serialized trace where only its sources are wanted costs
+about two orders of magnitude in payload and collapses pool throughput to the
+caller's parse rate no matter how many workers run."""
+date = "2026-08-11"
+check = "uv run pytest tests/caching/test_preprocess_batch.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
 
 [[contracts]]
 title = "Execution cache persistence is scoped and checkpointed"
@@ -225,7 +236,7 @@ check = "uv run pytest tests/caching/test_execution_cache.py"
 title = "Evaluation uses one bounded execution path"
 statement = """
 Every production code evaluation reaches execution through one dr-code path
-over the released dr-exec job and scheduling primitives. One job evaluates one
+over the dr-exec job and scheduling primitives. One job evaluates one
 materialized candidate. A HumanEval job loads one candidate namespace once and
 evaluates all ordered requested function/test groups there; multiple CodeTest
 questions are ordered suites with per-suite settings under one finite aggregate

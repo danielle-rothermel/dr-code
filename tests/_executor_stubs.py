@@ -271,3 +271,41 @@ class CountingExecutor:
     @property
     def call_count(self) -> int:
         return len(self.calls)
+
+
+class ConcurrencyTrackingExecutor:
+    """Executor wrapper recording peak concurrent run() calls."""
+
+    def __init__(
+        self,
+        inner: FakeExecutor,
+        *,
+        delay_seconds: float = 0.01,
+    ) -> None:
+        import threading
+
+        self._inner = inner
+        self._delay_seconds = delay_seconds
+        self._lock = threading.Lock()
+        self.active = 0
+        self.max_active = 0
+
+    def run(
+        self,
+        job: ExecutionJob,
+        /,
+        *,
+        cancellation: object = None,
+    ) -> CompletedExecution:
+        import time
+
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            if self._delay_seconds:
+                time.sleep(self._delay_seconds)
+            return self._inner.run(job, cancellation=None)
+        finally:
+            with self._lock:
+                self.active -= 1

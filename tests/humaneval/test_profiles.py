@@ -4,10 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from dr_code.humaneval.profiles import (
+    ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
     DEFAULT_HUMANEVAL_SCORING_PROFILE,
+    HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_ID,
+    HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_VERSION,
     HUMANEVAL_METRICS_PROFILE_VERSION,
     HUMANEVAL_SCORING_PROFILE_ID,
     HUMANEVAL_SCORING_PROFILE_VERSION,
+    CandidateReduction,
     resolve_humaneval_scoring_profile,
 )
 from dr_code.preprocessing import (
@@ -82,3 +86,52 @@ def test_profiles_are_immutable() -> None:
         DEFAULT_HUMANEVAL_SCORING_PROFILE.preprocessing_definition.version = (  # type: ignore[misc]
             "1"
         )
+
+
+# Persisted-format literals: a recorded scoring profile carries these exact
+# strings, so pin them rather than deriving them from the enum members.
+_GOLDEN_CANDIDATE_REDUCTIONS = {
+    "first_candidate",
+    "any_candidate_passes",
+}
+
+
+def test_candidate_reduction_literals_are_pinned() -> None:
+    assert CandidateReduction.FIRST_CANDIDATE.value == "first_candidate"
+    assert (
+        CandidateReduction.ANY_CANDIDATE_PASSES.value == "any_candidate_passes"
+    )
+    assert {
+        member.value for member in CandidateReduction
+    } == _GOLDEN_CANDIDATE_REDUCTIONS
+
+
+def test_every_registered_profile_declares_its_candidate_reduction() -> None:
+    first = resolve_humaneval_scoring_profile(
+        scoring_profile_id=HUMANEVAL_SCORING_PROFILE_ID,
+        scoring_profile_version=HUMANEVAL_SCORING_PROFILE_VERSION,
+    )
+    any_candidate = resolve_humaneval_scoring_profile(
+        scoring_profile_id=HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_ID,
+        scoring_profile_version=(
+            HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_VERSION
+        ),
+    )
+
+    assert first is DEFAULT_HUMANEVAL_SCORING_PROFILE
+    assert any_candidate is ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE
+    assert (
+        first.model_dump(mode="json")["candidate_reduction"]
+        == "first_candidate"
+    )
+    assert (
+        any_candidate.model_dump(mode="json")["candidate_reduction"]
+        == "any_candidate_passes"
+    )
+
+
+def test_scoring_profile_requires_an_explicit_candidate_reduction() -> None:
+    fields = dict(DEFAULT_HUMANEVAL_SCORING_PROFILE.model_dump(mode="json"))
+    fields.pop("candidate_reduction")
+    with pytest.raises(ValidationError, match="candidate_reduction"):
+        type(DEFAULT_HUMANEVAL_SCORING_PROFILE).model_validate(fields)

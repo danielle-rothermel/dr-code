@@ -10,7 +10,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "datasets>=3.0,<4",
-    "dr-exec==0.1.7",
+    "dr-exec==0.1.9",
     "dr-serialize==0.1.2",
     "dr-store==0.2.0",
     "numpy>=2.1,<3",

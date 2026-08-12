@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import random
 import sys
 from collections import Counter
@@ -12,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
+from typing import Final
 
 import polars as pl
 
@@ -19,15 +21,12 @@ from bootstrap_statistics import (
     BootstrapConfidenceInterval,
     bootstrap_confidence_interval,
 )
-from dr_code.preprocessing import (
-    EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
-    bind_preprocessing,
-)
+from dr_code.caching import preprocess_batch
+from dr_code.preprocessing import EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
 from dr_code.trace import (
     OUTPUT_KEY,
     Absent,
     InspectedCodeCandidateSetArtifact,
-    TextArtifact,
     Trace,
 )
 
@@ -36,6 +35,7 @@ _DEFAULT_CORPUS = (
     _ROOT.parent / "gen-viewer" / "data" / "generation-corpus.parquet"
 )
 _REQUIRED_COLUMNS = frozenset({"decoder_output", "sample_id", "task_id"})
+_DEFAULT_WORKERS: Final = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,24 +88,38 @@ def _failure_code(trace: Trace) -> str | None:
 def _analyze_task(
     task_id: str,
     task_rows: pl.DataFrame,
+    *,
+    worker_count: int,
 ) -> _TaskPreprocessingResult:
     decoder_outputs: list[str] = task_rows.get_column(
         "decoder_output"
     ).to_list()
-    runner = bind_preprocessing(EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION)
     started = perf_counter()
-    traces = [runner.run(TextArtifact(text=text)) for text in decoder_outputs]
-    preprocessing_seconds = perf_counter() - started
-    failures = Counter(
-        failure_code
-        for trace in traces
-        if (failure_code := _failure_code(trace)) is not None
+    traces_by_text = asyncio.run(
+        preprocess_batch(
+            decoder_outputs,
+            definition=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
+            worker_count=worker_count,
+        )
     )
+    preprocessing_seconds = perf_counter() - started
+    failures: Counter[str] = Counter()
+    successful_rows = 0
+    for text in decoder_outputs:
+        trace = traces_by_text.get(text)
+        if trace is None:
+            failures["preprocess_execution_failed"] += 1
+            continue
+        failure_code = _failure_code(trace)
+        if failure_code is None:
+            successful_rows += 1
+        else:
+            failures[failure_code] += 1
     return _TaskPreprocessingResult(
         task_id=task_id,
         rows=len(decoder_outputs),
         distinct_outputs=len(set(decoder_outputs)),
-        successful_rows=len(traces) - sum(failures.values()),
+        successful_rows=successful_rows,
         failure_codes=tuple(sorted(failures.items())),
         preprocessing_seconds=preprocessing_seconds,
     )
@@ -267,6 +281,12 @@ def main() -> int:
         help="bootstrap confidence level (default: 0.95)",
     )
     parser.add_argument(
+        "--workers",
+        type=_positive_int,
+        default=_DEFAULT_WORKERS,
+        help=f"concurrent preprocessing workers (default: {_DEFAULT_WORKERS})",
+    )
+    parser.add_argument(
         "--parquet",
         type=_parquet_path,
         default=_DEFAULT_CORPUS,
@@ -332,7 +352,9 @@ def main() -> int:
             f"{task_id} ({task_rows.height:,} rows)",
             flush=True,
         )
-        results.append(_analyze_task(task_id, task_rows))
+        results.append(
+            _analyze_task(task_id, task_rows, worker_count=arguments.workers)
+        )
 
     print(f"Parquet: {arguments.parquet}")
     print(

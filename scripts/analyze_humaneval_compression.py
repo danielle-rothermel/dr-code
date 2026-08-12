@@ -216,8 +216,6 @@ def _default_output_directory(
 def _task_representations(task: HumanEvalTask) -> dict[str, str]:
     parsed = task.parsed
     code_without_comments = task.ground_truth_code_without_comments
-    if parsed is None or code_without_comments is None:
-        raise ValueError(f"task {task.task_id!r} has no parsed source")
     return {
         "code_without_comments": code_without_comments,
         "comments_and_docstrings": parsed.comments,

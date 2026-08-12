@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum, UNIQUE, verify
 from types import MappingProxyType
 
 from pydantic import StrictFloat, StrictStr
@@ -21,6 +22,23 @@ HUMANEVAL_METRICS_PROFILE_ID = "humaneval-metrics"
 HUMANEVAL_METRICS_PROFILE_VERSION = "0"
 HUMANEVAL_SCORING_PROFILE_ID = "humaneval"
 HUMANEVAL_SCORING_PROFILE_VERSION = "0"
+HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_ID = "humaneval-any-candidate"
+HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_VERSION = "0"
+
+
+@verify(UNIQUE)
+class CandidateReduction(StrEnum):
+    """How a scoring profile reduces a sample's candidates to one outcome.
+
+    These values are persisted-format strings: a scoring profile is versioned
+    and named by projections, so a recorded profile carries the literal.
+    Never iterate this enum to build payloads or profile registries; name each
+    member explicitly so a reordering or an added member cannot silently
+    change what a persisted profile means.
+    """
+
+    FIRST_CANDIDATE = "first_candidate"
+    ANY_CANDIDATE_PASSES = "any_candidate_passes"
 
 
 class HumanEvalScoringProfile(FrozenModel):
@@ -28,6 +46,7 @@ class HumanEvalScoringProfile(FrozenModel):
     version: StrictStr
     preprocessing_definition: PreprocessingDefinitionCoordinate
     question: MetricQuestionCoordinate
+    candidate_reduction: CandidateReduction
     metrics_profile: HumanEvalMetricsProfile
 
 
@@ -55,24 +74,43 @@ if not isinstance(
     raise AssertionError("external preprocessing must preserve its coordinate")
 
 
+_HUMANEVAL_QUESTION = MetricQuestionCoordinate(
+    metric=MetricName.CODE_TEST,
+    on_key="output",
+    settings=question_settings(CodeTestSettings()),
+)
+
 DEFAULT_HUMANEVAL_SCORING_PROFILE = HumanEvalScoringProfile(
     profile_id=HUMANEVAL_SCORING_PROFILE_ID,
     version=HUMANEVAL_SCORING_PROFILE_VERSION,
     preprocessing_definition=_DEFAULT_PREPROCESSING_PRODUCER.definition,
-    question=MetricQuestionCoordinate(
-        metric=MetricName.CODE_TEST,
-        on_key="output",
-        settings=question_settings(CodeTestSettings()),
-    ),
+    question=_HUMANEVAL_QUESTION,
+    candidate_reduction=CandidateReduction.FIRST_CANDIDATE,
     metrics_profile=HUMANEVAL_METRICS_PROFILE,
 )
 
+ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE = HumanEvalScoringProfile(
+    profile_id=HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_ID,
+    version=HUMANEVAL_ANY_CANDIDATE_SCORING_PROFILE_VERSION,
+    preprocessing_definition=_DEFAULT_PREPROCESSING_PRODUCER.definition,
+    question=_HUMANEVAL_QUESTION,
+    candidate_reduction=CandidateReduction.ANY_CANDIDATE_PASSES,
+    metrics_profile=HUMANEVAL_METRICS_PROFILE,
+)
+
+# Each registered profile names its candidate reduction explicitly; the
+# registry is written out rather than derived so no profile can acquire a
+# reduction semantics by construction order.
 _SCORING_PROFILES = MappingProxyType(
     {
         (
             DEFAULT_HUMANEVAL_SCORING_PROFILE.profile_id,
             DEFAULT_HUMANEVAL_SCORING_PROFILE.version,
         ): DEFAULT_HUMANEVAL_SCORING_PROFILE,
+        (
+            ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE.profile_id,
+            ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE.version,
+        ): ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
     }
 )
 

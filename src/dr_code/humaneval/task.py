@@ -4,6 +4,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import cached_property
 from types import MappingProxyType
 from typing import Annotated, Any, Literal, Self
 
@@ -33,7 +34,7 @@ class EvaluationCaseStatus(StrEnum):
 
 
 class HumanEvalTask(FrozenModel):
-    """A HumanEval task whose supplied parses must match its source and tests."""
+    """A HumanEval task whose parses derive from its source and test fields."""
 
     task_id: str
     prompt: str
@@ -41,8 +42,6 @@ class HumanEvalTask(FrozenModel):
     entry_point: str
     test: str
     notes: tuple[str, ...] = ()
-    parsed: ParsedCode | None = None
-    parsed_tests: ParsedTests | None = None
 
     @computed_field
     @property
@@ -51,26 +50,28 @@ class HumanEvalTask(FrozenModel):
 
     @computed_field
     @property
-    def ground_truth_code_without_comments(self) -> str | None:
-        if self.parsed is None:
-            return None
+    def ground_truth_code_without_comments(self) -> str:
         return self.parsed.code_without_comments
 
-    @model_validator(mode="after")
-    def parse_code(self) -> Self:
-        parsed = parse_code(
+    @computed_field(exclude_if=lambda _value: True)
+    @cached_property
+    def parsed(self) -> ParsedCode:
+        return parse_code(
             display_title=self.task_id,
             code_str=self.ground_truth_code,
         )
-        if self.parsed is not None and self.parsed != parsed:
-            raise ValueError(
-                "parsed code must match prompt and canonical_solution"
-            )
-        parsed_tests = parse_humaneval_tests(self.test)
-        if self.parsed_tests is not None and self.parsed_tests != parsed_tests:
-            raise ValueError("parsed tests must match the raw test field")
-        object.__setattr__(self, "parsed", parsed)
-        object.__setattr__(self, "parsed_tests", parsed_tests)
+
+    @computed_field(exclude_if=lambda _value: True)
+    @cached_property
+    def parsed_tests(self) -> ParsedTests:
+        """Reparse the raw test field; in-memory tuples never cross JSON."""
+
+        return parse_humaneval_tests(self.test)
+
+    @model_validator(mode="after")
+    def parse_code(self) -> Self:
+        _ = self.parsed
+        _ = self.parsed_tests
         return self
 
 

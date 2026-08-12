@@ -61,7 +61,7 @@ def evaluation_from_candidate_execution(
             task_id=task.task_id,
             entry_point=task.entry_point,
             function_names=fallback_names,
-            total_cases=len(require_parsed_tests(task).cases),
+            total_cases=len(task.parsed_tests.cases),
             results=results,
         )
     if isinstance(outcome, HarnessExecutionFailure | ExecutorExecutionFailure):
@@ -110,7 +110,7 @@ def _evaluation_from_job_result(
             task_id=task.task_id,
             entry_point=task.entry_point,
             function_names=fallback_names,
-            total_cases=len(require_parsed_tests(task).cases),
+            total_cases=len(task.parsed_tests.cases),
             results=case_results,
         )
     suite = next(
@@ -131,7 +131,7 @@ def _evaluation_from_job_result(
         task_id=task.task_id,
         entry_point=task.entry_point,
         function_names=list(result.namespace.function_names),
-        total_cases=len(require_parsed_tests(task).cases),
+        total_cases=len(task.parsed_tests.cases),
         results=case_results,
     )
     if isinstance(suite, HumanEvalSuiteHarnessFailure):
@@ -168,7 +168,7 @@ def timeout_results(
     task: HumanEvalTask,
     function_name: str,
 ) -> list[EvaluationCaseResult]:
-    parsed_tests = require_parsed_tests(task)
+    parsed_tests = task.parsed_tests
     results: list[EvaluationCaseResult] = []
     for case in parsed_tests.cases:
         metadata = case_metadata(parsed_tests, case)
@@ -197,7 +197,7 @@ def error_results(
     message: str,
     elapsed_seconds: float | None = None,
 ) -> list[EvaluationCaseResult]:
-    parsed_tests = require_parsed_tests(task)
+    parsed_tests = task.parsed_tests
     results: list[EvaluationCaseResult] = []
     for case in parsed_tests.cases:
         metadata = case_metadata(parsed_tests, case)
@@ -233,17 +233,10 @@ def case_metadata(
     }
 
 
-def require_parsed_tests(task: HumanEvalTask) -> ParsedTests:
-    if task.parsed_tests is None:
-        raise ValueError("HumanEvalTask.parsed_tests is required")
-    return task.parsed_tests
-
-
 __all__ = [
     "case_metadata",
     "error_results",
     "evaluation_from_candidate_execution",
-    "require_parsed_tests",
     "timeout_results",
     "top_level_function_names",
 ]

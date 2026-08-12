@@ -2,10 +2,56 @@
 
 ## Unreleased
 
+- Pull-request CI runs lint, type, and test checks only. Distribution build,
+  metadata, and installed-wheel qualification run at publication time in the
+  tag-triggered release workflow.
+- HumanEval scoring profiles declare a candidate reduction, which also fixes
+  the rule applied across the function groups within one candidate.
+  `first_candidate` scores candidate zero alone and requires every one of its
+  function groups to pass; `any_candidate_passes` scores a pass when any
+  candidate has any function group passing the complete suite, matching the
+  whetstone correctness score, so a helper extracted beside a correct solution
+  no longer scores the sample zero. Both report harness or operator failure
+  rather than a measured zero when no candidate passes but some candidate's
+  measurement is broken. Blank and unextractable submissions stay distinct
+  zero-scoring outcomes under both.
+
 - Generation corpus adapters extract HumanEval, MBPP Pro, HumanEval Pro,
   ClassEval, BigCodeBench Lite Pro, and NL Latents archived model activity into
   five validated Parquet grains with atomic publication and content-addressed
   task material.
+- A fixed, staged verification workflow builds a preprocessing-eligible
+  historical HumanEval corpus, selects a balanced directional sample,
+  evaluates it with an explicit evaluation Python runtime and preflight checks,
+  and summarizes generation- and task-level outcomes.
+- The task-difficulty workflow reads validated generation corpus bundles from
+  the #108 extraction format and projects `generations.parquet` plus
+  `requests.parquet` into the workflow frame.
+- Directional HumanEval evaluation accepts worker and candidate-timeout
+  flags, isolates resumable artifacts by the effective settings, and reports
+  end-to-end and evaluation-only time per selected generation.
+- `evaluate_batch` schedules candidate execution across all samples through one
+  global plan-order queue bounded by worker count and attempt limits.
+- Parallel preprocessing runs on dr-exec 0.1.9's worker-pool importable JSON
+  executor. `preprocess_batch` runs each distinct text once across long-lived
+  worker processes and streams results to an optional observer so a
+  corpus-scale batch retains nothing. `candidate_sources_batch` returns
+  candidate sources alone for callers that consume them, keeping traces inside
+  the workers. Stage 1, the analysis script, and `evaluate_batch` sample
+  prepare share this path; the in-process pool, windowed dr-store trace
+  caching, and the hand-rolled admission windows and process pool they
+  replaced are removed. The single-text `run_preprocessing_cached` sqlite
+  memoization path is removed with them: batch preprocessing left it without
+  production callers, and evaluation sizes preprocessing width through
+  dr-exec's public `resolve_pool_capacity` rather than mapping capacity
+  variants itself.
+- The directional evaluator raises a low per-process open-file soft limit to a
+  worker-scaled minimum before parallel execution, or fails early with an
+  actionable shell command when the hard limit prevents it.
+- A one-command baseline runner exports git-tracked run config and results for
+  before/after comparisons against the reviewed HumanEval generation corpus.
+- Directional HumanEval evaluation no longer requires a separate environment
+  flag before stage 3; the explicit evaluation Python runtime remains required.
 
 ## 0.1.6 - 2026-08-06
 
@@ -90,8 +136,8 @@
   runtime discovery, image inspection, runtime allowlisting, and runtime
   environment construction. Under dr-exec, submitted programs are not
   contained by the subprocess boundary: they retain the invoking worker's
-  permissions, external worker isolation is the deployment boundary, and
-  evaluations run only on disposable workers. `DR_CODE_SANDBOX_IMAGE`,
+  permissions, external worker isolation is the deployment boundary.
+  `DR_CODE_SANDBOX_IMAGE`,
   `DR_CODE_RUN_SANDBOX_TESTS`, the `oci` pytest marker, and the dedicated CI
   and release OCI jobs are removed with the sandbox.
 

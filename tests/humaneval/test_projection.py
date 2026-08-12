@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from dr_exec import ExecutionPoolConfig
 
@@ -7,6 +9,7 @@ from _executor_stubs import importable_json_executor
 from dr_code.evaluation import BundleRecordReference, EvaluatedSampleRecord
 from dr_code.evaluation._batch import _evaluate_batch_assembly
 from dr_code.humaneval import (
+    ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
     DEFAULT_HUMANEVAL_SCORING_PROFILE,
     CompletedSubmissionResult,
     HarnessFailure,
@@ -17,6 +20,7 @@ from dr_code.humaneval import (
     score_humaneval_submission,
     score_humaneval_submissions_batch,
 )
+from dr_code.humaneval.task import EvaluationCaseStatus
 from dr_code.metrics import OperatorFailure, OperatorFailureRecord
 from dr_code.trace import TextArtifact
 
@@ -120,16 +124,20 @@ async def test_batch_projection_preserves_request_order() -> None:
     await execution_cache.close()
 
 
-async def test_projection_classifies_only_the_first_candidate_metric_slice() -> (
-    None
-):
+async def _two_candidate_record(
+    *,
+    first_source: str,
+    second_source: str,
+) -> tuple[EvaluatedSampleRecord, object]:
+    """Evaluate one sample whose submission yields two ordered candidates."""
+
     batch_request = request()
     selected_sample = batch_request.inputs[0].sample.model_copy(
         update={
             "raw_input": TextArtifact(
                 text=(
-                    "```python\ndef observed_load_count(_x): return 1\n```\n"
-                    "```python\ndef observed_load_count(_x): return 2\n```"
+                    f"```python\n{first_source}\n```\n"
+                    f"```python\n{second_source}\n```"
                 )
             )
         }
@@ -143,7 +151,7 @@ async def test_projection_classifies_only_the_first_candidate_metric_slice() -> 
             )
         }
     )
-    execution_cache = cache(BatchStore(), resident=1)
+    execution_cache = cache(BatchStore(), resident=2)
     placement = MemoryPlacement()
     await _evaluate_batch_assembly(
         batch_request,
@@ -155,6 +163,81 @@ async def test_projection_classifies_only_the_first_candidate_metric_slice() -> 
     record = placement.records[0]
     assert isinstance(record, EvaluatedSampleRecord)
     assert len(record.candidates) == 2
+    return record, execution_cache
+
+
+async def _one_candidate_record(
+    source: str,
+) -> tuple[EvaluatedSampleRecord, object]:
+    """Evaluate one sample whose submission yields exactly one candidate."""
+
+    batch_request = request()
+    selected_sample = batch_request.inputs[0].sample.model_copy(
+        update={"raw_input": TextArtifact(text=f"```python\n{source}\n```")}
+    )
+    batch_request = batch_request.model_copy(
+        update={
+            "inputs": (
+                batch_request.inputs[0].model_copy(
+                    update={"sample": selected_sample}
+                ),
+            )
+        }
+    )
+    execution_cache = cache(BatchStore())
+    placement = MemoryPlacement()
+    await _evaluate_batch_assembly(
+        batch_request,
+        executor=importable_json_executor(),
+        execution_cache=execution_cache,
+        pool_config=ExecutionPoolConfig(),
+        placement_sink=placement,
+    )
+    record = placement.records[0]
+    assert isinstance(record, EvaluatedSampleRecord)
+    assert len(record.candidates) == 1
+    return record, execution_cache
+
+
+def _project(
+    record: EvaluatedSampleRecord,
+    profile: object,
+) -> CompletedSubmissionResult | HarnessFailure:
+    return project_humaneval_submission(
+        record,
+        HumanEvalSubmissionRequest(
+            sample=record.sample.identity,
+            scoring_profile=profile,  # type: ignore[arg-type]
+        ),
+        sample_record=_reference(),
+    )
+
+
+async def test_declared_reduction_decides_a_later_passing_candidate() -> None:
+    record, execution_cache = await _two_candidate_record(
+        first_source="def observed_load_count(_x): return 999",
+        second_source="def observed_load_count(_x): return 1",
+    )
+
+    first_only = _project(record, DEFAULT_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(first_only, CompletedSubmissionResult)
+    assert first_only.outcome is SubmissionOutcome.TESTS_FAILED
+    assert first_only.score == 0.0
+
+    any_passes = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(any_passes, CompletedSubmissionResult)
+    assert any_passes.outcome is SubmissionOutcome.PASSED
+    assert any_passes.score == 1.0
+    await execution_cache.close()
+
+
+async def test_first_candidate_reduction_ignores_later_candidate_evidence() -> (
+    None
+):
+    record, execution_cache = await _two_candidate_record(
+        first_source="def observed_load_count(_x): return 1",
+        second_source="def observed_load_count(_x): return 2",
+    )
     later_failure = OperatorFailureRecord(
         identity=record.metrics[1].identity,
         failure=OperatorFailure(
@@ -165,19 +248,237 @@ async def test_projection_classifies_only_the_first_candidate_metric_slice() -> 
     isolated = record.model_copy(
         update={"metrics": (record.metrics[0], later_failure)}
     )
-    projection_request = HumanEvalSubmissionRequest(
-        sample=record.sample.identity,
-        scoring_profile=DEFAULT_HUMANEVAL_SCORING_PROFILE,
-    )
 
-    projected = project_humaneval_submission(
-        isolated,
-        projection_request,
-        sample_record=_reference(),
-    )
+    projected = _project(isolated, DEFAULT_HUMANEVAL_SCORING_PROFILE)
 
     assert isinstance(projected, CompletedSubmissionResult)
     assert projected.outcome is SubmissionOutcome.PASSED
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_scores_a_broken_measurement_as_failure() -> (
+    None
+):
+    record, execution_cache = await _two_candidate_record(
+        first_source="def observed_load_count(_x): return 999",
+        second_source="def observed_load_count(_x): return 998",
+    )
+    broken = OperatorFailureRecord(
+        identity=record.metrics[1].identity,
+        failure=OperatorFailure(
+            failure_type="BrokenCandidateMeasurement",
+            failure_message="candidate one was never measured",
+        ),
+    )
+    unmeasured = record.model_copy(
+        update={"metrics": (record.metrics[0], broken)}
+    )
+
+    # No ordinal passes, but one is unmeasured: it might have passed, so the
+    # sample is a harness failure rather than a measured zero.
+    projected = _project(unmeasured, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(projected, HarnessFailure)
+    assert projected.failure_class == "BrokenCandidateMeasurement"
+
+    # Every ordinal validly measured and none passing is a clean zero.
+    measured = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(measured, CompletedSubmissionResult)
+    assert measured.outcome is SubmissionOutcome.TESTS_FAILED
+    assert measured.score == 0.0
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_passes_a_solution_beside_a_helper() -> (
+    None
+):
+    # One fenced block is one candidate, and every top-level function in it
+    # becomes its own test group, so a correct solution keeps the company of
+    # the helper it was written with.
+    record, execution_cache = await _one_candidate_record(
+        "def helper(_x):\n    return 999\n\n\n"
+        "def observed_load_count(_x):\n    return 1\n"
+    )
+    (execution,) = record.executions
+    (suite,) = execution.outcome.result.suites
+    assert {group.function_name for group in suite.groups} == {
+        "helper",
+        "observed_load_count",
+    }
+
+    any_passes = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(any_passes, CompletedSubmissionResult)
+    assert any_passes.outcome is SubmissionOutcome.PASSED
+    assert any_passes.score == 1.0
+
+    # The strict comparator profile still requires every group to pass.
+    first_only = _project(record, DEFAULT_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(first_only, CompletedSubmissionResult)
+    assert first_only.outcome is SubmissionOutcome.TESTS_FAILED
+    assert first_only.score == 0.0
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_requires_one_group_to_pass_wholly() -> (
+    None
+):
+    # No single group passes the complete suite: each function is wrong, so
+    # the existential fails and the sample is a measured zero.
+    record, execution_cache = await _one_candidate_record(
+        "def helper(_x):\n    return 999\n\n\n"
+        "def observed_load_count(_x):\n    return 998\n"
+    )
+
+    for profile in (
+        DEFAULT_HUMANEVAL_SCORING_PROFILE,
+        ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
+    ):
+        projected = _project(record, profile)
+        assert isinstance(projected, CompletedSubmissionResult)
+        assert projected.outcome is SubmissionOutcome.TESTS_FAILED
+        assert projected.score == 0.0
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_finds_a_passing_group_in_any_candidate() -> (
+    None
+):
+    # The two quantifiers compose: the passing group sits in a later candidate
+    # next to a failing helper.
+    record, execution_cache = await _two_candidate_record(
+        first_source="def observed_load_count(_x):\n    return 999",
+        second_source=(
+            "def helper(_x):\n    return 997\n\n\n"
+            "def observed_load_count(_x):\n    return 1"
+        ),
+    )
+
+    any_passes = _project(record, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(any_passes, CompletedSubmissionResult)
+    assert any_passes.outcome is SubmissionOutcome.PASSED
+    assert any_passes.score == 1.0
+
+    first_only = _project(record, DEFAULT_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(first_only, CompletedSubmissionResult)
+    assert first_only.outcome is SubmissionOutcome.TESTS_FAILED
+    await execution_cache.close()
+
+
+async def test_any_candidate_reduction_reports_an_unfinished_group_honestly() -> (
+    None
+):
+    # A candidate whose solution group failed cleanly beside a group that never
+    # finished is not a measured zero: the wall-time budget stopped the
+    # measurement, and the unfinished group might have passed.
+    record, execution_cache = await _one_candidate_record(
+        "def helper(_x):\n    return 999\n\n\n"
+        "def observed_load_count(_x):\n    return 998\n"
+    )
+    (execution,) = record.executions
+    (suite,) = execution.outcome.result.suites
+    solution, unfinished = (
+        suite.groups
+        if suite.groups[0].function_name == "helper"
+        else (suite.groups[1], suite.groups[0])
+    )
+    stalled = unfinished.model_copy(
+        update={
+            "cases": tuple(
+                replace(case, status=EvaluationCaseStatus.TIMEOUT)
+                for case in unfinished.cases
+            )
+        }
+    )
+    timed_out = record.model_copy(
+        update={
+            "executions": (
+                execution.model_copy(
+                    update={
+                        "outcome": execution.outcome.model_copy(
+                            update={
+                                "result": execution.outcome.result.model_copy(
+                                    update={
+                                        "suites": (
+                                            suite.model_copy(
+                                                update={
+                                                    "groups": (
+                                                        solution,
+                                                        stalled,
+                                                    )
+                                                }
+                                            ),
+                                        )
+                                    }
+                                )
+                            }
+                        )
+                    }
+                ),
+            )
+        }
+    )
+
+    projected = _project(timed_out, ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE)
+    assert isinstance(projected, CompletedSubmissionResult)
+    assert projected.outcome is SubmissionOutcome.TIMED_OUT
+    assert projected.score == 0.0
+    await execution_cache.close()
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        DEFAULT_HUMANEVAL_SCORING_PROFILE,
+        ANY_CANDIDATE_HUMANEVAL_SCORING_PROFILE,
+    ],
+    ids=["first_candidate", "any_candidate_passes"],
+)
+async def test_blank_and_unextractable_submissions_score_zero_under_every_reduction(
+    profile: object,
+) -> None:
+    batch_request = request(2)
+    inputs = tuple(
+        item.model_copy(
+            update={
+                "sample": item.sample.model_copy(
+                    update={"raw_input": TextArtifact(text=text)}
+                )
+            }
+        )
+        for item, text in zip(
+            batch_request.inputs,
+            ("   \n\n  ", "there is no code in this reply at all"),
+            strict=True,
+        )
+    )
+    batch_request = batch_request.model_copy(update={"inputs": inputs})
+    execution_cache = cache(BatchStore(), resident=2)
+    placement = MemoryPlacement()
+    await _evaluate_batch_assembly(
+        batch_request,
+        executor=importable_json_executor(),
+        execution_cache=execution_cache,
+        pool_config=ExecutionPoolConfig(),
+        placement_sink=placement,
+    )
+
+    outcomes = []
+    for record in placement.records:
+        projected = project_humaneval_submission(
+            record,
+            HumanEvalSubmissionRequest(
+                sample=record.sample.identity,
+                scoring_profile=profile,  # type: ignore[arg-type]
+            ),
+            sample_record=_reference(),
+        )
+        assert isinstance(projected, CompletedSubmissionResult)
+        assert projected.score == 0.0
+        outcomes.append(projected.outcome)
+
+    assert set(outcomes) == {
+        SubmissionOutcome.EMPTY_SUBMISSION,
+        SubmissionOutcome.EXTRACTION_FAILED,
+    }
     await execution_cache.close()
 
 

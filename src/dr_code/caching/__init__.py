@@ -9,19 +9,23 @@ from dr_code.caching.execution_cache import (
     ExecutionCacheStats,
     WindowedExecutionCache,
 )
-from dr_code.caching.trace_cache import (
-    preprocessing_trace_cache_key,
-    run_preprocessing_cached,
+from dr_code.caching.preprocess_batch import (
+    CandidateSourcesObserver,
+    TraceObserver,
+    candidate_sources_batch,
+    preprocess_batch,
 )
 
 __all__ = [
     "BatchRecordStore",
     "CACHED_EXECUTION_OBSERVATION_SCHEMA_VERSION",
     "CachedExecutionObservation",
+    "CandidateSourcesObserver",
     "EXECUTION_CACHE_NAMESPACE",
     "EXECUTION_CACHE_RECORD_SCHEMA",
     "ExecutionCacheStats",
+    "TraceObserver",
     "WindowedExecutionCache",
-    "preprocessing_trace_cache_key",
-    "run_preprocessing_cached",
+    "candidate_sources_batch",
+    "preprocess_batch",
 ]

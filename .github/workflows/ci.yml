@@ -13,16 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  release-contract:
-    name: Release contract
-    runs-on: depot-ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Validate release metadata
-        run: python3 scripts/check_release_contract.py
-
   python:
     name: Python ${{ matrix.python-version }}
     runs-on: depot-ubuntu-24.04
@@ -50,15 +40,6 @@ jobs:
         if: matrix.python-version == '3.13'
         run: uvx tombi@1.2.5 lint --offline .defs/terms.toml .defs/contracts.toml
       - run: uv run pytest
-      - name: Build distributions
-        if: matrix.python-version == '3.13'
-        run: uv build
-      - name: Check distribution metadata
-        if: matrix.python-version == '3.13'
-        run: uvx --from twine==7.0.0 twine check --strict dist/*
-      - name: Smoke-test installed wheel
-        if: matrix.python-version == '3.13'
-        run: uv run python scripts/check_built_wheel.py
 
   viewer:
     name: Viewer

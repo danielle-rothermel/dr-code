@@ -102,8 +102,6 @@ def _lengths(text: str) -> tuple[int, int]:
 def _task_row(task: HumanEvalTask) -> dict[str, str | int]:
     parsed = task.parsed
     code_without_comments = task.ground_truth_code_without_comments
-    if parsed is None or code_without_comments is None:
-        raise ValueError(f"task {task.task_id!r} has no parsed source")
 
     tree = ast.parse(task.ground_truth_code)
     representations = {

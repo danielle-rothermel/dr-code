@@ -91,39 +91,63 @@ def bind_preprocessing(
 ) -> BoundPreprocessingRunner: ...
 ```
 
-### [Preprocessing trace caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
+### [Batch preprocessing](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
 
-`dr_code.caching` provides opt-in preprocessing trace memoization over a
-[dr-store](https://github.com/danielle-rothermel/dr-store) record cache. It
-accepts only validated entries whose input and producer match the request;
-other cache outcomes fall through to fresh preprocessing. dr-store's managed
-`SqliteRecordCache` supplies the persistent lifecycle.
-
-While development mode keeps component versions at `"0"`, discard persistent
-caches after preprocessing source, Python runtime, or dependency changes. Once
-development mode ends, every such behavior-affecting change requires a version
-bump for each affected preprocessing component before reusing its cache.
+Parallel batch preprocessing runs on dr-exec's worker pool. `preprocess_batch`
+deduplicates the requested texts and runs each one as one trusted importable
+JSON job across long-lived worker processes, which import the preprocessing
+entry point once per worker.
 
 ```python
-def preprocessing_trace_cache_key(
-    text: str,
-    runner: BoundPreprocessingRunner,
-) -> str: ...
+from dr_code.caching import preprocess_batch
 
-
-async def run_preprocessing_cached(
-    text: str,
-    runner: BoundPreprocessingRunner,
-    cache: RecordCache,
-) -> Trace: ...
+traces_by_text = await preprocess_batch(
+    texts,
+    definition=definition,
+    worker_count=16,
+)
 ```
+
+Pass `on_trace` to consume each result as it completes instead of retaining the
+whole batch; the returned mapping is then empty.
 
 ```python
-from dr_store import SqliteRecordCache
-
-async with await SqliteRecordCache.open("traces.sqlite3") as cache:
-    trace = await run_preprocessing_cached(text, runner, cache)
+await preprocess_batch(
+    texts,
+    definition=definition,
+    worker_count=16,
+    on_trace=lambda text, trace: consume(text, trace),
+)
 ```
+
+A caller that wants candidate sources rather than whole traces uses
+`candidate_sources_batch`, which runs an entry point returning the sources
+alone. Result size is the term that decides worker-pool throughput: the caller
+decodes and validates every byte a worker returns, single-threaded, so a whole
+serialized trace costs about a hundred times the payload of the sources it
+carries and no number of workers recovers it.
+
+```python
+from dr_code.caching import candidate_sources_batch
+
+sources_by_text = await candidate_sources_batch(
+    texts,
+    definition=definition,
+    worker_count=16,
+)
+```
+
+### Execution primitives
+
+Each kind of work in this repository runs on the dr-exec execution mode that
+matches its trust boundary and its cost per item. See dr-exec's
+[parallelism guide](https://github.com/danielle-rothermel/dr-exec#choosing-an-execution-mode-a-parallelism-guide)
+for the full decision table.
+
+| Work | Primitive | Why |
+|---|---|---|
+| Candidate and test execution | Spawned subprocess jobs (`ProcessExecutor`) | The source is model-produced and untrusted, so each candidate needs a real process boundary, an enforced budget, and a durable record of its own. |
+| Preprocessing | dr-exec worker pool (`WorkerPoolImportableJsonExecutor`, via `preprocess_batch`) | Trusted first-party code, CPU-bound, milliseconds per item: long-lived workers pay the import once each and use real cores, where spawn-per-job would spend all of them on `import`. |
 
 ### [Windowed execution caching](docs/windowed_execution_cache.md)
 
@@ -328,6 +352,17 @@ Scoring is a projection over authoritative sample evaluation records; it never
 starts a second candidate execution route. Results distinguish completed
 benchmark outcomes from harness failure.
 
+A scoring profile declares how the projection reduces a sample's candidates to
+one outcome, and how it reduces the function groups within one candidate.
+Extraction keeps one representation per candidate, so a solution and the helpers
+written beside it share a candidate, and evaluation runs the complete suite once
+per top-level function. `FIRST_CANDIDATE` scores candidate zero alone and
+requires every one of its function groups to pass. `ANY_CANDIDATE_PASSES` scores
+a pass when any candidate has any function group passing the complete suite, so
+a failing helper cannot mask a correct solution; it reports a harness or
+operator failure — never a measured zero — when no candidate passes but some
+candidate's measurement is broken.
+
 ```python
 class HumanEvalTask(FrozenModel):
     task_id: str
@@ -336,6 +371,11 @@ class HumanEvalTask(FrozenModel):
     entry_point: str
     test: str
     ...
+
+
+class CandidateReduction(StrEnum):
+    FIRST_CANDIDATE = "first_candidate"
+    ANY_CANDIDATE_PASSES = "any_candidate_passes"
 
 
 class SubmissionOutcome(StrEnum):
@@ -460,8 +500,7 @@ materialized candidate and interprets dr-exec's typed outcome and attribution
 taxonomy into candidate, harness, and executor records. `dr_code.core.execution`
 only provisions the caller-selected production executor. Submitted programs
 are not contained by that process boundary: they retain the invoking worker's
-permissions, external worker isolation is the deployment boundary, and
-evaluations run only on disposable workers.
+permissions, and external worker isolation is the deployment boundary.
 
 ```python
 class FrozenModel(BaseModel): ...

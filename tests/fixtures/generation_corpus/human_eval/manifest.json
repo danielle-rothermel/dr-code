@@ -1,0 +1,40 @@
+{
+  "format": "generation-corpus-v1",
+  "adapter_name": "fixture_human_eval",
+  "adapter_version": 1,
+  "created_at": "2026-08-11T01:59:43.218960+00:00",
+  "source_manifest": "/fixture/source/manifest.json",
+  "source_manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "source_dump_created_at": "2026-08-10T00:00:00+00:00",
+  "source_dump_pool_count": 1,
+  "generations": {
+    "path": "generations.parquet",
+    "sha256": "963534bcca7dc9b6e22a334efd5b298e68d86b41036750161e9510fea66dea6b",
+    "rows": 6,
+    "schema_sha256": "8066f0d8aed6b300abb5d4eac62d548963f3600ffb05fd4f1a6a6f6ed2d546be"
+  },
+  "source_records": {
+    "path": "source_records.parquet",
+    "sha256": "a1ede7314fde4da3fc57e8d6b85e235a98c89468c514294010699434cf726181",
+    "rows": 0,
+    "schema_sha256": "33fad7af7a31b33744b16d451c3ac6327edce73006888d26ea65225572d9e43f"
+  },
+  "encoder_artifacts": {
+    "path": "encoder_artifacts.parquet",
+    "sha256": "69ab075bdb169c1aec7ba9dbecdd17fe06ae2cd0cf3fbd443450dafcea6bcede",
+    "rows": 0,
+    "schema_sha256": "27dda644ea706bc98308fe26ef2d6d3d4ffa84e204493b112a724de67f84ee52"
+  },
+  "requests": {
+    "path": "requests.parquet",
+    "sha256": "682e64cb72ff49b63eb108ccbc40b494dea12e0a739400c449749fa4a731934f",
+    "rows": 6,
+    "schema_sha256": "0a441d8570bfcd2c3fcb1a2b82d4defba55633996ebdeb9b1df09be530b3cf96"
+  },
+  "tasks": {
+    "path": "tasks.parquet",
+    "sha256": "ca6715f2d86364e01451018bf6ef0f0edc0e58573cdb2c442e8a4e390c18c2a2",
+    "rows": 1,
+    "schema_sha256": "e8cf956743e347673b4ec8b141804d74ada4af560d92a82ade8835afed54051a"
+  }
+}

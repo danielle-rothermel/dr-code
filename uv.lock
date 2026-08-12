@@ -403,7 +403,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", specifier = ">=3.0,<4" },
-    { name = "dr-exec", specifier = "==0.1.7" },
+    { name = "dr-exec", specifier = "==0.1.9" },
     { name = "dr-serialize", specifier = "==0.1.2" },
     { name = "dr-store", specifier = "==0.2.0" },
     { name = "numpy", specifier = ">=2.1,<3" },
@@ -426,16 +426,16 @@ dev = [
 
 [[package]]
 name = "dr-exec"
-version = "0.1.7"
+version = "0.1.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dr-serialize" },
     { name = "dr-store" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/15/d6/cf6e5a3add2ee8b9c532b058f7841c73ad869abbc98417a793fe08b235a9/dr_exec-0.1.7.tar.gz", hash = "sha256:16c85b8f17e4d4a23e58c7046e3450aeccaa2781053e7bd296f85d80be92e797", size = 46927, upload-time = "2026-08-09T00:57:12.112Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/68/8e2cf24a57dead31302e5d0a13b49843db9486887ceb013859c43f244ce3/dr_exec-0.1.9.tar.gz", hash = "sha256:e83c20c6ddf8ac730b0f521befe85a3e357cb199236d90e443e9896aba6954cf", size = 65484, upload-time = "2026-08-11T20:53:54.761Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/a8/3d87ba49fceb37d797a626cc09fc68b7ac0d97d21777d4f9a5f056640cc8/dr_exec-0.1.7-py3-none-any.whl", hash = "sha256:d19b1fadad6ff972a4397c6784436179f8ae81137be10c3c6a6279f17fd863d8", size = 61456, upload-time = "2026-08-09T00:57:10.982Z" },
+    { url = "https://files.pythonhosted.org/packages/78/5e/c6c28475d700101ef82e8f96f3d79914884ada283a215405b3b7222a2a4d/dr_exec-0.1.9-py3-none-any.whl", hash = "sha256:e24ea5768df5c11950a82b962db3f75b43bb12bb041c6ce841e8cc6bdb5fe0fa", size = 83660, upload-time = "2026-08-11T20:53:53.51Z" },
 ]
 
 [[package]]

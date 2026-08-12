@@ -8,3 +8,4 @@ viewer/packages/*/dist/
 *.swp
 .runs/
 .scratch/
+.evaluation-venv/
