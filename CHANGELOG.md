@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.7 - 2026-08-12
+
 - Evidence writes can join a caller-owned transaction.
   `commit_evaluation_evidence` takes the caller's open sync SQLAlchemy Core
   connection and writes the member sample records, the attempt record, and the
@@ -106,8 +108,6 @@
   before/after comparisons against the reviewed HumanEval generation corpus.
 - Directional HumanEval evaluation no longer requires a separate environment
   flag before stage 3; the explicit evaluation Python runtime remains required.
-
-### 2026-08-12
 
 - `validate_preprocessing` and `validate_testing` are dr-code's standalone
   validation flows. Both run one caller-supplied request through
