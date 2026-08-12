@@ -302,6 +302,7 @@ def _project_record(
             reference,
             failure_type=metric_slice.failure_type,
             message=metric_slice.message,
+            failure_class=_slice_failure_class(execution),
         )
     classified = _classify_candidate(candidate, execution, request)
     if isinstance(classified, _CandidateHarnessFailure):
@@ -369,6 +370,7 @@ def _project_any_candidate(
                 first_broken = _CandidateHarnessFailure(
                     failure_type=metric_slice.failure_type,
                     message=metric_slice.message,
+                    failure_class=_slice_failure_class(execution),
                 )
             continue
 
@@ -483,6 +485,17 @@ def _validated_metric_slice(
             ),
         )
     return _SliceValid()
+
+
+def _slice_failure_class(execution: CandidateExecutionRecord) -> FailureClass:
+    """Attribute a broken metric slice to the party that owns the execution.
+
+    The operator that measures a candidate fails whenever the execution itself
+    failed, so the slice's failure carries the execution outcome's attribution
+    rather than the measuring harness's.
+    """
+
+    return failure_class_of(execution.outcome) or FailureClass.HARNESS
 
 
 def _classify_candidate(

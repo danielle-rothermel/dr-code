@@ -149,7 +149,7 @@ class ProjectionKind(StrEnum):
 
 class ProjectionRequest(FrozenModel):
     kind: ProjectionKind
-    definition_version: Literal[1] = 1
+    definition_version: Literal[2] = 2
 
 
 class EvaluationBatchRequest(FrozenModel):
@@ -265,7 +265,7 @@ class EvaluationBatchRequest(FrozenModel):
 
 class EvaluationProjectionReference(FrozenModel):
     kind: ProjectionKind
-    definition_version: Literal[1] = 1
+    definition_version: Literal[2] = 2
     source_attempt: EvaluationAttemptIdentity
     artifact_name: str
 

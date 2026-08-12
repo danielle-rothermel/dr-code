@@ -20,7 +20,7 @@ def test_evaluation_bundle_wire_literals_and_keys_are_golden() -> None:
     batch_request = request()
     projection = {
         "kind": "evaluation_samples",
-        "definition_version": 1,
+        "definition_version": 2,
         "source_attempt": {
             "attempt_id": str(batch_request.attempt.attempt_id)
         },
@@ -57,7 +57,7 @@ def test_evaluation_bundle_wire_literals_and_keys_are_golden() -> None:
             "attempt_id": "00000000-0000-0000-0000-000000000001"
         },
         "kind": "evaluation_samples",
-        "definition_version": 1,
+        "definition_version": 2,
     }
     assert EVALUATION_BUNDLE_FORMAT == "dr-code-evaluation-bundle-v1"
     assert EVALUATION_BUNDLE_SCHEMA_VERSION == 1

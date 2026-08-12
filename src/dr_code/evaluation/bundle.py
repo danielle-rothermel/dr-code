@@ -89,7 +89,7 @@ class ProjectionArtifactHeader(FrozenModel):
     schema_version: Literal[2] = EVALUATION_PROJECTION_SCHEMA_VERSION
     source_attempt: EvaluationAttemptIdentity
     kind: ProjectionKind
-    definition_version: Literal[1] = 1
+    definition_version: Literal[2] = 2
 
 
 class EvaluationReadLimits(FrozenModel):
