@@ -107,6 +107,14 @@ if TYPE_CHECKING:
         StructuralRecordComparison,
         compare_evaluation_attempts,
     )
+    from dr_code.evaluation.evidence import (
+        ATTEMPT_RECORD_OBJECT_SCHEMA,
+        EnlistedObjectStore,
+        OUTPUT_REFERENCE_BINDING_PREFIX,
+        commit_evaluation_evidence,
+        output_reference_binding_key,
+        sample_record_binding_key,
+    )
     from dr_code.evaluation.records import (
         AttemptCompleteness,
         AttemptLimitExhaustion,
@@ -198,6 +206,17 @@ _BUNDLE_EXPORTS = frozenset(
     }
 )
 
+_EVIDENCE_EXPORTS = frozenset(
+    {
+        "ATTEMPT_RECORD_OBJECT_SCHEMA",
+        "EnlistedObjectStore",
+        "OUTPUT_REFERENCE_BINDING_PREFIX",
+        "commit_evaluation_evidence",
+        "output_reference_binding_key",
+        "sample_record_binding_key",
+    }
+)
+
 _COMPARISON_EXPORTS = frozenset(
     {
         "ComparableProjectionComparison",
@@ -232,6 +251,10 @@ def __getattr__(name: str) -> object:
         from dr_code.evaluation import bundle
 
         value = getattr(bundle, name)
+    elif name in _EVIDENCE_EXPORTS:
+        from dr_code.evaluation import evidence
+
+        value = getattr(evidence, name)
     elif name in _COMPARISON_EXPORTS:
         from dr_code.evaluation import comparison
 
@@ -251,6 +274,7 @@ def __dir__() -> list[str]:
         set(globals())
         | _RECORD_EXPORTS
         | _BUNDLE_EXPORTS
+        | _EVIDENCE_EXPORTS
         | _COMPARISON_EXPORTS
         | _REPLAY_EXPORTS
     )
@@ -377,4 +401,10 @@ __all__ = [
     "EVALUATION_BUNDLE_SCHEMA_VERSION",
     "EVALUATION_PROJECTION_FORMAT",
     "EVALUATION_PROJECTION_SCHEMA_VERSION",
+    "ATTEMPT_RECORD_OBJECT_SCHEMA",
+    "OUTPUT_REFERENCE_BINDING_PREFIX",
+    "EnlistedObjectStore",
+    "commit_evaluation_evidence",
+    "output_reference_binding_key",
+    "sample_record_binding_key",
 ]

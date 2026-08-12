@@ -594,3 +594,28 @@ versions into one row grain invents joins and corrupts analysis denominators;
 derived retry identities similarly overstate flattened historical evidence."""
 date = "2026-08-08"
 check = "uv run pytest tests/generation_corpus"
+
+[[contracts]]
+title = "Evidence writes join the caller's transaction"
+statement = """
+dr-code persists at two grades. Cache-grade writes are fail-open: the windowed
+execution cache checkpoints outcomes best-effort, and a failed checkpoint never
+fails evaluation. Evidence-grade writes are transaction-participating: an
+explicit evaluation entry point accepts the caller's open sync SQLAlchemy Core
+connection and writes the member sample records, the attempt record, and the
+output_reference binding through dr-store's enlisted operations on that
+connection. It never commits, rolls back, or closes the connection it is
+handed, so the evidence becomes visible exactly when the caller commits and
+leaves nothing behind when the caller rolls back. The generation artifact
+bundle publishes before the enlisted writes, so a committed output_reference
+always names an already-published artifact. When no connection is supplied the
+best-effort publication path is unchanged."""
+rationale = """
+Reusable execution outcomes are an optimization whose loss costs only time,
+while evidence is the record a later analysis reads: partially visible evidence
+would misstate what ran. Joining the caller's transaction makes the records and
+the reference that resolves them commit as one unit without dr-code owning a
+transaction it did not open, and publishing the artifact first keeps a
+committed reference from naming an artifact that does not exist."""
+date = "2026-08-12"
+check = "uv run pytest tests/evaluation/test_evidence.py"

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Evidence writes can join a caller-owned transaction.
+  `commit_evaluation_evidence` takes the caller's open sync SQLAlchemy Core
+  connection and writes the member sample records, the attempt record, and the
+  `output_reference` binding through dr-store's enlisted operations, so they
+  become visible exactly when the caller commits and leave nothing behind when
+  it rolls back. The entry point never commits, rolls back, or closes the
+  connection, and the artifact bundle publishes before the enlisted writes so a
+  committed reference always names an already-published artifact. Callers that
+  supply no connection keep the existing best-effort publication behavior, and
+  the windowed execution cache stays cache-grade and fail-open. Enlisted
+  operations require a Postgres backend, so the tests cover the call seam
+  rather than real transaction visibility.
+- dr-store resolves from the sibling `../dr-store` checkout as an editable
+  dependency at 0.2.3, with a `dr-store==0.2.3` override neutralizing released
+  dr-exec 0.1.9's pin on 0.2.0, and `sqlalchemy>=2.0` is a direct dependency
+  because the evidence path types against `sqlalchemy.engine.Connection`. This
+  is a development-mode arrangement: it lasts until dr-store 0.2.3 is published
+  and dr-exec is repinned to it.
+
 - Evaluation sampling plans declare a sample count per selected task
   (`task_num_samples`, positionally aligned with the ordered selection) instead
   of one count shared by every task. Slot ordinals are prefix sums over those
