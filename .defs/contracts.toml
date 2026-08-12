@@ -283,6 +283,27 @@ date = "2026-08-12"
 check = "uv run pytest tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
+title = "Only candidate-owned outcomes enter the execution cache"
+statement = """
+The execution cache holds outcomes that describe the candidate and no others.
+A completed job and a candidate-owned termination are written and later reused;
+a harness failure and an infrastructure failure are never written, so a repeat
+of the same request re-executes it. The decision reads the failure class
+derived from the typed outcome and adds no second vocabulary. An evaluation
+batch request may additionally declare itself fresh, which skips cache lookup
+for that request's generations so every candidate re-executes and the fresh
+outcome is the one recorded and offered to persistence. dr-code decides
+cacheability and provides the fresh switch; it never re-attempts a request on
+its own."""
+rationale = """
+Caching a run-owned failure replays an environment fault to every later reader
+as though the candidate had produced it, which is the one thing attribution
+exists to prevent, and a caller who wants a deliberate re-run needs a way to
+say so that does not depend on guessing key structure."""
+date = "2026-08-12"
+check = "uv run pytest tests/evaluation/test_cache_policy.py"
+
+[[contracts]]
 title = "Failure attribution is a named three-way class"
 statement = """
 Failure attribution travels as the closed vocabulary harness, candidate, and

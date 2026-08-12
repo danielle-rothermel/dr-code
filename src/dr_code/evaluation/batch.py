@@ -167,6 +167,10 @@ class EvaluationBatchRequest(FrozenModel):
     window_limits: WindowLimits
     shard_limits: ShardLimits
     job_budget: CandidateJobBudget
+    # The caller's deliberate re-run: skip execution-cache lookup for this
+    # request's generations so every candidate re-executes and the fresh
+    # outcome is the one recorded and offered to persistence.
+    fresh: bool = False
 
     @model_validator(mode="after")
     def validate_request(self) -> Self:

@@ -68,6 +68,7 @@ from dr_code.evaluation.records import (
     NoCandidatesSampleRecord,
     PreprocessingAbsentSampleRecord,
     SampleEvaluationRecord,
+    outcome_is_cacheable,
 )
 from dr_code.evaluation.references import (
     EvidenceReference,
@@ -477,6 +478,8 @@ async def _place_prepared_inputs(
         if isinstance(reference, StoredRecordReference):
             for item in execution.pending:
                 try:
+                    if not outcome_is_cacheable(item.outcome):
+                        continue
                     await execution_cache.put(
                         item.request_key,
                         CachedExecutionObservation(
@@ -688,13 +691,18 @@ async def _execute_batch_candidates_globally(
     exhaustion: AttemptLimitExhaustion | None = None
 
     for window in _windows(flat_work, request.window_limits.max_cache_keys):
-        await execution_cache.prefetch(
-            item.work.request_key for item in window
-        )
+        if not request.fresh:
+            await execution_cache.prefetch(
+                item.work.request_key for item in window
+            )
         try:
             misses: list[_GlobalCandidateWork] = []
             for item in window:
-                observation = execution_cache.get(item.work.request_key)
+                observation = (
+                    None
+                    if request.fresh
+                    else execution_cache.get(item.work.request_key)
+                )
                 if observation is None:
                     misses.append(item)
                 else:
