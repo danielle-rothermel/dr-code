@@ -12,11 +12,12 @@ dependencies = [
     "datasets>=3.0,<4",
     "dr-exec==0.1.9",
     "dr-serialize==0.1.2",
-    "dr-store==0.2.0",
+    "dr-store==0.2.3",
     "numpy>=2.1,<3",
     "polars>=1.43.2",
     "pydantic>=2.13.4",
     "python-minifier==3.2.0",
+    "sqlalchemy>=2.0",
     "typer>=0.26.7",
     "zstandard>=0.25.0",
 ]
@@ -49,6 +50,14 @@ dev = [
 
 [tool.uv]
 required-version = ">=0.12.0"
+# Released dr-exec 0.1.9 pins dr-store==0.2.0; the override resolves the
+# dependency graph against the local dr-store the evidence path is built for.
+override-dependencies = ["dr-store==0.2.3"]
+
+# Development-mode arrangement: dr-store 0.2.3 is unreleased, so it resolves
+# from the sibling checkout until it is published.
+[tool.uv.sources]
+dr-store = { path = "../dr-store", editable = true }
 
 # Development mode pins every component to initial-version. Only repository
 # contract tests read this marker; runtime code does not, and persisted
