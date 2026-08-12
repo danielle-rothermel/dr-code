@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 
 from _executor_stubs import CountingExecutor, importable_json_executor
 from dr_code.evaluation import (
@@ -46,7 +46,7 @@ async def test_batch_uses_one_pool_and_preserves_input_order(
         batch_request,
         executor=executor,
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
 
@@ -92,7 +92,7 @@ async def test_frozen_candidates_bypass_preprocessing_and_still_execute(
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=MemoryPlacement(),
     )
     assert result.completeness is AttemptCompleteness.COMPLETE
@@ -114,7 +114,7 @@ async def test_cancellation_propagates_without_an_assembly() -> None:
                 batch_request,
                 executor=scripted_executor(outcome=CancelledOutcome()),
                 execution_cache=execution_cache,
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
                 placement_sink=MemoryPlacement(),
             )
     finally:

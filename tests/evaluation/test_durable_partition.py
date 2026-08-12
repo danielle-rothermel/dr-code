@@ -64,7 +64,7 @@ class _CancellationGatedExecutor:
         self.started = Event()
         self.cleaned = Event()
 
-    def run(
+    def run_blocking(
         self,
         job: ExecutionJob,
         /,
@@ -77,6 +77,15 @@ class _CancellationGatedExecutor:
         self.cleaned.set()
         return completed_execution(job, outcome=CancelledOutcome())
 
+    def run(
+        self,
+        job: ExecutionJob,
+        /,
+        *,
+        cancellation: object = None,
+    ) -> CompletedExecution:
+        return self.run_blocking(job, cancellation=cancellation)
+
 
 async def test_durable_cancellation_requests_and_settles_cleanup(
     monkeypatch: pytest.MonkeyPatch,
@@ -84,23 +93,25 @@ async def test_durable_cancellation_requests_and_settles_cleanup(
     monkeypatch.setattr(_batch, "CancelToken", _GateCancelToken)
     execution_cache = cache(BatchStore(), resident=1)
     executor = _CancellationGatedExecutor()
-    running = asyncio.create_task(
-        _evaluate_durable_partition_assembly(
-            request(projections=()),
-            executor=executor,
-            execution_cache=execution_cache,
-            placement_sink=MemoryPlacement(),
+    try:
+        running = asyncio.create_task(
+            _evaluate_durable_partition_assembly(
+                request(projections=()),
+                executor=executor,
+                execution_cache=execution_cache,
+                placement_sink=MemoryPlacement(),
+            )
         )
-    )
 
-    assert await asyncio.wait_for(
-        asyncio.to_thread(executor.started.wait), timeout=5
-    )
-    running.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await running
+        assert await asyncio.wait_for(
+            asyncio.to_thread(executor.started.wait), timeout=5
+        )
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
 
-    assert executor.cleaned.is_set()
-    await execution_cache.prefetch(("post-cancellation-probe",))
-    execution_cache.discard("post-cancellation-probe")
-    await execution_cache.close()
+        assert executor.cleaned.is_set()
+        await execution_cache.prefetch(("post-cancellation-probe",))
+        execution_cache.discard("post-cancellation-probe")
+    finally:
+        await execution_cache.close()

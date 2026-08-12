@@ -870,7 +870,7 @@ def _interpret_completed_execution(
 
 
 def probe_runtime_packages(executor: Executor) -> dict[str, object]:
-    completed = executor.run(
+    completed = executor.run_blocking(
         _build_python_execution_job(
             driver_source=_RUNTIME_PROBE_SOURCE,
             input_json="{}",

@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 from dr_serialize import canonical_json_bytes
 from dr_serialize import Sha256Digest
 from dr_store import ArtifactBundlePublication, ObjectStore
@@ -125,7 +125,7 @@ async def test_publication_rejects_an_unclosed_nested_bundle_reference(
                 publication=ArtifactBundlePublication.allocate(
                     tmp_path, prefix="unclosed"
                 ),
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             )
     finally:
         await execution_cache.close()

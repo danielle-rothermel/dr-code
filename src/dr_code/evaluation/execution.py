@@ -147,7 +147,7 @@ def execute_candidate_job(
     run_grade: RunGrade,
     executor: Executor,
 ) -> CandidateExecutionRecord:
-    completed = executor.run(
+    completed = executor.run_blocking(
         build_candidate_execution_job(job_id, request, budget)
     )
     return executed_candidate_record(
@@ -271,9 +271,7 @@ def interpret_candidate_execution(
         if isinstance(outcome, SignaledOutcome):
             reason = CandidateTerminationReason.SIGNALED
         elif isinstance(outcome, BudgetExceededOutcome):
-            if outcome.axis is BudgetAxis.WALL_TIME:
-                reason = CandidateTerminationReason.WALL_TIME
-            elif outcome.axis is BudgetAxis.PAYLOAD_OUTPUT:
+            if outcome.axis is BudgetAxis.PAYLOAD_OUTPUT:
                 reason = CandidateTerminationReason.PAYLOAD_OUTPUT
         elif isinstance(outcome, ProtocolFailedOutcome):
             reason = CandidateTerminationReason.PAYLOAD_PROTOCOL

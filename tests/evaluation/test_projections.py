@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 
 from _executor_stubs import importable_json_executor
 from dr_code.evaluation import (
@@ -40,7 +40,7 @@ async def test_all_standard_projection_drafts_are_compact_and_ordered() -> (
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
 
@@ -60,7 +60,7 @@ async def test_public_projection_rows_pin_the_five_wire_discriminators() -> (
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
     record = placement.records[0]

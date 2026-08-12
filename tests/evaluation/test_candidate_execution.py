@@ -151,10 +151,6 @@ def test_candidate_job_budget_rejects_mismatched_retention() -> None:
             CandidateTerminationReason.SIGNALED,
         ),
         (
-            BudgetExceededOutcome(axis=BudgetAxis.WALL_TIME),
-            CandidateTerminationReason.WALL_TIME,
-        ),
-        (
             BudgetExceededOutcome(axis=BudgetAxis.PAYLOAD_OUTPUT),
             CandidateTerminationReason.PAYLOAD_OUTPUT,
         ),
@@ -229,7 +225,7 @@ def test_real_receipt_reference_is_preserved(receipt_kind: str) -> None:
                 RecordingFailure(
                     operation="finalize",
                     errno=None,
-                    detail="test failure",
+                    detail="OSError",
                 ),
             ),
         )
@@ -349,7 +345,7 @@ def test_terminated_candidate_execution_attributes_the_candidate() -> None:
     assert failure_class_of(interpreted) is FailureClass.CANDIDATE
 
 
-def test_wall_time_termination_stays_candidate_owned() -> None:
+def test_wall_time_exhaustion_is_infrastructure_owned() -> None:
     interpreted = interpret_candidate_execution(
         candidate_job_request("def observed_load_count(_x):\n    return 1\n"),
         completed_execution(
@@ -357,9 +353,10 @@ def test_wall_time_termination_stays_candidate_owned() -> None:
             outcome=BudgetExceededOutcome(axis=BudgetAxis.WALL_TIME),
         ),
     )
-    assert isinstance(interpreted, CandidateJobTerminated)
-    assert interpreted.reason is CandidateTerminationReason.WALL_TIME
-    assert failure_class_of(interpreted) is FailureClass.CANDIDATE
+    assert isinstance(interpreted, ExecutorExecutionFailure)
+    assert interpreted.attribution is not None
+    assert interpreted.attribution.owner is FailureOwner.EXECUTOR
+    assert failure_class_of(interpreted) is FailureClass.INFRASTRUCTURE
 
 
 def test_harness_execution_failure_attributes_the_harness() -> None:

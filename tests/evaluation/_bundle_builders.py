@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 from dr_store import (
     ArtifactBundlePublication,
     BundleReadLimits,
@@ -93,7 +93,7 @@ async def publish_batch(
             execution_cache=execution_cache,
             object_store=object_store,
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()

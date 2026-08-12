@@ -15,6 +15,7 @@ from typing import Protocol, TypeAlias, TypeVar
 from uuid import uuid5
 
 from dr_exec import (
+    AutoPoolCapacity,
     CancelToken,
     CompletedExecution,
     ExecutionJob,
@@ -250,7 +251,7 @@ async def _evaluate_durable_partition_assembly(
         execution_cache=execution_cache,
         run_window=run_window,
         placement_sink=placement_sink,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
     )
 
 
@@ -260,7 +261,9 @@ async def _run_durable_job(
 ) -> CompletedExecution:
     cancellation = CancelToken()
     running = asyncio.create_task(
-        asyncio.to_thread(executor.run, job, cancellation=cancellation)
+        asyncio.to_thread(
+            executor.run_blocking, job, cancellation=cancellation
+        )
     )
     try:
         return await asyncio.shield(running)

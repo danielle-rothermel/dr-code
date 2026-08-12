@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from dr_exec import CancelledOutcome, ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, CancelledOutcome, ExecutionPoolConfig
 from dr_store import ArtifactBundlePublication, MemoryBackend, ObjectStore
 
 from _executor_stubs import importable_json_executor, scripted_executor
@@ -51,7 +51,7 @@ async def test_truthful_placement_and_projection_preconditions(
                 execution_cache=execution_cache,
                 object_store=None,
                 publication=None,
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             )
         object_request = request().model_copy(
             update={"record_placement": RecordPlacement.OBJECT_STORE}
@@ -63,7 +63,7 @@ async def test_truthful_placement_and_projection_preconditions(
                 execution_cache=execution_cache,
                 object_store=ObjectStore(MemoryBackend()),
                 publication=None,
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             )
     finally:
         await execution_cache.close()
@@ -83,7 +83,7 @@ async def test_object_store_without_projections_needs_no_bundle(
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
             publication=None,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -113,7 +113,7 @@ async def test_shard_count_limit_splits_bundle_local_records(
             execution_cache=execution_cache,
             object_store=None,
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -143,7 +143,7 @@ async def test_oversized_single_record_fails_before_terminal_publication(
                 execution_cache=execution_cache,
                 object_store=None,
                 publication=publication,
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             )
     finally:
         await execution_cache.close()
@@ -163,7 +163,7 @@ async def test_cancellation_never_terminally_publishes(
                 execution_cache=execution_cache,
                 object_store=None,
                 publication=publication,
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             )
     finally:
         await execution_cache.close()

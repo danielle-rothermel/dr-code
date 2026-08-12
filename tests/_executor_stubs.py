@@ -73,8 +73,14 @@ def _attribute(outcome: ExecutionOutcome) -> ExecutionAttribution:
                 if outcome.exit_code == 0
                 else FailureOwner.PAYLOAD
             )
-        case SignaledOutcome() | BudgetExceededOutcome():
+        case SignaledOutcome():
             owner = FailureOwner.PAYLOAD
+        case BudgetExceededOutcome():
+            owner = (
+                FailureOwner.EXECUTOR
+                if outcome.axis is BudgetAxis.WALL_TIME
+                else FailureOwner.PAYLOAD
+            )
         case ProtocolFailedOutcome():
             owner = (
                 FailureOwner.EXECUTOR
@@ -258,7 +264,7 @@ class CountingExecutor:
         self._inner = inner
         self.calls: list[ExecutionJob] = []
 
-    def run(
+    def run_blocking(
         self,
         job: ExecutionJob,
         /,
@@ -266,7 +272,16 @@ class CountingExecutor:
         cancellation: object = None,
     ) -> CompletedExecution:
         self.calls.append(job)
-        return self._inner.run(job, cancellation=None)
+        return self._inner.run_blocking(job, cancellation=None)
+
+    def run(
+        self,
+        job: ExecutionJob,
+        /,
+        *,
+        cancellation: object = None,
+    ) -> CompletedExecution:
+        return self.run_blocking(job, cancellation=cancellation)
 
     @property
     def call_count(self) -> int:
@@ -290,7 +305,7 @@ class ConcurrencyTrackingExecutor:
         self.active = 0
         self.max_active = 0
 
-    def run(
+    def run_blocking(
         self,
         job: ExecutionJob,
         /,
@@ -305,7 +320,16 @@ class ConcurrencyTrackingExecutor:
         try:
             if self._delay_seconds:
                 time.sleep(self._delay_seconds)
-            return self._inner.run(job, cancellation=None)
+            return self._inner.run_blocking(job, cancellation=None)
         finally:
             with self._lock:
                 self.active -= 1
+
+    def run(
+        self,
+        job: ExecutionJob,
+        /,
+        *,
+        cancellation: object = None,
+    ) -> CompletedExecution:
+        return self.run_blocking(job, cancellation=cancellation)

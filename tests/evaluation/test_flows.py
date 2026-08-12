@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 from dr_store import ArtifactBundlePublication, MemoryBackend, ObjectStore
 
 from _executor_stubs import importable_json_executor
@@ -78,7 +78,7 @@ async def test_validate_testing_reports_attempt_verdicts(
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -105,7 +105,7 @@ async def test_validate_preprocessing_reports_corpus_coverage(
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -143,7 +143,7 @@ async def test_preprocessing_coverage_counters_partition_the_corpus(
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -185,7 +185,7 @@ async def test_preprocessing_coverage_counts_a_failed_text(
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     finally:
         await execution_cache.close()
@@ -214,7 +214,7 @@ async def test_structural_comparison_needs_a_reference_and_a_resolver(
                 publication=ArtifactBundlePublication.allocate(
                     tmp_path, prefix="testing"
                 ),
-                pool_config=ExecutionPoolConfig(),
+                pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
                 evidence_resolver=RestoredEvidence(object_store=object_store),
             )
     finally:
@@ -248,7 +248,7 @@ async def test_validate_testing_compares_against_a_reference_attempt(
             execution_cache=execution_cache,
             object_store=object_store,
             publication=reference_publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
         assert reference_run.result.bundle_path is not None
         reference = await restore_evaluation_attempt(
@@ -265,7 +265,7 @@ async def test_validate_testing_compares_against_a_reference_attempt(
             execution_cache=execution_cache,
             object_store=object_store,
             publication=candidate_publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             reference=reference.attempt,
             evidence_resolver=RestoredEvidence(
                 reference_root,

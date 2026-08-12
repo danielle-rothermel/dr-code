@@ -119,8 +119,8 @@ def failure_class_of(
     """Name which party owns a candidate execution outcome's failure.
 
     A completed job has no failure to attribute and returns ``None``. Wall-time
-    termination stays candidate-owned at dr-exec 0.1.9, which attributes it to
-    the payload.
+    budget exhaustion is infrastructure-owned at dr-exec 0.1.10, which
+    attributes it to the executor.
     """
 
     match outcome:

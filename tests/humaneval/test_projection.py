@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 
 from _executor_stubs import importable_json_executor
 from dr_code.evaluation import (
@@ -59,7 +59,7 @@ async def test_projection_scores_authoritative_records_without_execution() -> (
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
     record = placement.records[0]
@@ -105,7 +105,7 @@ async def test_batch_projection_preserves_request_order() -> None:
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
     records = tuple(
@@ -162,7 +162,7 @@ async def _two_candidate_record(
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
     record = placement.records[0]
@@ -195,7 +195,7 @@ async def _one_candidate_record(
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
     record = placement.records[0]
@@ -517,7 +517,7 @@ async def test_blank_and_unextractable_submissions_score_zero_under_every_reduct
         batch_request,
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
 
@@ -551,7 +551,7 @@ async def test_projection_requires_full_profile_coordinate_and_question() -> (
         request(),
         executor=importable_json_executor(),
         execution_cache=execution_cache,
-        pool_config=ExecutionPoolConfig(),
+        pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         placement_sink=placement,
     )
     record = placement.records[0]

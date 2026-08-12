@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from dr_exec import ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 from dr_store import ArtifactBundlePublication
 
 from _executor_stubs import importable_json_executor
@@ -46,7 +46,7 @@ async def test_cache_and_job_windows_remain_bounded_across_larger_input(
             execution_cache=execution_cache,
             object_store=None,
             publication=publication,
-            pool_config=ExecutionPoolConfig(),
+            pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
     )
 
