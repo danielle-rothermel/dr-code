@@ -71,7 +71,13 @@ testpaths = ["tests"]
 # Test directories carry no package markers, so mirrored basenames
 # (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
 # need importlib import mode rather than sys.path insertion.
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib -m 'not postgres'"
+markers = [
+    # Opt-in: needs a live PostgreSQL server via DR_STORE_POSTGRES_DSN. Run
+    # with dr-store's scratch server, which supplies both:
+    #   ../dr-store/scripts/test-postgres.sh -- uv run pytest -m postgres
+    "postgres: requires a PostgreSQL-backed dr-store",
+]
 
 [tool.ruff]
 include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]

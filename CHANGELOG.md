@@ -14,9 +14,22 @@
   already holding a different reference raises `BindingConflictError`, and any
   exception leaves the issued writes staged for the caller to roll back. The
   separate best-effort publication path takes no connection and is unchanged,
-  and the windowed execution cache stays cache-grade and fail-open. Enlisted
-  operations require a Postgres backend, so the tests cover the call seam
-  rather than real transaction visibility.
+  and the windowed execution cache stays cache-grade and fail-open. Transaction
+  visibility is covered against a real PostgreSQL-backed dr-store by the
+  opt-in `postgres` tests below, alongside the fake that covers the call seam.
+
+- Added opt-in `postgres`-marked tests that drive `commit_evaluation_evidence`
+  against a real PostgreSQL-backed dr-store, since matching call signatures do
+  not establish matching behavior: committed evidence visible to a later
+  transaction, rollback leaving nothing behind, a member key held by a
+  different record refused through the first-writer-wins winner comparison, a
+  changed attempt refused under an existing `attempt_id` while leaving the
+  original evidence intact, identical re-commit idempotent, and a failure
+  leaving writes staged for the caller to roll back. The marker is deselected
+  by default so the standard suite stays offline; run them with dr-store's
+  scratch server (`../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m
+  postgres`). Attempt and sample record builders moved to a shared
+  `tests/evaluation/_evidence_builders.py` used by both evidence modules.
 - dr-store resolves from the sibling `../dr-store` checkout as an editable
   dependency at 0.2.3, with a `dr-store==0.2.3` override neutralizing released
   dr-exec 0.1.9's pin on 0.2.0, and `sqlalchemy>=2.0` is a direct dependency

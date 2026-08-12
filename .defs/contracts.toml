@@ -624,6 +624,9 @@ the reference that resolves them commit as one unit without dr-code owning a
 transaction it did not open. Surfacing a first-writer-wins collision as an
 error keeps another writer's record from committing as if it were this
 attempt's evidence, and leaving rollback to the caller keeps dr-code from
-discarding work in a transaction it does not own."""
+discarding work in a transaction it does not own. Transaction visibility and
+collision refusal are properties of the database rather than of the call shape,
+so they are pinned against a real PostgreSQL-backed store in addition to the
+fake that covers the call seam."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py"
+check = "uv run pytest tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py && ../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m postgres tests/evaluation/test_evidence_postgres.py"
