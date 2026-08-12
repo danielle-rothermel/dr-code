@@ -82,6 +82,28 @@ def test_extraction_reads_a_top_level_json_code_field() -> None:
     )
 
 
+def test_extraction_ignores_enormous_irrelevant_number() -> None:
+    enormous_number = "9" * 5_000
+    out = _extract(
+        '{"ignored": '
+        + enormous_number
+        + ', "code": "def f():\\n    return 1"}'
+    )
+
+    assert "def f():\n    return 1" in _sources(out.value)
+    assert Representation.JSON_CODE_FIELD.value in _origin_operations(
+        out.value
+    )
+
+
+def test_extraction_does_not_treat_a_numeric_code_field_as_text() -> None:
+    out = _extract('{"code": 123}')
+
+    assert Representation.JSON_CODE_FIELD.value not in _origin_operations(
+        out.value
+    )
+
+
 @pytest.mark.parametrize("tag", ["json", ""])
 def test_extraction_reads_a_json_code_field_inside_a_fence(tag: str) -> None:
     envelope = json.dumps({"code": "def f():\n    return 1"})

@@ -1,15 +1,40 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
+from matplotlib.figure import Figure
 import polars as pl
+import pytest
 import zstandard
 
 from dr_code.metrics.compression import train_zstd_dictionary
+
+
+def _load_comparison_module() -> ModuleType:
+    path = (
+        Path(__file__).parents[2]
+        / "scripts"
+        / "compare_historical_compression_curves.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "compare_historical_compression_curves",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"could not load comparison script: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+comparison = _load_comparison_module()
 
 
 def _sha256(value: bytes) -> str:
@@ -384,3 +409,148 @@ def test_rejects_incorrect_per_sample_character_budget(
         "max_budget must equal round(budget_ratio * "
         "len(gt_code_without_comments))" in completed.stderr
     )
+
+
+def test_rejects_malformed_historical_numeric_outcome(tmp_path: Path) -> None:
+    old_results = tmp_path / "old.parquet"
+    new_results = tmp_path / "new.parquet"
+    dictionary_dir = tmp_path / "dictionaries"
+    output_dir = tmp_path / "comparison"
+    _write_historical_results(old_results, "historical-model")
+    _write_current_results(new_results, "current-model")
+    _write_dictionary_bundle(dictionary_dir)
+    historical = pl.read_parquet(old_results).with_columns(
+        pl.when(
+            (pl.col("row_kind") == "autoencoder")
+            & (pl.col("compression_method") == "zstd22")
+            & (pl.col("task_id") == "HistoricalEval/0")
+            & (pl.col("budget") == 32)
+            & (pl.col("source_sample_id") == "0")
+        )
+        .then(pl.lit("malformed"))
+        .otherwise(pl.col("score_bytes").cast(pl.String))
+        .alias("score_bytes")
+    )
+    historical.write_parquet(old_results)
+
+    completed = subprocess.run(
+        [
+            *_command(
+                old_results=old_results,
+                dictionary_dir=dictionary_dir,
+                output_dir=output_dir,
+            ),
+            "--new-results",
+            str(new_results),
+            "--new-model",
+            "current-model",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "invalid historical numeric values: score_bytes" in completed.stderr
+
+
+def test_reports_task_missing_from_one_treatment(tmp_path: Path) -> None:
+    old_results = tmp_path / "old.parquet"
+    new_results = tmp_path / "new.parquet"
+    dictionary_dir = tmp_path / "dictionaries"
+    output_dir = tmp_path / "comparison"
+    _write_historical_results(old_results, "historical-model")
+    _write_current_results(new_results, "current-model")
+    _write_dictionary_bundle(dictionary_dir)
+    current = pl.read_parquet(new_results).filter(
+        ~(
+            (pl.col("task_id") == "CurrentEval/3")
+            & (pl.col("budget_ratio") == 0.25)
+        )
+    )
+    current.write_parquet(new_results)
+
+    subprocess.run(
+        [
+            *_command(
+                old_results=old_results,
+                dictionary_dir=dictionary_dir,
+                output_dir=output_dir,
+            ),
+            "--new-results",
+            str(new_results),
+            "--new-model",
+            "current-model",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    current_curves = pl.read_csv(
+        output_dir / "historical_current_compression_curves.csv"
+    ).filter(pl.col("run") == "current")
+    incomplete = current_curves.filter(pl.col("target_budget_ratio") == 0.25)
+    assert incomplete.get_column("task_count").eq(3).all()
+    assert incomplete.get_column("expected_task_count").eq(4).all()
+    assert incomplete.get_column("covered_slot_count").eq(6).all()
+    assert incomplete.get_column("expected_row_count").eq(8).all()
+    assert incomplete.get_column("missing_row_count").eq(2).all()
+    complete = current_curves.filter(pl.col("target_budget_ratio") == 0.5)
+    assert complete.get_column("expected_task_count").eq(4).all()
+    assert complete.get_column("missing_row_count").eq(0).all()
+
+
+def test_plot_uses_model_labels_and_neutral_comparison_language(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    curves = pl.DataFrame(
+        [
+            {
+                "run": run,
+                "panel_method": panel_method,
+                "treatment_value": 1.0,
+                "treatment_label": "1×",
+                "raw_ratio": 1.0,
+                "compressed_ratio": 0.8,
+                "pass_rate": 0.5,
+            }
+            for panel_method in ("zstd22", "zstd_dict22_4k")
+            for run in ("historical", "current")
+        ]
+    )
+    references = pl.DataFrame(
+        schema={
+            "compression_method": pl.String,
+            "mean_ratio_to_gt_raw_bytes": pl.Float64,
+        }
+    )
+    closed_figures: list[Figure] = []
+    monkeypatch.setattr(
+        comparison.plt,
+        "close",
+        lambda figure: closed_figures.append(figure),
+    )
+
+    comparison._plot_curves(
+        curves,
+        references,
+        historical_model="archive/model-a\nv1",
+        new_model="candidate/model-b",
+        synthetic=False,
+        path=tmp_path / "comparison.png",
+    )
+
+    figure = closed_figures[0]
+    assert [text.get_text() for text in figure.texts][0] == (
+        "archive/model-a vs candidate/model-b: Compression vs Pass Rate"
+    )
+    experiment_labels = [
+        text.get_text() for text in figure.legends[0].get_texts()
+    ]
+    assert experiment_labels == [
+        "Historical · archive/model-a",
+        "Current · candidate/model-b",
+    ]
+    assert "Improved" not in experiment_labels

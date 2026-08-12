@@ -120,6 +120,48 @@ def test_drop_if_name_splits_before_main_guard() -> None:
     ) == ["def f():\n    return 1\n"]
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "message = \"if __name__ == '__main__':\"\nanswer = 1\n",
+        "# if __name__ == '__main__':\nanswer = 1\n",
+        ("def f():\n    if __name__ == '__main__':\n        return 1\n"),
+    ],
+)
+def test_drop_if_name_ignores_non_statement_and_nested_matches(
+    source: str,
+) -> None:
+    assert drop_if_name(source) == [source]
+
+
+def test_drop_if_name_analyzes_the_text_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dr_code.core.source import text_transforms
+
+    calls = 0
+    original = text_transforms._module_level_name_guard_linenos
+
+    def _counting(text: str) -> set[int]:
+        nonlocal calls
+        calls += 1
+        return original(text)
+
+    monkeypatch.setattr(
+        text_transforms, "_module_level_name_guard_linenos", _counting
+    )
+    source = "\n".join(
+        ["def f():", "    return 1"] * 50 + ["if __name__ == '__main__':"]
+    )
+
+    result = text_transforms.drop_if_name(source)
+
+    # The whole-text guard analysis is loop-invariant: one call per split,
+    # never one per line.
+    assert calls == 1
+    assert len(result) == 1
+
+
 def test_drop_after_last_return_truncates_trailing_lines() -> None:
     assert drop_after_last_return("def f():\n    return 1\nprint('x')") == (
         "def f():\n    return 1\n"

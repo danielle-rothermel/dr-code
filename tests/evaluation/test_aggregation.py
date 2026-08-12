@@ -9,7 +9,10 @@ from _builders import (
     not_applicable,
     operator_failure,
     policy,
+    preprocessing_coordinate,
     question_coordinate,
+    record_identity,
+    sample_identity,
     slot,
 )
 from dr_code.evaluation import (
@@ -25,7 +28,8 @@ from dr_code.evaluation import (
     NotApplicablePolicy,
     aggregate,
 )
-from dr_code.metrics import MetricValueUnit
+from dr_code.metrics import MetricsDefinitionCoordinate, MetricValueUnit
+from dr_code.trace import PreprocessingTraceProducer
 
 EXPECTED_STATUSES = {
     "ok",
@@ -341,9 +345,30 @@ def test_boolean_values_aggregate_as_one_and_zero() -> None:
     assert result.value == 0.5
 
 
+def test_distinct_candidate_coordinates_can_share_one_record_identity() -> (
+    None
+):
+    result = aggregate(
+        request_for(
+            AggregationSlot(
+                candidate=candidate(candidate_ordinal=0), record=measured(1)
+            ),
+            AggregationSlot(
+                candidate=candidate(
+                    sample=sample_identity(sample_id="sample-1"),
+                    candidate_ordinal=0,
+                ),
+                record=measured(3),
+            ),
+        )
+    )
+
+    assert isinstance(result, AggregationOk)
+    assert result.value == 2.0
+
+
 def test_a_record_answering_another_question_raises() -> None:
     other = question_coordinate(on_key="somewhere_else")
-    from _builders import record_identity
 
     mismatched = measured(1, identity=record_identity(question=other))
     with pytest.raises(ValueError, match="but the policy aggregates"):
@@ -363,8 +388,6 @@ def test_a_non_measured_record_answering_another_question_raises(
     rule: NotApplicablePolicy,
     record_builder,
 ) -> None:
-    from _builders import record_identity
-
     other = question_coordinate(on_key="somewhere_else")
     mismatched = record_builder(identity=record_identity(question=other))
 
@@ -382,6 +405,87 @@ def test_a_record_without_the_policys_value_raises() -> None:
     with pytest.raises(ValueError, match="no value named"):
         aggregate(
             request_for(slot(measured(1, name="other_value"), ordinal=0))
+        )
+
+
+def test_records_with_different_metric_versions_raise() -> None:
+    mismatched = measured(
+        2, identity=record_identity(metric_version="another-version")
+    )
+
+    with pytest.raises(ValueError, match="incompatible metric versions"):
+        aggregate(
+            request_for(
+                slot(measured(1), ordinal=0),
+                slot(mismatched, ordinal=1),
+            )
+        )
+
+
+def test_records_with_different_metrics_definitions_raise() -> None:
+    question = question_coordinate()
+    other_definition = MetricsDefinitionCoordinate(
+        definition_id="other-metrics",
+        version="0",
+        questions=(question,),
+    )
+    mismatched = measured(
+        2,
+        identity=record_identity(metrics_definition=other_definition),
+    )
+
+    with pytest.raises(ValueError, match="incompatible metrics definitions"):
+        aggregate(
+            request_for(
+                slot(measured(1), ordinal=0),
+                slot(mismatched, ordinal=1),
+            )
+        )
+
+
+def test_records_with_different_preprocessing_producers_raise() -> None:
+    other_preprocessing = preprocessing_coordinate(version="another-version")
+    other_producer = PreprocessingTraceProducer(definition=other_preprocessing)
+    mismatched = measured(2, identity=record_identity(producer=other_producer))
+
+    with pytest.raises(
+        ValueError, match="incompatible preprocessing producers"
+    ):
+        aggregate(
+            request_for(
+                slot(measured(1), ordinal=0),
+                AggregationSlot(
+                    candidate=candidate(
+                        preprocessing=other_preprocessing,
+                        candidate_ordinal=1,
+                    ),
+                    record=mismatched,
+                ),
+            )
+        )
+
+
+def test_record_producer_must_match_its_slot_candidate_preprocessing() -> None:
+    other_preprocessing = preprocessing_coordinate(version="another-version")
+    mismatched = measured(
+        identity=record_identity(
+            producer=PreprocessingTraceProducer(definition=other_preprocessing)
+        )
+    )
+
+    with pytest.raises(
+        ValueError, match="does not match aggregation slot candidate"
+    ):
+        aggregate(request_for(slot(mismatched, ordinal=0)))
+
+
+def test_values_with_the_same_name_but_different_units_raise() -> None:
+    with pytest.raises(ValueError, match="incompatible units.*count.*bytes"):
+        aggregate(
+            request_for(
+                slot(measured(1, unit=MetricValueUnit.COUNT), ordinal=0),
+                slot(measured(2, unit=MetricValueUnit.BYTES), ordinal=1),
+            )
         )
 
 

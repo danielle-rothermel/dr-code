@@ -95,9 +95,16 @@ def build(
     ),
 ) -> None:
     selected_recipes = _select_recipes(recipes)
-    selected_tasks = load_humaneval_plus(
+    available_tasks = load_humaneval_plus(
         prefer_snapshot=snapshot is not None, snapshot_path=snapshot
-    )[:tasks]
+    )
+    if tasks > len(available_tasks):
+        raise typer.BadParameter(
+            "requested task count exceeds available HumanEvalPlus tasks: "
+            f"{tasks} > {len(available_tasks)}",
+            param_hint="--tasks",
+        )
+    selected_tasks = available_tasks[:tasks]
     samples = build_dataset(
         tasks=selected_tasks, recipes=selected_recipes, seed=seed
     )

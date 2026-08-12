@@ -12,6 +12,7 @@ class StepName(StrEnum):
     TRIM_OUTER_BLANKS = "trim_outer_blanks"
     REJECT_BLANK_INPUT = "reject_blank_input"
     EXTRACT_ALL_REPRESENTATIONS = "extract_all_representations"
+    NORMALIZE_TEXT_PRESERVING_SEMANTICS = "normalize_text_preserving_semantics"
     NORMALIZE_SMART_QUOTES = "normalize_smart_quotes"
     STRIP_FENCES = "strip_fences"
     DEDENT_CANDIDATES = "dedent_candidates"

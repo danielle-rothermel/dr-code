@@ -194,7 +194,9 @@ text; with an observer each result is handed over as it completes and nothing is
 retained. A caller that consumes candidate sources runs the candidate-sources
 entry point, which returns the sources alone rather than the trace carrying
 them. `evaluate_batch` sample prepare uses the trace path; the eligible-corpus
-stage uses the candidate-sources path."""
+stage uses the candidate-sources path. Batches run unbudgeted unless a caller
+declares a per-item wall-time budget; a text killed on that budget is that
+text's failure like any other and is additionally reported as a timeout."""
 rationale = """
 Preprocessing is trusted, CPU-bound, milliseconds-per-item work, so it needs
 real cores without paying interpreter startup per item, and it makes no
@@ -203,7 +205,11 @@ from retaining every result. Result size is the throughput term that matters:
 the caller decodes and validates every byte a worker returns, single-threaded,
 so returning a whole serialized trace where only its sources are wanted costs
 about two orders of magnitude in payload and collapses pool throughput to the
-caller's parse rate no matter how many workers run."""
+caller's parse rate no matter how many workers run. The wall-time budget is a
+liveness guard, not a performance bound: trusted milliseconds-per-item work has
+no principled runtime ceiling, so the library declares none and each workflow
+sets a value far above any healthy input's cost, where a wedged worker would
+otherwise stall a corpus-scale run indefinitely."""
 date = "2026-08-11"
 check = "uv run pytest tests/caching/test_preprocess_batch.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from dr_code.core.source.python_analysis import validate_python_source
@@ -59,6 +61,25 @@ def test_salvaged_candidate_still_gets_its_inferred_imports() -> None:
     assert result.succeeded
     assert "import numpy as np" in result.accepted_code
     assert validate_python_source(result.accepted_code).compile_ok
+
+
+def test_extraction_preserves_same_local_import_in_sibling_functions() -> None:
+    result = extract_humaneval_code(
+        "def floor_value(x):\n"
+        "    import math\n"
+        "    return math.floor(x)\n\n"
+        "def ceil_value(x):\n"
+        "    import math\n"
+        "    return math.ceil(x)\n"
+    )
+
+    assert result.succeeded
+    assert result.accepted_code is not None
+    namespace: dict[str, object] = {}
+    exec(result.accepted_code, namespace)
+    ceil_value = namespace["ceil_value"]
+    assert callable(ceil_value)
+    assert ceil_value(1.5) == 2
 
 
 def test_marked_code_field_wins_over_code_in_another_marked_field() -> None:
@@ -133,6 +154,65 @@ def test_json_code_field_wins_over_code_quoted_in_other_json_fields() -> None:
 
     assert result.succeeded
     assert result.accepted_code == "def f(x):\n    return x + 1"
+
+
+def test_valid_python_preserves_unicode_string_contents() -> None:
+    source = "def f():\n    return '①'\n"
+
+    result = extract_humaneval_code(source)
+
+    assert result.succeeded
+    assert result.accepted_code is not None
+    namespace: dict[str, object] = {}
+    exec(result.accepted_code, namespace)
+    function = namespace["f"]
+    assert callable(function)
+    assert function() == "①"
+
+
+def test_fenced_python_preserves_unicode_string_contents() -> None:
+    source = "```python\ndef f():\n    return '①'\n```"
+
+    result = extract_humaneval_code(source)
+
+    assert result.succeeded
+    assert result.accepted_code is not None
+    namespace: dict[str, object] = {}
+    exec(result.accepted_code, namespace)
+    function = namespace["f"]
+    assert callable(function)
+    assert function() == "①"
+
+
+def test_json_code_field_preserves_raw_unicode_string_contents() -> None:
+    source = json.dumps(
+        {"code": "def f():\n    return '①'\n"}, ensure_ascii=False
+    )
+
+    result = extract_humaneval_code(source)
+
+    assert result.succeeded
+    assert result.accepted_code is not None
+    namespace: dict[str, object] = {}
+    exec(result.accepted_code, namespace)
+    function = namespace["f"]
+    assert callable(function)
+    assert function() == "①"
+
+
+def test_valid_python_preserves_multiline_string_whitespace() -> None:
+    expected = "a\t \n\n\n\nb  \n"
+    source = "def f():\n    return '''" + expected + "'''\n"
+
+    result = extract_humaneval_code(source)
+
+    assert result.succeeded
+    assert result.accepted_code is not None
+    namespace: dict[str, object] = {}
+    exec(result.accepted_code, namespace)
+    function = namespace["f"]
+    assert callable(function)
+    assert function() == expected
 
 
 def test_extraction_reports_blank_input_as_its_own_failure() -> None:

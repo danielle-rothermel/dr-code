@@ -133,8 +133,9 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         artifact = aux[self.settings.task_key]
         if not isinstance(artifact, JsonArtifact):
             raise TypeError("code_test task must be a JSON artifact")
+        payload = artifact.model_dump(mode="json")["payload"]
         payload_key = json.dumps(
-            artifact.payload, sort_keys=True, separators=(",", ":")
+            payload, sort_keys=True, separators=(",", ":")
         )
         cached = self._validated_tasks.get(payload_key)
         if cached is not None:
@@ -145,7 +146,7 @@ class CodeTest(MetricOperator[CodeTestSettings]):
 
 
 def _validate_task_payload(artifact: JsonArtifact) -> HumanEvalTask:
-    payload = artifact.payload
+    payload = artifact.model_dump(mode="json")["payload"]
     if not isinstance(payload, dict):
         raise ValueError("code_test task payload must be a JSON object")
 

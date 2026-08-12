@@ -164,6 +164,8 @@ def _target_mapping(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     mapping: dict[str, str],
 ) -> dict[str, str]:
+    if _dynamically_reflects_local_names(node):
+        return {}
     preserved_names = _preserved_local_names(node)
     return {
         name: replacement
@@ -221,12 +223,27 @@ def _preserved_local_names(
     return names
 
 
+def _dynamically_reflects_local_names(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    return any(
+        isinstance(descendant, ast.Call)
+        and isinstance(descendant.func, ast.Name)
+        and descendant.func.id in {"locals", "vars"}
+        and not descendant.args
+        and not descendant.keywords
+        for descendant in ast.walk(node)
+    )
+
+
 def _local_mapping(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     reserved: set[str],
     *,
     rename_params: bool,
 ) -> dict[str, str]:
+    if _dynamically_reflects_local_names(node):
+        return {}
     param_names = {arg.arg for arg in function_params(node)}
     preserved_names = _preserved_local_names(node)
     local_names = [
@@ -538,12 +555,20 @@ def _character_column(line: str, byte_column: int) -> int:
     return len(line.encode("utf-8")[:byte_column].decode("utf-8"))
 
 
-def _remove_inline_import(line: str, statement: ast.stmt) -> str:
+def _remove_inline_import(line: str, statement: ast.stmt, lineno: int) -> str:
     end_col_offset = statement.end_col_offset
     if end_col_offset is None:
         raise ValueError("statement has no end position")
-    start = _character_column(line, statement.col_offset)
-    end = _character_column(line, end_col_offset)
+    start = (
+        _character_column(line, statement.col_offset)
+        if lineno == statement.lineno
+        else 0
+    )
+    end = (
+        _character_column(line, end_col_offset)
+        if lineno == statement.end_lineno
+        else len(line.rstrip("\r\n"))
+    )
 
     suffix = line[end:]
     suffix_without_space = suffix.lstrip(" \t")
@@ -577,11 +602,9 @@ def remove_top_level_imports(source: str) -> str:
     }
     inline_imports: dict[int, list[ast.stmt]] = {}
     for statement in imports:
-        if (
-            statement.end_lineno == statement.lineno
-            and statement.lineno in non_import_linenos
-        ):
-            inline_imports.setdefault(statement.lineno, []).append(statement)
+        for lineno in {statement.lineno, statement.end_lineno}:
+            if lineno is not None and lineno in non_import_linenos:
+                inline_imports.setdefault(lineno, []).append(statement)
 
     removed_linenos = top_level_import_linenos(tree) - inline_imports.keys()
     output: list[str] = []
@@ -591,7 +614,7 @@ def remove_top_level_imports(source: str) -> str:
             key=lambda item: item.col_offset,
             reverse=True,
         ):
-            line = _remove_inline_import(line, statement)
+            line = _remove_inline_import(line, statement, lineno)
         if lineno not in removed_linenos:
             output.append(line)
     return "".join(output)

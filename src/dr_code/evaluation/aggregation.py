@@ -17,8 +17,14 @@ from dr_code.evaluation.plan import (
 from dr_code.metrics import (
     MeasuredRecord,
     MetricRecord,
+    MetricRecordIdentity,
+    MetricValueUnit,
     NotApplicableRecord,
     OperatorFailureRecord,
+)
+from dr_code.trace import (
+    ExternalPreprocessingTraceProducer,
+    PreprocessingTraceProducer,
 )
 
 
@@ -140,19 +146,33 @@ def aggregate(request: AggregationInput) -> AggregationResult:
     if missing:
         return AggregationMissing(missing=missing)
 
+    first_record = request.slots[0].record
+    assert first_record is not None
+    expected_identity = first_record.identity
+    expected_unit: MetricValueUnit | None = None
     refused: list[EvaluationCandidateIdentity] = []
     values: list[float] = []
     excluded = 0
     for slot in request.slots:
         record = slot.record
         assert record is not None
+        _validate_record_identity(record, slot, expected_identity, policy)
         outcome = _slot_contribution(record, policy)
         match outcome:
             case _Refused():
                 refused.append(slot.candidate)
             case _Excluded():
                 excluded += 1
-            case _Counted(value=value):
+            case _Counted(value=value, unit=unit):
+                if unit is not None:
+                    if expected_unit is None:
+                        expected_unit = unit
+                    elif unit != expected_unit:
+                        raise ValueError(
+                            f"value {policy.value!r} has incompatible units "
+                            f"across records: {expected_unit.value!r} and "
+                            f"{unit.value!r}"
+                        )
                 values.append(value)
     if refused:
         return AggregationNotApplicable(refused=tuple(refused))
@@ -165,6 +185,7 @@ def aggregate(request: AggregationInput) -> AggregationResult:
 @dataclass(frozen=True, slots=True)
 class _Counted:
     value: float
+    unit: MetricValueUnit | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,18 +204,57 @@ _SlotOutcome: TypeAlias = _Counted | _Excluded | _Refused
 def _slot_contribution(
     record: MetricRecord, policy: AggregationPolicy
 ) -> _SlotOutcome:
-    if record.identity.question != policy.question:
-        raise ValueError(
-            f"record answers metric {record.identity.question.metric} on "
-            f"{record.identity.question.on_key!r}, but the policy "
-            f"aggregates {policy.question.metric} on "
-            f"{policy.question.on_key!r}"
-        )
     if isinstance(record, NotApplicableRecord):
         return _by_policy(policy.not_applicable)
     if isinstance(record, OperatorFailureRecord):
         return _by_policy(policy.operator_failure)
     return _measured_contribution(record, policy)
+
+
+def _validate_record_identity(
+    record: MetricRecord,
+    slot: AggregationSlot,
+    expected: MetricRecordIdentity,
+    policy: AggregationPolicy,
+) -> None:
+    identity = record.identity
+    if identity.question != policy.question:
+        raise ValueError(
+            f"record answers metric {identity.question.metric} on "
+            f"{identity.question.on_key!r}, but the policy "
+            f"aggregates {policy.question.metric} on "
+            f"{policy.question.on_key!r}"
+        )
+
+    producer = identity.producer
+    if (
+        not isinstance(
+            producer,
+            PreprocessingTraceProducer | ExternalPreprocessingTraceProducer,
+        )
+        or producer.definition != slot.candidate.preprocessing
+    ):
+        raise ValueError(
+            "record preprocessing producer does not match aggregation slot "
+            f"candidate {slot.candidate!r}"
+        )
+
+    if identity.metric_version != expected.metric_version:
+        raise ValueError(
+            "records for aggregation have incompatible metric versions: "
+            f"{expected.metric_version!r} and {identity.metric_version!r}"
+        )
+    if identity.metrics_definition != expected.metrics_definition:
+        raise ValueError(
+            "records for aggregation have incompatible metrics definitions: "
+            f"{expected.metrics_definition!r} and "
+            f"{identity.metrics_definition!r}"
+        )
+    if producer != expected.producer:
+        raise ValueError(
+            "records for aggregation have incompatible preprocessing "
+            f"producers: {expected.producer!r} and {producer!r}"
+        )
 
 
 def _by_policy(rule: NotApplicablePolicy) -> _SlotOutcome:
@@ -212,7 +272,9 @@ def _measured_contribution(
 ) -> _SlotOutcome:
     for value in record.values:
         if value.name == policy.value:
-            return _Counted(value=_numeric(value.name, value.value))
+            return _Counted(
+                value=_numeric(value.name, value.value), unit=value.unit
+            )
     raise ValueError(
         f"measured record carries no value named {policy.value!r}"
     )

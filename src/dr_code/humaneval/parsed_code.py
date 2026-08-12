@@ -3,8 +3,7 @@ from __future__ import annotations
 import ast
 import copy
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from dr_code.core.models import FrozenModel
 from dr_code.core.source.python_analysis import (
     FunctionArgument,
     FunctionSignatureSite,
@@ -16,27 +15,21 @@ from dr_code.core.source.python_transforms import (
 )
 
 
-class Variable(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class Variable(FrozenModel):
     name: str
     var_type: str | None = None
 
 
-class FunctionSignature(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class FunctionSignature(FrozenModel):
     code_str: str
     signature_str: str
     function_name: str
-    function_args: list[Variable] = Field(default_factory=list)
+    function_args: tuple[Variable, ...] = ()
 
 
-class ParsedCode(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ParsedCode(FrozenModel):
     code_str: str
-    signatures: list[FunctionSignature] = Field(default_factory=list)
+    signatures: tuple[FunctionSignature, ...] = ()
     code_without_comments: str = ""
     comments: str = ""
     display_title: str = "ParsedCode"
@@ -53,9 +46,9 @@ def function_signature_from_site(
         code_str=ast.unparse(site.owner),
         signature_str=site.signature_source,
         function_name=site.name,
-        function_args=[
+        function_args=tuple(
             _variable_from_argument(argument) for argument in site.arguments
-        ],
+        ),
     )
 
 
@@ -69,10 +62,10 @@ def parse_code(
     code_str: str, *, display_title: str = "ParsedCode"
 ) -> ParsedCode:
     tree = ast.parse(code_str)
-    signatures = [
+    signatures = tuple(
         function_signature_from_site(site)
         for site in extract_function_signatures(tree)
-    ]
+    )
     return ParsedCode(
         code_str=code_str,
         signatures=signatures,

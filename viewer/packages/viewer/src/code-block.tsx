@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getHighlighter } from "./highlighter.js";
+import { getHighlighter, isSupportedLanguage } from "./highlighter.js";
 import { DEFAULT_LANGUAGE, SHIKI_THEMES } from "./themes.js";
 
 export interface CodeBlockProps {
@@ -29,6 +29,8 @@ export function CodeBlock({
   const [highlighted, setHighlighted] = useState<HighlightedCode | null>(null);
 
   useEffect(() => {
+    if (!isSupportedLanguage(lang)) return;
+
     let active = true;
     void getHighlighter().then((loaded) => {
       if (!active) return;

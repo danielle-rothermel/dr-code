@@ -28,6 +28,13 @@ import { CodeDiff } from "../src/code-diff.js";
 const OLD_CONTENT = "const answer = 1;";
 const NEW_CONTENT = "const answer = 2;";
 const HIGHLIGHTER = { name: "controlled-highlighter" };
+const BUNDLED_LANGUAGES = [
+  "python",
+  "javascript",
+  "typescript",
+  "json",
+  "bash",
+];
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -86,6 +93,9 @@ describe("CodeDiff contract", () => {
       "python",
     );
     expect(file.initTheme).toHaveBeenCalledWith("light");
+    expect(diffMocks.getDiffViewHighlighter).toHaveBeenCalledWith(
+      BUNDLED_LANGUAGES,
+    );
     expect(file.initRaw).toHaveBeenCalledOnce();
     expect(file.initSyntax).toHaveBeenCalledWith({
       registerHighlighter: HIGHLIGHTER,

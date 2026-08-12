@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import ast
 import math
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from types import MappingProxyType
+from typing import Annotated, Literal, Self, cast
 
-from pydantic import Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    Field,
+    JsonValue,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from dr_code.core.models import FrozenModel
 
@@ -100,22 +108,60 @@ class JsonArtifact(FrozenModel):
 
     @field_validator("payload")
     @classmethod
-    def reject_non_finite_floats(cls, payload: JsonValue) -> JsonValue:
+    def validate_and_freeze_payload(cls, payload: JsonValue) -> JsonValue:
         if _contains_non_finite_float(payload):
             raise ValueError(
                 "JSON artifact payload must contain only finite floats"
             )
-        return payload
+        return freeze_json_value(payload)
+
+    @field_serializer("payload")
+    def serialize_payload(self, payload: JsonValue) -> JsonValue:
+        return json_value_to_wire(payload)
 
 
-def _contains_non_finite_float(value: JsonValue) -> bool:
+def _contains_non_finite_float(value: object) -> bool:
     if isinstance(value, float):
         return not math.isfinite(value)
-    if isinstance(value, list):
+    if isinstance(value, list | tuple):
         return any(_contains_non_finite_float(item) for item in value)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return any(_contains_non_finite_float(item) for item in value.values())
     return False
+
+
+def freeze_json_value(value: JsonValue) -> JsonValue:
+    if isinstance(value, list):
+        return cast(
+            JsonValue, tuple(freeze_json_value(item) for item in value)
+        )
+    if isinstance(value, dict):
+        return cast(
+            JsonValue,
+            MappingProxyType(
+                {key: freeze_json_value(item) for key, item in value.items()}
+            ),
+        )
+    return value
+
+
+def json_value_to_wire(value: object) -> JsonValue:
+    if isinstance(value, tuple):
+        return [json_value_to_wire(item) for item in value]
+    if isinstance(value, Mapping):
+        wire: dict[str, JsonValue] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError(
+                    "immutable JSON mappings must retain string keys"
+                )
+            wire[key] = json_value_to_wire(item)
+        return wire
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    raise TypeError(
+        f"immutable JSON value has unsupported type: {type(value).__name__}"
+    )
 
 
 Artifact = Annotated[

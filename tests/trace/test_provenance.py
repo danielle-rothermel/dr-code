@@ -113,6 +113,76 @@ def test_component_setting_finite_float_round_trips_through_json() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "left, right",
+    [(1, 1.0), (1, True), (0, False)],
+    ids=["int-float", "int-true", "int-false"],
+)
+def test_component_coordinate_equality_preserves_setting_value_type(
+    left: int, right: float | bool
+) -> None:
+    def coordinate(value: int | float | bool) -> ComponentCoordinate:
+        return ComponentCoordinate(
+            registered_name="component",
+            version="0",
+            settings=(ComponentSetting(name="setting", value=value),),
+        )
+
+    assert coordinate(left) != coordinate(right)
+
+
+def test_component_coordinate_rejects_duplicate_setting_names() -> None:
+    with pytest.raises(
+        ValidationError, match="duplicate component setting names: threshold"
+    ):
+        ComponentCoordinate(
+            registered_name="component",
+            version="0",
+            settings=(
+                ComponentSetting(name="threshold", value=1),
+                ComponentSetting(name="threshold", value=2),
+            ),
+        )
+
+
+@pytest.mark.parametrize("reserved_name", ["input", "output"])
+def test_definition_coordinate_rejects_reserved_step_instance_names(
+    reserved_name: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match="step instance names must not be reserved trace keys",
+    ):
+        PreprocessingDefinitionCoordinate(
+            definition_id="definition",
+            version="0",
+            steps=(
+                StepCoordinate(
+                    instance_name=reserved_name,
+                    component=ComponentCoordinate(
+                        registered_name="component", version="0"
+                    ),
+                ),
+            ),
+        )
+
+
+def test_definition_coordinate_rejects_duplicate_step_instance_names() -> None:
+    component = ComponentCoordinate(registered_name="component", version="0")
+
+    with pytest.raises(
+        ValidationError, match="duplicate step instance names: normalize"
+    ):
+        PreprocessingDefinitionCoordinate(
+            definition_id="definition",
+            version="0",
+            steps=(
+                StepCoordinate(instance_name="normalize", component=component),
+                StepCoordinate(instance_name="normalize", component=component),
+            ),
+        )
+
+
 def test_coordinate_settings_rejects_non_string_tuple() -> None:
     class _IntTupleSettings(FrozenModel):
         alternatives: tuple[int, ...] = (1, 2)

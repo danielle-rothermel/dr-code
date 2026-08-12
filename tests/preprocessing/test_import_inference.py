@@ -6,6 +6,7 @@ import pytest
 
 from dr_code.humaneval.acceptance import extract_humaneval_code
 from dr_code.preprocessing.import_inference import (
+    dedupe_import_lines,
     infer_necessary_imports,
     repair_import_lines,
 )
@@ -60,6 +61,19 @@ def test_infer_necessary_imports_skips_function_parameter_name() -> None:
     result = infer_necessary_imports(source)
     assert "import torch.nn.functional as F" not in result
     assert "import" not in result
+
+
+def test_infer_necessary_imports_respects_sibling_function_scopes() -> None:
+    source = (
+        "def passthrough(math):\n"
+        "    return math\n\n"
+        "def square_root(value):\n"
+        "    return math.sqrt(value)\n"
+    )
+
+    result = infer_necessary_imports(source)
+
+    assert result == f"import math\n{source.rstrip()}"
 
 
 def test_infer_necessary_imports_skips_lambda_parameter_name() -> None:
@@ -146,6 +160,19 @@ def test_infer_necessary_imports_deduplicates_import_lines() -> None:
     assert result.count("import math") == 1
 
 
+def test_dedupe_import_lines_preserves_imports_in_sibling_scopes() -> None:
+    source = (
+        "def floor_value(x):\n"
+        "    import math\n"
+        "    return math.floor(x)\n\n"
+        "def ceil_value(x):\n"
+        "    import math\n"
+        "    return math.ceil(x)\n"
+    )
+
+    assert dedupe_import_lines(source) == source.rstrip()
+
+
 def test_infer_necessary_imports_passthrough_on_syntax_error() -> None:
     source = "def f(x\n    return np.array(x)\n"
     result = infer_necessary_imports(source)
@@ -192,6 +219,26 @@ def test_repair_import_lines_preserves_valid_indented_imports(
 
     assert repaired == source.rstrip()
     assert not changed
+
+
+@pytest.mark.parametrize(
+    "import_lines",
+    (
+        "from collections import (\n    Counter,\n    defaultdict,\n)",
+        "from collections import Counter, \\\n    defaultdict",
+        "from os import (\n    path,\n); sibling = 1",
+    ),
+)
+def test_repair_import_lines_preserves_valid_multiline_imports(
+    import_lines: str,
+) -> None:
+    source = f"{import_lines}\n\ndef f():\n    return Counter()\n"
+
+    repaired, changed = repair_import_lines(source)
+
+    assert repaired == source.rstrip()
+    assert not changed
+    compile(repaired, "<repaired>", "exec")
 
 
 def test_inferred_import_follows_and_preserves_module_docstring() -> None:

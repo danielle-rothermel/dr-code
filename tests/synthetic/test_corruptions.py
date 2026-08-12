@@ -132,13 +132,25 @@ def test_add_crlf_replaces_every_line_ending() -> None:
     assert "\n" not in corrupted.replace("\r\n", "")
 
 
-def test_add_unicode_noise_decomposes_unicode_without_changing_text() -> None:
+def test_add_unicode_noise_injects_nfkc_recoverable_fullwidth_text() -> None:
     source = 'label = "café"\n'
     corrupted = _apply(CorruptionName.ADD_UNICODE_NOISE, source)
 
     assert corrupted != source
-    assert unicodedata.normalize("NFC", corrupted) == source
-    assert unicodedata.is_normalized("NFD", corrupted)
+    assert unicodedata.normalize("NFKC", corrupted) == source
+    changed = [
+        replacement
+        for original, replacement in zip(source, corrupted, strict=True)
+        if original != replacement
+    ]
+    assert len(changed) == 1
+    assert "！" <= changed[0] <= "～"
+
+
+def test_add_unicode_noise_is_inapplicable_without_ascii_printables() -> None:
+    source = "\n\t\n"
+
+    assert _apply(CorruptionName.ADD_UNICODE_NOISE, source) == source
 
 
 def test_add_blank_lines_preserves_nonblank_lines_in_order() -> None:
@@ -233,6 +245,20 @@ def test_change_quote_style_preserves_string_value() -> None:
 
     assert "'yes'" in corrupted
     assert ast.dump(ast.parse(corrupted)) == ast.dump(ast.parse(source))
+
+
+def test_change_quote_style_flips_single_quotes_to_double() -> None:
+    source = "answer = 'yes'\n"
+    corrupted = _apply(CorruptionName.CHANGE_QUOTE_STYLE, source)
+
+    assert '"yes"' in corrupted
+    assert ast.dump(ast.parse(corrupted)) == ast.dump(ast.parse(source))
+
+
+def test_change_quote_style_is_inapplicable_without_string_tokens() -> None:
+    source = "answer = 42\n"
+
+    assert _apply(CorruptionName.CHANGE_QUOTE_STYLE, source) == source
 
 
 def test_change_string_form_preserves_runtime_result() -> None:

@@ -67,6 +67,7 @@ def load_humaneval_rows(
         return load_humaneval_snapshot_rows(
             snapshot_path=Path(snapshot_path),
             dataset_name=dataset_name,
+            dataset_split=dataset_split,
             hf_revision=hf_revision,
         )
 
@@ -81,6 +82,7 @@ def load_humaneval_snapshot_rows(
     *,
     snapshot_path: Path,
     dataset_name: str = DEFAULT_HUMANEVAL_DATASET_NAME,
+    dataset_split: str = DEFAULT_HUMANEVAL_DATASET_SPLIT,
     hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
 ) -> list[HumanEvalRow]:
     snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
@@ -89,6 +91,7 @@ def load_humaneval_snapshot_rows(
     validate_snapshot_header(
         snapshot.header,
         dataset_name=dataset_name,
+        dataset_split=dataset_split,
         hf_revision=hf_revision,
     )
     return [row.model_dump(mode="json") for row in snapshot.rows]
@@ -98,12 +101,18 @@ def validate_snapshot_header(
     header: HumanEvalRawRowsSnapshotHeader,
     *,
     dataset_name: str,
+    dataset_split: str,
     hf_revision: str,
 ) -> HumanEvalOverrideSetCoordinate:
     if header.dataset_id != dataset_name:
         raise ValueError(
             "HumanEval raw-row snapshot dataset mismatch: "
             f"{header.dataset_id!r} != {dataset_name!r}"
+        )
+    if dataset_split != DEFAULT_HUMANEVAL_DATASET_SPLIT:
+        raise ValueError(
+            "HumanEval raw-row snapshot dataset split mismatch: "
+            f"{DEFAULT_HUMANEVAL_DATASET_SPLIT!r} != {dataset_split!r}"
         )
     if header.hf_revision != hf_revision:
         raise ValueError(
@@ -128,7 +137,16 @@ def sample_humaneval_tasks_from_rows(
     seed: int,
     sample_count: int,
 ) -> list[SampledHumanEvalTask]:
+    if sample_count < 1:
+        raise ValueError(
+            f"sample_count must be positive, received {sample_count}"
+        )
     tasks = parse_humaneval_dataset(rows)
+    if sample_count > len(tasks):
+        raise ValueError(
+            "sample_count exceeds the available HumanEval tasks: "
+            f"{sample_count} > {len(tasks)}"
+        )
     indices = list(range(len(tasks)))
     random.Random(seed).shuffle(indices)
     return [

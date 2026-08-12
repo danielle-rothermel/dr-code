@@ -154,8 +154,8 @@ def test_tuple_expectations_survive_the_task_artifact_boundary(
     assert all(isinstance(case, InputResultTestCase) for case in cases)
     first = cases[0]
     assert isinstance(first, InputResultTestCase)
-    assert first.expected == expected_first
-    assert isinstance(first.expected, tuple)
+    assert first.expected.value() == expected_first
+    assert isinstance(first.expected.value(), tuple)
     assert restored.parsed_tests == task.parsed_tests
 
 

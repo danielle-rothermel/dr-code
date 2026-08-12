@@ -32,6 +32,13 @@ HUMANEVAL_SNAPSHOT: Final = (
 SAMPLING_SEED: Final = 42
 EVALUATION_WORKERS: Final = 16
 EVALUATION_TIMEOUT_SECONDS: Final = 120.0
+PREPROCESS_TIMEOUT_SECONDS_ENV: Final = "DR_CODE_PREPROCESS_TIMEOUT_SECONDS"
+PREPROCESS_TIMEOUT_SECONDS: Final = 600.0
+"""Per-item preprocessing wall-time watchdog for this workflow.
+
+Deliberately far above any healthy input's cost: it exists to break a wedged
+worker, not to bound normal work, and should never fire on a healthy corpus.
+"""
 SETTINGS: Final = (
     ("direct", "no_budget"),
     ("enc_dec", "no_budget"),
@@ -67,6 +74,36 @@ def expected_manifest_sha256() -> str | None:
 
 def baseline_directory(name: str) -> Path:
     return BASELINE_ROOT / name
+
+
+def parse_preprocess_timeout_seconds(value: str) -> float | None:
+    """Return a positive wall-time budget, or `None` for an explicit opt-out.
+
+    `0` and `none` both mean unbudgeted, matching the library default.
+    """
+
+    if value.strip().lower() in {"none", "0"}:
+        return None
+    try:
+        timeout_seconds = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be a number, 0, or 'none'"
+        ) from exc
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise argparse.ArgumentTypeError(
+            "must be finite and positive, or 0/'none' for unbudgeted"
+        )
+    return timeout_seconds
+
+
+def preprocess_timeout_seconds() -> float | None:
+    """Return this workflow's per-item preprocessing wall-time budget."""
+
+    override = os.environ.get(PREPROCESS_TIMEOUT_SECONDS_ENV)
+    if override:
+        return parse_preprocess_timeout_seconds(override)
+    return PREPROCESS_TIMEOUT_SECONDS
 
 
 _RUN_DIRECTORY = run_directory_path()

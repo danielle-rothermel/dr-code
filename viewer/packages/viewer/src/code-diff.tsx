@@ -5,9 +5,8 @@ import { DiffModeEnum, DiffView } from "@git-diff-view/react";
 import { getDiffViewHighlighter } from "@git-diff-view/shiki";
 import { useEffect, useState } from "react";
 
+import { SHIKI_LANGUAGES } from "./highlighter.js";
 import { DEFAULT_LANGUAGE } from "./themes.js";
-
-import "@git-diff-view/react/styles/diff-view-pure.css";
 
 export type CodeDiffMode = "split" | "unified";
 export type CodeDiffTheme = "light" | "dark";
@@ -65,7 +64,7 @@ export function CodeDiff({
       lang,
       lang,
     );
-    void getDiffViewHighlighter().then((highlighter) => {
+    void getDiffViewHighlighter([...SHIKI_LANGUAGES]).then((highlighter) => {
       if (!active) return;
       file.initTheme(theme);
       file.initRaw();

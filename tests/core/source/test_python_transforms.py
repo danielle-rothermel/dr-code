@@ -464,6 +464,20 @@ def test_alpha_rename_locals_preserves_module_level_names() -> None:
     assert "def f(" in out
 
 
+@pytest.mark.parametrize("reflection", ["locals()", "vars()"])
+def test_alpha_rename_locals_declines_reflected_function_scope(
+    reflection: str,
+) -> None:
+    source = f"def run():\n    value = 1\n    return {reflection}['value']\n"
+
+    transformed = alpha_rename_locals(source)
+
+    assert transformed == (
+        f"def run():\n    value = 1\n    return {reflection}['value']"
+    )
+    assert _run_entrypoint(transformed) == 1
+
+
 def test_remove_top_level_imports_deletes_only_import_lines() -> None:
     source = "import math\nfrom os import path\n\nx = 1\n"
     assert remove_top_level_imports(source) == "\nx = 1\n"
@@ -487,6 +501,19 @@ def test_remove_top_level_imports_preserves_same_line_sibling(
     transformed = remove_top_level_imports(source)
     namespace: dict[str, object] = {}
 
+    exec(transformed, namespace)
+
+    assert transformed == "sibling = 1\n"
+    assert namespace["sibling"] == 1
+
+
+def test_remove_top_level_imports_preserves_sibling_after_multiline_import() -> (
+    None
+):
+    source = "from os import (\n    path,\n); sibling = 1\n"
+
+    transformed = remove_top_level_imports(source)
+    namespace: dict[str, object] = {}
     exec(transformed, namespace)
 
     assert transformed == "sibling = 1\n"

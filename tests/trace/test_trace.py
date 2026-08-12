@@ -116,7 +116,6 @@ def test_trace_snapshots_values_against_later_caller_mutation() -> None:
 
 
 def test_trace_snapshots_json_payloads_against_later_caller_mutation() -> None:
-    # Freeze is shallow; copy nested JSON so callers cannot rewrite snapshots.
     payload = {"task_id": "HumanEval/0", "nested": {"names": ["a"]}}
     artifact = JsonArtifact(payload=payload)
     values = _minimal_values()
@@ -125,8 +124,15 @@ def test_trace_snapshots_json_payloads_against_later_caller_mutation() -> None:
 
     payload["task_id"] = "mutated after construction"
     payload["nested"]["names"].append("b")
-    artifact.payload["nested"]["names"].append("c")
+    artifact_payload = cast(Mapping[str, object], artifact.payload)
+    nested = cast(Mapping[str, object], artifact_payload["nested"])
+    _attempt_public_mutation(
+        lambda: cast(list[object], nested["names"]).append("c")
+    )
 
+    assert artifact == JsonArtifact(
+        payload={"task_id": "HumanEval/0", "nested": {"names": ["a"]}}
+    )
     assert trace.value("task") == JsonArtifact(
         payload={"task_id": "HumanEval/0", "nested": {"names": ["a"]}}
     )

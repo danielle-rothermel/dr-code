@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
+import pytest
+from dr_exec import Budgets, JobId
+
 from dr_code.preprocessing import EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
+from dr_code.preprocessing.execution import (
+    build_candidate_sources_job,
+    build_preprocess_text_job,
+    preprocess_job_budgets,
+    preprocess_text_request,
+)
 from dr_code.preprocessing.job import (
     PREPROCESS_TEXT_JOB_SCHEMA_VERSION,
     CandidateSourcesJobResult,
@@ -66,3 +77,57 @@ def test_candidate_sources_job_returns_nothing_for_absent_output() -> None:
         request.model_dump(mode="json", exclude_computed_fields=True)
     )
     assert CandidateSourcesJobResult.model_validate(payload).sources == ()
+
+
+def _request() -> PreprocessTextJobRequest:
+    return preprocess_text_request(
+        _FENCED, EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
+    )
+
+
+@pytest.mark.parametrize(
+    "build_job",
+    [build_preprocess_text_job, build_candidate_sources_job],
+)
+def test_preprocessing_jobs_are_unbudgeted_by_default(build_job) -> None:
+    """The library declares no wall-time limit unless a caller asks."""
+
+    job = build_job(JobId(uuid4()), _request())
+
+    assert job.budgets == Budgets.unbudgeted()
+
+
+@pytest.mark.parametrize(
+    "build_job",
+    [build_preprocess_text_job, build_candidate_sources_job],
+)
+def test_preprocessing_jobs_carry_a_declared_wall_time_budget(
+    build_job,
+) -> None:
+    job = build_job(
+        JobId(uuid4()), _request(), budgets=preprocess_job_budgets(600.0)
+    )
+
+    assert job.budgets.wall_time.max_ns == 600 * 1_000_000_000
+
+
+def test_preprocess_job_budgets_bounds_only_wall_time() -> None:
+    """Preprocessing is trusted work; only the wedged-job axis is bounded."""
+
+    budgets = preprocess_job_budgets(600.0)
+    unbudgeted = Budgets.unbudgeted()
+
+    assert budgets.wall_time.max_ns == 600 * 1_000_000_000
+    assert budgets.input_bytes == unbudgeted.input_bytes
+    assert budgets.payload_output == unbudgeted.payload_output
+    assert budgets.memory_bytes == unbudgeted.memory_bytes
+
+
+@pytest.mark.parametrize(
+    "wall_time_seconds", [0.0, -1.0, float("inf"), float("nan")]
+)
+def test_preprocess_job_budgets_rejects_unusable_limits(
+    wall_time_seconds: float,
+) -> None:
+    with pytest.raises(ValueError):
+        preprocess_job_budgets(wall_time_seconds)

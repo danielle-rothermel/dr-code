@@ -5,9 +5,12 @@ from collections.abc import Iterator
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BeforeValidator, Field, field_serializer
+
+from dr_code.core.models import FrozenModel
 
 __all__ = [
+    "EXPECTED_OUTPUT_NAME",
     "HumanEvalTestCaseKind",
     "InputExpressionTestCase",
     "InputOracleTestCase",
@@ -24,6 +27,9 @@ __all__ = [
 EXPECTED_ARG_INDEX = 1
 TOLERANCE_ARG_INDEX = 2
 PAIR_TARGET_SIZE = 2
+# The generated check code reads the oracle value from this name, which the
+# evaluation harness binds after evaluating the oracle as trusted test code.
+EXPECTED_OUTPUT_NAME = "__dr_code_expected_output"
 
 
 class UnsupportedTestFormatError(ValueError):
@@ -36,9 +42,7 @@ class HumanEvalTestCaseKind(StrEnum):
     INPUT_EXPRESSION = "input_expression"
 
 
-class SingleCaseCheck(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class SingleCaseCheck(FrozenModel):
     case_id: str
     code: str
     input_repr: str = ""
@@ -47,16 +51,49 @@ class SingleCaseCheck(BaseModel):
     expected_output_expr: str | None = None
 
 
-class InputResultTestCase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class _PythonLiteral(FrozenModel):
+    source: str
 
+    def value(self) -> Any:
+        return ast.literal_eval(self.source)
+
+
+def _capture_literal(value: object) -> _PythonLiteral:
+    if isinstance(value, _PythonLiteral):
+        return value
+    return _PythonLiteral(source=repr(value))
+
+
+def _capture_arguments(value: object) -> _PythonLiteral:
+    if isinstance(value, _PythonLiteral):
+        return value
+    if not isinstance(value, list | tuple):
+        raise ValueError("test-case arguments must be a list or tuple")
+    return _PythonLiteral(source=repr(list(value)))
+
+
+PythonLiteral = Annotated[
+    _PythonLiteral,
+    BeforeValidator(_capture_literal),
+]
+PythonArguments = Annotated[
+    _PythonLiteral,
+    BeforeValidator(_capture_arguments),
+]
+
+
+class InputResultTestCase(FrozenModel):
     kind: Literal[HumanEvalTestCaseKind.INPUT_RESULT] = (
         HumanEvalTestCaseKind.INPUT_RESULT
     )
     case_id: str
-    args: list[Any]
-    expected: Any
+    args: PythonArguments
+    expected: PythonLiteral
     atol: float = 0
+
+    @field_serializer("args", "expected")
+    def serialize_literals(self, value: _PythonLiteral) -> Any:
+        return value.value()
 
     def as_check(
         self,
@@ -64,29 +101,33 @@ class InputResultTestCase(BaseModel):
         candidate_name: str,
         assertion_name: str,
     ) -> SingleCaseCheck:
+        arguments_source = self.args.source
+        expected_source = self.expected.source
         return SingleCaseCheck(
             case_id=self.case_id,
-            input_repr=repr(self.args),
-            expected_output_repr=repr(self.expected),
-            actual_output_expr=f"{candidate_name}(*{self.args!r})",
+            input_repr=arguments_source,
+            expected_output_repr=expected_source,
+            actual_output_expr=f"{candidate_name}(*{arguments_source})",
             code=(
                 f"{assertion_name}("
-                f"{candidate_name}(*{self.args!r}), "
-                f"{self.expected!r}, {self.atol!r})"
+                f"{candidate_name}(*{arguments_source}), "
+                f"{expected_source}, {self.atol!r})"
             ),
         )
 
 
-class InputOracleTestCase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class InputOracleTestCase(FrozenModel):
     kind: Literal[HumanEvalTestCaseKind.INPUT_ORACLE] = (
         HumanEvalTestCaseKind.INPUT_ORACLE
     )
     case_id: str
-    args: list[Any]
+    args: PythonArguments
     oracle_name: str
     atol: float = 0
+
+    @field_serializer("args")
+    def serialize_arguments(self, value: _PythonLiteral) -> Any:
+        return value.value()
 
     def as_check(
         self,
@@ -94,34 +135,38 @@ class InputOracleTestCase(BaseModel):
         candidate_name: str,
         assertion_name: str,
     ) -> SingleCaseCheck:
-        expected_expr = f"{self.oracle_name}(*{self.args!r})"
+        arguments_source = self.args.source
+        expected_expr = f"{self.oracle_name}(*{arguments_source})"
         return SingleCaseCheck(
             case_id=self.case_id,
-            input_repr=repr(self.args),
+            input_repr=arguments_source,
             expected_output_repr=expected_expr,
-            actual_output_expr=f"{candidate_name}(*{self.args!r})",
+            actual_output_expr=f"{candidate_name}(*{arguments_source})",
             expected_output_expr=expected_expr,
             code=(
                 f"{assertion_name}("
-                f"{candidate_name}(*{self.args!r}), "
-                f"{expected_expr}, {self.atol!r})"
+                f"{candidate_name}(*{arguments_source}), "
+                f"{EXPECTED_OUTPUT_NAME}, {self.atol!r})"
             ),
         )
 
 
-class InputExpressionTestCase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class InputExpressionTestCase(FrozenModel):
     kind: Literal[HumanEvalTestCaseKind.INPUT_EXPRESSION] = (
         HumanEvalTestCaseKind.INPUT_EXPRESSION
     )
     case_id: str
-    args: list[Any]
-    expected: Any
+    args: PythonArguments
+    expected: PythonLiteral
     expression: str
+    candidate_arg_name: str
     input_name: str
     expected_name: str
     index_name: str | None = None
+
+    @field_serializer("args", "expected")
+    def serialize_literals(self, value: _PythonLiteral) -> Any:
+        return value.value()
 
     def as_check(
         self,
@@ -130,23 +175,25 @@ class InputExpressionTestCase(BaseModel):
         assertion_name: str,
     ) -> SingleCaseCheck:
         _ = assertion_name
+        arguments_source = self.args.source
+        expected_source = self.expected.source
         lines = []
         if self.index_name is not None:
             index = int(self.case_id.rsplit("_", maxsplit=1)[-1])
             lines.append(f"{self.index_name} = {index!r}")
         lines.extend(
             [
-                f"{self.input_name} = {self.args!r}",
-                f"{self.expected_name} = {self.expected!r}",
-                f"candidate = {candidate_name}",
+                f"{self.input_name} = {arguments_source}",
+                f"{self.expected_name} = {expected_source}",
+                f"{self.candidate_arg_name} = {candidate_name}",
                 self.expression,
             ]
         )
         return SingleCaseCheck(
             case_id=self.case_id,
-            input_repr=repr(self.args),
-            expected_output_repr=repr(self.expected),
-            actual_output_expr=f"{candidate_name}(*{self.args!r})",
+            input_repr=arguments_source,
+            expected_output_repr=expected_source,
+            actual_output_expr=f"{candidate_name}(*{arguments_source})",
             code="\n".join(lines),
         )
 
@@ -157,15 +204,13 @@ TestCase = Annotated[
 ]
 
 
-class ParsedTests(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ParsedTests(FrozenModel):
     test_type: HumanEvalTestCaseKind
     support_code: str
     check_name: str
     candidate_arg_name: str
     assertion_name: str
-    cases: list[TestCase]
+    cases: tuple[TestCase, ...]
     original_test: str
 
     def iter_checks(
@@ -340,6 +385,7 @@ def parse_humaneval_tests(test_str: str) -> ParsedTests:
                     args=args,
                     expected=expected,
                     expression=ast.unparse(assert_statement),
+                    candidate_arg_name=candidate_arg_name,
                     input_name=input_name,
                     expected_name=expected_name,
                     index_name=index_name,
@@ -390,6 +436,6 @@ def parse_humaneval_tests(test_str: str) -> ParsedTests:
         check_name=check_node.name,
         candidate_arg_name=candidate_arg_name,
         assertion_name="assertion",
-        cases=cases,
+        cases=tuple(cases),
         original_test=test_str,
     )

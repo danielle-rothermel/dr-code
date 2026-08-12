@@ -5,6 +5,7 @@ import pytest
 from dr_code.core.source.text_transforms import (
     drop_after_last_return,
     drop_if_name,
+    normalize_text,
     strip_code_fences,
 )
 from dr_code.preprocessing.import_inference import infer_necessary_imports
@@ -22,6 +23,9 @@ from dr_code.preprocessing.steps.infer_missing_imports import (
 )
 from dr_code.preprocessing.steps.normalize_smart_quotes import (
     NormalizeSmartQuotes,
+)
+from dr_code.preprocessing.steps.normalize_text_preserving_semantics import (
+    NormalizeTextPreservingSemantics,
 )
 from dr_code.preprocessing.steps.repair_import_lines import RepairImportLines
 from dr_code.preprocessing.steps.split_on_name_guard import SplitOnNameGuard
@@ -71,6 +75,30 @@ def test_strip_fences_wraps_function() -> None:
 def test_dedent_wraps_textwrap() -> None:
     out = DedentCandidates().apply(_candidate_set("    x = 1\n    y = 2\n"))
     assert _sources(out.value) == ("x = 1\ny = 2\n",)
+
+
+def test_semantic_normalization_preserves_changed_python_contents() -> None:
+    source = "def f():\n    return '''a\t \n\n\n\nb  \n'''\n"
+
+    out = NormalizeTextPreservingSemantics().apply(_candidate_set(source))
+
+    assert _sources(out.value) == (source.strip("\n"),)
+
+
+def test_semantic_normalization_normalizes_equivalent_valid_python() -> None:
+    source = "def f():  \n\n\n\n    return 1  \n"
+
+    out = NormalizeTextPreservingSemantics().apply(_candidate_set(source))
+
+    assert _sources(out.value) == (normalize_text(source),)
+
+
+def test_semantic_normalization_repairs_non_python_text() -> None:
+    source = "ｄｅｆ f():\n\treturn 1  \n\n\n"
+
+    out = NormalizeTextPreservingSemantics().apply(_candidate_set(source))
+
+    assert _sources(out.value) == (normalize_text(source),)
 
 
 def test_candidate_map_step_extends_lineage_with_its_operation() -> None:

@@ -419,6 +419,9 @@ def project_humaneval_submission(
 Synthetic datasets are built from versioned recipes whose corruption
 components are deterministic for a source, settings model, and random state.
 Each output carries the task, recipe, and seed that define its identity.
+The identity also pins a digest of the exact ground-truth source being
+corrupted. Dataset builds omit task/recipe pairs for which the recipe is not
+applicable; direct single-sample builds report that case explicitly.
 
 ```python
 class Recipe(FrozenModel):

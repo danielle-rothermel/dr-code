@@ -45,6 +45,16 @@
   production callers, and evaluation sizes preprocessing width through
   dr-exec's public `resolve_pool_capacity` rather than mapping capacity
   variants itself.
+- `preprocess_batch` and `candidate_sources_batch` accept an optional
+  `wall_time_seconds` per-item watchdog, defaulting to `None` so the library
+  stays unbudgeted. When set, each job declares that finite wall-time budget
+  and the worker pool enforces it by killing and respawning the worker; the
+  killed item is one item's failure, reported separately through `on_timeout`
+  so a wedged input stays distinguishable from an unparseable one, and the
+  rest of the batch completes. The task-difficulty workflow sets the policy:
+  stage 1 takes `--preprocess-timeout-seconds` (default 600, override with
+  `DR_CODE_PREPROCESS_TIMEOUT_SECONDS`, `0` or `none` to opt out), echoes it
+  into the baseline run config, and logs it with the worker count.
 - The directional evaluator raises a low per-process open-file soft limit to a
   worker-scaled minimum before parallel execution, or fails early with an
   actionable shell command when the hard limit prevents it.

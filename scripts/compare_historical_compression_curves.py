@@ -374,6 +374,24 @@ def _historical_curve_rows(
     )
     if autoencoder.is_empty():
         raise ValueError(f"historical model is absent: {model!r}")
+    invalid_numeric_columns = [
+        column
+        for column in (
+            "budget",
+            "score_bytes",
+            "gt_code_raw_bytes",
+            "test_pass_fraction",
+        )
+        if autoencoder.select(
+            (pl.col(column).is_null() | ~pl.col(column).is_finite()).any()
+        ).item()
+    ]
+    if invalid_numeric_columns:
+        raise ValueError(
+            "invalid historical numeric values: "
+            + ", ".join(invalid_numeric_columns)
+        )
+    expected_task_count = autoencoder.get_column("task_id").n_unique()
     keys = [
         "budget",
         "task_id",
@@ -415,6 +433,22 @@ def _historical_curve_rows(
                 ).alias("compressed_ratio"),
             )
         )
+        coverage = (
+            paired.group_by("budget", "task_id")
+            .agg(
+                pl.struct("data_sample_id", "source_sample_id")
+                .n_unique()
+                .alias("observed_slot_count")
+            )
+            .with_columns(
+                pl.min_horizontal(
+                    "observed_slot_count",
+                    pl.lit(expected_repeats),
+                ).alias("covered_slot_count")
+            )
+            .group_by("budget")
+            .agg(pl.col("covered_slot_count").sum())
+        )
         frames.append(
             paired.group_by("budget")
             .agg(
@@ -424,6 +458,7 @@ def _historical_curve_rows(
                 pl.col("compressed_ratio").mean(),
                 pl.col("test_pass_fraction").mean().alias("pass_rate"),
             )
+            .join(coverage, on="budget", how="left", validate="1:1")
             .with_columns(
                 pl.lit("historical").alias("run"),
                 pl.lit(model).alias("model_config_label"),
@@ -440,7 +475,11 @@ def _historical_curve_rows(
                 pl.lit(None, dtype=pl.Float64).alias("over_budget_rate"),
             )
         )
-    return _add_coverage(pl.concat(frames), expected_repeats=expected_repeats)
+    return _add_coverage(
+        pl.concat(frames),
+        expected_task_count=expected_task_count,
+        expected_repeats=expected_repeats,
+    )
 
 
 def _new_curve_rows(
@@ -483,6 +522,7 @@ def _new_curve_rows(
                         len(description) > int(cast(int, row["max_budget"]))
                     ),
                     "task_id": str(row["task_id"]),
+                    "repeat_index": int(cast(int, row["repeat_index"])),
                     "panel_method": method,
                     "raw_ratio": len(raw_description) / gt_raw_size,
                     "compressed_ratio": min(
@@ -493,10 +533,26 @@ def _new_curve_rows(
                 }
             )
     scored = pl.DataFrame(scored_rows)
-    aggregated = (
-        scored.group_by(
-            "panel_method", "target_budget_ratio", "treatment_label"
+    expected_task_count = new.get_column("task_id").n_unique()
+    coverage_keys = [
+        "panel_method",
+        "target_budget_ratio",
+        "treatment_label",
+    ]
+    coverage = (
+        scored.group_by(*coverage_keys, "task_id")
+        .agg(pl.col("repeat_index").n_unique().alias("observed_slot_count"))
+        .with_columns(
+            pl.min_horizontal(
+                "observed_slot_count",
+                pl.lit(expected_repeats),
+            ).alias("covered_slot_count")
         )
+        .group_by(coverage_keys)
+        .agg(pl.col("covered_slot_count").sum())
+    )
+    aggregated = (
+        scored.group_by(coverage_keys)
         .agg(
             pl.col("task_id").n_unique().alias("task_count"),
             pl.len().alias("row_count"),
@@ -509,6 +565,7 @@ def _new_curve_rows(
             pl.col("compressed_ratio").mean(),
             pl.col("pass_rate").mean(),
         )
+        .join(coverage, on=coverage_keys, how="left", validate="1:1")
         .with_columns(
             pl.lit("current").alias("run"),
             pl.lit(model).alias("model_config_label"),
@@ -517,24 +574,30 @@ def _new_curve_rows(
             pl.lit(None, dtype=pl.Int64).alias("fixed_budget"),
         )
     )
-    return _add_coverage(aggregated, expected_repeats=expected_repeats)
+    return _add_coverage(
+        aggregated,
+        expected_task_count=expected_task_count,
+        expected_repeats=expected_repeats,
+    )
 
 
 def _add_coverage(
     frame: pl.DataFrame,
     *,
+    expected_task_count: int,
     expected_repeats: int,
 ) -> pl.DataFrame:
     return (
         frame.with_columns(
-            (pl.col("task_count") * expected_repeats).alias(
+            pl.lit(expected_task_count).alias("expected_task_count"),
+            pl.lit(expected_task_count * expected_repeats).alias(
                 "expected_row_count"
-            )
+            ),
         )
         .with_columns(
             pl.max_horizontal(
                 pl.lit(0),
-                pl.col("expected_row_count") - pl.col("row_count"),
+                pl.col("expected_row_count") - pl.col("covered_slot_count"),
             ).alias("missing_row_count")
         )
         .select(
@@ -547,7 +610,9 @@ def _add_coverage(
             "fixed_budget",
             "target_budget_ratio",
             "task_count",
+            "expected_task_count",
             "row_count",
+            "covered_slot_count",
             "expected_row_count",
             "missing_row_count",
             "min_max_budget",
@@ -613,6 +678,8 @@ def _plot_curves(
     curves: pl.DataFrame,
     gt_references: pl.DataFrame,
     *,
+    historical_model: str,
+    new_model: str,
     synthetic: bool,
     path: Path,
 ) -> None:
@@ -698,7 +765,8 @@ def _plot_curves(
     figure.text(
         0.5,
         0.975,
-        "GPT-5 Nano/low: Compression vs Pass Rate",
+        f"{_display_model(historical_model)} vs "
+        f"{_display_model(new_model)}: Compression vs Pass Rate",
         ha="center",
         fontsize=14,
     )
@@ -718,7 +786,7 @@ def _plot_curves(
                 color=run_colors["historical"],
                 marker="o",
                 linewidth=2,
-                label="Old",
+                label=f"Historical · {_display_model(historical_model)}",
             ),
             Line2D(
                 [],
@@ -726,7 +794,7 @@ def _plot_curves(
                 color=run_colors["current"],
                 marker="o",
                 linewidth=2,
-                label="Improved",
+                label=f"Current · {_display_model(new_model)}",
             ),
         ],
         title="Experiment",
@@ -847,7 +915,7 @@ def _summary_lines(curves: pl.DataFrame) -> list[str]:
                 f"compressed="
                 f"{float(cast(float, row['compressed_ratio'])):.6f}, "
                 f"pass={float(cast(float, row['pass_rate'])):.6f}, "
-                f"coverage={int(cast(int, row['row_count']))}/"
+                f"coverage={int(cast(int, row['covered_slot_count']))}/"
                 f"{int(cast(int, row['expected_row_count']))}"
             )
     return lines
@@ -949,6 +1017,8 @@ def main() -> int:
     _plot_curves(
         curves,
         gt_references,
+        historical_model=arguments.historical_model,
+        new_model=new_model,
         synthetic=arguments.synthetic,
         path=plot_path,
     )
@@ -995,6 +1065,19 @@ def main() -> int:
             "Mean per observed generation row after pairing raw and selected "
             "compression rows; compressed bytes use min(raw, compressed)."
         ),
+        "coverage": {
+            "expected_task_population": (
+                "All task_id values observed for the selected model across "
+                "treatments."
+            ),
+            "expected_rows_per_treatment": (
+                "expected_task_count * configured expected repeats"
+            ),
+            "covered_slots": (
+                "Distinct paired task/repeat slots, capped at the configured "
+                "repeat count per task."
+            ),
+        },
         "runtime_versions": {
             "python-minifier": version("python-minifier"),
             "zstandard": version("zstandard"),

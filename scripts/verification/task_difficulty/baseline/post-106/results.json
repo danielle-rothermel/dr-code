@@ -1,0 +1,33 @@
+{
+  "evaluation": {
+    "complete_generations": 326,
+    "generation_count": 326,
+    "mean_task_success_rate": 0.8343558282208589,
+    "observed_extremes": {
+      "all_failed": 6,
+      "all_passed": 115,
+      "mixed": 42
+    },
+    "passed_generations": 272,
+    "task_count": 163
+  },
+  "exported_at": "2026-08-12T03:19:42.431292+00:00",
+  "preprocessing": {
+    "eligible_rate": 0.9884172541616275,
+    "eligible_rows": 201050,
+    "nonblank_rows": 203406,
+    "task_count": 163
+  },
+  "sampling": {
+    "coverage_cells": 1467,
+    "distinct_tasks": 163,
+    "selected_cells": 326,
+    "selected_generations": 326
+  },
+  "stages_completed": [
+    "preprocess",
+    "sample",
+    "evaluate",
+    "summarize"
+  ]
+}
