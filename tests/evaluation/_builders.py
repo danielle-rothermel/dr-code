@@ -84,7 +84,7 @@ def repeat_plan(**overrides: object) -> RepeatPlan:
         **{
             "coordinate": repeat_plan_coordinate(),
             "task_count": 2,
-            "repeats": 2,
+            "task_repeats": (2, 2),
             **overrides,
         }
     )

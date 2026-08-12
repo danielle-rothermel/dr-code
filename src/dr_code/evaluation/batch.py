@@ -201,16 +201,7 @@ class EvaluationBatchRequest(FrozenModel):
                     "steps: " + ", ".join(sorted(collisions))
                 )
 
-        expected_slots = tuple(
-            EvaluationSlotIdentity(
-                task_set=self.plan.task_set.coordinate,
-                repeat_plan=self.plan.repeat_plan.coordinate,
-                task_id=task_id,
-                repeat_index=repeat_index,
-            )
-            for task_id in self.plan.task_set.selected
-            for repeat_index in range(self.plan.repeat_plan.repeats)
-        )
+        expected_slots = self.plan.ordered_slots()
         positions = {slot: index for index, slot in enumerate(expected_slots)}
         try:
             input_positions = tuple(positions[slot] for slot in slots)

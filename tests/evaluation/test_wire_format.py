@@ -30,7 +30,7 @@ _GOLDEN_EVALUATION_PLAN = {
     "repeat_plan": {
         "coordinate": {"repeat_plan_id": "repeat-plan", "version": "1"},
         "task_count": 2,
-        "repeats": 2,
+        "task_repeats": [2, 2],
         "seeds": [11, 12, 13, 14],
     },
     "procedure": {

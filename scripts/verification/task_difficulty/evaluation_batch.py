@@ -220,18 +220,6 @@ def load_humaneval_tasks(
     return tasks
 
 
-def _samples_per_task(selected: pl.DataFrame) -> int:
-    """Return the repeat-slot width the selected sample needs per task.
-
-    Tasks appear in however many setting groups retained them, so the sample
-    is ragged. The plan declares the widest task's slot count and each task
-    fills the leading slots it actually has.
-    """
-
-    counts = selected.group_by("task_id").len().get_column("len").to_list()
-    return max(int(count) for count in counts)
-
-
 def _ordered_rows(selected: pl.DataFrame) -> list[dict[str, object]]:
     task_ids = selected.get_column("task_id").unique().sort().to_list()
     ordered: list[dict[str, object]] = []
@@ -306,8 +294,14 @@ def _materialized_candidates(
 def build_evaluation_plan(
     task_ids: tuple[str, ...],
     *,
-    repeats: int,
+    task_repeats: tuple[int, ...],
 ) -> EvaluationPlan:
+    """Build the workflow plan declaring each task's own repeat count.
+
+    Tasks appear in however many setting groups retained them, so the sample
+    is ragged; the plan declares exactly the slots each task occupies.
+    """
+
     settings = CodeTestSettings()
     question = MetricQuestion(
         metric=MetricName.CODE_TEST,
@@ -338,7 +332,7 @@ def build_evaluation_plan(
             version=_WORKFLOW_PLAN_VERSION,
         ),
         task_count=len(task_ids),
-        repeats=repeats,
+        task_repeats=task_repeats,
     )
     return EvaluationPlan(
         plan_id=_WORKFLOW_PLAN_ID,
@@ -414,8 +408,11 @@ def build_task_difficulty_batch_request(
     task_ids = tuple(
         dict.fromkeys(str(row["task_id"]) for row in ordered_rows)
     )
-    repeats = _samples_per_task(selected)
-    plan = build_evaluation_plan(task_ids, repeats=repeats)
+    task_repeats = tuple(
+        sum(1 for row in ordered_rows if str(row["task_id"]) == task_id)
+        for task_id in task_ids
+    )
+    plan = build_evaluation_plan(task_ids, task_repeats=task_repeats)
     tasks = load_humaneval_tasks(snapshot_path, task_ids)
     preprocessing = _exhaustive_preprocessing_coordinate()
 
@@ -503,7 +500,7 @@ def build_preflight_batch_request_for_task(
     """Build a one-sample batch for runtime preflight on a known task."""
 
     preprocessing = _exhaustive_preprocessing_coordinate()
-    plan = build_evaluation_plan((task.task_id,), repeats=1)
+    plan = build_evaluation_plan((task.task_id,), task_repeats=(1,))
     sample = EvaluationSample(
         metadata=EvaluationSampleMetadata(
             identity=EvaluationSampleIdentity(sample_id="runtime-preflight"),

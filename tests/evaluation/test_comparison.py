@@ -94,7 +94,7 @@ def _attempt(identity: int, members: tuple[EvaluationMemberRecord, ...]):
     plan = base.plan.model_copy(
         update={
             "repeat_plan": base.plan.repeat_plan.model_copy(
-                update={"repeats": 4}
+                update={"task_repeats": (4, 4)}
             )
         }
     )

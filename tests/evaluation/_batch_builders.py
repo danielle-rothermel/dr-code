@@ -209,7 +209,7 @@ def request(
             version="1",
         ),
         task_count=1,
-        repeats=count,
+        task_repeats=(count,),
     )
     if inputs is None:
         inputs = tuple(

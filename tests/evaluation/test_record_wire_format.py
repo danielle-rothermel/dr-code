@@ -11,7 +11,7 @@ from dr_code.evaluation import (
 
 
 def test_record_schema_versions_are_pinned() -> None:
-    assert EVALUATION_ATTEMPT_SCHEMA_VERSION == 1
+    assert EVALUATION_ATTEMPT_SCHEMA_VERSION == 2
     assert SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION == 1
     assert CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION == 1
 

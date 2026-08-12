@@ -446,7 +446,7 @@ def test_batch_request_preserves_slot_order_and_limits() -> None:
         attempt=attempt,
     )
 
-    assert request.plan.repeat_plan.repeats == 2
+    assert request.plan.repeat_plan.task_repeats == (2,)
     assert len(request.inputs) == 2
     assert request.inputs[0].sample.metadata.identity.sample_id == "sample-a"
     assert request.inputs[1].sample.metadata.identity.sample_id == "sample-b"
@@ -488,8 +488,9 @@ def test_batch_request_admits_a_ragged_per_task_sample() -> None:
         attempt=attempt,
     )
 
-    # The widest task sets the declared slot width; narrower tasks fill fewer.
-    assert request.plan.repeat_plan.repeats == 2
+    # Each task declares exactly the repeats its own sample rows fill.
+    assert request.plan.repeat_plan.task_repeats == (2, 1)
+    assert request.plan.repeat_plan.slot_count == len(request.inputs)
     assert len(request.inputs) == 3
     slots = [
         (

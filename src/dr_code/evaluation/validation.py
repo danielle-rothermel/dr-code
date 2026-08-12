@@ -197,16 +197,7 @@ def _validate_membership_order(
     plan: EvaluationPlan,
     members: Sequence[EvaluationMemberRecord],
 ) -> None:
-    expected_slots = tuple(
-        EvaluationSlotIdentity(
-            task_set=plan.task_set.coordinate,
-            repeat_plan=plan.repeat_plan.coordinate,
-            task_id=task_id,
-            repeat_index=repeat_index,
-        )
-        for task_id in plan.task_set.selected
-        for repeat_index in range(plan.repeat_plan.repeats)
-    )
+    expected_slots = plan.ordered_slots()
     positions = {slot: index for index, slot in enumerate(expected_slots)}
     try:
         member_positions = tuple(positions[member.slot] for member in members)

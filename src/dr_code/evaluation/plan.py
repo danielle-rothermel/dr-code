@@ -7,6 +7,7 @@ from pydantic import model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import RepeatPlan, TaskSet
+from dr_code.evaluation.identity import EvaluationSlotIdentity
 from dr_code.metrics import MetricQuestionCoordinate, MetricsDefinition
 from dr_code.preprocessing import PreprocessingDefinition
 
@@ -63,6 +64,41 @@ class EvaluationPlan(FrozenModel):
     procedure: EvaluationProcedure
     aggregation: AggregationPolicy
     __hash__ = None
+
+    def ordered_slots(self) -> tuple[EvaluationSlotIdentity, ...]:
+        """Return every slot the plan declares, in plan order.
+
+        Each selected task contributes exactly the repeats the plan declares
+        for it, so the slot sequence is the plan's exact expected membership.
+        """
+
+        return tuple(
+            EvaluationSlotIdentity(
+                task_set=self.task_set.coordinate,
+                repeat_plan=self.repeat_plan.coordinate,
+                task_id=task_id,
+                repeat_index=repeat_index,
+            )
+            for task_position, task_id in enumerate(self.task_set.selected)
+            for repeat_index in range(
+                self.repeat_plan.repeats_for(task_position)
+            )
+        )
+
+    def declares_slot(self, slot: EvaluationSlotIdentity) -> bool:
+        """Report whether this plan declares the given slot position."""
+
+        if (
+            slot.task_set != self.task_set.coordinate
+            or slot.repeat_plan != self.repeat_plan.coordinate
+        ):
+            return False
+        try:
+            task_position = self.task_set.selected.index(slot.task_id)
+        except ValueError:
+            return False
+        repeats = self.repeat_plan.repeats_for(task_position)
+        return 0 <= slot.repeat_index < repeats
 
     @model_validator(mode="after")
     def validate_plan_covers_the_selection(self) -> Self:

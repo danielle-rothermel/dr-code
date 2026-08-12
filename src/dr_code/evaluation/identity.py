@@ -10,7 +10,6 @@ from pydantic import Field, model_validator
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import (
     DatasetCoordinate,
-    RepeatPlan,
     RepeatPlanCoordinate,
     TaskSetCoordinate,
 )
@@ -29,12 +28,6 @@ class EvaluationSlotIdentity(FrozenModel):
     repeat_plan: RepeatPlanCoordinate
     task_id: str
     repeat_index: int = Field(ge=0)
-
-    def within(self, plan: RepeatPlan) -> bool:
-        return (
-            self.repeat_plan == plan.coordinate
-            and 0 <= self.repeat_index < plan.repeats
-        )
 
 
 class EvaluationSourceIdentity(FrozenModel):
