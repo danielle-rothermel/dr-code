@@ -606,16 +606,24 @@ connection and writes the member sample records, the attempt record, and the
 output_reference binding through dr-store's enlisted operations on that
 connection. It never commits, rolls back, or closes the connection it is
 handed, so the evidence becomes visible exactly when the caller commits and
-leaves nothing behind when the caller rolls back. The generation artifact
-bundle publishes before the enlisted writes, so a committed output_reference
-always names an already-published artifact. When no connection is supplied the
-best-effort publication path is unchanged."""
+leaves nothing behind when the caller rolls back. Publishing the generation
+artifact bundle before calling the entry point is a caller obligation that
+dr-code does not enforce; the entry point has no in-tree production caller yet,
+and whetstone's durable leg wires it. The enlisted writes are first-writer-wins
+and never overwrite: a member key or an output_reference already occupied by a
+different reference raises BindingConflictError, which is what re-committing a
+changed attempt under an existing attempt_id does. Any exception leaves the
+writes already issued staged in the caller's transaction and obligates the
+caller to roll it back. The separate best-effort publication path takes no
+connection and is unchanged."""
 rationale = """
 Reusable execution outcomes are an optimization whose loss costs only time,
 while evidence is the record a later analysis reads: partially visible evidence
 would misstate what ran. Joining the caller's transaction makes the records and
 the reference that resolves them commit as one unit without dr-code owning a
-transaction it did not open, and publishing the artifact first keeps a
-committed reference from naming an artifact that does not exist."""
+transaction it did not open. Surfacing a first-writer-wins collision as an
+error keeps another writer's record from committing as if it were this
+attempt's evidence, and leaving rollback to the caller keeps dr-code from
+discarding work in a transaction it does not own."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_evidence.py"
+check = "uv run pytest tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py"

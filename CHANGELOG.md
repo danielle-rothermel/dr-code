@@ -8,10 +8,13 @@
   `output_reference` binding through dr-store's enlisted operations, so they
   become visible exactly when the caller commits and leave nothing behind when
   it rolls back. The entry point never commits, rolls back, or closes the
-  connection, and the artifact bundle publishes before the enlisted writes so a
-  committed reference always names an already-published artifact. Callers that
-  supply no connection keep the existing best-effort publication behavior, and
-  the windowed execution cache stays cache-grade and fail-open. Enlisted
+  connection. Publishing the artifact bundle first is a caller obligation the
+  entry point does not enforce, and no in-tree production caller wires it yet.
+  The enlisted writes never overwrite: a member key or an `output_reference`
+  already holding a different reference raises `BindingConflictError`, and any
+  exception leaves the issued writes staged for the caller to roll back. The
+  separate best-effort publication path takes no connection and is unchanged,
+  and the windowed execution cache stays cache-grade and fail-open. Enlisted
   operations require a Postgres backend, so the tests cover the call seam
   rather than real transaction visibility.
 - dr-store resolves from the sibling `../dr-store` checkout as an editable

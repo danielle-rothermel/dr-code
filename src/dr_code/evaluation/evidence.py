@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Final, Protocol
 
 from dr_serialize import Jsonable
-from dr_store import ObjectReference
+from dr_store import (
+    BindingConflictError,
+    BindStatus,
+    ObjectReference,
+    PutStatus,
+)
 from sqlalchemy.engine import Connection  # noqa: TC002
 
 from dr_code.evaluation.bundle import (
@@ -33,7 +38,7 @@ class EnlistedObjectStore(Protocol):
         connection: Connection,
         schema: str,
         record: Jsonable,
-    ) -> tuple[ObjectReference, object]: ...
+    ) -> tuple[ObjectReference, PutStatus]: ...
 
     def put_many_enlisted(
         self,
@@ -46,7 +51,7 @@ class EnlistedObjectStore(Protocol):
         connection: Connection,
         key: str,
         reference: ObjectReference,
-    ) -> object: ...
+    ) -> BindStatus: ...
 
 
 def output_reference_binding_key(
@@ -88,8 +93,21 @@ def commit_evaluation_evidence(
     caller rolls back. This path never commits, rolls back, or closes
     ``connection``: the transaction belongs to the caller.
 
-    The caller publishes the generation artifact bundle before calling this,
-    so a committed reference always names an already-published artifact.
+    Publishing the generation artifact bundle before calling this is the
+    caller's obligation; nothing here enforces the ordering.
+
+    ``put_many_enlisted`` is first-writer-wins: an occupied member key keeps
+    its existing reference instead of raising. Any member key whose winner is
+    not the record written here raises :class:`BindingConflictError`, so a
+    collision can never commit as if it were this attempt's evidence. The
+    ``output_reference`` binding raises the same error directly from dr-store,
+    which is by design what re-committing a changed attempt under an existing
+    ``attempt_id`` does.
+
+    Any exception leaves the writes already issued staged in the caller's
+    transaction. Rolling that transaction back is the caller's obligation:
+    this path neither swallows the exception nor rolls back on the caller's
+    behalf.
     """
 
     if len(samples) != len(attempt.members):
@@ -104,7 +122,16 @@ def commit_evaluation_evidence(
         for ordinal, sample in enumerate(samples)
     }
     if entries:
-        object_store.put_many_enlisted(connection, entries)
+        winners = object_store.put_many_enlisted(connection, entries)
+        for key, (schema, record) in entries.items():
+            written = ObjectReference.for_record(schema, record)
+            winner = winners[key]
+            if winner != written:
+                raise BindingConflictError(
+                    key=key,
+                    existing=winner,
+                    requested=written,
+                )
     attempt_reference, _ = object_store.put_enlisted(
         connection,
         ATTEMPT_RECORD_OBJECT_SCHEMA,
