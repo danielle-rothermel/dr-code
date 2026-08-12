@@ -21,6 +21,7 @@ from dr_code.evaluation.records import (
     SampleEvaluationRecord,
 )
 from dr_code.evaluation.references import StoredRecordReference
+from dr_code.evaluation.validation import validate_sample_record_graph
 
 ATTEMPT_RECORD_OBJECT_SCHEMA: Final = "dr-code/evaluation-attempt-record-v1"
 OUTPUT_REFERENCE_BINDING_PREFIX: Final = "dr-code/evaluation-attempt/"
@@ -113,6 +114,15 @@ def commit_evaluation_evidence(
     if len(samples) != len(attempt.members):
         raise ValueError(
             "evidence sample records must match the attempt's members"
+        )
+    for member, sample in zip(attempt.members, samples, strict=True):
+        validate_sample_record_graph(
+            sample,
+            slot=member.slot,
+            sample=member.sample,
+            plan=attempt.plan,
+            runtime=attempt.runtime,
+            cache_namespace=attempt.cache_namespace,
         )
     entries: dict[str, tuple[str, Jsonable]] = {
         sample_record_binding_key(attempt.identity, ordinal=ordinal): (

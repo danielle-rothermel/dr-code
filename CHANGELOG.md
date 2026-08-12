@@ -30,12 +30,10 @@
   scratch server (`../dr-store/scripts/test-postgres.sh -- uv run pytest -q -m
   postgres`). Attempt and sample record builders moved to a shared
   `tests/evaluation/_evidence_builders.py` used by both evidence modules.
-- dr-store resolves from the sibling `../dr-store` checkout as an editable
-  dependency at 0.2.3, with a `dr-store==0.2.3` override neutralizing released
-  dr-exec 0.1.9's pin on 0.2.0, and `sqlalchemy>=2.0` is a direct dependency
-  because the evidence path types against `sqlalchemy.engine.Connection`. This
-  is a development-mode arrangement: it lasts until dr-store 0.2.3 is published
-  and dr-exec is repinned to it.
+- dr-store resolves from PyPI at 0.2.3, with a `dr-store==0.2.3`
+  override neutralizing released dr-exec 0.1.9's pin on 0.2.0, and
+  `sqlalchemy>=2.0` is a direct dependency because the evidence path types
+  against `sqlalchemy.engine.Connection`.
 
 - Evaluation sampling plans declare a sample count per selected task
   (`task_num_samples`, positionally aligned with the ordered selection) instead

@@ -13,9 +13,11 @@ from dr_store import (
     PutStatus,
 )
 
+from _builders import sample_identity
 from _evidence_builders import (
     _ATTEMPT_ID,
     attempt_record,
+    reference,
     sample_record,
 )
 from dr_code.evaluation import (
@@ -23,6 +25,7 @@ from dr_code.evaluation import (
     EnlistedObjectStore,
     EvaluationAttemptIdentity,
     EvaluationAttemptRecord,
+    EvaluationMemberRecord,
     OUTPUT_REFERENCE_BINDING_PREFIX,
     SAMPLE_RECORD_OBJECT_SCHEMA,
     commit_evaluation_evidence,
@@ -421,5 +424,31 @@ def test_evidence_requires_one_sample_record_per_member() -> None:
             object_store=store,
             attempt=attempt_record(),
             samples=(),
+        )
+    assert store.calls == []
+
+
+def test_evidence_rejects_misaligned_sample_records() -> None:
+    connection = FakeConnection()
+    store = FakeEnlistedObjectStore(connection=connection)
+    attempt = attempt_record(
+        members=(
+            EvaluationMemberRecord(
+                slot=sample_record().slot,
+                sample=sample_identity(sample_id="other-sample"),
+                record=reference(),
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="sample record identity does not match ordered membership",
+    ):
+        commit_evaluation_evidence(
+            store.connection,  # ty: ignore[invalid-argument-type]
+            object_store=store,
+            attempt=attempt,
+            samples=(sample_record(),),
         )
     assert store.calls == []

@@ -11,7 +11,7 @@ call shape. These tests exercise the same entry point against a real
 They need a PostgreSQL server and skip without one. dr-store's scratch-server
 script supplies both the server and the DSN from a consumer checkout:
 
-    ~/drotherm/repos/dr-store/scripts/test-postgres.sh -- \
+    ../dr-store/scripts/test-postgres.sh -- \
         uv run pytest -q tests/evaluation/test_evidence_postgres.py
 """
 
