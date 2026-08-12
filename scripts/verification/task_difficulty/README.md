@@ -4,6 +4,12 @@ This workflow estimates which HumanEval tasks appear consistently easy or
 hard in the historical generation corpus without evaluating every generation.
 Run the numbered scripts in order.
 
+These stages and [`run_baseline.sh`](run_baseline.sh) are repository
+apparatus: they run from a checkout with `uv run` and are not packaged in the
+wheel. The wheel's declared verbs are `dr-code-validate-preprocessing`,
+`dr-code-validate-testing`, `dr-code-synthetic`, and
+`dr-code-humaneval-schema`.
+
 ## Corpus input
 
 Stage 1 reads a validated **generation corpus bundle** produced by
@@ -140,8 +146,8 @@ explains the modes in full.
   It makes no containment claim, which is fine because nothing here is
   untrusted. Workers return only the candidate sources stage 1 consumes: the
   parent decodes and validates every returned byte single-threaded, so
-  returning whole traces would cost about a hundred times the payload and cap
-  throughput at the parent's parse rate regardless of worker count. Each item
+  returning whole traces would cost about a hundred times the payload no matter
+  how many workers run. Each item
   carries a wall-time watchdog set far above any healthy output's cost, so a
   worker that wedges on one pathological input is killed and respawned
   instead of stalling the run; the wedged item is one item's failure, logged

@@ -142,7 +142,11 @@ def runtime() -> EvaluationRuntimeIdentity:
     )
 
 
-def sample(index: int) -> EvaluationSample:
+def sample(
+    index: int,
+    *,
+    text: str = "def observed_load_count(_x):\n    return 1\n",
+) -> EvaluationSample:
     task = candidate_job_task()
     source_reference = StoredRecordReference(
         reference=ObjectReference.for_record(
@@ -164,9 +168,7 @@ def sample(index: int) -> EvaluationSample:
                 generation_id=f"generation-{index}",
             ),
         ),
-        raw_input=TextArtifact(
-            text="def observed_load_count(_x):\n    return 1\n"
-        ),
+        raw_input=TextArtifact(text=text),
         auxiliary_artifacts=(
             EvaluationSampleAuxiliaryArtifact(
                 trace_key="task",
@@ -183,6 +185,7 @@ def request(
     window_limits: WindowLimits | None = None,
     inputs: tuple[SampleEvaluationInput | FrozenCandidateEvaluationInput, ...]
     | None = None,
+    texts: tuple[str, ...] | None = None,
     projections: tuple[ProjectionKind, ...] = tuple(ProjectionKind),
 ) -> EvaluationBatchRequest:
     settings = CodeTestSettings()
@@ -223,7 +226,11 @@ def request(
                     task_id=TASK_ID,
                     sample_index=index,
                 ),
-                sample=sample(index),
+                sample=(
+                    sample(index)
+                    if texts is None
+                    else sample(index, text=texts[index])
+                ),
             )
             for index in range(count)
         )

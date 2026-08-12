@@ -78,6 +78,31 @@ def load_humaneval_rows(
     return [dataset[index] for index in range(len(dataset))]
 
 
+def load_humaneval_raw_snapshot(
+    snapshot_path: Path, /
+) -> HumanEvalRawRowsSnapshot:
+    """Parse one raw-row snapshot document without resolving overrides.
+
+    Callers that consume the pinned rows as recorded material read the snapshot
+    here; callers that build tasks the override set applies to go through
+    `load_humaneval_snapshot_rows`, which additionally requires the header's
+    override set to be the registered one.
+    """
+
+    return load_humaneval_raw_snapshot_bytes(snapshot_path.read_bytes())
+
+
+def load_humaneval_raw_snapshot_bytes(
+    snapshot_bytes: bytes,
+    /,
+) -> HumanEvalRawRowsSnapshot:
+    """Parse one verified raw-row snapshot byte string."""
+
+    return HumanEvalRawRowsSnapshot.model_validate_json(
+        snapshot_bytes.decode("utf-8")
+    )
+
+
 def load_humaneval_snapshot_rows(
     *,
     snapshot_path: Path,
@@ -85,9 +110,7 @@ def load_humaneval_snapshot_rows(
     dataset_split: str = DEFAULT_HUMANEVAL_DATASET_SPLIT,
     hf_revision: str = DEFAULT_HUMANEVAL_HF_REVISION,
 ) -> list[HumanEvalRow]:
-    snapshot = HumanEvalRawRowsSnapshot.model_validate_json(
-        snapshot_path.read_text(encoding="utf-8")
-    )
+    snapshot = load_humaneval_raw_snapshot(snapshot_path)
     validate_snapshot_header(
         snapshot.header,
         dataset_name=dataset_name,

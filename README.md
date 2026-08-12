@@ -122,10 +122,10 @@ await preprocess_batch(
 
 A caller that wants candidate sources rather than whole traces uses
 `candidate_sources_batch`, which runs an entry point returning the sources
-alone. Result size is the term that decides worker-pool throughput: the caller
+alone. Result size is the term that decides what the pool costs: the caller
 decodes and validates every byte a worker returns, single-threaded, so a whole
 serialized trace costs about a hundred times the payload of the sources it
-carries and no number of workers recovers it.
+carries and no number of workers recovers that difference.
 
 ```python
 from dr_code.caching import candidate_sources_batch
@@ -347,6 +347,21 @@ matched changed references are resolved, one pair at a time. Optional
 projection definitions are explicit `(kind, left_version, right_version)`
 tuples and yield either denominated comparable results or a typed
 `ProjectionNotComparable` result.
+
+`validate_preprocessing` and `validate_testing` are the standalone validation
+flows over that machinery. Both run one caller-supplied request through
+`evaluate_batch` and return its result, whose attempt carries the completeness,
+validity, and limit-exhaustion verdicts. `validate_preprocessing` first runs the
+request's distinct corpus texts through `preprocess_batch` under the plan's own
+preprocessing definition and hands those traces to `evaluate_batch`, so the
+corpus is preprocessed once and its `PreprocessingCoverage` — texts with
+candidates, texts without candidates, texts whose preprocessing failed —
+partitions the corpus under the definition actually evaluated. A reference
+attempt plus an evidence resolver turns either flow structural, returning the
+`compare_evaluation_attempts` result. The `dr-code-validate-preprocessing` and
+`dr-code-validate-testing` verbs wrap those calls: they read one request
+document, run the flow against a caller-named run root and a Python runtime
+whose identity must match the request's, and print the verdict.
 
 ### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
 

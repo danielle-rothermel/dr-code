@@ -12,6 +12,7 @@ from dr_store import (
 
 from _executor_stubs import importable_json_executor
 from dr_code.evaluation import (
+    EvaluationBatchRequest,
     EvaluationReadLimits,
     ProjectionKind,
     RecordPlacement,
@@ -37,21 +38,13 @@ def read_limits() -> EvaluationReadLimits:
     )
 
 
-async def publish_batch(
-    root: Path,
+async def stored_source_request(
+    batch_request: EvaluationBatchRequest,
     *,
-    placement: RecordPlacement = RecordPlacement.BUNDLE_LOCAL,
-    projections: tuple[ProjectionKind, ...] = tuple(ProjectionKind),
-    count: int = 1,
-    cache_store: BatchStore | None = None,
-    object_store: ObjectStore | None = None,
-):  # type: ignore[no-untyped-def]
-    publication = ArtifactBundlePublication.allocate(root, prefix="evaluation")
-    if object_store is None:
-        object_store = ObjectStore(MemoryBackend())
-    batch_request = request(count, projections=projections).model_copy(
-        update={"record_placement": placement}
-    )
+    object_store: ObjectStore,
+) -> EvaluationBatchRequest:
+    """Store each input's source object so restoring can resolve it."""
+
     inputs = []
     for item in batch_request.inputs:
         source_object, _ = await object_store.put(
@@ -71,7 +64,27 @@ async def publish_batch(
         )
         selected_sample = item.sample.model_copy(update={"metadata": metadata})
         inputs.append(item.model_copy(update={"sample": selected_sample}))
-    batch_request = batch_request.model_copy(update={"inputs": tuple(inputs)})
+    return batch_request.model_copy(update={"inputs": tuple(inputs)})
+
+
+async def publish_batch(
+    root: Path,
+    *,
+    placement: RecordPlacement = RecordPlacement.BUNDLE_LOCAL,
+    projections: tuple[ProjectionKind, ...] = tuple(ProjectionKind),
+    count: int = 1,
+    cache_store: BatchStore | None = None,
+    object_store: ObjectStore | None = None,
+):  # type: ignore[no-untyped-def]
+    publication = ArtifactBundlePublication.allocate(root, prefix="evaluation")
+    if object_store is None:
+        object_store = ObjectStore(MemoryBackend())
+    batch_request = await stored_source_request(
+        request(count, projections=projections).model_copy(
+            update={"record_placement": placement}
+        ),
+        object_store=object_store,
+    )
     execution_cache = cache(cache_store or BatchStore(), resident=1)
     try:
         result = await evaluate_batch(

@@ -1,6 +1,6 @@
 [project]
 name = "dr-code"
-version = "0.1.6"
+version = "0.1.7"
 description = "Python code preparation and evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
 readme = "README.md"
 license = "MIT"
@@ -21,6 +21,12 @@ dependencies = [
     "typer>=0.26.7",
     "zstandard>=0.25.0",
 ]
+
+[project.scripts]
+dr-code-humaneval-schema = "dr_code.humaneval.schema_cli:app"
+dr-code-synthetic = "dr_code.synthetic.cli:app"
+dr-code-validate-preprocessing = "dr_code.evaluation.cli:validate_preprocessing_app"
+dr-code-validate-testing = "dr_code.evaluation.cli:validate_testing_app"
 
 [project.urls]
 Repository = "https://github.com/danielle-rothermel/dr-code"

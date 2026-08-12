@@ -187,6 +187,7 @@ async def _evaluate_batch_assembly(
     execution_cache: WindowedExecutionCache,
     pool_config: ExecutionPoolConfig,
     placement_sink: _RecordPlacementSink,
+    preprocessed_traces: Mapping[str, Trace] | None = None,
 ) -> _EvaluationBatchAssembly:
     async with ExecutionPool(executor=executor, config=pool_config) as pool:
 
@@ -219,6 +220,7 @@ async def _evaluate_batch_assembly(
             run_window=run_window,
             placement_sink=placement_sink,
             pool_config=pool_config,
+            preprocessed_traces=preprocessed_traces,
         )
 
 
@@ -291,6 +293,7 @@ async def _assemble(
     run_window: _RunWindow,
     placement_sink: _RecordPlacementSink,
     pool_config: ExecutionPoolConfig,
+    preprocessed_traces: Mapping[str, Trace] | None = None,
 ) -> _EvaluationBatchAssembly:
     runner = (
         bind_preprocessing(request.plan.procedure.preprocessing)
@@ -299,8 +302,8 @@ async def _assemble(
         )
         else None
     )
-    traces_by_text: dict[str, Trace] = {}
-    if runner is not None:
+    traces_by_text: Mapping[str, Trace] = preprocessed_traces or {}
+    if runner is not None and preprocessed_traces is None:
         sample_texts = [
             item.sample.raw_input.text
             for item in request.inputs
@@ -547,6 +550,13 @@ def _prepare_input(
         assert runner is not None
         text = item.sample.raw_input.text
         precomputed = (traces_by_text or {}).get(text)
+        if precomputed is not None:
+            trace_input = precomputed.values.get("input")
+            if trace_input != item.sample.raw_input:
+                raise ValueError(
+                    "preprocessed trace input does not match the sample "
+                    "raw_input"
+                )
         raw_trace = (
             precomputed
             if precomputed is not None
@@ -609,24 +619,37 @@ def _frozen_candidate_trace(item: FrozenCandidateEvaluationInput) -> Trace:
     )
 
 
+def trace_candidate_sources(
+    trace: Trace, /
+) -> tuple[CodeArtifact, ...] | None:
+    """Read the candidate sources one preprocessing trace carries.
+
+    A trace whose output is not a code artifact yields ``None``: it carries no
+    candidate shape at all, as distinct from a candidate set that is empty.
+    """
+
+    output = trace.value(OUTPUT_KEY)
+    if isinstance(output, CodeArtifact):
+        return (output,)
+    if isinstance(output, CodeCandidateSetArtifact):
+        return tuple(
+            CodeArtifact(source=candidate.source)
+            for candidate in output.candidates
+        )
+    if isinstance(output, InspectedCodeCandidateSetArtifact):
+        return tuple(
+            CodeArtifact(source=candidate.candidate.source)
+            for candidate in output.candidates
+        )
+    return None
+
+
 def _materialize_candidates(
     item: EvaluationInput,
     trace: Trace,
 ) -> tuple[MaterializedEvaluationCandidate, ...]:
-    output = trace.value(OUTPUT_KEY)
-    if isinstance(output, CodeArtifact):
-        sources = (output,)
-    elif isinstance(output, CodeCandidateSetArtifact):
-        sources = tuple(
-            CodeArtifact(source=candidate.source)
-            for candidate in output.candidates
-        )
-    elif isinstance(output, InspectedCodeCandidateSetArtifact):
-        sources = tuple(
-            CodeArtifact(source=candidate.candidate.source)
-            for candidate in output.candidates
-        )
-    else:
+    sources = trace_candidate_sources(trace)
+    if sources is None:
         return ()
     producer = trace.producer
     if not isinstance(
