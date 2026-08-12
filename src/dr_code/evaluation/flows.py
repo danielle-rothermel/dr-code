@@ -96,6 +96,9 @@ async def validate_preprocessing(
             pool_config.capacity
         ).max_active_jobs,
     )
+    failed_texts = frozenset(
+        text for text in corpus if text not in traces_by_text
+    )
     with_candidates = sum(
         1
         for text in corpus
@@ -103,7 +106,7 @@ async def validate_preprocessing(
         and trace_candidate_sources(trace)
     )
     result = await evaluate_batch(
-        request,
+        _request_without_texts(request, failed_texts),
         executor=executor,
         execution_cache=execution_cache,
         object_store=object_store,
@@ -170,6 +173,29 @@ def _corpus_texts(request: EvaluationBatchRequest) -> tuple[str, ...]:
             if isinstance(item, SampleEvaluationInput)
         )
     )
+
+
+def _request_without_texts(
+    request: EvaluationBatchRequest,
+    excluded_texts: frozenset[str],
+) -> EvaluationBatchRequest:
+    """Drop sample inputs whose raw text failed pooled preprocessing."""
+
+    if not excluded_texts:
+        return request
+    filtered = tuple(
+        item
+        for item in request.inputs
+        if not (
+            isinstance(item, SampleEvaluationInput)
+            and item.sample.raw_input.text in excluded_texts
+        )
+    )
+    if not filtered:
+        raise ValueError(
+            "every distinct preprocessing text failed; nothing to evaluate"
+        )
+    return request.model_copy(update={"inputs": filtered})
 
 
 def _validate_comparison_pair(

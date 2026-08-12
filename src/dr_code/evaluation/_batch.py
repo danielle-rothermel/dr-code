@@ -550,6 +550,13 @@ def _prepare_input(
         assert runner is not None
         text = item.sample.raw_input.text
         precomputed = (traces_by_text or {}).get(text)
+        if precomputed is not None:
+            trace_input = precomputed.values.get("input")
+            if trace_input != item.sample.raw_input:
+                raise ValueError(
+                    "preprocessed trace input does not match the sample "
+                    "raw_input"
+                )
         raw_trace = (
             precomputed
             if precomputed is not None

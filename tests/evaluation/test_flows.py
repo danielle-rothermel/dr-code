@@ -195,6 +195,8 @@ async def test_preprocessing_coverage_counts_a_failed_text(
     assert coverage.texts_without_candidates == 0
     assert coverage.texts_failed == 1
     assert coverage.corpus_size == len(corpus)
+    assert len(validation.result.attempt.members) == 1
+    assert validation.result.attempt.members[0].sample.sample_id == "sample-0"
 
 
 async def test_structural_comparison_needs_a_reference_and_a_resolver(

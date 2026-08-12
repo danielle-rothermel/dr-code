@@ -19,7 +19,7 @@ from dr_code.humaneval.sampling import (
     DEFAULT_HUMANEVAL_DATASET_NAME,
     DEFAULT_HUMANEVAL_DATASET_SPLIT,
     DEFAULT_HUMANEVAL_HF_REVISION,
-    load_humaneval_raw_snapshot,
+    load_humaneval_raw_snapshot_bytes,
 )
 
 _TASK_ID_RE: Final = re.compile(r"^HumanEval/(?P<index>\d+)$")
@@ -91,10 +91,10 @@ class HumanEvalTaskAdapter:
 def _load_snapshot(
     path: Path,
 ) -> tuple[dict[str, TaskRecord], dict[str, str]]:
-    _verify_snapshot_bytes(path)
+    snapshot_bytes = _verified_snapshot_bytes(path)
     try:
-        snapshot = load_humaneval_raw_snapshot(path)
-    except (OSError, ValidationError, ValueError) as exc:
+        snapshot = load_humaneval_raw_snapshot_bytes(snapshot_bytes)
+    except (ValidationError, ValueError) as exc:
         raise ValueError(f"invalid HumanEval snapshot {path}: {exc}") from exc
     # The adapter records the snapshot's rows as pinned material and applies no
     # overrides, so it checks the header's dataset identity itself rather than
@@ -170,7 +170,7 @@ def _require_nonempty_strings(
             )
 
 
-def _verify_snapshot_bytes(path: Path) -> None:
+def _verified_snapshot_bytes(path: Path) -> bytes:
     try:
         snapshot_bytes = path.read_bytes()
     except OSError as exc:
@@ -181,6 +181,7 @@ def _verify_snapshot_bytes(path: Path) -> None:
             "HumanEval snapshot content hash mismatch: "
             f"expected={_EXPECTED_SNAPSHOT_SHA256}, actual={actual_sha256}"
         )
+    return snapshot_bytes
 
 
 def _cleaned_source_digest(row: dict[str, JsonValue]) -> str:

@@ -89,8 +89,17 @@ def load_humaneval_raw_snapshot(
     override set to be the registered one.
     """
 
+    return load_humaneval_raw_snapshot_bytes(snapshot_path.read_bytes())
+
+
+def load_humaneval_raw_snapshot_bytes(
+    snapshot_bytes: bytes,
+    /,
+) -> HumanEvalRawRowsSnapshot:
+    """Parse one verified raw-row snapshot byte string."""
+
     return HumanEvalRawRowsSnapshot.model_validate_json(
-        snapshot_path.read_text(encoding="utf-8")
+        snapshot_bytes.decode("utf-8")
     )
 
 
