@@ -16,8 +16,8 @@ HumanEval generations before committing resources to full experiments.
 
 ## Preprocessing validation
 
-- Report each task's nonblank-row denominator, successful rows, failure-code
-  counts, elapsed time, and throughput.
+- Report each task's nonblank-row denominator, successful rows, and
+  failure-code counts.
 - For a task sample, report the row-weighted aggregate success rate with a
   deterministic percentile bootstrap confidence interval that resamples
   tasks.

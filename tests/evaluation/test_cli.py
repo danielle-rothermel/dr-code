@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import tomllib
 from pathlib import Path
 
@@ -24,6 +25,13 @@ def test_declared_scripts_are_exactly_the_packaged_entry_points() -> None:
         pyproject = tomllib.load(file)
 
     assert pyproject["project"]["scripts"] == _DECLARED_SCRIPTS
+
+
+def test_declared_scripts_resolve_to_importable_targets() -> None:
+    for target in _DECLARED_SCRIPTS.values():
+        module_name, _, attribute = target.partition(":")
+        module = importlib.import_module(module_name)
+        assert callable(getattr(module, attribute)), target
 
 
 def test_validation_verbs_declare_their_flow_arguments() -> None:

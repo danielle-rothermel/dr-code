@@ -19,7 +19,7 @@ from dr_code.humaneval.sampling import (
     DEFAULT_HUMANEVAL_DATASET_NAME,
     DEFAULT_HUMANEVAL_DATASET_SPLIT,
     DEFAULT_HUMANEVAL_HF_REVISION,
-    load_humaneval_snapshot_rows,
+    load_humaneval_raw_snapshot,
 )
 
 _TASK_ID_RE: Final = re.compile(r"^HumanEval/(?P<index>\d+)$")
@@ -28,6 +28,13 @@ _DATA_SAMPLE_ID_RE: Final = re.compile(
     r"(?:/gt_solution(?:@(?P<source_digest>[0-9a-f]{16}))?)?$"
 )
 _EXPECTED_TASK_IDS: Final = tuple(f"HumanEval/{index}" for index in range(164))
+_REQUIRED_ROW_FIELDS: Final = (
+    "task_id",
+    "prompt",
+    "canonical_solution",
+    "entry_point",
+    "test",
+)
 _EXPECTED_SNAPSHOT_SHA256: Final = (
     "b2daa45795b56b5e73dfc70e9993ef07c7c3bdf4b01ade42beae88387a961377"
 )
@@ -86,14 +93,23 @@ def _load_snapshot(
 ) -> tuple[dict[str, TaskRecord], dict[str, str]]:
     _verify_snapshot_bytes(path)
     try:
-        rows = load_humaneval_snapshot_rows(snapshot_path=path)
+        snapshot = load_humaneval_raw_snapshot(path)
     except (OSError, ValidationError, ValueError) as exc:
         raise ValueError(f"invalid HumanEval snapshot {path}: {exc}") from exc
+    # The adapter records the snapshot's rows as pinned material and applies no
+    # overrides, so it checks the header's dataset identity itself rather than
+    # the override set the sampling loader requires.
+    if (
+        snapshot.header.dataset_id != DEFAULT_HUMANEVAL_DATASET_NAME
+        or snapshot.header.hf_revision != DEFAULT_HUMANEVAL_HF_REVISION
+    ):
+        raise ValueError(f"invalid HumanEval snapshot identity in {path}")
 
     records: dict[str, TaskRecord] = {}
     source_digests: dict[str, str] = {}
-    for raw_row in rows:
-        row = cast(dict[str, JsonValue], dict(raw_row))
+    for index, raw_row in enumerate(snapshot.rows):
+        row = cast(dict[str, JsonValue], raw_row.model_dump(mode="json"))
+        _require_nonempty_strings(row, index=index)
         task_id = row["task_id"]
         if not isinstance(task_id, str):
             raise AssertionError("validated HumanEval task ID is not a string")
@@ -133,6 +149,25 @@ def _load_snapshot(
             f"missing={missing!r}, unexpected={unexpected!r}"
         )
     return records, source_digests
+
+
+def _require_nonempty_strings(
+    row: dict[str, JsonValue], *, index: int
+) -> None:
+    """Reject a row whose recorded material is an empty string.
+
+    The snapshot model types every field `StrictStr`, which admits `""`; the
+    corpus record built from the row is only meaningful when each field carries
+    content.
+    """
+
+    for field in _REQUIRED_ROW_FIELDS:
+        value = row.get(field)
+        if not isinstance(value, str) or not value:
+            raise ValueError(
+                f"invalid HumanEval snapshot row {index}: "
+                f"{field} must be a nonempty string"
+            )
 
 
 def _verify_snapshot_bytes(path: Path) -> None:

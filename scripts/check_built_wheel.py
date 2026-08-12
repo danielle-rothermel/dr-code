@@ -10,7 +10,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parents[1]
 _SMOKE_PROGRAM = r"""
-from importlib.metadata import version
+from importlib.metadata import entry_points, version
 import hashlib
 import importlib
 from pathlib import Path
@@ -213,6 +213,35 @@ for module_name, expected in required_exports.items():
         raise SystemExit(
             f"installed wheel {module_name} has unresolved exports: "
             f"{sorted(missing_attributes)}"
+        )
+
+expected_console_scripts = {
+    "dr-code-humaneval-schema": "dr_code.humaneval.schema_cli:app",
+    "dr-code-synthetic": "dr_code.synthetic.cli:app",
+    "dr-code-validate-preprocessing": (
+        "dr_code.evaluation.cli:validate_preprocessing_app"
+    ),
+    "dr-code-validate-testing": "dr_code.evaluation.cli:validate_testing_app",
+}
+installed_console_scripts = {
+    entry.name: entry.value
+    for entry in entry_points(group="console_scripts")
+    if entry.name in expected_console_scripts
+}
+if installed_console_scripts != expected_console_scripts:
+    raise SystemExit(
+        "installed wheel console scripts do not match the declared verbs: "
+        f"{sorted(installed_console_scripts.items())}"
+    )
+for script_name, target in expected_console_scripts.items():
+    target_module, _, target_attribute = target.partition(":")
+    resolved = getattr(
+        importlib.import_module(target_module), target_attribute, None
+    )
+    if resolved is None:
+        raise SystemExit(
+            f"installed wheel console script {script_name} does not resolve "
+            f"{target}"
         )
 
 expected_version = sys.argv[1]
