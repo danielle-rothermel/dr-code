@@ -32,7 +32,6 @@ from workflow_settings import (
     PREPROCESS_TIMEOUT_SECONDS,
     PREPROCESS_TIMEOUT_SECONDS_ENV,
     PREPROCESSING_SUMMARY,
-    SETTINGS,
     _positive_worker_count,
     expected_manifest_sha256,
     generation_corpus_bundle_path,
@@ -84,20 +83,8 @@ def classify_generation_rows(corpus: pl.DataFrame) -> pl.DataFrame:
             + ", ".join(sorted(missing))
         )
 
-    filtered = corpus.filter(
-        pl.struct(["generation_mode", "budget_mode"]).is_in(
-            [
-                {
-                    "generation_mode": generation_mode,
-                    "budget_mode": budget_mode,
-                }
-                for generation_mode, budget_mode in SETTINGS
-            ]
-        )
-    )
-
     records: list[dict[str, object]] = []
-    for row in filtered.iter_rows(named=True):
+    for row in corpus.iter_rows(named=True):
         decoder_output = row["decoder_output"]
         if not _is_nonblank(decoder_output):
             continue

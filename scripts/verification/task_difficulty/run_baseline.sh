@@ -24,6 +24,7 @@ EXPORT_DIR="${REPO_ROOT}/scripts/verification/task_difficulty/baseline/${BASELIN
 WORKERS="${DR_CODE_EVALUATION_WORKERS:-16}"
 TIMEOUT="${DR_CODE_EVALUATION_TIMEOUT_SECONDS:-120}"
 PREPROCESS_TIMEOUT="${DR_CODE_PREPROCESS_TIMEOUT_SECONDS:-600}"
+TASKS_PER_GROUP="${DR_CODE_SAMPLE_TASKS_PER_GROUP:-40}"
 EVALUATION_VENV="${DR_CODE_EVALUATION_VENV:-${REPO_ROOT}/.evaluation-venv}"
 
 usage() {
@@ -39,6 +40,7 @@ Defaults:
   corpus bundle: ${REVIEWED_CORPUS}
   manifest SHA-256: ${REVIEWED_MANIFEST_SHA256}
   per-item preprocessing timeout: 600s (0 or none runs unbudgeted)
+  tasks per sampling group: 40 (0 or all keeps every task)
   run directory: ${HOME}/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/<baseline-name>
   export directory: scripts/verification/task_difficulty/baseline/<baseline-name>
 
@@ -54,6 +56,7 @@ Environment overrides:
   DR_CODE_EVALUATION_WORKERS
   DR_CODE_EVALUATION_TIMEOUT_SECONDS
   DR_CODE_PREPROCESS_TIMEOUT_SECONDS (per-item stage-1 watchdog; 0/none disables)
+  DR_CODE_SAMPLE_TASKS_PER_GROUP (stage-2 tasks per group; 0/all keeps every task)
   DR_CODE_EVALUATION_PYTHON
   DR_CODE_EVALUATION_VENV
 EOF
@@ -86,6 +89,7 @@ cd "${REPO_ROOT}"
   echo "workers=${WORKERS}"
   echo "timeout_seconds=${TIMEOUT}"
   echo "preprocess_timeout_seconds=${PREPROCESS_TIMEOUT}"
+  echo "tasks_per_group=${TASKS_PER_GROUP}"
   echo "git_rev=$(git rev-parse HEAD)"
   echo "git_branch=$(git branch --show-current)"
   echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -99,6 +103,7 @@ uv run python scripts/verification/task_difficulty/01_build_eligible_corpus.py \
 
 echo "Stage 2: select balanced sample" | tee -a "${RUN_LOG}"
 uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py \
+  --tasks-per-group "${TASKS_PER_GROUP}" \
   2>&1 | tee -a "${RUN_LOG}"
 
 if [[ -z "${DR_CODE_EVALUATION_PYTHON:-}" ]]; then

@@ -98,10 +98,17 @@ def _sampling_results() -> dict[str, object] | None:
         "selected_generations": selected.height,
         "distinct_tasks": selected.get_column("task_id").n_unique(),
     }
+    if "tasks_per_group" in selected.columns:
+        tasks_per_group = selected.item(0, "tasks_per_group")
+        payload["tasks_per_group"] = (
+            "all" if tasks_per_group is None else int(tasks_per_group)
+        )
     if SAMPLING_COVERAGE.is_file():
         coverage = pl.read_parquet(SAMPLING_COVERAGE)
-        payload["coverage_cells"] = coverage.height
-        payload["selected_cells"] = int(coverage.get_column("selected").sum())
+        payload["populated_groups"] = coverage.height
+        payload["eligible_tasks"] = int(
+            coverage.get_column("eligible_tasks").sum()
+        )
     return payload
 
 
@@ -241,7 +248,9 @@ def _format_results_text(
         lines.append(
             "sampling: "
             f"{sampling.get('selected_generations')} selected generations "
-            f"across {sampling.get('distinct_tasks')} tasks"
+            f"across {sampling.get('distinct_tasks')} tasks and "
+            f"{sampling.get('populated_groups')} groups "
+            f"(tasks_per_group={sampling.get('tasks_per_group')})"
         )
     evaluation = results.get("evaluation")
     if isinstance(evaluation, dict):

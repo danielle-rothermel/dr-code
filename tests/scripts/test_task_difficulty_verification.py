@@ -108,7 +108,7 @@ def test_load_workflow_frame_validates_manifest_sha256() -> None:
         )
 
 
-def test_classification_keeps_three_complete_settings() -> None:
+def test_classification_keeps_every_complete_nonblank_row() -> None:
     corpus = _LOADER.load_workflow_frame(_FIXTURE_BUNDLE)
 
     classified = _BUILD.classify_generation_rows(corpus)
@@ -134,7 +134,37 @@ def test_classification_keeps_three_complete_settings() -> None:
             "budget_mode": "budget",
             "max_characters": 50,
         },
+        {
+            "sample_id": "unresolved",
+            "generation_mode": "unresolved_encoder",
+            "budget_mode": "unresolved",
+            "max_characters": None,
+        },
     ]
+
+
+def test_classification_keeps_a_novel_mode_and_budget_combination() -> None:
+    """Nothing may silently exclude a populated cell from the probe."""
+
+    corpus = pl.DataFrame(
+        [
+            _generation_row(
+                "novel",
+                generation_mode="future_mode",
+                budget_mode="future_budget",
+                encoder_model=None,
+                encoder_output=None,
+                encoder_user_prompt=None,
+            )
+            | {"decoder_model": "model-a"}
+        ]
+    )
+
+    classified = _BUILD.classify_generation_rows(corpus)
+
+    assert classified.get_column("sample_id").to_list() == ["novel"]
+    assert classified.item(0, "generation_mode") == "future_mode"
+    assert classified.item(0, "budget_mode") == "future_budget"
 
 
 def test_preprocessing_retains_compilable_function_candidates() -> None:
@@ -240,37 +270,144 @@ def test_preprocess_timeout_env_override_can_disable_the_watchdog(
     assert _SETTINGS.preprocess_timeout_seconds() is None
 
 
-def test_sampling_selects_one_stable_row_per_cell() -> None:
+_SAMPLING_GROUPS = (
+    ("direct", "no_budget", "model-a"),
+    ("enc_dec", "budget", "model-b"),
+    ("unresolved_encoder", "unresolved", "model-c"),
+)
+
+
+def _eligible_grid(task_count: int, *, repeats: int = 2) -> pl.DataFrame:
     rows = []
-    for task_id in ("HumanEval/0", "HumanEval/1"):
-        for generation_mode, budget_mode in _SETTINGS.SETTINGS:
-            for model in _SETTINGS.MODEL_ROSTER:
-                for repeat in range(2):
-                    rows.append(
-                        {
-                            "sample_id": (
-                                f"{task_id}-{generation_mode}-{budget_mode}-"
-                                f"{model}-{repeat}"
-                            ),
-                            "task_id": task_id,
-                            "generation_mode": generation_mode,
-                            "budget_mode": budget_mode,
-                            "model_key": model,
-                            "code_candidates": ["def f():\n    return 1\n"],
-                            "candidate_count": 1,
-                        }
-                    )
-    eligible = pl.DataFrame(rows)
+    for task_index in range(task_count):
+        task_id = f"HumanEval/{task_index}"
+        for generation_mode, budget_mode, model in _SAMPLING_GROUPS:
+            for repeat in range(repeats):
+                rows.append(
+                    {
+                        "sample_id": (
+                            f"{task_id}-{generation_mode}-{budget_mode}-"
+                            f"{model}-{repeat}"
+                        ),
+                        "task_id": task_id,
+                        "generation_mode": generation_mode,
+                        "budget_mode": budget_mode,
+                        "model_key": model,
+                        "code_candidates": ["def f():\n    return 1\n"],
+                        "candidate_count": 1,
+                    }
+                )
+    return pl.DataFrame(rows)
 
-    first, coverage = _SAMPLE.select_balanced_sample(eligible)
-    second, _ = _SAMPLE.select_balanced_sample(eligible.reverse())
 
-    assert first.height == 18
-    assert coverage.get_column("selected").all()
+def test_sampling_membership_is_stable_for_a_seed_and_corpus() -> None:
+    eligible = _eligible_grid(10)
+
+    first, _ = _SAMPLE.select_balanced_sample(eligible, tasks_per_group=4)
+    second, _ = _SAMPLE.select_balanced_sample(
+        eligible.reverse(), tasks_per_group=4
+    )
+
     assert (
         first.get_column("sample_id").to_list()
         == second.get_column("sample_id").to_list()
     )
+    assert first.get_column("sampling_seed").unique().to_list() == [
+        _SETTINGS.SAMPLING_SEED
+    ]
+
+
+def test_sampling_represents_every_populated_group() -> None:
+    eligible = _eligible_grid(10)
+
+    selected, coverage = _SAMPLE.select_balanced_sample(
+        eligible, tasks_per_group=4
+    )
+
+    observed = set(
+        selected.select(
+            ["generation_mode", "budget_mode", "model_key"]
+        ).iter_rows()
+    )
+    assert observed == set(_SAMPLING_GROUPS)
+    assert coverage.height == len(_SAMPLING_GROUPS)
+    assert coverage.get_column("selected_tasks").to_list() == [4, 4, 4]
+    assert coverage.get_column("eligible_tasks").to_list() == [10, 10, 10]
+
+
+def test_sampling_honors_the_tasks_per_group_budget() -> None:
+    eligible = _eligible_grid(10)
+
+    selected, _ = _SAMPLE.select_balanced_sample(eligible, tasks_per_group=3)
+
+    assert selected.height == 3 * len(_SAMPLING_GROUPS)
+    per_group = selected.group_by(
+        ["generation_mode", "budget_mode", "model_key"]
+    ).len()
+    assert per_group.get_column("len").unique().to_list() == [3]
+    assert selected.get_column("tasks_per_group").unique().to_list() == [3]
+
+
+def test_sampling_budget_above_the_corpus_keeps_every_task() -> None:
+    eligible = _eligible_grid(4)
+
+    selected, _ = _SAMPLE.select_balanced_sample(eligible, tasks_per_group=40)
+
+    assert selected.height == 4 * len(_SAMPLING_GROUPS)
+
+
+def test_sampling_with_all_keeps_the_full_group_grid() -> None:
+    eligible = _eligible_grid(10)
+
+    selected, coverage = _SAMPLE.select_balanced_sample(
+        eligible, tasks_per_group=None
+    )
+
+    assert selected.height == 10 * len(_SAMPLING_GROUPS)
+    assert coverage.get_column("selected_tasks").to_list() == [10, 10, 10]
+    assert selected.get_column("tasks_per_group").unique().to_list() == [None]
+
+
+def test_sampling_rejects_a_corpus_with_no_populated_group() -> None:
+    eligible = _eligible_grid(1).head(0)
+
+    with pytest.raises(ValueError, match="no populated"):
+        _SAMPLE.select_balanced_sample(eligible, tasks_per_group=4)
+
+
+def test_tasks_per_group_flag_defaults_to_the_workflow_budget() -> None:
+    arguments = _SAMPLE._parse_args([])
+
+    assert arguments.tasks_per_group == _SETTINGS.SAMPLE_TASKS_PER_GROUP
+
+
+@pytest.mark.parametrize("full_grid", ["0", "all", "All", " all "])
+def test_tasks_per_group_flag_accepts_the_full_grid(full_grid: str) -> None:
+    arguments = _SAMPLE._parse_args(["--tasks-per-group", full_grid])
+
+    assert arguments.tasks_per_group is None
+
+
+@pytest.mark.parametrize("rejected", ["-1", "abc", "2.5"])
+def test_tasks_per_group_flag_rejects_unusable_values(rejected: str) -> None:
+    with pytest.raises(SystemExit):
+        _SAMPLE._parse_args(["--tasks-per-group", rejected])
+
+
+def test_tasks_per_group_env_override_reaches_the_flag_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(_SETTINGS.SAMPLE_TASKS_PER_GROUP_ENV, "7")
+
+    assert _SETTINGS.sample_tasks_per_group() == 7
+
+
+def test_tasks_per_group_env_override_can_request_every_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(_SETTINGS.SAMPLE_TASKS_PER_GROUP_ENV, "all")
+
+    assert _SETTINGS.sample_tasks_per_group() is None
 
 
 def test_batch_request_preserves_slot_order_and_limits() -> None:
