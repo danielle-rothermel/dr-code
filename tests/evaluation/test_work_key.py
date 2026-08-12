@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from _builders import evaluation_slot
+from _builders import dataset, evaluation_slot, task_set_coordinate
 from dr_serialize import build_identity_document, identity_document_hash
 
 from dr_code.evaluation import derive_work_key
@@ -20,6 +20,8 @@ _GOLDEN_WORK_KEY_PAYLOAD = {
     "experiment_config_hash": _CONFIG_HASH,
     "task_set_id": "task-set",
     "task_set_version": "1",
+    "dataset_id": "dataset",
+    "dataset_version": "1",
     "sampling_plan_id": "sampling-plan",
     "sampling_plan_version": "1",
     "task_id": "t0",
@@ -45,7 +47,7 @@ def test_work_key_hashes_the_golden_derivation_payload() -> None:
         == expected
     )
     assert str(expected) == (
-        "a125dce847b31ca610f049aac229197a24c95ff74206dab38ec89366e02a2c10"
+        "2b471d17be6da86b2fca7520b3f4b9715fce57cb25723a5a2dcf68e408f62683"
     )
 
 
@@ -67,6 +69,19 @@ def test_work_key_separates_sample_indices_within_one_task() -> None:
         evaluation_slot(sample_index=1), experiment_config_hash=_CONFIG_HASH
     )
     assert first != second
+
+
+def test_work_key_separates_dataset_identities() -> None:
+    base = derive_work_key(
+        evaluation_slot(), experiment_config_hash=_CONFIG_HASH
+    )
+    other_dataset = derive_work_key(
+        evaluation_slot(
+            task_set=task_set_coordinate(dataset=dataset(version="2"))
+        ),
+        experiment_config_hash=_CONFIG_HASH,
+    )
+    assert base != other_dataset
 
 
 def test_work_key_separates_tasks_and_experiment_configurations() -> None:

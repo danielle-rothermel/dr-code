@@ -40,6 +40,8 @@ def derive_work_key(
                 "experiment_config_hash": experiment_config_hash,
                 "task_set_id": slot.task_set.task_set_id,
                 "task_set_version": slot.task_set.version,
+                "dataset_id": slot.task_set.dataset.dataset_id,
+                "dataset_version": slot.task_set.dataset.version,
                 "sampling_plan_id": slot.sampling_plan.sampling_plan_id,
                 "sampling_plan_version": slot.sampling_plan.version,
                 "task_id": slot.task_id,
