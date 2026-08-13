@@ -11,7 +11,7 @@ from _executor_stubs import (
     completed_execution,
     importable_json_executor,
 )
-from dr_code.evaluation import AttemptCompleteness
+from dr_code.evaluation import AttemptCompleteness, PreprocessMode
 from dr_code.evaluation import _batch
 from dr_code.evaluation._batch import _evaluate_durable_partition_assembly
 
@@ -33,9 +33,12 @@ async def test_durable_partition_runs_serially_without_a_pool(
         raise AssertionError("durable partition must not construct a pool")
 
     monkeypatch.setattr(_batch, "ExecutionPool", reject_pool)
-    ordinary = request()
+    ordinary = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     frozen = frozen_input(0, ordinary.inputs[0].slot)
-    batch_request = request(inputs=(frozen,))
+    batch_request = request(
+        inputs=(frozen,),
+        preprocess_mode=PreprocessMode.IN_PROCESS,
+    )
     execution_cache = cache(BatchStore())
     executor = CountingExecutor(importable_json_executor())
 
@@ -96,7 +99,9 @@ async def test_durable_cancellation_requests_and_settles_cleanup(
     try:
         running = asyncio.create_task(
             _evaluate_durable_partition_assembly(
-                request(projections=()),
+                request(
+                    preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+                ),
                 executor=executor,
                 execution_cache=execution_cache,
                 placement_sink=MemoryPlacement(),

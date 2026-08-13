@@ -11,6 +11,7 @@ from dr_code.evaluation import (
     EvaluatedSampleRecord,
     ExecutorExecutionFailure,
     FailureClass,
+    PreprocessMode,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
 from dr_code.humaneval import (
@@ -52,7 +53,7 @@ def _reference(index: int = 0) -> BundleRecordReference:
 async def test_projection_scores_authoritative_records_without_execution() -> (
     None
 ):
-    batch_request = request()
+    batch_request = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     execution_cache = cache(BatchStore())
     placement = MemoryPlacement()
     await _evaluate_batch_assembly(
@@ -98,7 +99,7 @@ async def test_projection_scores_authoritative_records_without_execution() -> (
 
 
 async def test_batch_projection_preserves_request_order() -> None:
-    batch_request = request(2)
+    batch_request = request(2, preprocess_mode=PreprocessMode.IN_PROCESS)
     execution_cache = cache(BatchStore())
     placement = MemoryPlacement()
     await _evaluate_batch_assembly(
@@ -136,7 +137,7 @@ async def _two_candidate_record(
 ) -> tuple[EvaluatedSampleRecord, object]:
     """Evaluate one sample whose submission yields two ordered candidates."""
 
-    batch_request = request()
+    batch_request = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     selected_sample = batch_request.inputs[0].data.sample.model_copy(
         update={
             "raw_input": TextArtifact(
@@ -181,7 +182,7 @@ async def _one_candidate_record(
 ) -> tuple[EvaluatedSampleRecord, object]:
     """Evaluate one sample whose submission yields exactly one candidate."""
 
-    batch_request = request()
+    batch_request = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     selected_sample = batch_request.inputs[0].data.sample.model_copy(
         update={"raw_input": TextArtifact(text=f"```python\n{source}\n```")}
     )
@@ -505,7 +506,7 @@ async def test_any_candidate_reduction_reports_an_unfinished_group_honestly() ->
 async def test_blank_and_unextractable_submissions_score_zero_under_every_reduction(
     profile: object,
 ) -> None:
-    batch_request = request(2)
+    batch_request = request(2, preprocess_mode=PreprocessMode.IN_PROCESS)
     inputs = tuple(
         item.model_copy(
             update={
@@ -562,7 +563,7 @@ async def test_projection_requires_full_profile_coordinate_and_question() -> (
     execution_cache = cache(BatchStore())
     placement = MemoryPlacement()
     await _evaluate_batch_assembly(
-        request(),
+        request(preprocess_mode=PreprocessMode.IN_PROCESS),
         executor=importable_json_executor(),
         execution_cache=execution_cache,
         pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),

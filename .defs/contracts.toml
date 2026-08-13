@@ -206,11 +206,15 @@ text; with an observer each result is handed over as it completes and nothing is
 retained. A caller that consumes candidate sources runs the candidate-sources
 entry point, which returns the sources alone rather than the trace carrying
 them. `evaluate_batch` sample prepare uses the trace path; the eligible-corpus
-stage uses the candidate-sources path. A caller that already ran the trace path
+stage uses the candidate-sources path. `EvalBatchRequest.preprocess_mode` is
+required: `process_pool` runs distinct sample texts through `preprocess_batch`
+under the plan's preprocessing definition with worker width taken from
+`pool_config`; `in_process` skips that pooled pass and prepares each sample on
+the caller thread via the bound runner. A caller that already ran the trace path
 over a request's sample texts under the plan's own preprocessing definition
 hands those traces to `evaluate_batch`, which then runs no pooled pass of its
-own and prepares any omitted text in process, so one attempt preprocesses its
-corpus once. Batches run unbudgeted unless a caller
+own regardless of mode and prepares any omitted text in process, so one attempt
+preprocesses its corpus once. Batches run unbudgeted unless a caller
 declares a per-item wall-time budget; a text killed on that budget is that
 text's failure like any other and is additionally reported as a timeout."""
 rationale = """

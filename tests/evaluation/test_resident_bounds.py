@@ -8,7 +8,7 @@ from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
 from dr_store import ArtifactBundlePublication
 
 from _executor_stubs import importable_json_executor
-from dr_code.evaluation import evaluate_batch
+from dr_code.evaluation import PreprocessMode, evaluate_batch
 
 from ._batch_builders import BatchStore, cache, request
 
@@ -34,7 +34,7 @@ async def test_cache_and_job_windows_remain_bounded_across_larger_input(
     tmp_path: Path,
 ) -> None:
     store = GatedStore()
-    batch_request = request(4)
+    batch_request = request(4, preprocess_mode=PreprocessMode.IN_PROCESS)
     execution_cache = cache(store, resident=1)
     publication = ArtifactBundlePublication.allocate(
         tmp_path, prefix="resident"

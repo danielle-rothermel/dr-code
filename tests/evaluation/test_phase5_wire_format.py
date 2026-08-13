@@ -8,6 +8,7 @@ from dr_code.evaluation import (
     ComparableProjectionComparison,
     ComparisonStatus,
     EvalAttemptId,
+    PreprocessMode,
     ProjectionKind,
     ProjectionNotComparable,
     ReplayMode,
@@ -33,7 +34,10 @@ def test_replay_preflight_wire_keys_and_discriminators_are_exact() -> None:
         ).model_dump_json()
     )
     ready = json.loads(
-        ReplayReady(source=source, request=request()).model_dump_json()
+        ReplayReady(
+            source=source,
+            request=request(preprocess_mode=PreprocessMode.IN_PROCESS),
+        ).model_dump_json()
     )
 
     assert list(unavailable) == ["kind", "source", "reason"]
@@ -46,8 +50,12 @@ def test_comparison_wire_keys_and_discriminators_are_exact() -> None:
     structural = json.loads(
         StructuralRecordComparison(
             identity=StructuralMemberId(
-                slot=request().inputs[0].slot,
-                sample=request().inputs[0].data.sample.metadata.identity,
+                slot=request(preprocess_mode=PreprocessMode.IN_PROCESS)
+                .inputs[0]
+                .slot,
+                sample=request(preprocess_mode=PreprocessMode.IN_PROCESS)
+                .inputs[0]
+                .data.sample.metadata.identity,
             ),
             left=reference(),
             right=reference(1),

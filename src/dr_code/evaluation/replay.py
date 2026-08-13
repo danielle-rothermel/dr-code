@@ -13,6 +13,7 @@ from dr_code.evaluation.batch import (
     EvalBatchRequest,
     EvalBatchResult,
     ProjectionRequest,
+    PreprocessMode,
     RecordPlacement,
     RunGrade,
     SampleData,
@@ -97,6 +98,7 @@ def preflight_replay(
     window_limits: WindowLimits,
     shard_limits: ShardLimits,
     job_budget: CandidateJobBudget,
+    preprocess_mode: PreprocessMode,
 ) -> ReplayPreflight:
     """Validate whole-attempt evidence and build one current batch request."""
 
@@ -131,6 +133,7 @@ def preflight_replay(
         window_limits=window_limits,
         shard_limits=shard_limits,
         job_budget=job_budget,
+        preprocess_mode=preprocess_mode,
     )
     return ReplayReady(source=source, request=request)
 

@@ -9,6 +9,7 @@ from dr_store import ArtifactBundlePublication, MemoryBackend, ObjectStore
 
 from _executor_stubs import importable_json_executor, scripted_executor
 from dr_code.evaluation import (
+    PreprocessMode,
     RecordPlacement,
     ShardLimits,
     evaluate_batch,
@@ -46,16 +47,18 @@ async def test_truthful_placement_and_projection_preconditions(
     try:
         with pytest.raises(ValueError, match="bundle-local"):
             await evaluate_batch(
-                request(projections=()),
+                request(
+                    preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+                ),
                 executor=executor,
                 execution_cache=execution_cache,
                 object_store=None,
                 publication=None,
                 pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
             )
-        object_request = request().model_copy(
-            update={"record_placement": RecordPlacement.OBJECT_STORE}
-        )
+        object_request = request(
+            preprocess_mode=PreprocessMode.IN_PROCESS
+        ).model_copy(update={"record_placement": RecordPlacement.OBJECT_STORE})
         with pytest.raises(ValueError, match="requested projections"):
             await evaluate_batch(
                 object_request,
@@ -72,9 +75,9 @@ async def test_truthful_placement_and_projection_preconditions(
 async def test_object_store_without_projections_needs_no_bundle(
     tmp_path: Path,
 ) -> None:
-    batch_request = request(projections=()).model_copy(
-        update={"record_placement": RecordPlacement.OBJECT_STORE}
-    )
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    ).model_copy(update={"record_placement": RecordPlacement.OBJECT_STORE})
     execution_cache = cache(BatchStore())
     try:
         result = await evaluate_batch(
@@ -96,7 +99,9 @@ async def test_object_store_without_projections_needs_no_bundle(
 async def test_shard_count_limit_splits_bundle_local_records(
     tmp_path: Path,
 ) -> None:
-    batch_request = request(2, projections=()).model_copy(
+    batch_request = request(
+        2, preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    ).model_copy(
         update={
             "shard_limits": ShardLimits(
                 max_records=1,
@@ -125,7 +130,9 @@ async def test_shard_count_limit_splits_bundle_local_records(
 async def test_oversized_single_record_fails_before_terminal_publication(
     tmp_path: Path,
 ) -> None:
-    batch_request = request(projections=()).model_copy(
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    ).model_copy(
         update={
             "shard_limits": ShardLimits(
                 max_records=1,
@@ -158,7 +165,9 @@ async def test_cancellation_never_terminally_publishes(
     try:
         with pytest.raises(asyncio.CancelledError):
             await evaluate_batch(
-                request(projections=()),
+                request(
+                    preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+                ),
                 executor=scripted_executor(outcome=CancelledOutcome()),
                 execution_cache=execution_cache,
                 object_store=None,

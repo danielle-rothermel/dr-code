@@ -61,6 +61,7 @@ from dr_code.evaluation import (
     SlotData,
     MaterializedEvalCandidate,
     MetricRecordProjectionRow,
+    PreprocessMode,
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
@@ -488,6 +489,7 @@ def build_task_difficulty_batch_request(
         window_limits=window_limits,
         shard_limits=shard_limits,
         job_budget=candidate_job_budget(settings.timeout_seconds),
+        preprocess_mode=PreprocessMode.PROCESS_POOL,
     )
 
 
@@ -570,6 +572,7 @@ def build_preflight_batch_request_for_task(
             max_uncompressed_bytes=10_000_000,
         ),
         job_budget=candidate_job_budget(settings.timeout_seconds),
+        preprocess_mode=PreprocessMode.PROCESS_POOL,
     )
 
 

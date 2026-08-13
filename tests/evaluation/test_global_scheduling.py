@@ -12,6 +12,7 @@ from dr_code.evaluation import (
     AttemptLimits,
     EvalBatchRequest,
     EvalSlotId,
+    PreprocessMode,
     WindowLimits,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
@@ -36,6 +37,7 @@ def _multi_frozen_request(
 ) -> EvalBatchRequest:
     base = request(
         count,
+        preprocess_mode=PreprocessMode.IN_PROCESS,
         attempt_limits=attempt_limits,
         window_limits=window_limits,
     )

@@ -19,6 +19,7 @@ from dr_code.evaluation import (
     EvalMemberRecord,
     EvalRuntimeId,
     EvaluatedSampleRecord,
+    PreprocessMode,
     SampleEvalRecord,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
@@ -147,7 +148,9 @@ def test_graph_rejects_candidate_trace_and_execution_context_mismatches() -> (
 
 @pytest.mark.asyncio
 async def test_graph_rejects_completed_result_candidate_mismatch() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     execution_cache = cache(BatchStore())
     placement = MemoryPlacement()
     await _evaluate_batch_assembly(

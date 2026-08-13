@@ -149,6 +149,14 @@ class RunGrade(StrEnum):
 
 
 @verify(UNIQUE)
+class PreprocessMode(StrEnum):
+    # Never build persisted payloads by iterating this closed vocabulary.
+
+    IN_PROCESS = "in_process"
+    PROCESS_POOL = "process_pool"
+
+
+@verify(UNIQUE)
 class ProjectionKind(StrEnum):
     # Never build persisted payloads by iterating this closed vocabulary.
 
@@ -179,6 +187,9 @@ class EvalBatchRequest(FrozenModel):
     window_limits: WindowLimits
     shard_limits: ShardLimits
     job_budget: CandidateJobBudget
+    # Required, never defaulted: pooled preprocessing pays dr-exec worker pool
+    # startup and must be an explicit caller choice.
+    preprocess_mode: PreprocessMode
     # The caller's deliberate re-run: skip execution-cache lookup for this
     # request's generations so every candidate re-executes and the fresh
     # outcome is the one recorded and offered to persistence. Persisted
@@ -333,11 +344,16 @@ async def evaluate_batch(
 ) -> EvalBatchResult:
     """Evaluate one bounded standalone attempt and optionally publish it.
 
+    `request.preprocess_mode` chooses how sample inputs are prepared:
+    `process_pool` runs distinct texts through `preprocess_batch`; `in_process`
+    prepares each sample on the caller thread via the bound runner.
+
     `preprocessed_traces` lets a caller that already ran the pooled
     preprocessing leg over this request's sample texts hand those traces in, so
-    the corpus is preprocessed once per attempt instead of twice. The traces
-    must come from `request.plan.procedure.preprocessing`; a sample text absent
-    from the mapping is preprocessed in process while the batch prepares it.
+    the corpus is preprocessed once per attempt instead of twice. That mapping
+    bypasses the pooled pass regardless of mode. The traces must come from
+    `request.plan.procedure.preprocessing`; a sample text absent from the mapping
+    is preprocessed in process while the batch prepares it.
     """
 
     return await _evaluate_batch_with_replay(
@@ -594,6 +610,7 @@ __all__ = [
     "EvalBatchRequest",
     "EvalBatchResult",
     "EvalProjectionReference",
+    "PreprocessMode",
     "ProjectionKind",
     "ProjectionRequest",
     "RecordPlacement",

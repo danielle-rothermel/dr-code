@@ -12,6 +12,7 @@ from _executor_stubs import importable_json_executor, scripted_executor
 from dr_code.evaluation import (
     EvalAttemptId,
     EvaluatedSampleRecord,
+    PreprocessMode,
     ReplayMode,
     ReplayReady,
     ReplaySource,
@@ -50,7 +51,9 @@ def _preflight(
     *,
     attempt_int: int = 100,
 ):
-    context = request(projections=())
+    context = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     return preflight_replay(
         source,
         mode,
@@ -64,6 +67,7 @@ def _preflight(
         window_limits=context.window_limits,
         shard_limits=context.shard_limits,
         job_budget=context.job_budget,
+        preprocess_mode=PreprocessMode.IN_PROCESS,
     )
 
 

@@ -40,6 +40,7 @@ from dr_code.evaluation.aggregation import (
 )
 from dr_code.evaluation.batch import (
     EvalBatchRequest,
+    PreprocessMode,
     ProjectionKind,
     SampleData,
     SampleWithCandidatesData,
@@ -305,17 +306,18 @@ async def _assemble(
     )
     traces_by_text: Mapping[str, Trace] = preprocessed_traces or {}
     if runner is not None and preprocessed_traces is None:
-        sample_texts = [
-            item.data.sample.raw_input.text
-            for item in request.inputs
-            if isinstance(item.data, SampleData)
-        ]
-        if sample_texts:
-            traces_by_text = await preprocess_batch(
-                sample_texts,
-                definition=request.plan.procedure.preprocessing,
-                worker_count=_preprocessing_worker_count(pool_config),
-            )
+        if request.preprocess_mode is PreprocessMode.PROCESS_POOL:
+            sample_texts = [
+                item.data.sample.raw_input.text
+                for item in request.inputs
+                if isinstance(item.data, SampleData)
+            ]
+            if sample_texts:
+                traces_by_text = await preprocess_batch(
+                    sample_texts,
+                    definition=request.plan.procedure.preprocessing,
+                    worker_count=_preprocessing_worker_count(pool_config),
+                )
     prepared_inputs, prepare_exhaustion = _prepare_inputs(
         request,
         runner=runner,

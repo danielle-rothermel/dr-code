@@ -11,6 +11,7 @@ from dr_code.evaluation import (
     AttemptLimits,
     AttemptValidity,
     EvalBatchRequest,
+    PreprocessMode,
     WindowLimits,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
@@ -58,13 +59,14 @@ def _with_two_candidates(
 
 async def test_cache_hits_do_not_consume_admitted_job_limit() -> None:
     batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS,
         attempt_limits=AttemptLimits(
             max_slots=1,
             max_materialized_candidates=2,
             max_admitted_jobs=1,
             max_retained_evidence_bytes=10_000_000,
             max_projection_rows=10,
-        )
+        ),
     )
     store = BatchStore()
     execution_cache = cache(store)
@@ -97,13 +99,14 @@ async def test_every_materialized_candidate_consumes_materialized_limit() -> (
     None
 ):
     batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS,
         attempt_limits=AttemptLimits(
             max_slots=1,
             max_materialized_candidates=1,
             max_admitted_jobs=4,
             max_retained_evidence_bytes=10_000_000,
             max_projection_rows=20,
-        )
+        ),
     )
     batch_request = _with_two_candidates(batch_request)
     execution_cache = cache(BatchStore())
@@ -134,7 +137,9 @@ async def test_every_materialized_candidate_consumes_materialized_limit() -> (
 async def test_multi_candidate_cache_windows_release_resident_capacity() -> (
     None
 ):
-    batch_request = _with_two_candidates(request(projections=()))
+    batch_request = _with_two_candidates(
+        request(preprocess_mode=PreprocessMode.IN_PROCESS, projections=())
+    )
     execution_cache = cache(BatchStore(), resident=1)
     placement = StoredMemoryPlacement()
 
@@ -158,6 +163,7 @@ async def test_admission_exhaustion_after_earlier_window_releases_keys() -> (
 ):
     batch_request = _with_two_candidates(
         request(
+            preprocess_mode=PreprocessMode.IN_PROCESS,
             projections=(),
             attempt_limits=AttemptLimits(
                 max_slots=1,
@@ -191,7 +197,7 @@ async def test_bundle_local_records_are_not_published_to_persistent_cache() -> (
     store = BatchStore()
     execution_cache = cache(store, resident=1)
     await _evaluate_batch_assembly(
-        request(projections=()),
+        request(preprocess_mode=PreprocessMode.IN_PROCESS, projections=()),
         executor=importable_json_executor(),
         execution_cache=execution_cache,
         pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
@@ -207,6 +213,7 @@ async def test_retained_evidence_exhaustion_preserves_only_completed_prefix() ->
 ):
     batch_request = request(
         2,
+        preprocess_mode=PreprocessMode.IN_PROCESS,
         attempt_limits=AttemptLimits(
             max_slots=2,
             max_materialized_candidates=4,
@@ -239,6 +246,7 @@ async def test_retained_evidence_exhaustion_preserves_only_completed_prefix() ->
 async def test_admission_exhaustion_publishes_every_completed_sample() -> None:
     batch_request = request(
         3,
+        preprocess_mode=PreprocessMode.IN_PROCESS,
         attempt_limits=AttemptLimits(
             max_slots=3,
             max_materialized_candidates=6,
@@ -276,6 +284,7 @@ async def test_known_request_and_window_limit_violations_fail_model_validation()
     with pytest.raises(ValidationError, match="max_slots"):
         request(
             2,
+            preprocess_mode=PreprocessMode.IN_PROCESS,
             attempt_limits=AttemptLimits(
                 max_slots=1,
                 max_materialized_candidates=4,
@@ -286,6 +295,7 @@ async def test_known_request_and_window_limit_violations_fail_model_validation()
         )
     with pytest.raises(ValidationError, match="max_cache_keys"):
         request(
+            preprocess_mode=PreprocessMode.IN_PROCESS,
             window_limits=WindowLimits(
                 max_preprocessing_slots=1,
                 max_cache_keys=3,

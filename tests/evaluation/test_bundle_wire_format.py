@@ -9,6 +9,7 @@ from dr_code.evaluation import (
     EVAL_PROJECTION_SCHEMA_VERSION,
     SAMPLE_RECORD_OBJECT_SCHEMA,
     EvalBundlePayload,
+    PreprocessMode,
     ProjectionArtifactHeader,
     ProjectionKind,
 )
@@ -17,7 +18,7 @@ from ._batch_builders import request
 
 
 def test_eval_bundle_wire_literals_and_keys_are_golden() -> None:
-    batch_request = request()
+    batch_request = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     projection = {
         "kind": "evaluation_samples",
         "definition_version": 2,

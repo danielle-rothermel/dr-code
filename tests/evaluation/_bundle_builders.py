@@ -14,6 +14,7 @@ from _executor_stubs import importable_json_executor
 from dr_code.evaluation import (
     EvalBatchRequest,
     EvalReadLimits,
+    PreprocessMode,
     ProjectionKind,
     RecordPlacement,
     StoredRecordReference,
@@ -90,9 +91,11 @@ async def publish_batch(
     if object_store is None:
         object_store = ObjectStore(MemoryBackend())
     batch_request = await stored_source_request(
-        request(count, projections=projections).model_copy(
-            update={"record_placement": placement}
-        ),
+        request(
+            count,
+            preprocess_mode=PreprocessMode.IN_PROCESS,
+            projections=projections,
+        ).model_copy(update={"record_placement": placement}),
         object_store=object_store,
     )
     execution_cache = cache(cache_store or BatchStore(), resident=1)

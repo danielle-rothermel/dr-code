@@ -10,6 +10,7 @@ from _executor_stubs import (
     scripted_executor,
     timeout_executor,
 )
+from dr_code.evaluation import PreprocessMode
 from dr_code.evaluation._batch import _evaluate_batch_assembly
 
 from ._batch_builders import (
@@ -54,7 +55,9 @@ async def _run(
 
 
 async def test_executor_failure_is_never_persisted_and_re_executes() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
     executor = CountingExecutor(_infrastructure_executor())  # type: ignore[arg-type]
 
@@ -68,7 +71,9 @@ async def test_executor_failure_is_never_persisted_and_re_executes() -> None:
 
 
 async def test_harness_failure_is_never_persisted_and_re_executes() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
     executor = CountingExecutor(_harness_executor())  # type: ignore[arg-type]
 
@@ -82,7 +87,9 @@ async def test_harness_failure_is_never_persisted_and_re_executes() -> None:
 
 
 async def test_wall_time_exhaustion_is_not_cached_and_re_executes() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
     executor = CountingExecutor(timeout_executor())
 
@@ -96,7 +103,9 @@ async def test_wall_time_exhaustion_is_not_cached_and_re_executes() -> None:
 
 
 async def test_completed_outcome_is_persisted_and_reused() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
     executor = CountingExecutor(importable_json_executor())
 
@@ -110,7 +119,9 @@ async def test_completed_outcome_is_persisted_and_reused() -> None:
 
 
 async def test_fresh_request_re_executes_despite_a_populated_cache() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
     executor = CountingExecutor(importable_json_executor())
 
@@ -126,7 +137,9 @@ async def test_fresh_request_re_executes_despite_a_populated_cache() -> None:
 
 
 async def test_fresh_request_never_reads_the_persistent_cache() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
 
     await _run(
@@ -146,7 +159,9 @@ async def test_fresh_request_never_reads_the_persistent_cache() -> None:
 
 
 async def test_fresh_run_persists_its_outcome_when_no_entry_is_bound() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
 
     await _run(
@@ -167,7 +182,9 @@ async def test_fresh_run_persists_its_outcome_when_no_entry_is_bound() -> None:
 
 
 async def test_fresh_run_does_not_replace_an_already_bound_entry() -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     store = BatchStore()
 
     await _run(

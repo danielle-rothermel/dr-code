@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from dr_code.evaluation import (
     BundleRecordReference,
+    PreprocessMode,
     ProjectionKind,
     RecordPlacement,
     EvaluatedSampleRecord,
@@ -89,7 +90,9 @@ async def test_restoration_enforces_nested_reference_depth(
 async def test_publication_rejects_an_unclosed_nested_bundle_reference(
     tmp_path: Path,
 ) -> None:
-    batch_request = request(projections=())
+    batch_request = request(
+        preprocess_mode=PreprocessMode.IN_PROCESS, projections=()
+    )
     item = batch_request.inputs[0]
     provenance = item.data.sample.metadata.provenance.model_copy(
         update={

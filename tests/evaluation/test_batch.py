@@ -8,6 +8,7 @@ from dr_code.evaluation import (
     AttemptCompleteness,
     AttemptValidity,
     EvaluatedSampleRecord,
+    PreprocessMode,
 )
 from dr_code.evaluation import _batch
 from dr_code.evaluation._batch import _evaluate_batch_assembly
@@ -36,7 +37,7 @@ async def test_batch_uses_one_pool_and_preserves_input_order(
             super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(_batch, "ExecutionPool", CountingPool)
-    batch_request = request(3)
+    batch_request = request(3, preprocess_mode=PreprocessMode.IN_PROCESS)
     store = BatchStore()
     execution_cache = cache(store, resident=1)
     executor = CountingExecutor(importable_json_executor())
@@ -73,9 +74,12 @@ async def test_batch_uses_one_pool_and_preserves_input_order(
 async def test_frozen_candidates_bypass_preprocessing_and_still_execute(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    base = request()
+    base = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     frozen = frozen_input(0, base.inputs[0].slot)
-    batch_request = request(inputs=(frozen,))
+    batch_request = request(
+        inputs=(frozen,),
+        preprocess_mode=PreprocessMode.IN_PROCESS,
+    )
 
     class RejectingRunner:
         def run(self, *args: object, **kwargs: object) -> object:
@@ -106,7 +110,7 @@ async def test_cancellation_propagates_without_an_assembly() -> None:
 
     from _executor_stubs import scripted_executor
 
-    batch_request = request()
+    batch_request = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     execution_cache = cache(BatchStore())
     try:
         with pytest.raises(asyncio.CancelledError):

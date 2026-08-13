@@ -14,6 +14,7 @@ from dr_code.evaluation import (
     ComparisonStatus,
     EvalAttemptId,
     EvidenceReference,
+    PreprocessMode,
     SampleEvalRecord,
     restore_eval_attempt,
     validate_preprocessing,
@@ -73,7 +74,7 @@ async def test_validate_testing_reports_attempt_verdicts(
     execution_cache = cache(BatchStore())
     try:
         validation = await validate_testing(
-            request(2),
+            request(2, preprocess_mode=PreprocessMode.IN_PROCESS),
             executor=importable_json_executor(),
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
@@ -100,7 +101,7 @@ async def test_validate_preprocessing_reports_corpus_coverage(
     execution_cache = cache(BatchStore())
     try:
         validation = await validate_preprocessing(
-            request(2),
+            request(2, preprocess_mode=PreprocessMode.PROCESS_POOL),
             executor=importable_json_executor(),
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
@@ -138,7 +139,11 @@ async def test_preprocessing_coverage_counters_partition_the_corpus(
     execution_cache = cache(BatchStore())
     try:
         validation = await validate_preprocessing(
-            request(len(corpus), texts=corpus),
+            request(
+                len(corpus),
+                texts=corpus,
+                preprocess_mode=PreprocessMode.PROCESS_POOL,
+            ),
             executor=importable_json_executor(),
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
@@ -180,7 +185,11 @@ async def test_preprocessing_coverage_counts_a_failed_text(
     execution_cache = cache(BatchStore())
     try:
         validation = await validate_preprocessing(
-            request(len(corpus), texts=corpus),
+            request(
+                len(corpus),
+                texts=corpus,
+                preprocess_mode=PreprocessMode.PROCESS_POOL,
+            ),
             executor=importable_json_executor(),
             execution_cache=execution_cache,
             object_store=ObjectStore(MemoryBackend()),
@@ -207,7 +216,7 @@ async def test_structural_comparison_needs_a_reference_and_a_resolver(
     try:
         with pytest.raises(ValueError, match="structural comparison"):
             await validate_testing(
-                request(1),
+                request(1, preprocess_mode=PreprocessMode.IN_PROCESS),
                 executor=importable_json_executor(),
                 execution_cache=execution_cache,
                 object_store=object_store,
@@ -234,7 +243,8 @@ async def test_validate_testing_compares_against_a_reference_attempt(
     object_store = ObjectStore(MemoryBackend())
     execution_cache = cache(BatchStore())
     reference_request = await stored_source_request(
-        request(1), object_store=object_store
+        request(1, preprocess_mode=PreprocessMode.IN_PROCESS),
+        object_store=object_store,
     )
     candidate_request = reference_request.model_copy(
         update={

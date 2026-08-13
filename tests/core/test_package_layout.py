@@ -89,6 +89,7 @@ EVAL_CORE_EXPORTS = {
             "PreprocessingAbsentSampleRecord",
             "ProjectionArtifactHeader",
             "ProjectionComparison",
+            "PreprocessMode",
             "ProjectionKind",
             "ProjectionNotComparable",
             "ProjectionRequest",

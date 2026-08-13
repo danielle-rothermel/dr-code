@@ -29,6 +29,7 @@ from dr_code.evaluation import (
     EvalSourceId,
     GeneratedSampleProvenance,
     MaterializedEvalCandidate,
+    PreprocessMode,
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
@@ -239,6 +240,7 @@ def slot_data(
 def request(
     count: int = 1,
     *,
+    preprocess_mode: PreprocessMode,
     attempt_limits: AttemptLimits | None = None,
     window_limits: WindowLimits | None = None,
     inputs: tuple[SlotData, ...] | None = None,
@@ -349,6 +351,7 @@ def request(
             stdout_head_bytes=1_048_576,
             stderr_head_bytes=1_048_576,
         ),
+        preprocess_mode=preprocess_mode,
     )
 
 

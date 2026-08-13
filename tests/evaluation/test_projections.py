@@ -10,6 +10,7 @@ from dr_code.evaluation import (
     EvalSampleProjectionRow,
     MaterializedCandidateProjectionRow,
     MetricRecordProjectionRow,
+    PreprocessMode,
     ProjectionKind,
     ScoreProjectionRow,
 )
@@ -33,7 +34,7 @@ def _reference() -> BundleRecordReference:
 async def test_all_standard_projection_drafts_are_compact_and_ordered() -> (
     None
 ):
-    batch_request = request()
+    batch_request = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     execution_cache = cache(BatchStore())
     placement = MemoryPlacement()
     assembly = await _evaluate_batch_assembly(
@@ -53,7 +54,7 @@ async def test_all_standard_projection_drafts_are_compact_and_ordered() -> (
 async def test_public_projection_rows_pin_the_five_wire_discriminators() -> (
     None
 ):
-    batch_request = request()
+    batch_request = request(preprocess_mode=PreprocessMode.IN_PROCESS)
     execution_cache = cache(BatchStore())
     placement = MemoryPlacement()
     assembly = await _evaluate_batch_assembly(

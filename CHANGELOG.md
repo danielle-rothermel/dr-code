@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `EvalBatchRequest.preprocess_mode` is required and chooses how sample inputs
+  are prepared: `process_pool` runs distinct texts through `preprocess_batch`;
+  `in_process` prepares each sample on the caller thread via the bound runner.
 - Restructured evaluation batch inputs into nested `SlotData` with
   discriminated `SampleData` or `SampleWithCandidatesData` payloads, replacing
   the flat `SampleEvalInput` / `FrozenCandidateEvalInput` union. Persisted

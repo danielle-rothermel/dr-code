@@ -126,6 +126,7 @@ required_exports = {
         "PreprocessingAbsentSampleRecord",
         "ProjectionArtifactHeader",
         "ProjectionComparison",
+        "PreprocessMode",
         "ProjectionKind",
         "ProjectionNotComparable",
         "ProjectionRequest",
