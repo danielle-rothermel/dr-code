@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   python:
-    name: Python core ${{ matrix.python-version }}
+    name: Python ${{ matrix.python-version }}
     runs-on: depot-ubuntu-24.04
     strategy:
       fail-fast: false
