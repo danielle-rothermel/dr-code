@@ -17,8 +17,8 @@ from _builders import (
 from dr_code.evaluation import (
     AggregationPolicy,
     AggregationStatistic,
-    EvaluationPlan,
-    EvaluationProcedure,
+    EvalPlan,
+    EvalProcedure,
     NotApplicablePolicy,
 )
 from dr_code.metrics import (
@@ -31,8 +31,8 @@ EXPECTED_STATISTICS = {"mean", "sum", "count", "proportion"}
 EXPECTED_NOT_APPLICABLE_POLICIES = {"exclude", "zero", "fail"}
 
 
-def evaluation_plan(**overrides: object) -> EvaluationPlan:
-    return EvaluationPlan(
+def evaluation_plan(**overrides: object) -> EvalPlan:
+    return EvalPlan(
         **{
             "plan_id": "plan",
             "version": "1",
@@ -68,7 +68,7 @@ def test_procedure_rejects_a_definition_coordinate_in_place_of_a_definition() ->
     None
 ):
     with pytest.raises(ValidationError):
-        EvaluationProcedure(
+        EvalProcedure(
             preprocessing={
                 "definition_id": "pre",
                 "version": "0",
@@ -228,7 +228,7 @@ def test_plan_load_resolves_definitions_through_the_registry() -> None:
     try:
         registry_module.REGISTRY = MappingProxyType({})
         with pytest.raises(KeyError):
-            EvaluationPlan.model_validate_json(payload)
+            EvalPlan.model_validate_json(payload)
     finally:
         registry_module.REGISTRY = original
 

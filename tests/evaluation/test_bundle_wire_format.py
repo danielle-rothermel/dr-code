@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 
 from dr_code.evaluation import (
-    EVALUATION_BUNDLE_FORMAT,
-    EVALUATION_BUNDLE_SCHEMA_VERSION,
-    EVALUATION_PROJECTION_FORMAT,
-    EVALUATION_PROJECTION_SCHEMA_VERSION,
+    EVAL_BUNDLE_FORMAT,
+    EVAL_BUNDLE_SCHEMA_VERSION,
+    EVAL_PROJECTION_FORMAT,
+    EVAL_PROJECTION_SCHEMA_VERSION,
     SAMPLE_RECORD_OBJECT_SCHEMA,
-    EvaluationBundlePayload,
+    EvalBundlePayload,
     ProjectionArtifactHeader,
     ProjectionKind,
 )
@@ -16,7 +16,7 @@ from dr_code.evaluation import (
 from ._batch_builders import request
 
 
-def test_evaluation_bundle_wire_literals_and_keys_are_golden() -> None:
+def test_eval_bundle_wire_literals_and_keys_are_golden() -> None:
     batch_request = request()
     projection = {
         "kind": "evaluation_samples",
@@ -26,7 +26,7 @@ def test_evaluation_bundle_wire_literals_and_keys_are_golden() -> None:
         },
         "artifact_name": "projection-evaluation-samples.jsonl",
     }
-    payload = EvaluationBundlePayload.model_validate_json(
+    payload = EvalBundlePayload.model_validate_json(
         json.dumps(
             {
                 "format": "dr-code-evaluation-bundle-v1",
@@ -49,7 +49,7 @@ def test_evaluation_bundle_wire_literals_and_keys_are_golden() -> None:
     }
     assert ProjectionArtifactHeader(
         source_attempt=batch_request.attempt,
-        kind=ProjectionKind.EVALUATION_SAMPLES,
+        kind=ProjectionKind.EVAL_SAMPLES,
     ).model_dump(mode="json") == {
         "format": "dr-code-evaluation-projection-v1",
         "schema_version": 2,
@@ -59,8 +59,8 @@ def test_evaluation_bundle_wire_literals_and_keys_are_golden() -> None:
         "kind": "evaluation_samples",
         "definition_version": 2,
     }
-    assert EVALUATION_BUNDLE_FORMAT == "dr-code-evaluation-bundle-v1"
-    assert EVALUATION_BUNDLE_SCHEMA_VERSION == 1
-    assert EVALUATION_PROJECTION_FORMAT == "dr-code-evaluation-projection-v1"
-    assert EVALUATION_PROJECTION_SCHEMA_VERSION == 2
+    assert EVAL_BUNDLE_FORMAT == "dr-code-evaluation-bundle-v1"
+    assert EVAL_BUNDLE_SCHEMA_VERSION == 1
+    assert EVAL_PROJECTION_FORMAT == "dr-code-evaluation-projection-v1"
+    assert EVAL_PROJECTION_SCHEMA_VERSION == 2
     assert SAMPLE_RECORD_OBJECT_SCHEMA == "dr-code/sample-evaluation-record-v1"

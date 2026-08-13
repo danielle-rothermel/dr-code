@@ -26,7 +26,7 @@ from dr_code.humaneval.parsed_tests import (
 )
 
 
-class EvaluationCaseStatus(StrEnum):
+class EvalCaseStatus(StrEnum):
     PASSED = "passed"
     FAILED = "failed"
     ERROR = "error"
@@ -76,11 +76,11 @@ class HumanEvalTask(FrozenModel):
 
 
 @dataclass(frozen=True, slots=True)
-class EvaluationCaseResult:
+class EvalCaseResult:
     task_id: str
     case_id: str
     function_name: str
-    status: EvaluationCaseStatus
+    status: EvalCaseStatus
     test_type: HumanEvalTestCaseKind
     message: str = ""
     input_repr: str = ""
@@ -89,8 +89,8 @@ class EvaluationCaseResult:
     elapsed_seconds: float | None = None
     timeout_seconds: float | None = None
 
-    def to_summary(self) -> EvaluationCaseSummary:
-        return EvaluationCaseSummary(
+    def to_summary(self) -> EvalCaseSummary:
+        return EvalCaseSummary(
             task_id=self.task_id,
             case_id=self.case_id,
             function_name=self.function_name,
@@ -105,13 +105,13 @@ class EvaluationCaseResult:
         )
 
 
-class EvaluationCaseSummary(BaseModel):
+class EvalCaseSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
     case_id: str
     function_name: str
-    status: EvaluationCaseStatus
+    status: EvalCaseStatus
     message: str = ""
     test_type: HumanEvalTestCaseKind
     input_repr: str = ""
@@ -122,9 +122,9 @@ class EvaluationCaseSummary(BaseModel):
 
 
 def _results_for_function(
-    results: list[EvaluationCaseResult],
+    results: list[EvalCaseResult],
     function_name: str,
-) -> list[EvaluationCaseResult]:
+) -> list[EvalCaseResult]:
     return [
         result for result in results if result.function_name == function_name
     ]
@@ -134,7 +134,7 @@ def select_best_function_name(
     *,
     function_names: list[str],
     entry_point: str,
-    results: list[EvaluationCaseResult],
+    results: list[EvalCaseResult],
 ) -> str | None:
     if not function_names:
         return None
@@ -145,7 +145,7 @@ def select_best_function_name(
                 1
                 for result in results
                 if result.function_name == function_name
-                and result.status is EvaluationCaseStatus.PASSED
+                and result.status is EvalCaseStatus.PASSED
             ),
             function_name == entry_point,
             -function_names.index(function_name),
@@ -153,14 +153,14 @@ def select_best_function_name(
     )
 
 
-class EvaluationTaskResult(BaseModel):
+class EvalTaskResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
     entry_point: str
     function_names: list[str]
     total_cases: int
-    results: list[EvaluationCaseResult] = Field(default_factory=list)
+    results: list[EvalCaseResult] = Field(default_factory=list)
 
     @computed_field(exclude_if=lambda _value: True)
     @property
@@ -173,7 +173,7 @@ class EvaluationTaskResult(BaseModel):
 
     @computed_field(exclude_if=lambda _value: True)
     @property
-    def failures(self) -> list[EvaluationCaseResult]:
+    def failures(self) -> list[EvalCaseResult]:
         best_function_name = self.best_function_name
         if best_function_name is None:
             return []
@@ -181,7 +181,7 @@ class EvaluationTaskResult(BaseModel):
             result
             for result in self.results
             if result.function_name == best_function_name
-            and result.status is not EvaluationCaseStatus.PASSED
+            and result.status is not EvalCaseStatus.PASSED
         ]
 
     @computed_field(exclude_if=lambda _value: True)
@@ -209,7 +209,7 @@ class EvaluationTaskResult(BaseModel):
         if not self.coverage_complete:
             return False
         return all(
-            result.status is EvaluationCaseStatus.PASSED
+            result.status is EvalCaseStatus.PASSED
             for result in function_results
         )
 
@@ -227,8 +227,8 @@ class EvaluationTaskResult(BaseModel):
             )
         )
 
-    def to_summary(self) -> EvaluationTaskSummary:
-        return EvaluationTaskSummary(
+    def to_summary(self) -> EvalTaskSummary:
+        return EvalTaskSummary(
             task_id=self.task_id,
             entry_point=self.entry_point,
             function_names=self.function_names,
@@ -241,7 +241,7 @@ class EvaluationTaskResult(BaseModel):
         )
 
 
-class EvaluationTaskSummary(BaseModel):
+class EvalTaskSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
@@ -249,7 +249,7 @@ class EvaluationTaskSummary(BaseModel):
     function_names: list[str]
     best_function_name: str | None = None
     total_cases: int
-    results: list[EvaluationCaseSummary] = Field(default_factory=list)
+    results: list[EvalCaseSummary] = Field(default_factory=list)
     passed: bool
     failure_count: int
     status_counts: dict[str, int] = Field(default_factory=dict)
@@ -270,7 +270,7 @@ class HumanEvalRunnerCaseOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     case_id: str
-    status: EvaluationCaseStatus
+    status: EvalCaseStatus
     message: str = ""
     input_repr: str = ""
     expected_output_repr: str = ""
@@ -310,13 +310,13 @@ HumanEvalRunnerOutput = Annotated[
 ]
 
 
-class EvaluationHarnessError(RuntimeError):
+class EvalHarnessError(RuntimeError):
     def __init__(
         self,
         message: str,
         *,
-        case_results: Iterable[EvaluationCaseResult] = (),
-        evaluation: EvaluationTaskResult | None = None,
+        case_results: Iterable[EvalCaseResult] = (),
+        evaluation: EvalTaskResult | None = None,
         cause: BaseException | None = None,
     ) -> None:
         super().__init__(message)

@@ -45,20 +45,20 @@ from dr_code.evaluation import (
     CandidateJobBudget,
     CorpusSampleProvenance,
     DatasetCoordinate,
-    EvaluationAttemptIdentity,
-    EvaluationBatchRequest,
-    EvaluationCandidateIdentity,
-    EvaluationProcedure,
-    EvaluationReadLimits,
-    EvaluationRuntimeIdentity,
-    EvaluationSample,
-    EvaluationSampleAuxiliaryArtifact,
-    EvaluationSampleIdentity,
-    EvaluationSampleMetadata,
-    EvaluationSlotIdentity,
-    EvaluationSourceIdentity,
-    FrozenCandidateEvaluationInput,
-    MaterializedEvaluationCandidate,
+    EvalAttemptIdentity,
+    EvalBatchRequest,
+    EvalCandidateIdentity,
+    EvalProcedure,
+    EvalReadLimits,
+    EvalRuntimeIdentity,
+    EvalSample,
+    EvalSampleAuxiliaryArtifact,
+    EvalSampleIdentity,
+    EvalSampleMetadata,
+    EvalSlotIdentity,
+    EvalSourceIdentity,
+    FrozenCandidateEvalInput,
+    MaterializedEvalCandidate,
     MetricRecordProjectionRow,
     ProjectionKind,
     ProjectionRequest,
@@ -70,12 +70,12 @@ from dr_code.evaluation import (
     TaskSet,
     TaskSetCoordinate,
     WindowLimits,
-    restore_evaluation_attempt,
+    restore_eval_attempt,
     evaluate_batch,
-    read_evaluation_projection,
+    read_eval_projection,
 )
-from dr_code.evaluation.batch import EvaluationBatchResult, ShardLimits
-from dr_code.evaluation.plan import EvaluationPlan
+from dr_code.evaluation.batch import EvalBatchResult, ShardLimits
+from dr_code.evaluation.plan import EvalPlan
 from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
 from dr_code.humaneval.sampling import load_humaneval_rows
 from dr_code.humaneval.settings import CodeTestSettings
@@ -99,7 +99,7 @@ from dr_code.trace import (
     TextArtifact,
 )
 
-from workflow_settings import EvaluationSettings
+from workflow_settings import EvalSettings
 
 _WORKFLOW_METRICS_DEFINITION_ID: Final = (
     "directional-humaneval-task-difficulty"
@@ -175,7 +175,7 @@ def candidate_job_budget(timeout_seconds: float) -> CandidateJobBudget:
 
 def settings_fingerprint(
     *,
-    settings: EvaluationSettings,
+    settings: EvalSettings,
     manifest_sha256: str,
     selected_sample_path: Path,
 ) -> str:
@@ -193,8 +193,8 @@ def settings_fingerprint(
     ).hexdigest()
 
 
-def attempt_identity(fingerprint: str) -> EvaluationAttemptIdentity:
-    return EvaluationAttemptIdentity(
+def attempt_identity(fingerprint: str) -> EvalAttemptIdentity:
+    return EvalAttemptIdentity(
         attempt_id=uuid5(_ATTEMPT_NAMESPACE, fingerprint.encode())
     )
 
@@ -237,7 +237,7 @@ def _corpus_provenance(
 ) -> CorpusSampleProvenance:
     sample_id = str(row["sample_id"])
     return CorpusSampleProvenance(
-        source_identity=EvaluationSourceIdentity(
+        source_identity=EvalSourceIdentity(
             namespace=_WORKFLOW_CACHE_NAMESPACE,
             value=sample_id,
         ),
@@ -263,21 +263,21 @@ def _materialized_candidates(
     row: dict[str, object],
     *,
     preprocessing: PreprocessingDefinitionCoordinate,
-) -> tuple[MaterializedEvaluationCandidate, ...]:
+) -> tuple[MaterializedEvalCandidate, ...]:
     sample_id = str(row["sample_id"])
     candidates = row["code_candidates"]
     if not isinstance(candidates, list) or not candidates:
         raise ValueError(
             f"selected sample {sample_id!r} has no code candidates"
         )
-    materialized: list[MaterializedEvaluationCandidate] = []
+    materialized: list[MaterializedEvalCandidate] = []
     for ordinal, source in enumerate(candidates):
         if not isinstance(source, str):
             raise TypeError("candidate source must be a string")
         materialized.append(
-            MaterializedEvaluationCandidate(
-                identity=EvaluationCandidateIdentity(
-                    sample=EvaluationSampleIdentity(sample_id=sample_id),
+            MaterializedEvalCandidate(
+                identity=EvalCandidateIdentity(
+                    sample=EvalSampleIdentity(sample_id=sample_id),
                     preprocessing=preprocessing,
                     candidate_ordinal=ordinal,
                 ),
@@ -290,11 +290,11 @@ def _materialized_candidates(
     return tuple(materialized)
 
 
-def build_evaluation_plan(
+def build_eval_plan(
     task_ids: tuple[str, ...],
     *,
     task_num_samples: tuple[int, ...],
-) -> EvaluationPlan:
+) -> EvalPlan:
     """Build the workflow plan declaring each task's own sample count.
 
     Tasks appear in however many setting groups retained them, so the sample
@@ -333,12 +333,12 @@ def build_evaluation_plan(
         task_count=len(task_ids),
         task_num_samples=task_num_samples,
     )
-    return EvaluationPlan(
+    return EvalPlan(
         plan_id=_WORKFLOW_PLAN_ID,
         version=_WORKFLOW_PLAN_VERSION,
         task_set=task_set,
         sampling_plan=sampling_plan,
-        procedure=EvaluationProcedure(
+        procedure=EvalProcedure(
             preprocessing=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
             metrics=MetricsDefinition(
                 definition_id=_WORKFLOW_METRICS_DEFINITION_ID,
@@ -399,10 +399,10 @@ def build_task_difficulty_batch_request(
     *,
     snapshot_path: Path,
     manifest_sha256: str,
-    settings: EvaluationSettings,
-    runtime: EvaluationRuntimeIdentity,
-    attempt: EvaluationAttemptIdentity,
-) -> EvaluationBatchRequest:
+    settings: EvalSettings,
+    runtime: EvalRuntimeIdentity,
+    attempt: EvalAttemptIdentity,
+) -> EvalBatchRequest:
     ordered_rows = _ordered_rows(selected)
     task_ids = tuple(
         dict.fromkeys(str(row["task_id"]) for row in ordered_rows)
@@ -411,11 +411,11 @@ def build_task_difficulty_batch_request(
         sum(1 for row in ordered_rows if str(row["task_id"]) == task_id)
         for task_id in task_ids
     )
-    plan = build_evaluation_plan(task_ids, task_num_samples=task_num_samples)
+    plan = build_eval_plan(task_ids, task_num_samples=task_num_samples)
     tasks = load_humaneval_tasks(snapshot_path, task_ids)
     preprocessing = _exhaustive_preprocessing_coordinate()
 
-    inputs: list[FrozenCandidateEvaluationInput] = []
+    inputs: list[FrozenCandidateEvalInput] = []
     total_candidates = 0
     for task_id in task_ids:
         task = tasks[task_id]
@@ -429,9 +429,9 @@ def build_task_difficulty_batch_request(
                 if isinstance(decoder_output, str) and decoder_output.strip()
                 else ""
             )
-            sample = EvaluationSample(
-                metadata=EvaluationSampleMetadata(
-                    identity=EvaluationSampleIdentity(
+            sample = EvalSample(
+                metadata=EvalSampleMetadata(
+                    identity=EvalSampleIdentity(
                         sample_id=str(row["sample_id"])
                     ),
                     task_id=task_id,
@@ -442,7 +442,7 @@ def build_task_difficulty_batch_request(
                 ),
                 raw_input=TextArtifact(text=raw_text),
                 auxiliary_artifacts=(
-                    EvaluationSampleAuxiliaryArtifact(
+                    EvalSampleAuxiliaryArtifact(
                         trace_key="task",
                         artifact=JsonArtifact(
                             payload=task.model_dump(mode="json")
@@ -456,8 +456,8 @@ def build_task_difficulty_batch_request(
             )
             total_candidates += len(candidates)
             inputs.append(
-                FrozenCandidateEvaluationInput(
-                    slot=EvaluationSlotIdentity(
+                FrozenCandidateEvalInput(
+                    slot=EvalSlotIdentity(
                         task_set=plan.task_set.coordinate,
                         sampling_plan=plan.sampling_plan.coordinate,
                         task_id=task_id,
@@ -474,7 +474,7 @@ def build_task_difficulty_batch_request(
         candidate_count=total_candidates,
         worker_count=settings.worker_count,
     )
-    return EvaluationBatchRequest(
+    return EvalBatchRequest(
         attempt=attempt,
         plan=plan,
         runtime=runtime,
@@ -493,17 +493,17 @@ def build_task_difficulty_batch_request(
 def build_preflight_batch_request_for_task(
     task: HumanEvalTask,
     *,
-    settings: EvaluationSettings,
-    runtime: EvaluationRuntimeIdentity,
+    settings: EvalSettings,
+    runtime: EvalRuntimeIdentity,
     manifest_sha256: str,
-) -> EvaluationBatchRequest:
+) -> EvalBatchRequest:
     """Build a one-sample batch for runtime preflight on a known task."""
 
     preprocessing = _exhaustive_preprocessing_coordinate()
-    plan = build_evaluation_plan((task.task_id,), task_num_samples=(1,))
-    sample = EvaluationSample(
-        metadata=EvaluationSampleMetadata(
-            identity=EvaluationSampleIdentity(sample_id="runtime-preflight"),
+    plan = build_eval_plan((task.task_id,), task_num_samples=(1,))
+    sample = EvalSample(
+        metadata=EvalSampleMetadata(
+            identity=EvalSampleIdentity(sample_id="runtime-preflight"),
             task_id=task.task_id,
             provenance=_corpus_provenance(
                 {"sample_id": "runtime-preflight"},
@@ -512,7 +512,7 @@ def build_preflight_batch_request_for_task(
         ),
         raw_input=TextArtifact(text=""),
         auxiliary_artifacts=(
-            EvaluationSampleAuxiliaryArtifact(
+            EvalSampleAuxiliaryArtifact(
                 trace_key="task",
                 artifact=JsonArtifact(payload=task.model_dump(mode="json")),
             ),
@@ -525,8 +525,8 @@ def build_preflight_batch_request_for_task(
         },
         preprocessing=preprocessing,
     )
-    return EvaluationBatchRequest(
-        attempt=EvaluationAttemptIdentity(
+    return EvalBatchRequest(
+        attempt=EvalAttemptIdentity(
             attempt_id=uuid5(_ATTEMPT_NAMESPACE, b"runtime-preflight")
         ),
         plan=plan,
@@ -534,8 +534,8 @@ def build_preflight_batch_request_for_task(
         cache_namespace=_WORKFLOW_CACHE_NAMESPACE,
         run_grade=RunGrade.SELECTION,
         inputs=(
-            FrozenCandidateEvaluationInput(
-                slot=EvaluationSlotIdentity(
+            FrozenCandidateEvalInput(
+                slot=EvalSlotIdentity(
                     task_set=plan.task_set.coordinate,
                     sampling_plan=plan.sampling_plan.coordinate,
                     task_id=task.task_id,
@@ -574,10 +574,10 @@ def evaluation_read_limits(
     *,
     sample_count: int,
     candidate_count: int,
-) -> EvaluationReadLimits:
+) -> EvalReadLimits:
     from dr_store import BundleReadLimits
 
-    return EvaluationReadLimits(
+    return EvalReadLimits(
         bundle=BundleReadLimits(
             manifest_max_bytes=1 << 20,
             manifest_max_depth=64,
@@ -604,7 +604,7 @@ def _projection_row_to_record(
     *,
     selected_by_sample: dict[str, dict[str, object]],
     runtime_identity_json: str,
-    settings: EvaluationSettings,
+    settings: EvalSettings,
     source_by_sample_and_ordinal: dict[tuple[str, int], str],
 ) -> dict[str, object]:
     sample_id = row.candidate.sample.sample_id
@@ -676,9 +676,9 @@ def export_candidate_results(
     selected: pl.DataFrame,
     output_path: Path,
     *,
-    settings: EvaluationSettings,
+    settings: EvalSettings,
     runtime_identity_json: str,
-    limits: EvaluationReadLimits | None = None,
+    limits: EvalReadLimits | None = None,
     object_store: ObjectStore | None = None,
 ) -> pl.DataFrame:
     candidate_count = int(selected.get_column("candidate_count").sum())
@@ -687,7 +687,7 @@ def export_candidate_results(
             sample_count=selected.height,
             candidate_count=candidate_count,
         )
-    _, rows = read_evaluation_projection(
+    _, rows = read_eval_projection(
         bundle_path,
         ProjectionKind.METRIC_RECORDS,
         limits=limits,
@@ -726,7 +726,7 @@ async def bundle_is_complete(
     bundle_path: Path,
     *,
     object_store: ObjectStore | None,
-    limits: EvaluationReadLimits,
+    limits: EvalReadLimits,
 ) -> bool:
     if not bundle_path.is_dir():
         return False
@@ -734,7 +734,7 @@ async def bundle_is_complete(
     if not manifest_path.is_file():
         return False
     try:
-        restored = await restore_evaluation_attempt(
+        restored = await restore_eval_attempt(
             bundle_path,
             object_store=object_store,
             limits=limits,
@@ -746,11 +746,11 @@ async def bundle_is_complete(
 
 def runtime_identity_from_executor(
     executor: Executor,
-) -> EvaluationRuntimeIdentity:
+) -> EvalRuntimeIdentity:
     runtime = getattr(executor, "runtime", None)
     if runtime is not None:
-        return EvaluationRuntimeIdentity(document=runtime.describe().id_doc)
-    return EvaluationRuntimeIdentity(
+        return EvalRuntimeIdentity(document=runtime.describe().id_doc)
+    return EvalRuntimeIdentity(
         document=build_identity_document(
             schema="dr-code/task-difficulty-runtime",
             schema_version=1,
@@ -760,10 +760,10 @@ def runtime_identity_from_executor(
 
 
 def runtime_identity_with_packages(
-    base: EvaluationRuntimeIdentity,
+    base: EvalRuntimeIdentity,
     packages: dict[str, object],
-) -> EvaluationRuntimeIdentity:
-    return EvaluationRuntimeIdentity(
+) -> EvalRuntimeIdentity:
+    return EvalRuntimeIdentity(
         document=build_identity_document(
             schema="dr-code/task-difficulty-runtime",
             schema_version=1,
@@ -775,7 +775,7 @@ def runtime_identity_with_packages(
     )
 
 
-def runtime_identity_json(runtime: EvaluationRuntimeIdentity) -> str:
+def runtime_identity_json(runtime: EvalRuntimeIdentity) -> str:
     return json.dumps(
         runtime.document.to_json_dict(),
         sort_keys=True,
@@ -923,7 +923,7 @@ def manifest_matches(
 
 
 __all__ = [
-    "EvaluationBatchResult",
+    "EvalBatchResult",
     "attempt_identity",
     "build_preflight_batch_request_for_task",
     "build_task_difficulty_batch_request",

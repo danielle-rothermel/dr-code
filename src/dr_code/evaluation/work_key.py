@@ -8,7 +8,7 @@ from dr_serialize import (
     identity_document_hash,
 )
 
-from dr_code.evaluation.identity import EvaluationSlotIdentity
+from dr_code.evaluation.identity import EvalSlotIdentity
 
 # Persisted identity payload keys are an explicit wire contract. Never derive
 # them from model field names, and never build this payload by iterating.
@@ -17,7 +17,7 @@ WORK_KEY_SCHEMA_VERSION: Final = 1
 
 
 def derive_work_key(
-    slot: EvaluationSlotIdentity,
+    slot: EvalSlotIdentity,
     /,
     *,
     experiment_config_hash: str,

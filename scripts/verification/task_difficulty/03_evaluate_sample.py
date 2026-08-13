@@ -27,7 +27,7 @@ from dr_code.evaluation import AttemptCompleteness, evaluate_batch
 from dr_code.humaneval import HumanEvalTask
 
 from corpus_loader import manifest_sha256
-from evaluation_batch import (
+from eval_batch import (
     attempt_identity,
     build_preflight_batch_request_for_task,
     build_task_difficulty_batch_request,
@@ -47,14 +47,14 @@ from evaluation_batch import (
 from workflow_settings import (
     HUMANEVAL_SNAPSHOT,
     SELECTED_SAMPLE,
-    EvaluationPaths,
-    evaluation_paths,
+    EvalPaths,
+    eval_paths,
     generation_corpus_bundle_path,
-    parse_evaluation_args,
+    parse_eval_args,
     prepare_run_directory,
 )
 
-_RUNTIME_ENVIRONMENT_VARIABLE = "DR_CODE_EVALUATION_PYTHON"
+_RUNTIME_ENVIRONMENT_VARIABLE = "DR_CODE_EVAL_PYTHON"
 _PREFLIGHT_TASK_ID = "HumanEval/0"
 _CACHE_RESIDENT_ENTRIES = 256
 _CACHE_PENDING_ENTRIES = 64
@@ -112,7 +112,7 @@ async def _preflight_runtime(
     *,
     runtime_executable: Path,
     preflight_task: HumanEvalTask,
-    paths: EvaluationPaths,
+    paths: EvalPaths,
     settings,
     manifest_sha: str,
     object_store: ObjectStore,
@@ -158,7 +158,7 @@ async def _preflight_runtime(
 
 async def _evaluate_selected_sample(
     *,
-    paths: EvaluationPaths,
+    paths: EvalPaths,
     settings,
     logger: logging.Logger,
 ) -> Path:
@@ -337,7 +337,7 @@ async def _evaluate_selected_sample(
 
 
 async def _async_main(
-    settings, paths: EvaluationPaths, logger: logging.Logger
+    settings, paths: EvalPaths, logger: logging.Logger
 ) -> int:
     bundle_path = await _evaluate_selected_sample(
         paths=paths,
@@ -350,8 +350,8 @@ async def _async_main(
 
 def main(argv: Sequence[str] | None = None) -> int:
     run_started = perf_counter()
-    evaluation_settings = parse_evaluation_args(__doc__, argv)
-    paths = evaluation_paths(evaluation_settings)
+    evaluation_settings = parse_eval_args(__doc__, argv)
+    paths = eval_paths(evaluation_settings)
     prepare_run_directory()
     paths.root.mkdir(parents=True, exist_ok=True)
     logger = _configure_logging(paths.evaluation_log)

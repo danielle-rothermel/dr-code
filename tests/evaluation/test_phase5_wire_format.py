@@ -7,7 +7,7 @@ import dr_code.evaluation as evaluation
 from dr_code.evaluation import (
     ComparableProjectionComparison,
     ComparisonStatus,
-    EvaluationAttemptIdentity,
+    EvalAttemptIdentity,
     ProjectionKind,
     ProjectionNotComparable,
     ReplayMode,
@@ -24,7 +24,7 @@ from .test_record_models import reference
 
 def test_replay_preflight_wire_keys_and_discriminators_are_exact() -> None:
     source = ReplaySource(
-        attempt=EvaluationAttemptIdentity(attempt_id=UUID(int=2)),
+        attempt=EvalAttemptIdentity(attempt_id=UUID(int=2)),
         mode=ReplayMode.SAMPLES,
     )
     unavailable = json.loads(
@@ -59,7 +59,7 @@ def test_comparison_wire_keys_and_discriminators_are_exact() -> None:
     )
     comparable = json.loads(
         ComparableProjectionComparison(
-            projection=ProjectionKind.EVALUATION_SAMPLES,
+            projection=ProjectionKind.EVAL_SAMPLES,
             population=2,
             available_denominator=1,
             changed=1,
@@ -109,16 +109,16 @@ def test_phase5_public_symbols_are_exported() -> None:
         "ReplayReady",
         "ReplayPreflight",
         "preflight_replay",
-        "replay_evaluation_attempt",
-        "EvaluationEvidenceResolver",
+        "replay_eval_attempt",
+        "EvalEvidenceResolver",
         "ComparisonStatus",
         "StructuralRecordComparison",
         "StructuralMemberIdentity",
         "ComparableProjectionComparison",
         "ProjectionNotComparable",
         "ProjectionComparison",
-        "StructuralEvaluationComparison",
-        "compare_evaluation_attempts",
+        "StructuralEvalComparison",
+        "compare_eval_attempts",
     ):
         assert name in evaluation.__all__
         assert getattr(evaluation, name) is not None

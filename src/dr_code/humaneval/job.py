@@ -14,12 +14,12 @@ from pydantic import Field, PositiveInt, model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.identity import (
-    EvaluationCandidateIdentity,
-    MaterializedEvaluationCandidate,
+    EvalCandidateIdentity,
+    MaterializedEvalCandidate,
 )
 from dr_code.humaneval.settings import CodeTestSettings
-from dr_code.humaneval.task import EvaluationCaseResult, HumanEvalTask
-from dr_code.humaneval.task import EvaluationCaseStatus
+from dr_code.humaneval.task import EvalCaseResult, HumanEvalTask
+from dr_code.humaneval.task import EvalCaseStatus
 from dr_code.humaneval.parsed_tests import (
     EXPECTED_OUTPUT_NAME as _EXPECTED_OUTPUT_NAME,
 )
@@ -54,7 +54,7 @@ class HumanEvalEvaluatorSuite(FrozenModel):
 
 class HumanEvalCandidateJobRequest(FrozenModel):
     schema_version: Literal[2] = HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION
-    candidate: MaterializedEvaluationCandidate
+    candidate: MaterializedEvalCandidate
     suites: tuple[HumanEvalEvaluatorSuite, ...] = Field(min_length=1)
     # Bounds every rendered evidence field this job reports. The default
     # holds a realistic failing assertion's repr rather than cutting it at
@@ -81,7 +81,7 @@ CandidateNamespaceOutcome: TypeAlias = Annotated[
 
 class HumanEvalFunctionGroupResult(FrozenModel):
     function_name: str
-    cases: tuple[EvaluationCaseResult, ...]
+    cases: tuple[EvalCaseResult, ...]
 
 
 class HumanEvalSuiteCompleted(FrozenModel):
@@ -106,7 +106,7 @@ HumanEvalSuiteResult: TypeAlias = Annotated[
 
 class HumanEvalCandidateJobResult(FrozenModel):
     schema_version: Literal[2] = HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION
-    candidate: EvaluationCandidateIdentity
+    candidate: EvalCandidateIdentity
     namespace: CandidateNamespaceOutcome
     suites: tuple[HumanEvalSuiteResult, ...]
 
@@ -248,7 +248,7 @@ def _evaluate_case(
     compiled_check: CodeType,
     expected_output: object = None,
     field_limit: int,
-) -> EvaluationCaseResult:
+) -> EvalCaseResult:
     started_at = time.perf_counter()
     check_namespace = candidate_namespace | {"candidate": candidate}
     if check.expected_output_expr is not None:
@@ -256,7 +256,7 @@ def _evaluate_case(
     try:
         exec(compiled_check, check_namespace)
     except AssertionError as error:
-        status = EvaluationCaseStatus.FAILED
+        status = EvalCaseStatus.FAILED
         message = _clip(error, field_limit)
         metadata = _failure_metadata(
             check,
@@ -266,7 +266,7 @@ def _evaluate_case(
             field_limit,
         )
     except BaseException as error:
-        status = EvaluationCaseStatus.ERROR
+        status = EvalCaseStatus.ERROR
         message = _exception_message(error, field_limit)
         metadata = _failure_metadata(
             check,
@@ -276,7 +276,7 @@ def _evaluate_case(
             field_limit,
         )
     else:
-        status = EvaluationCaseStatus.PASSED
+        status = EvalCaseStatus.PASSED
         message = ""
         metadata = {
             "input_repr": _clip(check.input_repr, field_limit),
@@ -285,7 +285,7 @@ def _evaluate_case(
             ),
             "actual_output_repr": "",
         }
-    return EvaluationCaseResult(
+    return EvalCaseResult(
         task_id=task.task_id,
         case_id=check.case_id,
         function_name=function_name,

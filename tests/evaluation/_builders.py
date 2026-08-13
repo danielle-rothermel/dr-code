@@ -6,11 +6,11 @@ from dr_code.evaluation import (
     AggregationPolicy,
     AggregationSlot,
     AggregationStatistic,
-    EvaluationCandidateIdentity,
-    EvaluationSampleIdentity,
-    EvaluationSlotIdentity,
+    EvalCandidateIdentity,
+    EvalSampleIdentity,
+    EvalSlotIdentity,
     DatasetCoordinate,
-    EvaluationProcedure,
+    EvalProcedure,
     SamplingPlan,
     SamplingPlanCoordinate,
     TaskSet,
@@ -90,8 +90,8 @@ def sampling_plan(**overrides: object) -> SamplingPlan:
     )
 
 
-def evaluation_slot(**overrides: object) -> EvaluationSlotIdentity:
-    return EvaluationSlotIdentity(
+def evaluation_slot(**overrides: object) -> EvalSlotIdentity:
+    return EvalSlotIdentity(
         **{
             "task_set": task_set_coordinate(),
             "sampling_plan": sampling_plan_coordinate(),
@@ -123,12 +123,12 @@ def preprocessing_coordinate(
     )
 
 
-def sample_identity(**overrides: object) -> EvaluationSampleIdentity:
-    return EvaluationSampleIdentity(**{"sample_id": "sample-0", **overrides})
+def sample_identity(**overrides: object) -> EvalSampleIdentity:
+    return EvalSampleIdentity(**{"sample_id": "sample-0", **overrides})
 
 
-def candidate(**overrides: object) -> EvaluationCandidateIdentity:
-    return EvaluationCandidateIdentity(
+def candidate(**overrides: object) -> EvalCandidateIdentity:
+    return EvalCandidateIdentity(
         **{
             "sample": sample_identity(),
             "preprocessing": preprocessing_coordinate(),
@@ -178,8 +178,8 @@ def question_coordinate(**overrides: object) -> MetricQuestionCoordinate:
     )
 
 
-def procedure(**overrides: object) -> EvaluationProcedure:
-    return EvaluationProcedure(
+def procedure(**overrides: object) -> EvalProcedure:
+    return EvalProcedure(
         **{
             "preprocessing": preprocessing_definition(),
             "metrics": metrics_definition(),

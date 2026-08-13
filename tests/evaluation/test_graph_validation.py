@@ -16,10 +16,10 @@ from _builders import (
 )
 from dr_code.evaluation import (
     CandidateJobCompleted,
-    EvaluationMemberRecord,
-    EvaluationRuntimeIdentity,
+    EvalMemberRecord,
+    EvalRuntimeIdentity,
     EvaluatedSampleRecord,
-    SampleEvaluationRecord,
+    SampleEvalRecord,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
 from dr_code.evaluation.validation import validate_sample_record_graph
@@ -38,7 +38,7 @@ from .test_record_models import (
 from ._batch_builders import BatchStore, MemoryPlacement, cache, request
 
 
-def _validate(record: SampleEvaluationRecord) -> None:
+def _validate(record: SampleEvalRecord) -> None:
     validate_sample_record_graph(
         record,
         slot=record.slot,
@@ -53,7 +53,7 @@ def test_attempt_rejects_member_slots_outside_plan() -> None:
     with pytest.raises(ValidationError, match="belong to the evaluation plan"):
         attempt(
             members=(
-                EvaluationMemberRecord(
+                EvalMemberRecord(
                     slot=evaluation_slot(task_id="t1"),
                     sample=sample_identity(),
                     record=reference(),
@@ -66,12 +66,12 @@ def test_attempt_rejects_members_out_of_plan_order() -> None:
     with pytest.raises(ValidationError, match="preserve plan slot order"):
         attempt(
             members=(
-                EvaluationMemberRecord(
+                EvalMemberRecord(
                     slot=evaluation_slot(sample_index=1),
                     sample=sample_identity(sample_id="sample-1"),
                     record=reference(1),
                 ),
-                EvaluationMemberRecord(
+                EvalMemberRecord(
                     slot=evaluation_slot(sample_index=0),
                     sample=sample_identity(sample_id="sample-0"),
                     record=reference(0),
@@ -122,7 +122,7 @@ def test_graph_rejects_candidate_trace_and_execution_context_mismatches() -> (
     with pytest.raises(ValueError, match="preprocessing does not match"):
         _validate(record.model_copy(update={"trace": wrong_trace}))
 
-    wrong_runtime = EvaluationRuntimeIdentity(
+    wrong_runtime = EvalRuntimeIdentity(
         document=IdentityDocument(
             schema="tests/other-runtime",
             schema_version=1,

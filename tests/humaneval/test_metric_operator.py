@@ -17,7 +17,7 @@ from dr_code.metrics import (
 from dr_code.trace import CodeArtifact, JsonArtifact, external_trace
 
 
-def test_code_test_requires_the_evaluation_batch_execution_outcome() -> None:
+def test_code_test_requires_the_eval_batch_execution_outcome() -> None:
     code = CodeArtifact(source="def add_one(x):\n    return x + 1\n")
     trace = external_trace(
         {

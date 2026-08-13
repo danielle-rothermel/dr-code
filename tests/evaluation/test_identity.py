@@ -17,15 +17,15 @@ from _builders import (
 from dr_code.evaluation import (
     BundleRecordReference,
     CorpusSampleProvenance,
-    EvaluationAttemptIdentity,
-    EvaluationCandidateIdentity,
-    EvaluationRuntimeIdentity,
-    EvaluationSample,
-    EvaluationSampleMetadata,
-    EvaluationSampleProvenance,
-    EvaluationSourceIdentity,
+    EvalAttemptIdentity,
+    EvalCandidateIdentity,
+    EvalRuntimeIdentity,
+    EvalSample,
+    EvalSampleMetadata,
+    EvalSampleProvenance,
+    EvalSourceIdentity,
     GeneratedSampleProvenance,
-    MaterializedEvaluationCandidate,
+    MaterializedEvalCandidate,
     StoredRecordReference,
     SyntheticSampleProvenance,
 )
@@ -53,8 +53,8 @@ def bundle_reference() -> BundleRecordReference:
     )
 
 
-def source_identity() -> EvaluationSourceIdentity:
-    return EvaluationSourceIdentity(namespace="generator", value="run-1")
+def source_identity() -> EvalSourceIdentity:
+    return EvalSourceIdentity(namespace="generator", value="run-1")
 
 
 def generated_provenance() -> GeneratedSampleProvenance:
@@ -83,13 +83,13 @@ def test_sample_identity_and_source_identity_require_nonempty_values() -> None:
     with pytest.raises(ValidationError):
         type(sample_identity())(sample_id="")
     with pytest.raises(ValidationError):
-        EvaluationSourceIdentity(namespace="", value="source")
+        EvalSourceIdentity(namespace="", value="source")
 
 
 def test_candidate_identity_nests_only_sample_identity_and_preprocessing() -> (
     None
 ):
-    candidate = EvaluationCandidateIdentity(
+    candidate = EvalCandidateIdentity(
         sample=sample_identity(),
         preprocessing=preprocessing_coordinate(),
         candidate_ordinal=0,
@@ -99,7 +99,7 @@ def test_candidate_identity_nests_only_sample_identity_and_preprocessing() -> (
 
 
 def test_attempt_identity_serializes_uuid_canonically() -> None:
-    identity = EvaluationAttemptIdentity(
+    identity = EvalAttemptIdentity(
         attempt_id=UUID("12345678-1234-5678-1234-567812345678")
     )
     assert json.loads(identity.model_dump_json()) == {
@@ -113,7 +113,7 @@ def test_runtime_identity_nests_the_dependency_document() -> None:
         schema_version=1,
         payload={"python": "3.13"},
     )
-    assert EvaluationRuntimeIdentity(document=document).document is document
+    assert EvalRuntimeIdentity(document=document).document is document
 
 
 def test_all_sample_provenance_variants_round_trip_by_kind() -> None:
@@ -144,7 +144,7 @@ def test_all_sample_provenance_variants_round_trip_by_kind() -> None:
             ),
         ),
     )
-    adapter = TypeAdapter(EvaluationSampleProvenance)
+    adapter = TypeAdapter(EvalSampleProvenance)
     assert [item.kind for item in provenances] == [
         "generated",
         "corpus",
@@ -159,16 +159,14 @@ def test_all_sample_provenance_variants_round_trip_by_kind() -> None:
 def test_request_sample_and_materialized_candidate_have_exact_wire_fields() -> (
     None
 ):
-    metadata = EvaluationSampleMetadata(
+    metadata = EvalSampleMetadata(
         identity=sample_identity(),
         task_id="t0",
         provenance=generated_provenance(),
     )
-    sample = EvaluationSample(
-        metadata=metadata, raw_input=TextArtifact(text="raw")
-    )
-    candidate = MaterializedEvaluationCandidate(
-        identity=EvaluationCandidateIdentity(
+    sample = EvalSample(metadata=metadata, raw_input=TextArtifact(text="raw"))
+    candidate = MaterializedEvalCandidate(
+        identity=EvalCandidateIdentity(
             sample=sample_identity(),
             preprocessing=preprocessing_coordinate(),
             candidate_ordinal=0,
@@ -193,8 +191,8 @@ def test_materialized_candidate_rejects_a_mismatched_source_hash() -> None:
     with pytest.raises(
         ValidationError, match="must match the candidate source"
     ):
-        MaterializedEvaluationCandidate(
-            identity=EvaluationCandidateIdentity(
+        MaterializedEvalCandidate(
+            identity=EvalCandidateIdentity(
                 sample=sample_identity(),
                 preprocessing=preprocessing_coordinate(),
                 candidate_ordinal=0,

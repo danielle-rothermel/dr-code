@@ -39,11 +39,11 @@ from dr_code.evaluation.aggregation import (
     aggregate,
 )
 from dr_code.evaluation.batch import (
-    EvaluationBatchRequest,
-    EvaluationInput,
-    FrozenCandidateEvaluationInput,
+    EvalBatchRequest,
+    EvalInput,
+    FrozenCandidateEvalInput,
     ProjectionKind,
-    SampleEvaluationInput,
+    SampleEvalInput,
 )
 from dr_code.evaluation.execution import (
     build_candidate_execution_job,
@@ -52,8 +52,8 @@ from dr_code.evaluation.execution import (
     reused_candidate_record,
 )
 from dr_code.evaluation.identity import (
-    EvaluationCandidateIdentity,
-    MaterializedEvaluationCandidate,
+    EvalCandidateIdentity,
+    MaterializedEvalCandidate,
 )
 from dr_code.evaluation.records import (
     AttemptCompleteness,
@@ -62,20 +62,20 @@ from dr_code.evaluation.records import (
     AttemptValidity,
     CandidateExecutionOutcome,
     CandidateExecutionRecord,
-    EvaluationMemberRecord,
+    EvalMemberRecord,
     EvaluatedSampleRecord,
     ExecutorExecutionFailure,
     HarnessExecutionFailure,
     NoCandidatesSampleRecord,
     PreprocessingAbsentSampleRecord,
-    SampleEvaluationRecord,
+    SampleEvalRecord,
     outcome_is_cacheable,
 )
 from dr_code.evaluation.references import (
     EvidenceReference,
     StoredRecordReference,
 )
-from dr_code.evaluation.score import EvaluationCoordinate, Score
+from dr_code.evaluation.score import EvalCoordinate, Score
 from dr_code.humaneval.job import HumanEvalCandidateJobRequest
 from dr_code.metrics import (
     MeasuredRecord,
@@ -118,8 +118,8 @@ class _PendingCacheObservation:
 
 
 @dataclass(frozen=True, slots=True)
-class _EvaluationBatchAssembly:
-    members: tuple[EvaluationMemberRecord, ...]
+class _EvalBatchAssembly:
+    members: tuple[EvalMemberRecord, ...]
     completeness: AttemptCompleteness
     validity: AttemptValidity
     limit_exhaustion: AttemptLimitExhaustion | None
@@ -129,7 +129,7 @@ class _EvaluationBatchAssembly:
 
 class _RecordPlacementSink(Protocol):
     async def place(
-        self, record: SampleEvaluationRecord, /
+        self, record: SampleEvalRecord, /
     ) -> EvidenceReference: ...
 
     async def finish(self) -> None: ...
@@ -137,10 +137,10 @@ class _RecordPlacementSink(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class _PreparedInput:
-    input: EvaluationInput
+    input: EvalInput
     trace: Trace
     absence: Absent | None
-    candidates: tuple[MaterializedEvaluationCandidate, ...]
+    candidates: tuple[MaterializedEvalCandidate, ...]
     metric_plans: tuple[_CandidateMetricPlan, ...]
 
 
@@ -181,7 +181,7 @@ _WindowValue = TypeVar("_WindowValue")
 
 
 async def _evaluate_batch_assembly(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     /,
     *,
     executor: Executor,
@@ -189,7 +189,7 @@ async def _evaluate_batch_assembly(
     pool_config: ExecutionPoolConfig,
     placement_sink: _RecordPlacementSink,
     preprocessed_traces: Mapping[str, Trace] | None = None,
-) -> _EvaluationBatchAssembly:
+) -> _EvalBatchAssembly:
     async with ExecutionPool(executor=executor, config=pool_config) as pool:
 
         async def run_window(
@@ -226,13 +226,13 @@ async def _evaluate_batch_assembly(
 
 
 async def _evaluate_durable_partition_assembly(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     /,
     *,
     executor: Executor,
     execution_cache: WindowedExecutionCache,
     placement_sink: _RecordPlacementSink,
-) -> _EvaluationBatchAssembly:
+) -> _EvalBatchAssembly:
     async def run_window(
         work: Sequence[_CandidateWork],
     ) -> dict[int, CompletedExecution]:
@@ -290,19 +290,17 @@ def _preprocessing_worker_count(config: ExecutionPoolConfig) -> int:
 
 
 async def _assemble(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     *,
     execution_cache: WindowedExecutionCache,
     run_window: _RunWindow,
     placement_sink: _RecordPlacementSink,
     pool_config: ExecutionPoolConfig,
     preprocessed_traces: Mapping[str, Trace] | None = None,
-) -> _EvaluationBatchAssembly:
+) -> _EvalBatchAssembly:
     runner = (
         bind_preprocessing(request.plan.procedure.preprocessing)
-        if any(
-            isinstance(item, SampleEvaluationInput) for item in request.inputs
-        )
+        if any(isinstance(item, SampleEvalInput) for item in request.inputs)
         else None
     )
     traces_by_text: Mapping[str, Trace] = preprocessed_traces or {}
@@ -310,7 +308,7 @@ async def _assemble(
         sample_texts = [
             item.sample.raw_input.text
             for item in request.inputs
-            if isinstance(item, SampleEvaluationInput)
+            if isinstance(item, SampleEvalInput)
         ]
         if sample_texts:
             traces_by_text = await preprocess_batch(
@@ -343,7 +341,7 @@ async def _assemble(
 
 
 def _prepare_inputs(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     *,
     runner: BoundPreprocessingRunner | None,
     traces_by_text: Mapping[str, Trace] | None = None,
@@ -403,15 +401,15 @@ def _prepare_inputs(
 
 
 async def _place_prepared_inputs(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     prepared_inputs: Sequence[_PreparedInput],
     execution_by_sample: Mapping[int, _ExecutionWindow],
     *,
     exhaustion: AttemptLimitExhaustion | None,
     execution_cache: WindowedExecutionCache,
     placement_sink: _RecordPlacementSink,
-) -> _EvaluationBatchAssembly:
-    members: list[EvaluationMemberRecord] = []
+) -> _EvalBatchAssembly:
+    members: list[EvalMemberRecord] = []
     aggregation_slots: list[AggregationSlot] = []
     score_values: list[MetricValue] = []
     invalid = False
@@ -419,7 +417,7 @@ async def _place_prepared_inputs(
 
     for sample_index, prepared in enumerate(prepared_inputs):
         if prepared.absence is not None:
-            record: SampleEvaluationRecord = PreprocessingAbsentSampleRecord(
+            record: SampleEvalRecord = PreprocessingAbsentSampleRecord(
                 slot=prepared.input.slot,
                 sample=prepared.input.sample.metadata,
                 trace=serialize_trace(prepared.trace),
@@ -475,7 +473,7 @@ async def _place_prepared_inputs(
 
         reference = await placement_sink.place(record)
         members.append(
-            EvaluationMemberRecord(
+            EvalMemberRecord(
                 slot=record.slot,
                 sample=record.sample.identity,
                 record=reference,
@@ -506,7 +504,7 @@ async def _place_prepared_inputs(
 
     await placement_sink.finish()
     members.extend(
-        EvaluationMemberRecord(
+        EvalMemberRecord(
             slot=item.slot,
             sample=item.sample.metadata.identity,
             record=None,
@@ -528,7 +526,7 @@ async def _place_prepared_inputs(
         aggregation_slots=aggregation_slots,
         score_values=score_values,
     )
-    return _EvaluationBatchAssembly(
+    return _EvalBatchAssembly(
         members=tuple(members),
         completeness=completeness,
         validity=validity,
@@ -539,13 +537,13 @@ async def _place_prepared_inputs(
 
 
 def _prepare_input(
-    request: EvaluationBatchRequest,
-    item: EvaluationInput,
+    request: EvalBatchRequest,
+    item: EvalInput,
     *,
     runner: BoundPreprocessingRunner | None,
     traces_by_text: Mapping[str, Trace] | None = None,
 ) -> _PreparedInput:
-    if isinstance(item, FrozenCandidateEvaluationInput):
+    if isinstance(item, FrozenCandidateEvalInput):
         trace = _frozen_candidate_trace(item)
         candidates = item.candidates
         absence = None
@@ -602,7 +600,7 @@ def _prepare_input(
     )
 
 
-def _frozen_candidate_trace(item: FrozenCandidateEvaluationInput) -> Trace:
+def _frozen_candidate_trace(item: FrozenCandidateEvalInput) -> Trace:
     return Trace(
         values={
             "input": item.sample.raw_input,
@@ -648,9 +646,9 @@ def trace_candidate_sources(
 
 
 def _materialize_candidates(
-    item: EvaluationInput,
+    item: EvalInput,
     trace: Trace,
-) -> tuple[MaterializedEvaluationCandidate, ...]:
+) -> tuple[MaterializedEvalCandidate, ...]:
     sources = trace_candidate_sources(trace)
     if sources is None:
         return ()
@@ -664,8 +662,8 @@ def _materialize_candidates(
         )
     preprocessing = producer.definition
     return tuple(
-        MaterializedEvaluationCandidate(
-            identity=EvaluationCandidateIdentity(
+        MaterializedEvalCandidate(
+            identity=EvalCandidateIdentity(
                 sample=item.sample.metadata.identity,
                 preprocessing=preprocessing,
                 candidate_ordinal=ordinal,
@@ -680,7 +678,7 @@ def _materialize_candidates(
 
 
 async def _execute_batch_candidates_globally(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     prepared_inputs: Sequence[_PreparedInput],
     *,
     execution_cache: WindowedExecutionCache,
@@ -814,8 +812,8 @@ async def _execute_batch_candidates_globally(
 
 
 def _candidate_work(
-    request: EvaluationBatchRequest,
-    candidate: MaterializedEvaluationCandidate,
+    request: EvalBatchRequest,
+    candidate: MaterializedEvalCandidate,
     plan: _CandidateMetricPlan,
     index: int,
 ) -> _CandidateWork:
@@ -837,7 +835,7 @@ def _candidate_work(
     )
 
 
-def _record_is_invalid(record: SampleEvaluationRecord) -> bool:
+def _record_is_invalid(record: SampleEvalRecord) -> bool:
     if not isinstance(record, EvaluatedSampleRecord):
         return False
     return any(
@@ -852,12 +850,12 @@ def _record_is_invalid(record: SampleEvaluationRecord) -> bool:
 
 
 def _projection_row_contribution(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     prepared: _PreparedInput,
 ) -> int:
     requested = {projection.kind for projection in request.projections}
     return (
-        (1 if ProjectionKind.EVALUATION_SAMPLES in requested else 0)
+        (1 if ProjectionKind.EVAL_SAMPLES in requested else 0)
         + (
             len(prepared.candidates)
             if ProjectionKind.MATERIALIZED_CANDIDATES in requested
@@ -872,7 +870,7 @@ def _projection_row_contribution(
     )
 
 
-def _terminal_projection_reserve(request: EvaluationBatchRequest) -> int:
+def _terminal_projection_reserve(request: EvalBatchRequest) -> int:
     requested = {projection.kind for projection in request.projections}
     return int(ProjectionKind.AGGREGATION_RESULTS in requested) + int(
         ProjectionKind.SCORES in requested
@@ -880,8 +878,8 @@ def _terminal_projection_reserve(request: EvaluationBatchRequest) -> int:
 
 
 def _extend_aggregate_state(
-    request: EvaluationBatchRequest,
-    record: SampleEvaluationRecord,
+    request: EvalBatchRequest,
+    record: SampleEvalRecord,
     *,
     aggregation_slots: list[AggregationSlot],
     score_values: list[MetricValue],
@@ -918,7 +916,7 @@ def _extend_aggregate_state(
 
 
 def _terminal_projection_drafts(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     *,
     aggregation_slots: Sequence[AggregationSlot],
     score_values: Sequence[MetricValue],
@@ -943,7 +941,7 @@ def _terminal_projection_drafts(
 
 
 def _score_from_aggregation(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     result: AggregationResult,
     values: Sequence[MetricValue],
 ) -> Score | None:
@@ -956,7 +954,7 @@ def _score_from_aggregation(
         name=request.plan.aggregation.value,
         value=result.value,
         unit=next(iter(units)),
-        evaluation=EvaluationCoordinate(
+        evaluation=EvalCoordinate(
             plan_id=request.plan.plan_id,
             version=request.plan.version,
             task_set=request.plan.task_set.coordinate,

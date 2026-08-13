@@ -10,18 +10,18 @@ from dr_store import ArtifactBundlePublication, ObjectStore
 
 from _executor_stubs import importable_json_executor, scripted_executor
 from dr_code.evaluation import (
-    EvaluationAttemptIdentity,
+    EvalAttemptIdentity,
     EvaluatedSampleRecord,
-    FrozenCandidateEvaluationInput,
+    FrozenCandidateEvalInput,
     ReplayMode,
     ReplayReady,
     ReplaySource,
-    SampleEvaluationInput,
+    SampleEvalInput,
     preflight_replay,
-    replay_evaluation_attempt,
-    restore_evaluation_attempt,
+    replay_eval_attempt,
+    restore_eval_attempt,
 )
-from dr_code.evaluation.bundle import RestoredEvaluationAttempt
+from dr_code.evaluation.bundle import RestoredEvalAttempt
 from dr_code.evaluation import _batch
 
 from ._batch_builders import BatchStore, cache, request
@@ -32,11 +32,11 @@ pytestmark = pytest.mark.asyncio
 
 async def _source(
     root: Path,
-) -> tuple[RestoredEvaluationAttempt, ObjectStore]:
+) -> tuple[RestoredEvalAttempt, ObjectStore]:
     root.mkdir()
     result, object_store = await publish_batch(root, projections=())
     assert result.bundle_path is not None
-    restored = await restore_evaluation_attempt(
+    restored = await restore_eval_attempt(
         result.bundle_path,
         object_store=object_store,
         limits=read_limits(),
@@ -45,7 +45,7 @@ async def _source(
 
 
 def _preflight(
-    source: RestoredEvaluationAttempt,
+    source: RestoredEvalAttempt,
     mode: ReplayMode,
     *,
     attempt_int: int = 100,
@@ -54,7 +54,7 @@ def _preflight(
     return preflight_replay(
         source,
         mode,
-        attempt=EvaluationAttemptIdentity(attempt_id=UUID(int=attempt_int)),
+        attempt=EvalAttemptIdentity(attempt_id=UUID(int=attempt_int)),
         runtime=context.runtime,
         cache_namespace="tests/replay",
         run_grade=context.run_grade,
@@ -76,7 +76,7 @@ async def test_sample_replay_reconstructs_raw_input_and_auxiliary_artifacts(
 
     assert isinstance(preflight, ReplayReady)
     replay_input = preflight.request.inputs[0]
-    assert isinstance(replay_input, SampleEvaluationInput)
+    assert isinstance(replay_input, SampleEvalInput)
     assert (
         replay_input.sample.raw_input
         == source.samples[0].trace.values["input"]
@@ -93,7 +93,7 @@ async def test_sample_replay_reconstructs_raw_input_and_auxiliary_artifacts(
     )
     execution_cache = cache(BatchStore())
     try:
-        result = await replay_evaluation_attempt(
+        result = await replay_eval_attempt(
             preflight,
             executor=importable_json_executor(),
             execution_cache=execution_cache,
@@ -114,7 +114,7 @@ async def test_materialized_candidate_replay_bypasses_preprocessing_and_persists
     preflight = _preflight(source, ReplayMode.MATERIALIZED_CANDIDATES)
     assert isinstance(preflight, ReplayReady)
     replay_input = preflight.request.inputs[0]
-    assert isinstance(replay_input, FrozenCandidateEvaluationInput)
+    assert isinstance(replay_input, FrozenCandidateEvalInput)
     assert isinstance(source.samples[0], EvaluatedSampleRecord)
     assert replay_input.candidates == source.samples[0].candidates
 
@@ -129,7 +129,7 @@ async def test_materialized_candidate_replay_bypasses_preprocessing_and_persists
     )
     execution_cache = cache(BatchStore())
     try:
-        result = await replay_evaluation_attempt(
+        result = await replay_eval_attempt(
             preflight,
             executor=importable_json_executor(),
             execution_cache=execution_cache,
@@ -146,7 +146,7 @@ async def test_materialized_candidate_replay_bypasses_preprocessing_and_persists
     )
     assert result.attempt.replay == expected
     assert result.bundle_path is not None
-    persisted = await restore_evaluation_attempt(
+    persisted = await restore_eval_attempt(
         result.bundle_path,
         object_store=object_store,
         limits=read_limits(),
@@ -164,7 +164,7 @@ async def test_malformed_sample_replay_is_rejected_before_side_effects(
     procedure = source.attempt.plan.procedure.model_copy(
         update={"preprocessing": preprocessing}
     )
-    unsupported = RestoredEvaluationAttempt(
+    unsupported = RestoredEvalAttempt(
         attempt=source.attempt.model_copy(
             update={
                 "plan": source.attempt.plan.model_copy(
@@ -183,7 +183,7 @@ async def test_malformed_sample_replay_is_rejected_before_side_effects(
 
 async def test_inconsistent_restored_membership_raises(tmp_path: Path) -> None:
     source, _ = await _source(tmp_path / "source")
-    malformed = RestoredEvaluationAttempt(
+    malformed = RestoredEvalAttempt(
         attempt=source.attempt,
         samples=(),
     )
@@ -204,7 +204,7 @@ async def test_replay_cancellation_propagates(tmp_path: Path) -> None:
     execution_cache = cache(BatchStore())
     try:
         with pytest.raises(asyncio.CancelledError):
-            await replay_evaluation_attempt(
+            await replay_eval_attempt(
                 preflight,
                 executor=scripted_executor(outcome=CancelledOutcome()),
                 execution_cache=execution_cache,

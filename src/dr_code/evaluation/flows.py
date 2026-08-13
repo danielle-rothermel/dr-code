@@ -9,17 +9,17 @@ from dr_store import ArtifactBundlePublication, ObjectStore
 from dr_code.caching.preprocess_batch import preprocess_batch
 from dr_code.evaluation._batch import trace_candidate_sources
 from dr_code.evaluation.batch import (
-    EvaluationBatchRequest,
-    EvaluationBatchResult,
-    SampleEvaluationInput,
+    EvalBatchRequest,
+    EvalBatchResult,
+    SampleEvalInput,
     evaluate_batch,
 )
 from dr_code.evaluation.comparison import (
-    EvaluationEvidenceResolver,
-    StructuralEvaluationComparison,
-    compare_evaluation_attempts,
+    EvalEvidenceResolver,
+    StructuralEvalComparison,
+    compare_eval_attempts,
 )
-from dr_code.evaluation.records import EvaluationAttemptRecord
+from dr_code.evaluation.records import EvalAttemptRecord
 
 if TYPE_CHECKING:
     from dr_code.caching import WindowedExecutionCache
@@ -52,20 +52,20 @@ class PreprocessingValidation:
     """One preprocessing-change validation over a corpus and a plan."""
 
     coverage: PreprocessingCoverage
-    result: EvaluationBatchResult
-    comparison: StructuralEvaluationComparison | None
+    result: EvalBatchResult
+    comparison: StructuralEvalComparison | None
 
 
 @dataclass(frozen=True, slots=True)
 class TestingValidation:
     """One testing-change validation over a plan."""
 
-    result: EvaluationBatchResult
-    comparison: StructuralEvaluationComparison | None
+    result: EvalBatchResult
+    comparison: StructuralEvalComparison | None
 
 
 async def validate_preprocessing(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     /,
     *,
     executor: Executor,
@@ -73,8 +73,8 @@ async def validate_preprocessing(
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
     pool_config: ExecutionPoolConfig,
-    reference: EvaluationAttemptRecord | None = None,
-    evidence_resolver: EvaluationEvidenceResolver | None = None,
+    reference: EvalAttemptRecord | None = None,
+    evidence_resolver: EvalEvidenceResolver | None = None,
 ) -> PreprocessingValidation:
     """Validate a preprocessing change over the pooled preprocessing leg.
 
@@ -128,7 +128,7 @@ async def validate_preprocessing(
 
 
 async def validate_testing(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     /,
     *,
     executor: Executor,
@@ -136,8 +136,8 @@ async def validate_testing(
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
     pool_config: ExecutionPoolConfig,
-    reference: EvaluationAttemptRecord | None = None,
-    evidence_resolver: EvaluationEvidenceResolver | None = None,
+    reference: EvalAttemptRecord | None = None,
+    evidence_resolver: EvalEvidenceResolver | None = None,
 ) -> TestingValidation:
     """Validate a testing change over the pooled evaluation leg.
 
@@ -163,22 +163,22 @@ async def validate_testing(
     )
 
 
-def _corpus_texts(request: EvaluationBatchRequest) -> tuple[str, ...]:
+def _corpus_texts(request: EvalBatchRequest) -> tuple[str, ...]:
     """Give the distinct sample texts the preprocessing leg runs over."""
 
     return tuple(
         dict.fromkeys(
             item.sample.raw_input.text
             for item in request.inputs
-            if isinstance(item, SampleEvaluationInput)
+            if isinstance(item, SampleEvalInput)
         )
     )
 
 
 def _request_without_texts(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     excluded_texts: frozenset[str],
-) -> EvaluationBatchRequest:
+) -> EvalBatchRequest:
     """Drop sample inputs whose raw text failed pooled preprocessing."""
 
     if not excluded_texts:
@@ -187,7 +187,7 @@ def _request_without_texts(
         item
         for item in request.inputs
         if not (
-            isinstance(item, SampleEvaluationInput)
+            isinstance(item, SampleEvalInput)
             and item.sample.raw_input.text in excluded_texts
         )
     )
@@ -199,8 +199,8 @@ def _request_without_texts(
 
 
 def _validate_comparison_pair(
-    reference: EvaluationAttemptRecord | None,
-    evidence_resolver: EvaluationEvidenceResolver | None,
+    reference: EvalAttemptRecord | None,
+    evidence_resolver: EvalEvidenceResolver | None,
 ) -> None:
     if (reference is None) != (evidence_resolver is None):
         raise ValueError(
@@ -210,13 +210,13 @@ def _validate_comparison_pair(
 
 
 async def _compare(
-    attempt: EvaluationAttemptRecord,
-    reference: EvaluationAttemptRecord | None,
-    evidence_resolver: EvaluationEvidenceResolver | None,
-) -> StructuralEvaluationComparison | None:
+    attempt: EvalAttemptRecord,
+    reference: EvalAttemptRecord | None,
+    evidence_resolver: EvalEvidenceResolver | None,
+) -> StructuralEvalComparison | None:
     if reference is None or evidence_resolver is None:
         return None
-    return await compare_evaluation_attempts(
+    return await compare_eval_attempts(
         reference,
         attempt,
         resolver=evidence_resolver,

@@ -36,7 +36,7 @@ from dr_store import derive_cache_key
 from pydantic import ValidationError
 
 from dr_code.evaluation.batch import CandidateJobBudget, RunGrade
-from dr_code.evaluation.identity import EvaluationRuntimeIdentity
+from dr_code.evaluation.identity import EvalRuntimeIdentity
 from dr_code.evaluation.records import (
     CandidateExecutionOutcome,
     CandidateExecutionRecord,
@@ -142,7 +142,7 @@ def execute_candidate_job(
     *,
     job_id: JobId,
     budget: CandidateJobBudget,
-    runtime: EvaluationRuntimeIdentity,
+    runtime: EvalRuntimeIdentity,
     cache_namespace: str,
     run_grade: RunGrade,
     executor: Executor,
@@ -166,7 +166,7 @@ def executed_candidate_record(
     /,
     *,
     budget: CandidateJobBudget,
-    runtime: EvaluationRuntimeIdentity,
+    runtime: EvalRuntimeIdentity,
     cache_namespace: str,
     run_grade: RunGrade,
 ) -> CandidateExecutionRecord:
@@ -195,7 +195,7 @@ def reused_candidate_record(
     /,
     *,
     budget: CandidateJobBudget,
-    runtime: EvaluationRuntimeIdentity,
+    runtime: EvalRuntimeIdentity,
     cache_namespace: str,
     run_grade: RunGrade,
 ) -> CandidateExecutionRecord:

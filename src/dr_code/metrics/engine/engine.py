@@ -27,7 +27,7 @@ from dr_code.metrics.registry import REGISTRY
 from dr_code.trace import Absent, Artifact, Trace, WiringError
 
 if TYPE_CHECKING:
-    from dr_code.evaluation.identity import MaterializedEvaluationCandidate
+    from dr_code.evaluation.identity import MaterializedEvalCandidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +100,7 @@ class _CandidateMetricPlan:
 def _plan_candidate_metrics(
     definition: MetricsDefinition,
     trace: Trace,
-    candidate: MaterializedEvaluationCandidate,
+    candidate: MaterializedEvalCandidate,
     /,
 ) -> _CandidateMetricPlan:
     """Bind one candidate to the plan's questions without executing it."""

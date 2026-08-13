@@ -14,22 +14,22 @@ from pydantic import Field, PositiveInt, TypeAdapter, model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.identity import (
-    EvaluationAttemptIdentity,
-    EvaluationCandidateIdentity,
-    EvaluationRuntimeIdentity,
-    EvaluationSampleIdentity,
-    EvaluationSampleMetadata,
-    EvaluationSlotIdentity,
-    MaterializedEvaluationCandidate,
+    EvalAttemptIdentity,
+    EvalCandidateIdentity,
+    EvalRuntimeIdentity,
+    EvalSampleIdentity,
+    EvalSampleMetadata,
+    EvalSlotIdentity,
+    MaterializedEvalCandidate,
 )
-from dr_code.evaluation.plan import EvaluationPlan
+from dr_code.evaluation.plan import EvalPlan
 from dr_code.evaluation.references import EvidenceReference
 from dr_code.humaneval.job import HumanEvalCandidateJobResult
 from dr_code.metrics import MetricRecord
 from dr_code.trace import Absent, SerializedTrace
 
-EVALUATION_ATTEMPT_SCHEMA_VERSION: Final = 3
-SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION: Final = 2
+EVAL_ATTEMPT_SCHEMA_VERSION: Final = 3
+SAMPLE_EVAL_RECORD_SCHEMA_VERSION: Final = 2
 CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION: Final = 2
 
 
@@ -149,9 +149,9 @@ def outcome_is_cacheable(outcome: CandidateExecutionOutcome, /) -> bool:
 
 class CandidateExecutionRecord(FrozenModel):
     schema_version: Literal[2] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
-    candidate: EvaluationCandidateIdentity
+    candidate: EvalCandidateIdentity
     request_identity: Sha256Digest
-    runtime: EvaluationRuntimeIdentity
+    runtime: EvalRuntimeIdentity
     cache_namespace: str
     cache_key: str
     provenance: CandidateExecutionProvenance
@@ -159,10 +159,10 @@ class CandidateExecutionRecord(FrozenModel):
 
 
 class PreprocessingAbsentSampleRecord(FrozenModel):
-    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVAL_RECORD_SCHEMA_VERSION
     status: Literal["preprocessing_absent"] = "preprocessing_absent"
-    slot: EvaluationSlotIdentity
-    sample: EvaluationSampleMetadata
+    slot: EvalSlotIdentity
+    sample: EvalSampleMetadata
     trace: SerializedTrace
     absence: Absent
 
@@ -173,10 +173,10 @@ class PreprocessingAbsentSampleRecord(FrozenModel):
 
 
 class NoCandidatesSampleRecord(FrozenModel):
-    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVAL_RECORD_SCHEMA_VERSION
     status: Literal["no_candidates"] = "no_candidates"
-    slot: EvaluationSlotIdentity
-    sample: EvaluationSampleMetadata
+    slot: EvalSlotIdentity
+    sample: EvalSampleMetadata
     trace: SerializedTrace
 
     @model_validator(mode="after")
@@ -186,12 +186,12 @@ class NoCandidatesSampleRecord(FrozenModel):
 
 
 class EvaluatedSampleRecord(FrozenModel):
-    schema_version: Literal[2] = SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+    schema_version: Literal[2] = SAMPLE_EVAL_RECORD_SCHEMA_VERSION
     status: Literal["evaluated"] = "evaluated"
-    slot: EvaluationSlotIdentity
-    sample: EvaluationSampleMetadata
+    slot: EvalSlotIdentity
+    sample: EvalSampleMetadata
     trace: SerializedTrace
-    candidates: tuple[MaterializedEvaluationCandidate, ...]
+    candidates: tuple[MaterializedEvalCandidate, ...]
     executions: tuple[CandidateExecutionRecord, ...]
     metrics: tuple[MetricRecord, ...]
 
@@ -222,8 +222,8 @@ class EvaluatedSampleRecord(FrozenModel):
 
 
 def _validate_slot_sample_task(
-    slot: EvaluationSlotIdentity,
-    sample: EvaluationSampleMetadata,
+    slot: EvalSlotIdentity,
+    sample: EvalSampleMetadata,
 ) -> None:
     if slot.task_id != sample.task_id:
         raise ValueError(
@@ -231,14 +231,14 @@ def _validate_slot_sample_task(
         )
 
 
-SampleEvaluationRecord: TypeAlias = Annotated[
+SampleEvalRecord: TypeAlias = Annotated[
     PreprocessingAbsentSampleRecord
     | NoCandidatesSampleRecord
     | EvaluatedSampleRecord,
     Field(discriminator="status"),
 ]
-SAMPLE_EVALUATION_RECORD_ADAPTER: Final = TypeAdapter[SampleEvaluationRecord](
-    SampleEvaluationRecord
+SAMPLE_EVAL_RECORD_ADAPTER: Final = TypeAdapter[SampleEvalRecord](
+    SampleEvalRecord
 )
 
 
@@ -277,9 +277,9 @@ class AttemptLimitExhaustion(FrozenModel):
         return self
 
 
-class EvaluationMemberRecord(FrozenModel):
-    slot: EvaluationSlotIdentity
-    sample: EvaluationSampleIdentity
+class EvalMemberRecord(FrozenModel):
+    slot: EvalSlotIdentity
+    sample: EvalSampleIdentity
     record: EvidenceReference | None
 
 
@@ -290,17 +290,17 @@ class ReplayMode(StrEnum):
 
 
 class ReplaySource(FrozenModel):
-    attempt: EvaluationAttemptIdentity
+    attempt: EvalAttemptIdentity
     mode: ReplayMode
 
 
-class EvaluationAttemptRecord(FrozenModel):
-    schema_version: Literal[3] = EVALUATION_ATTEMPT_SCHEMA_VERSION
-    identity: EvaluationAttemptIdentity
-    plan: EvaluationPlan
-    runtime: EvaluationRuntimeIdentity
+class EvalAttemptRecord(FrozenModel):
+    schema_version: Literal[3] = EVAL_ATTEMPT_SCHEMA_VERSION
+    identity: EvalAttemptIdentity
+    plan: EvalPlan
+    runtime: EvalRuntimeIdentity
     cache_namespace: str
-    members: tuple[EvaluationMemberRecord, ...]
+    members: tuple[EvalMemberRecord, ...]
     completeness: AttemptCompleteness
     validity: AttemptValidity
     limit_exhaustion: AttemptLimitExhaustion | None
@@ -353,9 +353,9 @@ __all__ = [
     "CandidateJobCompleted",
     "CandidateJobTerminated",
     "CandidateTerminationReason",
-    "EVALUATION_ATTEMPT_SCHEMA_VERSION",
-    "EvaluationAttemptRecord",
-    "EvaluationMemberRecord",
+    "EVAL_ATTEMPT_SCHEMA_VERSION",
+    "EvalAttemptRecord",
+    "EvalMemberRecord",
     "EvaluatedSampleRecord",
     "ExecutedCandidateProvenance",
     "ExecutorExecutionFailure",
@@ -366,9 +366,9 @@ __all__ = [
     "ReplayMode",
     "ReplaySource",
     "ReusedCandidateProvenance",
-    "SAMPLE_EVALUATION_RECORD_ADAPTER",
-    "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
-    "SampleEvaluationRecord",
+    "SAMPLE_EVAL_RECORD_ADAPTER",
+    "SAMPLE_EVAL_RECORD_SCHEMA_VERSION",
+    "SampleEvalRecord",
     "failure_class_of",
     "outcome_is_cacheable",
 ]

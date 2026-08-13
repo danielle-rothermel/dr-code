@@ -7,12 +7,12 @@ from pydantic import model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import SamplingPlan, TaskSet
-from dr_code.evaluation.identity import EvaluationSlotIdentity
+from dr_code.evaluation.identity import EvalSlotIdentity
 from dr_code.metrics import MetricQuestionCoordinate, MetricsDefinition
 from dr_code.preprocessing import PreprocessingDefinition
 
 
-class EvaluationProcedure(FrozenModel):
+class EvalProcedure(FrozenModel):
     preprocessing: PreprocessingDefinition
     metrics: MetricsDefinition
     __hash__ = None
@@ -56,16 +56,16 @@ class AggregationPolicy(FrozenModel):
         return self
 
 
-class EvaluationPlan(FrozenModel):
+class EvalPlan(FrozenModel):
     plan_id: str
     version: str
     task_set: TaskSet
     sampling_plan: SamplingPlan
-    procedure: EvaluationProcedure
+    procedure: EvalProcedure
     aggregation: AggregationPolicy
     __hash__ = None
 
-    def ordered_slots(self) -> tuple[EvaluationSlotIdentity, ...]:
+    def ordered_slots(self) -> tuple[EvalSlotIdentity, ...]:
         """Return every slot the plan declares, in plan order.
 
         Each selected task contributes exactly the samples the plan declares
@@ -73,7 +73,7 @@ class EvaluationPlan(FrozenModel):
         """
 
         return tuple(
-            EvaluationSlotIdentity(
+            EvalSlotIdentity(
                 task_set=self.task_set.coordinate,
                 sampling_plan=self.sampling_plan.coordinate,
                 task_id=task_id,
@@ -85,7 +85,7 @@ class EvaluationPlan(FrozenModel):
             )
         )
 
-    def declares_slot(self, slot: EvaluationSlotIdentity) -> bool:
+    def declares_slot(self, slot: EvalSlotIdentity) -> bool:
         """Report whether this plan declares the given slot position."""
 
         if (
@@ -129,7 +129,7 @@ class EvaluationPlan(FrozenModel):
 __all__ = [
     "AggregationPolicy",
     "AggregationStatistic",
-    "EvaluationPlan",
-    "EvaluationProcedure",
+    "EvalPlan",
+    "EvalProcedure",
     "NotApplicablePolicy",
 ]

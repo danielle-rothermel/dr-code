@@ -21,7 +21,7 @@
 ## 0.1.7 - 2026-08-12
 
 - Evidence writes can join a caller-owned transaction.
-  `commit_evaluation_evidence` takes the caller's open sync SQLAlchemy Core
+  `commit_eval_evidence` takes the caller's open sync SQLAlchemy Core
   connection and writes the member sample records, the attempt record, and the
   `output_reference` binding through dr-store's enlisted operations, so they
   become visible exactly when the caller commits and leave nothing behind when
@@ -36,7 +36,7 @@
   visibility is covered against a real PostgreSQL-backed dr-store by the
   opt-in `postgres` tests below, alongside the fake that covers the call seam.
 
-- Added opt-in `postgres`-marked tests that drive `commit_evaluation_evidence`
+- Added opt-in `postgres`-marked tests that drive `commit_eval_evidence`
   against a real PostgreSQL-backed dr-store, since matching call signatures do
   not establish matching behavior: committed evidence visible to a later
   transaction, rollback leaving nothing behind, a member key held by a
@@ -52,7 +52,7 @@
   override neutralizing released dr-exec 0.1.9's pin on 0.2.0, and
   `sqlalchemy>=2.0` is a direct dependency because the evidence path types
   against `sqlalchemy.engine.Connection`.
-- `commit_evaluation_evidence` accepts one sample record per attempt member
+- `commit_eval_evidence` accepts one sample record per attempt member
   whose bundle reference is present, preserving each member's ordinal and
   writing no binding for members omitted by admission or retained-evidence
   limits.
@@ -61,7 +61,7 @@
   (`task_num_samples`, positionally aligned with the ordered selection) instead
   of one count shared by every task. Slot ordinals are prefix sums over those
   counts and bounds are checked per task, so a plan over tasks with unequal
-  sample counts declares exactly the slots its members fill. `EvaluationPlan`
+  sample counts declares exactly the slots its members fill. `EvalPlan`
   owns slot expansion and validity through `ordered_slots` and `declares_slot`.
 
 - Pull-request CI runs lint, type, and test checks only. Distribution build,
@@ -135,7 +135,7 @@
   corpus is preprocessed once, and reports a `PreprocessingCoverage` whose
   texts-with-candidates, texts-without-candidates, and texts-failed counts
   partition the corpus. Supplying a reference attempt and an evidence resolver
-  returns the `compare_evaluation_attempts` result as well. They compose the
+  returns the `compare_eval_attempts` result as well. They compose the
   existing pooled machinery and add no execution machinery or verdict
   vocabulary.
 - The wheel declares four verbs in `[project.scripts]`:
@@ -170,7 +170,7 @@
   candidate's behavior. `outcome_is_cacheable`, exported from
   `dr_code.evaluation`, derives the decision from the typed outcome's failure
   class and adds no second vocabulary.
-- `EvaluationBatchRequest.fresh` skips execution-cache lookup for a request's
+- `EvalBatchRequest.fresh` skips execution-cache lookup for a request's
   generations, so every candidate re-executes and the fresh outcome is the one
   recorded and offered to persistence. Persisted bindings are append-only and
   first-writer-wins, so a fresh run does not replace an entry already stored
@@ -213,7 +213,7 @@
   candidate execution outcome by `failure_class_of`. The exception-type string
   stays in `HarnessFailureCause.exception_type` rather than standing in for the
   class.
-- `EvaluationBatchRequest.run_grade` declares the run's standing as `trial` or
+- `EvalBatchRequest.run_grade` declares the run's standing as `trial` or
   `selection` and joins `candidate_execution_cache_key`, so a trial outcome and
   a selection-grade outcome for identical source never collide. The field is
   required with no default, and `evaluate_batch`, `evaluate_durable_partition`,
@@ -375,7 +375,7 @@
   implementation: `build_humaneval_batch_request` builds every request and
   `interpret_subprocess_batch_result` reads every completed process back into
   case results. The `code_test` metrics operator routes through both and
-  assembles an `EvaluationTaskResult`, so request bytes, top-level-function
+  assembles an `EvalTaskResult`, so request bytes, top-level-function
   selection, best-function selection, and coverage are computed once rather
   than once per scored path. The operator's remaining difference is
   attribution: runner-protocol breakage becomes candidate-attributable case
@@ -393,10 +393,10 @@
   validator always recomputes `parsed` and `parsed_tests` from
   `prompt + canonical_solution` and `test`, and rejects a supplied value that
   disagrees, so a task can never carry a parse describing other code.
-- `EvaluationTaskResult`'s five derived readings (`best_function_name`,
+- `EvalTaskResult`'s five derived readings (`best_function_name`,
   `failures`, `coverage_complete`, `passed`, `status_counts`) no longer
   serialize, so the model's own dump revalidates under `extra="forbid"` and
-  the readings are recomputed from `results`. `EvaluationTaskSummary` remains
+  the readings are recomputed from `results`. `EvalTaskSummary` remains
   the shape that carries the readings across a boundary.
 - `tests/metrics/test_registry.py` derives every operator result model from
   `REGISTRY` — through `compute`'s return annotation and that model's
@@ -462,11 +462,11 @@
   the same number of slots, indices run `0 .. repeats - 1`, and flattening
   runs all repeats of the first selected task before any of the second.
   `seeds` is optional and, when present, carries exactly one seed per slot.
-- An `EvaluationProcedure` nests the resolved `PreprocessingDefinition` and
+- An `EvalProcedure` nests the resolved `PreprocessingDefinition` and
   `MetricsDefinition` rather than their coordinates, because a procedure
   declares work about to run — the deliberate asymmetry with archived
   records, which carry registry-free projections instead.
-- `EvaluationPlan` ties a task set, repeat plan, procedure, and
+- `EvalPlan` ties a task set, repeat plan, procedure, and
   `AggregationPolicy` together, requiring the repeat plan to cover exactly
   the selected tasks and the aggregated question to be one its own nested
   metrics definition declares.
@@ -485,7 +485,7 @@
   carries a finite scalar, a unit from the shared `MetricFactUnit` (never
   `TEXT`, since a score is a measurement), the evaluation it summarizes,
   and the fact coordinates it was computed from.
-- Golden tests pin the exact serialized literals of `EvaluationPlan` and
+- Golden tests pin the exact serialized literals of `EvalPlan` and
   `Score` as the persisted wire format.
 
 ## 2026-08-05 (metric record evolution)

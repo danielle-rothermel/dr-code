@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 from dr_code.humaneval.parsed_tests import ParsedTests, TestCase
 from dr_code.humaneval.task import (
-    EvaluationCaseResult,
-    EvaluationCaseStatus,
-    EvaluationHarnessError,
-    EvaluationTaskResult,
+    EvalCaseResult,
+    EvalCaseStatus,
+    EvalHarnessError,
+    EvalTaskResult,
     HumanEvalTask,
 )
 
@@ -23,7 +23,7 @@ def evaluation_from_candidate_execution(
     candidate_source: str,
     question: object,
     outcome: CandidateExecutionOutcome,
-) -> EvaluationTaskResult:
+) -> EvalTaskResult:
     from dr_code.evaluation.records import (
         CandidateJobCompleted,
         CandidateJobTerminated,
@@ -37,7 +37,7 @@ def evaluation_from_candidate_execution(
         raise TypeError("question must be a MetricQuestionCoordinate")
     fallback_names = _safe_top_level_function_names(candidate_source)
     if isinstance(outcome, CandidateJobTerminated):
-        results: list[EvaluationCaseResult] = []
+        results: list[EvalCaseResult] = []
         for function_name in fallback_names:
             if outcome.reason is CandidateTerminationReason.WALL_TIME:
                 results.extend(
@@ -57,7 +57,7 @@ def evaluation_from_candidate_execution(
                         ),
                     )
                 )
-        return EvaluationTaskResult(
+        return EvalTaskResult(
             task_id=task.task_id,
             entry_point=task.entry_point,
             function_names=fallback_names,
@@ -65,14 +65,12 @@ def evaluation_from_candidate_execution(
             results=results,
         )
     if isinstance(outcome, HarnessExecutionFailure | ExecutorExecutionFailure):
-        raise EvaluationHarnessError(
-            f"{outcome.failure_type}: {outcome.message}"
-        )
+        raise EvalHarnessError(f"{outcome.failure_type}: {outcome.message}")
     if not isinstance(outcome, CandidateJobCompleted):
-        raise EvaluationHarnessError(
+        raise EvalHarnessError(
             f"unsupported candidate execution outcome: {type(outcome).__name__}"
         )
-    return _evaluation_from_job_result(
+    return _eval_from_job_result(
         task=task,
         fallback_names=fallback_names,
         question=question,
@@ -80,13 +78,13 @@ def evaluation_from_candidate_execution(
     )
 
 
-def _evaluation_from_job_result(
+def _eval_from_job_result(
     *,
     task: HumanEvalTask,
     fallback_names: list[str],
     question: object,
     result: HumanEvalCandidateJobResult,
-) -> EvaluationTaskResult:
+) -> EvalTaskResult:
     from dr_code.humaneval.job import (
         CandidateNamespaceFailure,
         HumanEvalSuiteCompleted,
@@ -106,7 +104,7 @@ def _evaluation_from_job_result(
                 ),
             )
         ]
-        return EvaluationTaskResult(
+        return EvalTaskResult(
             task_id=task.task_id,
             entry_point=task.entry_point,
             function_names=fallback_names,
@@ -118,7 +116,7 @@ def _evaluation_from_job_result(
         None,
     )
     if suite is None:
-        raise EvaluationHarnessError(
+        raise EvalHarnessError(
             "candidate job returned no matching HumanEval suite"
         )
     groups = (
@@ -127,7 +125,7 @@ def _evaluation_from_job_result(
         else suite.completed_groups
     )
     case_results = [case for group in groups for case in group.cases]
-    evaluation = EvaluationTaskResult(
+    evaluation = EvalTaskResult(
         task_id=task.task_id,
         entry_point=task.entry_point,
         function_names=list(result.namespace.function_names),
@@ -135,7 +133,7 @@ def _evaluation_from_job_result(
         results=case_results,
     )
     if isinstance(suite, HumanEvalSuiteHarnessFailure):
-        raise EvaluationHarnessError(
+        raise EvalHarnessError(
             f"{suite.failure_type}: {suite.message}",
             case_results=case_results,
             evaluation=evaluation,
@@ -172,17 +170,17 @@ def timeout_results(
     *,
     task: HumanEvalTask,
     function_name: str,
-) -> list[EvaluationCaseResult]:
+) -> list[EvalCaseResult]:
     parsed_tests = task.parsed_tests
-    results: list[EvaluationCaseResult] = []
+    results: list[EvalCaseResult] = []
     for case in parsed_tests.cases:
         metadata = case_metadata(parsed_tests, case)
         results.append(
-            EvaluationCaseResult(
+            EvalCaseResult(
                 task_id=task.task_id,
                 case_id=case.case_id,
                 function_name=function_name,
-                status=EvaluationCaseStatus.TIMEOUT,
+                status=EvalCaseStatus.TIMEOUT,
                 message="Candidate job exceeded its wall-time budget",
                 test_type=parsed_tests.test_type,
                 input_repr=metadata["input_repr"],
@@ -201,17 +199,17 @@ def error_results(
     function_name: str,
     message: str,
     elapsed_seconds: float | None = None,
-) -> list[EvaluationCaseResult]:
+) -> list[EvalCaseResult]:
     parsed_tests = task.parsed_tests
-    results: list[EvaluationCaseResult] = []
+    results: list[EvalCaseResult] = []
     for case in parsed_tests.cases:
         metadata = case_metadata(parsed_tests, case)
         results.append(
-            EvaluationCaseResult(
+            EvalCaseResult(
                 task_id=task.task_id,
                 case_id=case.case_id,
                 function_name=function_name,
-                status=EvaluationCaseStatus.ERROR,
+                status=EvalCaseStatus.ERROR,
                 message=message,
                 test_type=parsed_tests.test_type,
                 input_repr=metadata["input_repr"],

@@ -24,14 +24,14 @@ from dr_store import (
 
 from dr_code.caching import WindowedExecutionCache
 from dr_code.core.execution.executor import host_process_executor
-from dr_code.evaluation.batch import EvaluationBatchRequest
+from dr_code.evaluation.batch import EvalBatchRequest
 from dr_code.evaluation.flows import (
     PreprocessingCoverage,
     validate_preprocessing,
     validate_testing,
 )
-from dr_code.evaluation.identity import EvaluationRuntimeIdentity
-from dr_code.evaluation.records import EvaluationAttemptRecord
+from dr_code.evaluation.identity import EvalRuntimeIdentity
+from dr_code.evaluation.records import EvalAttemptRecord
 
 CACHE_RESIDENT_ENTRIES = 4096
 CACHE_PENDING_ENTRIES = 4096
@@ -150,12 +150,12 @@ def validate_testing_command(
 
 
 async def _run_preprocessing(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     *,
     run_root: Path,
     runtime: Path,
     workers: int,
-) -> tuple[EvaluationAttemptRecord, PreprocessingCoverage]:
+) -> tuple[EvalAttemptRecord, PreprocessingCoverage]:
     paths = _RunPaths.under(run_root)
     async with _resources(request, paths, runtime=runtime) as resources:
         validation = await validate_preprocessing(
@@ -170,12 +170,12 @@ async def _run_preprocessing(
 
 
 async def _run_testing(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     *,
     run_root: Path,
     runtime: Path,
     workers: int,
-) -> EvaluationAttemptRecord:
+) -> EvalAttemptRecord:
     paths = _RunPaths.under(run_root)
     async with _resources(request, paths, runtime=runtime) as resources:
         validation = await validate_testing(
@@ -199,7 +199,7 @@ class _FlowResources:
 
 @asynccontextmanager
 async def _resources(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     paths: _RunPaths,
     *,
     runtime: Path,
@@ -237,7 +237,7 @@ async def _resources(
 
 
 def _require_declared_runtime(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     executor: ProcessExecutor,
 ) -> None:
     """Refuse to run jobs on an interpreter the request does not declare.
@@ -247,9 +247,7 @@ def _require_declared_runtime(
     outcomes under this one's digest.
     """
 
-    observed = EvaluationRuntimeIdentity(
-        document=executor.runtime.describe().id_doc
-    )
+    observed = EvalRuntimeIdentity(document=executor.runtime.describe().id_doc)
     if observed != request.runtime:
         raise typer.BadParameter(
             "--runtime identity does not match the request's declared runtime",
@@ -263,13 +261,13 @@ def _pool_config(workers: int) -> ExecutionPoolConfig:
     )
 
 
-def _load_request(path: Path) -> EvaluationBatchRequest:
-    return EvaluationBatchRequest.model_validate_json(
+def _load_request(path: Path) -> EvalBatchRequest:
+    return EvalBatchRequest.model_validate_json(
         path.read_text(encoding="utf-8")
     )
 
 
-def _echo_verdict(attempt: EvaluationAttemptRecord) -> None:
+def _echo_verdict(attempt: EvalAttemptRecord) -> None:
     typer.echo(
         f"completeness={attempt.completeness.value} "
         f"validity={attempt.validity.value}"

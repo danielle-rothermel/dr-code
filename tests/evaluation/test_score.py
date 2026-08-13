@@ -8,12 +8,12 @@ from _builders import (
     sampling_plan_coordinate,
     task_set_coordinate,
 )
-from dr_code.evaluation import EvaluationCoordinate, Score
+from dr_code.evaluation import EvalCoordinate, Score
 from dr_code.metrics import MetricValue, MetricValueCoordinate, MetricValueUnit
 
 
-def evaluation_coordinate(**overrides: object) -> EvaluationCoordinate:
-    return EvaluationCoordinate(
+def evaluation_coordinate(**overrides: object) -> EvalCoordinate:
+    return EvalCoordinate(
         **{
             "plan_id": "plan",
             "version": "1",

@@ -1,6 +1,6 @@
 """Evidence writes against a real PostgreSQL-backed dr-store.
 
-`test_evidence.py` drives `commit_evaluation_evidence` through a fake that
+`test_evidence.py` drives `commit_eval_evidence` through a fake that
 mirrors dr-store's enlisted semantics, and pins the call surface with
 `inspect.signature`. Matching signatures do not establish matching behavior:
 whether a rollback really leaves nothing behind, and whether a first-writer-wins
@@ -28,7 +28,7 @@ from _evidence_builders import attempt_record, sample_record
 from dr_code.evaluation import (
     ATTEMPT_RECORD_OBJECT_SCHEMA,
     SAMPLE_RECORD_OBJECT_SCHEMA,
-    commit_evaluation_evidence,
+    commit_eval_evidence,
     output_reference_binding_key,
     sample_record_binding_key,
 )
@@ -124,7 +124,7 @@ async def test_committed_evidence_is_visible_to_a_later_transaction(
     sample = sample_record()
 
     with engine.connect() as connection, connection.begin():
-        stored = commit_evaluation_evidence(
+        stored = commit_eval_evidence(
             connection,
             object_store=object_store,
             attempt=attempt,
@@ -159,7 +159,7 @@ async def test_rollback_leaves_no_evidence_in_the_database(
 
     with engine.connect() as connection:
         transaction = connection.begin()
-        commit_evaluation_evidence(
+        commit_eval_evidence(
             connection,
             object_store=object_store,
             attempt=attempt,
@@ -183,7 +183,7 @@ async def test_recommitting_a_changed_attempt_raises_the_binding_conflict(
     # the real database is what refuses it.
     attempt = attempt_record()
     with engine.connect() as connection, connection.begin():
-        commit_evaluation_evidence(
+        commit_eval_evidence(
             connection,
             object_store=object_store,
             attempt=attempt,
@@ -193,7 +193,7 @@ async def test_recommitting_a_changed_attempt_raises_the_binding_conflict(
     changed = attempt_record(cache_namespace="evaluation-v2")
     with engine.connect() as connection, connection.begin():
         with pytest.raises(BindingConflictError) as caught:
-            commit_evaluation_evidence(
+            commit_eval_evidence(
                 connection,
                 object_store=object_store,
                 attempt=changed,
@@ -238,7 +238,7 @@ async def test_a_member_key_held_by_a_different_record_is_refused(
     with engine.connect() as connection:
         transaction = connection.begin()
         with pytest.raises(BindingConflictError) as caught:
-            commit_evaluation_evidence(
+            commit_eval_evidence(
                 connection,
                 object_store=object_store,
                 attempt=attempt,
@@ -267,14 +267,14 @@ async def test_recommitting_identical_evidence_is_idempotent(
     sample = sample_record()
 
     with engine.connect() as connection, connection.begin():
-        first = commit_evaluation_evidence(
+        first = commit_eval_evidence(
             connection,
             object_store=object_store,
             attempt=attempt,
             samples=(sample,),
         )
     with engine.connect() as connection, connection.begin():
-        second = commit_evaluation_evidence(
+        second = commit_eval_evidence(
             connection,
             object_store=object_store,
             attempt=attempt,
@@ -305,7 +305,7 @@ async def test_a_failure_leaves_staged_writes_for_the_caller_to_roll_back(
             },
         )
         with pytest.raises(ValueError, match="match the attempt's members"):
-            commit_evaluation_evidence(
+            commit_eval_evidence(
                 connection,
                 object_store=object_store,
                 attempt=attempt,

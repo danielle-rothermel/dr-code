@@ -16,7 +16,7 @@ from dr_store import (
 )
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.identity import EvaluationRuntimeIdentity
+from dr_code.evaluation.identity import EvalRuntimeIdentity
 from dr_code.evaluation.records import CandidateExecutionOutcome
 from dr_code.evaluation.references import StoredRecordReference
 
@@ -79,7 +79,7 @@ class WindowedExecutionCache:
         self,
         store: BatchRecordStore,
         *,
-        runtime: EvaluationRuntimeIdentity,
+        runtime: EvalRuntimeIdentity,
         max_resident_entries: int,
         max_pending_checkpoint_entries: int,
     ) -> None:

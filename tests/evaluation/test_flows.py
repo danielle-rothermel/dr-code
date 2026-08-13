@@ -12,10 +12,10 @@ from dr_code.evaluation import (
     AttemptCompleteness,
     AttemptValidity,
     ComparisonStatus,
-    EvaluationAttemptIdentity,
+    EvalAttemptIdentity,
     EvidenceReference,
-    SampleEvaluationRecord,
-    restore_evaluation_attempt,
+    SampleEvalRecord,
+    restore_eval_attempt,
     validate_preprocessing,
     validate_testing,
 )
@@ -33,12 +33,12 @@ class RestoredEvidence:
     def __init__(self, *bundle_roots: Path, object_store: ObjectStore) -> None:
         self._roots = bundle_roots
         self._object_store = object_store
-        self._records: dict[EvidenceReference, SampleEvaluationRecord] = {}
+        self._records: dict[EvidenceReference, SampleEvalRecord] = {}
         self._restored: set[Path] = set()
 
     async def resolve(
         self, reference: EvidenceReference, /
-    ) -> SampleEvaluationRecord:
+    ) -> SampleEvalRecord:
         if reference not in self._records:
             await self._restore_published_bundles()
         return self._records[reference]
@@ -49,7 +49,7 @@ class RestoredEvidence:
                 if bundle_path in self._restored:
                     continue
                 self._restored.add(bundle_path)
-                restored = await restore_evaluation_attempt(
+                restored = await restore_eval_attempt(
                     bundle_path,
                     object_store=self._object_store,
                     limits=read_limits(),
@@ -238,7 +238,7 @@ async def test_validate_testing_compares_against_a_reference_attempt(
     )
     candidate_request = reference_request.model_copy(
         update={
-            "attempt": EvaluationAttemptIdentity(attempt_id=UUID(int=2)),
+            "attempt": EvalAttemptIdentity(attempt_id=UUID(int=2)),
         }
     )
     try:
@@ -251,7 +251,7 @@ async def test_validate_testing_compares_against_a_reference_attempt(
             pool_config=ExecutionPoolConfig(capacity=AutoPoolCapacity()),
         )
         assert reference_run.result.bundle_path is not None
-        reference = await restore_evaluation_attempt(
+        reference = await restore_eval_attempt(
             reference_run.result.bundle_path,
             object_store=object_store,
             limits=read_limits(),

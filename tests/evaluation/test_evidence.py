@@ -27,12 +27,12 @@ from dr_code.evaluation import (
     AttemptLimitKind,
     AttemptValidity,
     EnlistedObjectStore,
-    EvaluationAttemptIdentity,
-    EvaluationAttemptRecord,
-    EvaluationMemberRecord,
+    EvalAttemptIdentity,
+    EvalAttemptRecord,
+    EvalMemberRecord,
     OUTPUT_REFERENCE_BINDING_PREFIX,
     SAMPLE_RECORD_OBJECT_SCHEMA,
-    commit_evaluation_evidence,
+    commit_eval_evidence,
     output_reference_binding_key,
     sample_record_binding_key,
 )
@@ -207,9 +207,9 @@ class _EnlistedWriteFailed(RuntimeError):
 
 def commit_one_attempt(
     store: FakeEnlistedObjectStore,
-) -> EvaluationAttemptRecord:
+) -> EvalAttemptRecord:
     attempt = attempt_record()
-    commit_evaluation_evidence(
+    commit_eval_evidence(
         store.connection,  # ty: ignore[invalid-argument-type]
         object_store=store,
         attempt=attempt,
@@ -320,7 +320,7 @@ def test_a_stale_first_writer_wins_member_winner_is_not_accepted() -> None:
     connection.visible_bindings[member_key] = stale
 
     with pytest.raises(BindingConflictError) as raised:
-        commit_evaluation_evidence(
+        commit_eval_evidence(
             connection,  # ty: ignore[invalid-argument-type]
             object_store=store,
             attempt=attempt,
@@ -343,7 +343,7 @@ def test_rebinding_a_changed_attempt_raises_the_binding_conflict() -> None:
     connection.visible_bindings[binding_key] = occupied
 
     with pytest.raises(BindingConflictError) as raised:
-        commit_evaluation_evidence(
+        commit_eval_evidence(
             connection,  # ty: ignore[invalid-argument-type]
             object_store=store,
             attempt=attempt,
@@ -390,7 +390,7 @@ def test_binding_reference_resolves_the_attempt_record() -> None:
 
 
 def test_member_records_bind_under_the_attempt_prefix() -> None:
-    attempt = EvaluationAttemptIdentity(attempt_id=_ATTEMPT_ID)
+    attempt = EvalAttemptIdentity(attempt_id=_ATTEMPT_ID)
     binding_key = output_reference_binding_key(attempt)
     member_key = sample_record_binding_key(attempt, ordinal=3)
 
@@ -403,7 +403,7 @@ def test_evidence_wire_literals() -> None:
         "dr-code/evaluation-attempt-record-v1"
     )
     assert OUTPUT_REFERENCE_BINDING_PREFIX == "dr-code/evaluation-attempt/"
-    attempt = EvaluationAttemptIdentity(attempt_id=_ATTEMPT_ID)
+    attempt = EvalAttemptIdentity(attempt_id=_ATTEMPT_ID)
     assert output_reference_binding_key(attempt) == (
         "dr-code/evaluation-attempt/00000000-0000-0000-0000-000000000002"
     )
@@ -413,7 +413,7 @@ def test_evidence_wire_literals() -> None:
 
 
 def test_sample_record_ordinal_must_not_be_negative() -> None:
-    attempt = EvaluationAttemptIdentity(attempt_id=_ATTEMPT_ID)
+    attempt = EvalAttemptIdentity(attempt_id=_ATTEMPT_ID)
     with pytest.raises(ValueError, match="must not be negative"):
         sample_record_binding_key(attempt, ordinal=-1)
 
@@ -423,7 +423,7 @@ def test_evidence_requires_one_sample_record_per_member() -> None:
     store = FakeEnlistedObjectStore(connection=connection)
 
     with pytest.raises(ValueError, match="referenced members"):
-        commit_evaluation_evidence(
+        commit_eval_evidence(
             store.connection,  # ty: ignore[invalid-argument-type]
             object_store=store,
             attempt=attempt_record(),
@@ -439,12 +439,12 @@ def test_evidence_commits_only_referenced_member_records() -> None:
     second_slot = evaluation_slot(sample_index=1)
     attempt = attempt_record(
         members=(
-            EvaluationMemberRecord(
+            EvalMemberRecord(
                 slot=first_slot,
                 sample=sample_identity(),
                 record=reference(0),
             ),
-            EvaluationMemberRecord(
+            EvalMemberRecord(
                 slot=second_slot,
                 sample=sample_identity(sample_id="sample-1"),
                 record=None,
@@ -459,7 +459,7 @@ def test_evidence_commits_only_referenced_member_records() -> None:
         ),
     )
 
-    commit_evaluation_evidence(
+    commit_eval_evidence(
         connection,  # ty: ignore[invalid-argument-type]
         object_store=store,
         attempt=attempt,
@@ -477,7 +477,7 @@ def test_evidence_rejects_misaligned_sample_records() -> None:
     store = FakeEnlistedObjectStore(connection=connection)
     attempt = attempt_record(
         members=(
-            EvaluationMemberRecord(
+            EvalMemberRecord(
                 slot=sample_record().slot,
                 sample=sample_identity(sample_id="other-sample"),
                 record=reference(),
@@ -489,7 +489,7 @@ def test_evidence_rejects_misaligned_sample_records() -> None:
         ValueError,
         match="sample record identity does not match ordered membership",
     ):
-        commit_evaluation_evidence(
+        commit_eval_evidence(
             store.connection,  # ty: ignore[invalid-argument-type]
             object_store=store,
             attempt=attempt,

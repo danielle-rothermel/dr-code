@@ -13,7 +13,7 @@ from dr_code.evaluation.coordinates import (
 from dr_code.metrics import MetricValueCoordinate, MetricValueUnit
 
 
-class EvaluationCoordinate(FrozenModel):
+class EvalCoordinate(FrozenModel):
     plan_id: str
     version: str
     task_set: TaskSetCoordinate
@@ -24,7 +24,7 @@ class Score(FrozenModel):
     name: str
     value: float
     unit: MetricValueUnit
-    evaluation: EvaluationCoordinate
+    evaluation: EvalCoordinate
     sources: tuple[MetricValueCoordinate, ...]
 
     @model_validator(mode="after")
@@ -57,6 +57,6 @@ class Score(FrozenModel):
 
 
 __all__ = [
-    "EvaluationCoordinate",
+    "EvalCoordinate",
     "Score",
 ]

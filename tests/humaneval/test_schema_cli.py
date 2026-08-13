@@ -16,4 +16,4 @@ def test_humaneval_schema_command_emits_complete_bundle(
     assert set(bundle["required"]) == {"task", "case_summary"}
     assert set(bundle["properties"]) == {"task", "case_summary"}
     assert "HumanEvalTask" in bundle["$defs"]
-    assert "EvaluationCaseSummary" in bundle["$defs"]
+    assert "EvalCaseSummary" in bundle["$defs"]

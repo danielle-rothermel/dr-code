@@ -40,7 +40,7 @@ from dr_code.evaluation import (
     CandidateJobCompleted,
     CandidateJobTerminated,
     CandidateTerminationReason,
-    EvaluationRuntimeIdentity,
+    EvalRuntimeIdentity,
     ExecutedCandidateProvenance,
     ExecutorExecutionFailure,
     FailureClass,
@@ -68,8 +68,8 @@ from dr_code.humaneval.job import (
 )
 
 
-def _runtime() -> EvaluationRuntimeIdentity:
-    return EvaluationRuntimeIdentity(
+def _runtime() -> EvalRuntimeIdentity:
+    return EvalRuntimeIdentity(
         document=build_identity_document(
             schema="tests/runtime",
             schema_version=1,

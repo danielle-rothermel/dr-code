@@ -24,19 +24,19 @@ from pydantic import Field, PositiveInt, TypeAdapter
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.batch import (
-    EvaluationBatchRequest,
-    EvaluationProjectionReference,
+    EvalBatchRequest,
+    EvalProjectionReference,
     ProjectionKind,
 )
-from dr_code.evaluation.identity import EvaluationAttemptIdentity
+from dr_code.evaluation.identity import EvalAttemptIdentity
 from dr_code.evaluation.projections import ProjectionRow
 from dr_code.evaluation.records import (
-    EvaluationAttemptRecord,
+    EvalAttemptRecord,
     EvaluatedSampleRecord,
-    SAMPLE_EVALUATION_RECORD_ADAPTER,
-    SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION,
+    SAMPLE_EVAL_RECORD_ADAPTER,
+    SAMPLE_EVAL_RECORD_SCHEMA_VERSION,
     ReusedCandidateProvenance,
-    SampleEvaluationRecord,
+    SampleEvalRecord,
 )
 from dr_code.evaluation.references import (
     BundleRecordReference,
@@ -44,23 +44,23 @@ from dr_code.evaluation.references import (
     StoredRecordReference,
 )
 from dr_code.evaluation.validation import (
-    validate_evaluation_attempt_graph,
+    validate_eval_attempt_graph,
     validate_sample_record_graph,
 )
 
-EVALUATION_BUNDLE_SCHEMA_VERSION: Final = 1
-EVALUATION_PROJECTION_SCHEMA_VERSION: Final = 2
-EVALUATION_BUNDLE_FORMAT: Final = "dr-code-evaluation-bundle-v1"
-EVALUATION_PROJECTION_FORMAT: Final = "dr-code-evaluation-projection-v1"
+EVAL_BUNDLE_SCHEMA_VERSION: Final = 1
+EVAL_PROJECTION_SCHEMA_VERSION: Final = 2
+EVAL_BUNDLE_FORMAT: Final = "dr-code-evaluation-bundle-v1"
+EVAL_PROJECTION_FORMAT: Final = "dr-code-evaluation-projection-v1"
 SAMPLE_RECORD_OBJECT_SCHEMA: Final = "dr-code/sample-evaluation-record-v1"
-EVALUATION_ATTEMPT_ARTIFACT: Final = "evaluation-attempt.json"
+EVAL_ATTEMPT_ARTIFACT: Final = "evaluation-attempt.json"
 SAMPLE_RECORD_SHARD_FORMAT: Final = "dr-code-sample-record-shard-v1"
 SAMPLE_REFERENCE_SHARD_FORMAT: Final = "dr-code-sample-reference-shard-v1"
 
 # Persisted names are explicit wire contracts. Do not construct this mapping by
 # iterating ProjectionKind.
 _PROJECTION_ARTIFACT_NAMES: Final = {
-    ProjectionKind.EVALUATION_SAMPLES: "projection-evaluation-samples.jsonl",
+    ProjectionKind.EVAL_SAMPLES: "projection-evaluation-samples.jsonl",
     ProjectionKind.MATERIALIZED_CANDIDATES: (
         "projection-materialized-candidates.jsonl"
     ),
@@ -72,40 +72,40 @@ _PROJECTION_ARTIFACT_NAMES: Final = {
 }
 
 
-class EvaluationBundlePayload(FrozenModel):
-    format: Literal["dr-code-evaluation-bundle-v1"] = EVALUATION_BUNDLE_FORMAT
-    schema_version: Literal[1] = EVALUATION_BUNDLE_SCHEMA_VERSION
-    attempt: EvaluationAttemptIdentity
+class EvalBundlePayload(FrozenModel):
+    format: Literal["dr-code-evaluation-bundle-v1"] = EVAL_BUNDLE_FORMAT
+    schema_version: Literal[1] = EVAL_BUNDLE_SCHEMA_VERSION
+    attempt: EvalAttemptIdentity
     attempt_artifact: Literal["evaluation-attempt.json"] = (
-        EVALUATION_ATTEMPT_ARTIFACT
+        EVAL_ATTEMPT_ARTIFACT
     )
-    projections: tuple[EvaluationProjectionReference, ...]
+    projections: tuple[EvalProjectionReference, ...]
 
 
 class ProjectionArtifactHeader(FrozenModel):
     format: Literal["dr-code-evaluation-projection-v1"] = (
-        EVALUATION_PROJECTION_FORMAT
+        EVAL_PROJECTION_FORMAT
     )
-    schema_version: Literal[2] = EVALUATION_PROJECTION_SCHEMA_VERSION
-    source_attempt: EvaluationAttemptIdentity
+    schema_version: Literal[2] = EVAL_PROJECTION_SCHEMA_VERSION
+    source_attempt: EvalAttemptIdentity
     kind: ProjectionKind
     definition_version: Literal[2] = 2
 
 
-class EvaluationReadLimits(FrozenModel):
+class EvalReadLimits(FrozenModel):
     bundle: BundleReadLimits
     max_sample_records: PositiveInt
     max_object_reads: PositiveInt
     max_reference_depth: PositiveInt
 
 
-class RestoredEvaluationAttempt(FrozenModel):
-    attempt: EvaluationAttemptRecord
-    samples: tuple[SampleEvaluationRecord, ...]
+class RestoredEvalAttempt(FrozenModel):
+    attempt: EvalAttemptRecord
+    samples: tuple[SampleEvalRecord, ...]
 
 
-class EvaluationBundleAudit(FrozenModel):
-    attempt: EvaluationAttemptIdentity
+class EvalBundleAudit(FrozenModel):
+    attempt: EvalAttemptIdentity
     artifact_count: int = Field(ge=0)
     sample_record_count: int = Field(ge=0)
     object_read_count: int = Field(ge=0)
@@ -114,7 +114,7 @@ class EvaluationBundleAudit(FrozenModel):
 @dataclass(frozen=True, slots=True)
 class _PlacedRecord:
     reference: EvidenceReference
-    record: SampleEvaluationRecord
+    record: SampleEvalRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,7 +126,7 @@ class _EncodedRecord:
 class _RecordPlacement:
     def __init__(
         self,
-        request: EvaluationBatchRequest,
+        request: EvalBatchRequest,
         *,
         publication: ArtifactBundlePublication | None,
         object_store: ObjectStore | None,
@@ -140,9 +140,7 @@ class _RecordPlacement:
         self._placed_references: list[EvidenceReference] = []
         self._finished = False
 
-    async def place(
-        self, record: SampleEvaluationRecord, /
-    ) -> EvidenceReference:
+    async def place(self, record: SampleEvalRecord, /) -> EvidenceReference:
         if self._finished:
             raise RuntimeError("record placement is already finished")
         expected = next(
@@ -179,7 +177,7 @@ class _RecordPlacement:
             )
             reference = StoredRecordReference(
                 reference=object_reference,
-                schema_version=SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION,
+                schema_version=SAMPLE_EVAL_RECORD_SCHEMA_VERSION,
             )
             if self._publication is not None:
                 await self._admit_reference(reference)
@@ -213,7 +211,7 @@ class _RecordPlacement:
             record_index=record_index,
             record_sha256=Sha256Digest(encoded.sha256),
             schema=SAMPLE_RECORD_OBJECT_SCHEMA,
-            schema_version=SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION,
+            schema_version=SAMPLE_EVAL_RECORD_SCHEMA_VERSION,
         )
         if len(self._shard_records) >= self._resident_record_limit:
             await self._flush_record_shard()
@@ -304,11 +302,11 @@ class _RecordPlacement:
 
     async def iter_records(
         self,
-    ) -> AsyncIterator[tuple[EvidenceReference, SampleEvaluationRecord]]:
+    ) -> AsyncIterator[tuple[EvidenceReference, SampleEvalRecord]]:
         """Re-read placed evidence sequentially without retaining the attempt."""
 
         local_cache_name: str | None = None
-        local_cache: tuple[SampleEvaluationRecord, ...] = ()
+        local_cache: tuple[SampleEvalRecord, ...] = ()
         for reference in self.references:
             if isinstance(reference, BundleRecordReference):
                 assert self._publication is not None
@@ -323,7 +321,7 @@ class _RecordPlacement:
             else:
                 assert self._object_store is not None
                 decoded = await self._object_store.get(reference.reference)
-                record = SAMPLE_EVALUATION_RECORD_ADAPTER.validate_json(
+                record = SAMPLE_EVAL_RECORD_ADAPTER.validate_json(
                     canonical_json_bytes(decoded), strict=True
                 )
             yield reference, record
@@ -351,7 +349,7 @@ def _sample_reference_artifact_name(index: int) -> str:
 
 
 def _shard_header(
-    *, format: str, attempt: EvaluationAttemptIdentity, record_count: int
+    *, format: str, attempt: EvalAttemptIdentity, record_count: int
 ) -> Jsonable:
     return {
         "format": format,
@@ -362,7 +360,7 @@ def _shard_header(
 
 
 def _record_shard_bytes(
-    attempt: EvaluationAttemptIdentity,
+    attempt: EvalAttemptIdentity,
     records: Iterable[_EncodedRecord],
 ) -> bytes:
     rows = tuple(records)
@@ -377,7 +375,7 @@ def _record_shard_bytes(
 
 
 def _reference_shard_bytes(
-    attempt: EvaluationAttemptIdentity,
+    attempt: EvalAttemptIdentity,
     references: Iterable[StoredRecordReference],
 ) -> bytes:
     rows = tuple(references)
@@ -411,8 +409,8 @@ def _write_artifact(
 
 
 def _load_authored_sample_shard(
-    path: Path, attempt: EvaluationAttemptIdentity
-) -> tuple[SampleEvaluationRecord, ...]:
+    path: Path, attempt: EvalAttemptIdentity
+) -> tuple[SampleEvalRecord, ...]:
     data = path.read_bytes()
     if not data.endswith(b"\n"):
         raise ValueError("authored sample shard is incomplete")
@@ -433,7 +431,7 @@ def _load_authored_sample_shard(
     if count != len(decoded) - 1:
         raise ValueError("authored sample shard record_count is incorrect")
     return tuple(
-        SAMPLE_EVALUATION_RECORD_ADAPTER.validate_json(
+        SAMPLE_EVAL_RECORD_ADAPTER.validate_json(
             canonical_json_bytes(row), strict=True
         )
         for row in decoded[1:]
@@ -444,8 +442,8 @@ def _projection_header_payload(
     header: ProjectionArtifactHeader,
 ) -> Jsonable:
     return {
-        "format": EVALUATION_PROJECTION_FORMAT,
-        "schema_version": EVALUATION_PROJECTION_SCHEMA_VERSION,
+        "format": EVAL_PROJECTION_FORMAT,
+        "schema_version": EVAL_PROJECTION_SCHEMA_VERSION,
         "source_attempt": header.source_attempt.model_dump(mode="json"),
         "kind": header.kind.value,
         "definition_version": header.definition_version,
@@ -499,24 +497,24 @@ async def _write_projection_artifact(
 def _publish_bundle(
     publication: ArtifactBundlePublication,
     *,
-    attempt: EvaluationAttemptRecord,
-    projections: tuple[EvaluationProjectionReference, ...],
+    attempt: EvalAttemptRecord,
+    projections: tuple[EvalProjectionReference, ...],
 ) -> None:
     _write_artifact(
         publication,
-        EVALUATION_ATTEMPT_ARTIFACT,
+        EVAL_ATTEMPT_ARTIFACT,
         canonical_json_bytes(attempt.model_dump(mode="json")),
     )
-    payload = EvaluationBundlePayload(
+    payload = EvalBundlePayload(
         attempt=attempt.identity,
         projections=projections,
     )
     publication.publish(
         {
-            "format": EVALUATION_BUNDLE_FORMAT,
-            "schema_version": EVALUATION_BUNDLE_SCHEMA_VERSION,
+            "format": EVAL_BUNDLE_FORMAT,
+            "schema_version": EVAL_BUNDLE_SCHEMA_VERSION,
             "attempt": payload.attempt.model_dump(mode="json"),
-            "attempt_artifact": EVALUATION_ATTEMPT_ARTIFACT,
+            "attempt_artifact": EVAL_ATTEMPT_ARTIFACT,
             "projections": [
                 projection.model_dump(mode="json")
                 for projection in payload.projections
@@ -538,7 +536,7 @@ def _consume_bytes(reader: ArtifactBundleReader, name: str) -> bytes:
 def _decode_canonical_lines(
     data: bytes,
     *,
-    limits: EvaluationReadLimits,
+    limits: EvalReadLimits,
 ) -> tuple[Jsonable, ...]:
     if not data.endswith(b"\n"):
         raise ValueError("JSONL artifact must end with a newline")
@@ -565,7 +563,7 @@ def _read_projection_artifact(
     reader: ArtifactBundleReader,
     kind: ProjectionKind,
     *,
-    limits: EvaluationReadLimits,
+    limits: EvalReadLimits,
 ) -> tuple[ProjectionArtifactHeader, tuple[ProjectionRow, ...]]:
     lines = _decode_canonical_lines(
         _consume_bytes(reader, _PROJECTION_ARTIFACT_NAMES[kind]),
@@ -591,12 +589,12 @@ def _read_projection_artifact(
     return header, rows
 
 
-def read_evaluation_projection(
+def read_eval_projection(
     bundle_path: str | Path,
     kind: ProjectionKind,
     /,
     *,
-    limits: EvaluationReadLimits,
+    limits: EvalReadLimits,
 ) -> tuple[ProjectionArtifactHeader, tuple[ProjectionRow, ...]]:
     """Verify and decode only one fixed self-bound projection artifact."""
 
@@ -605,9 +603,9 @@ def read_evaluation_projection(
 
 
 def _decode_attempt(
-    reader: ArtifactBundleReader, limits: EvaluationReadLimits
-) -> EvaluationAttemptRecord:
-    payload = _consume_bytes(reader, EVALUATION_ATTEMPT_ARTIFACT)
+    reader: ArtifactBundleReader, limits: EvalReadLimits
+) -> EvalAttemptRecord:
+    payload = _consume_bytes(reader, EVAL_ATTEMPT_ARTIFACT)
     decoded = decode_strict_json_bytes(
         payload,
         max_bytes=limits.bundle.max_bytes_per_artifact,
@@ -615,7 +613,7 @@ def _decode_attempt(
     )
     if canonical_json_bytes(decoded) != payload:
         raise ValueError("evaluation attempt artifact is not canonical JSON")
-    return EvaluationAttemptRecord.model_validate_json(
+    return EvalAttemptRecord.model_validate_json(
         canonical_json_bytes(decoded), strict=True
     )
 
@@ -624,9 +622,9 @@ def _decode_sample_shard(
     reader: ArtifactBundleReader,
     name: str,
     *,
-    attempt: EvaluationAttemptIdentity,
-    limits: EvaluationReadLimits,
-) -> tuple[SampleEvaluationRecord, ...]:
+    attempt: EvalAttemptIdentity,
+    limits: EvalReadLimits,
+) -> tuple[SampleEvalRecord, ...]:
     lines = _decode_canonical_lines(
         _consume_bytes(reader, name), limits=limits
     )
@@ -638,7 +636,7 @@ def _decode_sample_shard(
     if header != len(lines) - 1:
         raise ValueError("sample shard record_count is incorrect")
     return tuple(
-        SAMPLE_EVALUATION_RECORD_ADAPTER.validate_json(
+        SAMPLE_EVAL_RECORD_ADAPTER.validate_json(
             canonical_json_bytes(line), strict=True
         )
         for line in lines[1:]
@@ -649,8 +647,8 @@ def _decode_reference_shard(
     reader: ArtifactBundleReader,
     name: str,
     *,
-    attempt: EvaluationAttemptIdentity,
-    limits: EvaluationReadLimits,
+    attempt: EvalAttemptIdentity,
+    limits: EvalReadLimits,
 ) -> tuple[StoredRecordReference, ...]:
     lines = _decode_canonical_lines(
         _consume_bytes(reader, name), limits=limits
@@ -674,7 +672,7 @@ def _validate_shard_header(
     payload: Jsonable,
     *,
     expected_format: str,
-    attempt: EvaluationAttemptIdentity,
+    attempt: EvalAttemptIdentity,
 ) -> int:
     if not isinstance(payload, dict) or set(payload) != {
         "format",
@@ -688,7 +686,7 @@ def _validate_shard_header(
             "sample shard format or schema version is unsupported"
         )
     if (
-        EvaluationAttemptIdentity.model_validate_json(
+        EvalAttemptIdentity.model_validate_json(
             canonical_json_bytes(payload["source_attempt"]), strict=True
         )
         != attempt
@@ -700,41 +698,41 @@ def _validate_shard_header(
     return count
 
 
-async def restore_evaluation_attempt(
+async def restore_eval_attempt(
     bundle_path: str | Path,
     /,
     *,
     object_store: ObjectStore | None,
-    limits: EvaluationReadLimits,
-) -> RestoredEvaluationAttempt:
+    limits: EvalReadLimits,
+) -> RestoredEvalAttempt:
     """Restore authoritative samples without a preliminary whole-bundle audit."""
 
     reader = ArtifactBundleReader(bundle_path, limits=limits.bundle)
     attempt = await asyncio.to_thread(_decode_attempt, reader, limits)
-    samples, _ = await _restore_evaluation_records(
+    samples, _ = await _restore_eval_records(
         reader,
         attempt,
         object_store=object_store,
         limits=limits,
     )
-    validate_evaluation_attempt_graph(attempt, samples)
-    return RestoredEvaluationAttempt(attempt=attempt, samples=samples)
+    validate_eval_attempt_graph(attempt, samples)
+    return RestoredEvalAttempt(attempt=attempt, samples=samples)
 
 
-async def _restore_evaluation_records(
+async def _restore_eval_records(
     reader: ArtifactBundleReader,
-    attempt: EvaluationAttemptRecord,
+    attempt: EvalAttemptRecord,
     *,
     object_store: ObjectStore | None,
-    limits: EvaluationReadLimits,
-) -> tuple[tuple[SampleEvaluationRecord, ...], int]:
+    limits: EvalReadLimits,
+) -> tuple[tuple[SampleEvalRecord, ...], int]:
     present = tuple(
         member for member in attempt.members if member.record is not None
     )
     if len(present) > limits.max_sample_records:
         raise ValueError("sample record count exceeds max_sample_records")
 
-    local_by_name: dict[str, dict[int, SampleEvaluationRecord]] = {}
+    local_by_name: dict[str, dict[int, SampleEvalRecord]] = {}
     local_names = tuple(
         dict.fromkeys(
             member.record.artifact_name
@@ -784,7 +782,7 @@ async def _restore_evaluation_records(
                 "stored-record reference index does not match attempt"
             )
 
-    samples: list[SampleEvaluationRecord] = []
+    samples: list[SampleEvalRecord] = []
     object_reads = 0
     for member in present:
         reference = member.record
@@ -808,7 +806,7 @@ async def _restore_evaluation_records(
             if (
                 reference.schema != SAMPLE_RECORD_OBJECT_SCHEMA
                 or reference.schema_version
-                != SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+                != SAMPLE_EVAL_RECORD_SCHEMA_VERSION
             ):
                 raise ValueError(
                     "bundle record reference schema is unsupported"
@@ -819,13 +817,13 @@ async def _restore_evaluation_records(
                 raise ValueError("stored record reads exceed max_object_reads")
             assert object_store is not None
             decoded = await object_store.get(reference.reference)
-            sample = SAMPLE_EVALUATION_RECORD_ADAPTER.validate_json(
+            sample = SAMPLE_EVAL_RECORD_ADAPTER.validate_json(
                 canonical_json_bytes(decoded), strict=True
             )
             if (
                 reference.reference.schema != SAMPLE_RECORD_OBJECT_SCHEMA
                 or reference.schema_version
-                != SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+                != SAMPLE_EVAL_RECORD_SCHEMA_VERSION
             ):
                 raise ValueError(
                     "stored record reference schema is unsupported"
@@ -854,11 +852,11 @@ async def _restore_evaluation_records(
 
 
 async def _validate_nested_evidence_references(
-    samples: tuple[SampleEvaluationRecord, ...],
+    samples: tuple[SampleEvalRecord, ...],
     *,
-    resolved: dict[EvidenceReference, SampleEvaluationRecord],
+    resolved: dict[EvidenceReference, SampleEvalRecord],
     object_store: ObjectStore | None,
-    limits: EvaluationReadLimits,
+    limits: EvalReadLimits,
     initial_reference_count: int,
 ) -> int:
     reference_count = initial_reference_count
@@ -871,7 +869,7 @@ async def _validate_nested_evidence_references(
         *,
         depth: int,
         require_sample: bool,
-    ) -> SampleEvaluationRecord | None:
+    ) -> SampleEvalRecord | None:
         nonlocal reference_count, object_reads
         reference_count += 1
         if reference_count > limits.max_sample_records:
@@ -902,10 +900,10 @@ async def _validate_nested_evidence_references(
             is_sample = (
                 reference.reference.schema == SAMPLE_RECORD_OBJECT_SCHEMA
                 and reference.schema_version
-                == SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+                == SAMPLE_EVAL_RECORD_SCHEMA_VERSION
             )
             if is_sample:
-                sample = SAMPLE_EVALUATION_RECORD_ADAPTER.validate_json(
+                sample = SAMPLE_EVAL_RECORD_ADAPTER.validate_json(
                     canonical_json_bytes(decoded), strict=True
                 )
                 resolved[reference] = sample
@@ -929,7 +927,7 @@ async def _validate_nested_evidence_references(
         return sample
 
     async def traverse(
-        sample: SampleEvaluationRecord,
+        sample: SampleEvalRecord,
         *,
         depth: int,
     ) -> None:
@@ -946,7 +944,7 @@ async def _validate_nested_evidence_references(
 
 
 def _nested_evidence_references(
-    sample: SampleEvaluationRecord,
+    sample: SampleEvalRecord,
 ) -> tuple[tuple[EvidenceReference, bool], ...]:
     references: list[tuple[EvidenceReference, bool]] = [
         (sample.sample.provenance.source_reference, False)
@@ -960,18 +958,18 @@ def _nested_evidence_references(
     return tuple(references)
 
 
-async def audit_evaluation_bundle(
+async def audit_eval_bundle(
     bundle_path: str | Path,
     /,
     *,
     object_store: ObjectStore | None,
-    limits: EvaluationReadLimits,
-) -> EvaluationBundleAudit:
+    limits: EvalReadLimits,
+) -> EvalBundleAudit:
     """Audit envelope integrity, then validate the complete domain graph."""
 
     reader = ArtifactBundleReader(bundle_path, limits=limits.bundle)
     manifest = await asyncio.to_thread(reader.audit)
-    payload = EvaluationBundlePayload.model_validate_json(
+    payload = EvalBundlePayload.model_validate_json(
         canonical_json_bytes(manifest.payload), strict=True
     )
     attempt = await asyncio.to_thread(_decode_attempt, reader, limits)
@@ -982,7 +980,7 @@ async def audit_evaluation_bundle(
     if len(attempt.members) > limits.max_sample_records:
         raise ValueError("sample record count exceeds max_sample_records")
 
-    expected = {EVALUATION_ATTEMPT_ARTIFACT}
+    expected = {EVAL_ATTEMPT_ARTIFACT}
     local_names = tuple(
         dict.fromkeys(
             member.record.artifact_name
@@ -1013,7 +1011,7 @@ async def audit_evaluation_bundle(
             if (
                 reference.schema != SAMPLE_RECORD_OBJECT_SCHEMA
                 or reference.schema_version
-                != SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+                != SAMPLE_EVAL_RECORD_SCHEMA_VERSION
             ):
                 raise ValueError(
                     "bundle record reference schema is unsupported"
@@ -1052,8 +1050,7 @@ async def audit_evaluation_bundle(
     if stored:
         if any(
             reference.reference.schema != SAMPLE_RECORD_OBJECT_SCHEMA
-            or reference.schema_version
-            != SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION
+            or reference.schema_version != SAMPLE_EVAL_RECORD_SCHEMA_VERSION
             for reference in stored
         ):
             raise ValueError("stored record reference schema is unsupported")
@@ -1086,7 +1083,7 @@ async def audit_evaluation_bundle(
             )
 
     if tuple(payload.projections) != tuple(
-        EvaluationProjectionReference(
+        EvalProjectionReference(
             kind=projection.kind,
             source_attempt=projection.source_attempt,
             artifact_name=projection.artifact_name,
@@ -1115,14 +1112,14 @@ async def audit_evaluation_bundle(
     declared = {descriptor.name for descriptor in manifest.artifacts}
     if declared != expected:
         raise ValueError("evaluation bundle artifact graph is not closed")
-    samples, object_reads = await _restore_evaluation_records(
+    samples, object_reads = await _restore_eval_records(
         reader,
         attempt,
         object_store=object_store,
         limits=limits,
     )
-    validate_evaluation_attempt_graph(attempt, samples)
-    return EvaluationBundleAudit(
+    validate_eval_attempt_graph(attempt, samples)
+    return EvalBundleAudit(
         attempt=attempt.identity,
         artifact_count=len(manifest.artifacts),
         sample_record_count=sum(
@@ -1133,17 +1130,17 @@ async def audit_evaluation_bundle(
 
 
 __all__ = [
-    "EVALUATION_BUNDLE_FORMAT",
-    "EVALUATION_BUNDLE_SCHEMA_VERSION",
-    "EVALUATION_PROJECTION_FORMAT",
-    "EVALUATION_PROJECTION_SCHEMA_VERSION",
-    "EvaluationBundleAudit",
-    "EvaluationBundlePayload",
-    "EvaluationReadLimits",
+    "EVAL_BUNDLE_FORMAT",
+    "EVAL_BUNDLE_SCHEMA_VERSION",
+    "EVAL_PROJECTION_FORMAT",
+    "EVAL_PROJECTION_SCHEMA_VERSION",
+    "EvalBundleAudit",
+    "EvalBundlePayload",
+    "EvalReadLimits",
     "ProjectionArtifactHeader",
-    "RestoredEvaluationAttempt",
+    "RestoredEvalAttempt",
     "SAMPLE_RECORD_OBJECT_SCHEMA",
-    "audit_evaluation_bundle",
-    "read_evaluation_projection",
-    "restore_evaluation_attempt",
+    "audit_eval_bundle",
+    "read_eval_projection",
+    "restore_eval_attempt",
 ]

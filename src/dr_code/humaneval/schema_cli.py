@@ -29,20 +29,17 @@ def main() -> None:
 
 
 @app.command(
-    help=(
-        "Print a JSON Schema bundle for HumanEvalTask and "
-        "EvaluationCaseSummary."
-    )
+    help=("Print a JSON Schema bundle for HumanEvalTask and EvalCaseSummary.")
 )
 def humaneval() -> None:
     from pydantic.json_schema import models_json_schema
 
-    from dr_code.humaneval.task import EvaluationCaseSummary, HumanEvalTask
+    from dr_code.humaneval.task import EvalCaseSummary, HumanEvalTask
 
     mapping, definitions = models_json_schema(
         [
             (HumanEvalTask, VALIDATION_MODE),
-            (EvaluationCaseSummary, VALIDATION_MODE),
+            (EvalCaseSummary, VALIDATION_MODE),
         ],
         title=HUMANEVAL_SCHEMA_TITLE,
         schema_generator=LenientGenerateJsonSchema,
@@ -52,7 +49,7 @@ def humaneval() -> None:
         "type": "object",
         "properties": {
             "task": mapping[(HumanEvalTask, VALIDATION_MODE)],
-            "case_summary": mapping[(EvaluationCaseSummary, VALIDATION_MODE)],
+            "case_summary": mapping[(EvalCaseSummary, VALIDATION_MODE)],
         },
         "required": ["task", "case_summary"],
         "$defs": definitions["$defs"],

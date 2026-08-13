@@ -11,14 +11,14 @@ from dr_code.evaluation import (
     BundleRecordReference,
     ComparableProjectionComparison,
     ComparisonStatus,
-    EvaluationAttemptIdentity,
-    EvaluationMemberRecord,
+    EvalAttemptIdentity,
+    EvalMemberRecord,
     EvaluatedSampleRecord,
     NoCandidatesSampleRecord,
     PreprocessingAbsentSampleRecord,
     ProjectionKind,
     ProjectionNotComparable,
-    compare_evaluation_attempts,
+    compare_eval_attempts,
 )
 from dr_code.trace import Absent, CodeArtifact, SerializedTrace
 
@@ -79,17 +79,15 @@ def _record(index: int, *, output: str = "same") -> NoCandidatesSampleRecord:
     )
 
 
-def _member(
-    index: int, reference: BundleRecordReference
-) -> EvaluationMemberRecord:
-    return EvaluationMemberRecord(
+def _member(index: int, reference: BundleRecordReference) -> EvalMemberRecord:
+    return EvalMemberRecord(
         slot=evaluation_slot(sample_index=index),
         sample=sample_identity(sample_id=f"sample-{index}"),
         record=reference,
     )
 
 
-def _attempt(identity: int, members: tuple[EvaluationMemberRecord, ...]):
+def _attempt(identity: int, members: tuple[EvalMemberRecord, ...]):
     base = attempt()
     plan = base.plan.model_copy(
         update={
@@ -100,9 +98,7 @@ def _attempt(identity: int, members: tuple[EvaluationMemberRecord, ...]):
     )
     return base.model_copy(
         update={
-            "identity": EvaluationAttemptIdentity(
-                attempt_id=UUID(int=identity)
-            ),
+            "identity": EvalAttemptIdentity(attempt_id=UUID(int=identity)),
             "plan": plan,
             "members": members,
         }
@@ -125,7 +121,7 @@ async def test_comparison_preserves_member_identity_and_reports_add_remove() -> 
     )
     resolver = Resolver()
 
-    result = await compare_evaluation_attempts(left, right, resolver=resolver)
+    result = await compare_eval_attempts(left, right, resolver=resolver)
 
     assert [item.identity.sample.sample_id for item in result.matched] == [
         "sample-0",
@@ -150,7 +146,7 @@ async def test_equal_content_hashes_short_circuit_without_resolution() -> None:
     right_reference = _reference(record, artifact="right.json", index=7)
     resolver = Resolver()
 
-    result = await compare_evaluation_attempts(
+    result = await compare_eval_attempts(
         _attempt(10, (_member(0, left_reference),)),
         _attempt(11, (_member(0, right_reference),)),
         resolver=resolver,
@@ -181,7 +177,7 @@ async def test_changed_matches_resolve_left_then_right_once_per_pair() -> None:
         }
     )
 
-    result = await compare_evaluation_attempts(
+    result = await compare_eval_attempts(
         _attempt(10, tuple(_member(i, left_references[i]) for i in range(2))),
         _attempt(11, tuple(_member(i, right_references[i]) for i in range(2))),
         resolver=resolver,
@@ -222,12 +218,12 @@ async def test_projection_comparison_reports_denominators_and_not_comparable() -
         {left_reference: left_record, right_reference: right_record}
     )
 
-    result = await compare_evaluation_attempts(
+    result = await compare_eval_attempts(
         _attempt(10, (_member(0, left_reference),)),
         _attempt(11, (_member(0, right_reference),)),
         resolver=resolver,
         projections=(
-            (ProjectionKind.EVALUATION_SAMPLES, 2, 2),
+            (ProjectionKind.EVAL_SAMPLES, 2, 2),
             (ProjectionKind.MATERIALIZED_CANDIDATES, 2, 2),
             (ProjectionKind.METRIC_RECORDS, 2, None),
             (ProjectionKind.SCORES, 2, 3),
@@ -279,7 +275,7 @@ async def test_comparison_reports_exact_candidate_and_metric_statuses() -> (
         {left_reference: left_record, right_reference: right_record}
     )
 
-    result = await compare_evaluation_attempts(
+    result = await compare_eval_attempts(
         _attempt(10, (_member(0, left_reference),)),
         _attempt(11, (_member(0, right_reference),)),
         resolver=resolver,
@@ -299,7 +295,7 @@ async def test_duplicate_semantic_membership_is_rejected() -> None:
     malformed = _attempt(10, (member, member))
 
     with pytest.raises(ValueError, match="duplicate semantic"):
-        await compare_evaluation_attempts(
+        await compare_eval_attempts(
             malformed,
             _attempt(11, (member,)),
             resolver=Resolver(),

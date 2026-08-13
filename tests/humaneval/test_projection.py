@@ -25,7 +25,7 @@ from dr_code.humaneval import (
     score_humaneval_submission,
     score_humaneval_submissions_batch,
 )
-from dr_code.humaneval.task import EvaluationCaseStatus
+from dr_code.humaneval.task import EvalCaseStatus
 from dr_code.metrics import OperatorFailure, OperatorFailureRecord
 from dr_code.trace import TextArtifact
 
@@ -323,7 +323,7 @@ def _executor_failed(
                 OperatorFailureRecord(
                     identity=record.metrics[0].identity,
                     failure=OperatorFailure(
-                        failure_type="EvaluationHarnessError",
+                        failure_type="EvalHarnessError",
                         failure_message="candidate execution did not complete",
                     ),
                 ),
@@ -443,7 +443,7 @@ async def test_any_candidate_reduction_reports_an_unfinished_group_honestly() ->
     stalled = unfinished.model_copy(
         update={
             "cases": tuple(
-                replace(case, status=EvaluationCaseStatus.TIMEOUT)
+                replace(case, status=EvalCaseStatus.TIMEOUT)
                 for case in unfinished.cases
             )
         }

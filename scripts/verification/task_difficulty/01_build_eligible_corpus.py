@@ -27,7 +27,7 @@ from corpus_loader import (
 )
 from workflow_settings import (
     ELIGIBLE_CORPUS,
-    EVALUATION_WORKERS,
+    EVAL_WORKERS,
     PREPROCESS_LOG,
     PREPROCESS_TIMEOUT_SECONDS,
     PREPROCESS_TIMEOUT_SECONDS_ENV,
@@ -117,7 +117,7 @@ def preprocess_distinct_outputs(
     outputs: Sequence[str],
     *,
     logger: logging.Logger,
-    worker_count: int = EVALUATION_WORKERS,
+    worker_count: int = EVAL_WORKERS,
     timeout_seconds: float | None = PREPROCESS_TIMEOUT_SECONDS,
 ) -> dict[str, tuple[str, ...]]:
     if worker_count < 1:
@@ -257,10 +257,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=_positive_worker_count,
-        default=EVALUATION_WORKERS,
+        default=EVAL_WORKERS,
         help=(
             "concurrent preprocessing worker processes "
-            f"(default: {EVALUATION_WORKERS})"
+            f"(default: {EVAL_WORKERS})"
         ),
     )
     parser.add_argument(

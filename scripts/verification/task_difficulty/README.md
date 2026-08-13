@@ -74,7 +74,7 @@ uv run python scripts/build_generation_corpus.py human_eval \
    ```shell
    python3 -m venv --copies .evaluation-venv
    uv pip install --python .evaluation-venv/bin/python3 .
-   DR_CODE_EVALUATION_PYTHON="$PWD/.evaluation-venv/bin/python3" \
+   DR_CODE_EVAL_PYTHON="$PWD/.evaluation-venv/bin/python3" \
      uv run python scripts/verification/task_difficulty/03_evaluate_sample.py \
        --workers 16 --timeout-seconds 120
    ```

@@ -23,48 +23,48 @@ from dr_code.trace import (
 )
 
 
-class EvaluationSlotIdentity(FrozenModel):
+class EvalSlotIdentity(FrozenModel):
     task_set: TaskSetCoordinate
     sampling_plan: SamplingPlanCoordinate
     task_id: str
     sample_index: int = Field(ge=0)
 
 
-class EvaluationSourceIdentity(FrozenModel):
+class EvalSourceIdentity(FrozenModel):
     namespace: str = Field(min_length=1)
     value: str = Field(min_length=1)
 
 
-class EvaluationSampleIdentity(FrozenModel):
+class EvalSampleIdentity(FrozenModel):
     sample_id: str = Field(min_length=1)
 
 
-class EvaluationCandidateIdentity(FrozenModel):
+class EvalCandidateIdentity(FrozenModel):
     """Identifies a candidate after materialization ordering is final."""
 
-    sample: EvaluationSampleIdentity
+    sample: EvalSampleIdentity
     preprocessing: PreprocessingDefinitionCoordinate
     candidate_ordinal: int = Field(ge=0)
 
 
-class EvaluationRuntimeIdentity(FrozenModel):
+class EvalRuntimeIdentity(FrozenModel):
     document: IdentityDocument
 
 
-class EvaluationAttemptIdentity(FrozenModel):
+class EvalAttemptIdentity(FrozenModel):
     attempt_id: UUID
 
 
 class GeneratedSampleProvenance(FrozenModel):
     kind: Literal["generated"] = "generated"
-    source_identity: EvaluationSourceIdentity
+    source_identity: EvalSourceIdentity
     source_reference: EvidenceReference
     generation_id: str
 
 
 class CorpusSampleProvenance(FrozenModel):
     kind: Literal["corpus"] = "corpus"
-    source_identity: EvaluationSourceIdentity
+    source_identity: EvalSourceIdentity
     source_reference: EvidenceReference
     dataset: DatasetCoordinate
     row_id: str
@@ -72,12 +72,12 @@ class CorpusSampleProvenance(FrozenModel):
 
 class SyntheticSampleProvenance(FrozenModel):
     kind: Literal["synthetic"] = "synthetic"
-    source_identity: EvaluationSourceIdentity
+    source_identity: EvalSourceIdentity
     source_reference: EvidenceReference
     coordinate: SyntheticSampleCoordinate
 
 
-EvaluationSampleProvenance: TypeAlias = Annotated[
+EvalSampleProvenance: TypeAlias = Annotated[
     GeneratedSampleProvenance
     | CorpusSampleProvenance
     | SyntheticSampleProvenance,
@@ -85,18 +85,18 @@ EvaluationSampleProvenance: TypeAlias = Annotated[
 ]
 
 
-class EvaluationSampleMetadata(FrozenModel):
-    identity: EvaluationSampleIdentity
+class EvalSampleMetadata(FrozenModel):
+    identity: EvalSampleIdentity
     task_id: str
-    provenance: EvaluationSampleProvenance
+    provenance: EvalSampleProvenance
 
 
-class EvaluationSampleAuxiliaryArtifact(FrozenModel):
+class EvalSampleAuxiliaryArtifact(FrozenModel):
     trace_key: str = Field(min_length=1)
     artifact: Artifact
 
     @model_validator(mode="after")
-    def validate_trace_key(self) -> EvaluationSampleAuxiliaryArtifact:
+    def validate_trace_key(self) -> EvalSampleAuxiliaryArtifact:
         if self.trace_key in {"input", "output"}:
             raise ValueError(
                 "sample auxiliary trace_key must not be input or output"
@@ -104,26 +104,26 @@ class EvaluationSampleAuxiliaryArtifact(FrozenModel):
         return self
 
 
-class EvaluationSample(FrozenModel):
-    metadata: EvaluationSampleMetadata
+class EvalSample(FrozenModel):
+    metadata: EvalSampleMetadata
     raw_input: TextArtifact
-    auxiliary_artifacts: tuple[EvaluationSampleAuxiliaryArtifact, ...] = ()
+    auxiliary_artifacts: tuple[EvalSampleAuxiliaryArtifact, ...] = ()
 
     @model_validator(mode="after")
-    def validate_auxiliary_artifacts(self) -> EvaluationSample:
+    def validate_auxiliary_artifacts(self) -> EvalSample:
         keys = tuple(item.trace_key for item in self.auxiliary_artifacts)
         if len(set(keys)) != len(keys):
             raise ValueError("sample auxiliary trace keys must be unique")
         return self
 
 
-class MaterializedEvaluationCandidate(FrozenModel):
-    identity: EvaluationCandidateIdentity
+class MaterializedEvalCandidate(FrozenModel):
+    identity: EvalCandidateIdentity
     source: CodeArtifact
     source_sha256: Sha256Digest
 
     @model_validator(mode="after")
-    def validate_source_sha256(self) -> MaterializedEvaluationCandidate:
+    def validate_source_sha256(self) -> MaterializedEvalCandidate:
         actual = Sha256Digest(
             hashlib.sha256(self.source.source.encode("utf-8")).hexdigest()
         )
@@ -134,17 +134,17 @@ class MaterializedEvaluationCandidate(FrozenModel):
 
 __all__ = [
     "CorpusSampleProvenance",
-    "EvaluationAttemptIdentity",
-    "EvaluationCandidateIdentity",
-    "EvaluationRuntimeIdentity",
-    "EvaluationSample",
-    "EvaluationSampleAuxiliaryArtifact",
-    "EvaluationSampleIdentity",
-    "EvaluationSampleMetadata",
-    "EvaluationSampleProvenance",
-    "EvaluationSlotIdentity",
-    "EvaluationSourceIdentity",
+    "EvalAttemptIdentity",
+    "EvalCandidateIdentity",
+    "EvalRuntimeIdentity",
+    "EvalSample",
+    "EvalSampleAuxiliaryArtifact",
+    "EvalSampleIdentity",
+    "EvalSampleMetadata",
+    "EvalSampleProvenance",
+    "EvalSlotIdentity",
+    "EvalSourceIdentity",
     "GeneratedSampleProvenance",
-    "MaterializedEvaluationCandidate",
+    "MaterializedEvalCandidate",
     "SyntheticSampleProvenance",
 ]

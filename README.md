@@ -175,10 +175,10 @@ the persisted key.
 
 ```python
 from dr_code.caching import WindowedExecutionCache
-from dr_code.evaluation import EvaluationRuntimeIdentity
+from dr_code.evaluation import EvalRuntimeIdentity
 from dr_serialize import build_identity_document
 
-runtime = EvaluationRuntimeIdentity(
+runtime = EvalRuntimeIdentity(
     document=build_identity_document(
         schema="example/python-runtime",
         schema_version=1,
@@ -294,17 +294,17 @@ MetricRecord = Annotated[
 ```
 
 ```python
-class EvaluationProcedure(FrozenModel):
+class EvalProcedure(FrozenModel):
     preprocessing: PreprocessingDefinition
     metrics: MetricsDefinition
 
 
-class EvaluationPlan(FrozenModel):
+class EvalPlan(FrozenModel):
     plan_id: str
     version: str
     task_set: TaskSet
     sampling_plan: SamplingPlan
-    procedure: EvaluationProcedure
+    procedure: EvalProcedure
     aggregation: AggregationPolicy
 
 
@@ -321,11 +321,11 @@ evidence and carry their source-attempt binding.
 
 Evaluation bundles can be consumed at three grains:
 
-- `read_evaluation_projection` verifies and validates only one fixed,
+- `read_eval_projection` verifies and validates only one fixed,
   self-bound projection artifact;
-- `restore_evaluation_attempt` consumes the attempt and required record or
+- `restore_eval_attempt` consumes the attempt and required record or
   reference shards without a preliminary whole-bundle audit; and
-- `audit_evaluation_bundle` first verifies every artifact through dr-store,
+- `audit_eval_bundle` first verifies every artifact through dr-store,
   then validates the complete evaluation schema and reference graph without
   resolving external objects.
 
@@ -338,10 +338,10 @@ external records.
 `preflight_replay` reconstructs the complete ordered source attempt as frozen
 samples or frozen materialized candidates. It returns `ReplayUnavailable`
 without creating an attempt when recorded definitions or evidence are not
-supported; `replay_evaluation_attempt` sends a ready replay through the same
+supported; `replay_eval_attempt` sends a ready replay through the same
 standalone bounded batch path and records its source before publication.
 
-`compare_evaluation_attempts` aligns compact attempt membership by slot and
+`compare_eval_attempts` aligns compact attempt membership by slot and
 sample identity. Equal references or content hashes remain compact; only
 matched changed references are resolved, one pair at a time. Optional
 projection definitions are explicit `(kind, left_version, right_version)`
@@ -358,7 +358,7 @@ corpus is preprocessed once and its `PreprocessingCoverage` — texts with
 candidates, texts without candidates, texts whose preprocessing failed —
 partitions the corpus under the definition actually evaluated. A reference
 attempt plus an evidence resolver turns either flow structural, returning the
-`compare_evaluation_attempts` result. The `dr-code-validate-preprocessing` and
+`compare_eval_attempts` result. The `dr-code-validate-preprocessing` and
 `dr-code-validate-testing` verbs wrap those calls: they read one request
 document, run the flow against a caller-named run root and a Python runtime
 whose identity must match the request's, and print the verdict.
@@ -399,7 +399,7 @@ class CandidateReduction(StrEnum):
 class SubmissionOutcome(StrEnum):
     PASSED = "passed"
     TESTS_FAILED = "tests_failed"
-    EVALUATION_INCOMPLETE = "evaluation_incomplete"
+    EVAL_INCOMPLETE = "evaluation_incomplete"
     EMPTY_SUBMISSION = "empty_submission"
     EXTRACTION_FAILED = "extraction_failed"
     NO_TOP_LEVEL_FUNCTIONS = "no_top_level_functions"
@@ -414,18 +414,18 @@ HumanEvalSubmissionResult = Annotated[
 
 
 class HumanEvalSubmissionRequest(FrozenModel):
-    sample: EvaluationSampleIdentity
+    sample: EvalSampleIdentity
     scoring_profile: HumanEvalScoringProfile
 
 
 def project_humaneval_submissions_batch(
-    records: Sequence[tuple[SampleEvaluationRecord, EvidenceReference]],
+    records: Sequence[tuple[SampleEvalRecord, EvidenceReference]],
     requests: Sequence[HumanEvalSubmissionRequest],
 ) -> tuple[HumanEvalSubmissionResult, ...]: ...
 
 
 def project_humaneval_submission(
-    record: SampleEvaluationRecord,
+    record: SampleEvalRecord,
     request: HumanEvalSubmissionRequest,
     *,
     sample_record: EvidenceReference,

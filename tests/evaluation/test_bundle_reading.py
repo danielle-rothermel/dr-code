@@ -17,10 +17,10 @@ from dr_code.evaluation import (
     ProjectionKind,
     RecordPlacement,
     EvaluatedSampleRecord,
-    read_evaluation_projection,
-    restore_evaluation_attempt,
+    read_eval_projection,
+    restore_eval_attempt,
     ReusedCandidateProvenance,
-    audit_evaluation_bundle,
+    audit_eval_bundle,
     evaluate_batch,
 )
 
@@ -38,9 +38,9 @@ async def test_selected_projection_reads_only_its_self_bound_artifact(
     result, _ = await publish_batch(tmp_path)
     assert result.bundle_path is not None
     (result.bundle_path / "evaluation-attempt.json").write_bytes(b"tampered")
-    header, rows = read_evaluation_projection(
+    header, rows = read_eval_projection(
         result.bundle_path,
-        ProjectionKind.EVALUATION_SAMPLES,
+        ProjectionKind.EVAL_SAMPLES,
         limits=read_limits(),
     )
     assert header.source_attempt == result.attempt.identity
@@ -60,7 +60,7 @@ async def test_restoration_consumes_required_records_without_preaudit(
         tmp_path, placement=placement, projections=()
     )
     assert result.bundle_path is not None
-    restored = await restore_evaluation_attempt(
+    restored = await restore_eval_attempt(
         result.bundle_path,
         object_store=object_store,
         limits=read_limits(),
@@ -79,7 +79,7 @@ async def test_restoration_enforces_nested_reference_depth(
     limits = read_limits().model_copy(update={"max_reference_depth": 1})
 
     with pytest.raises(ValueError, match="max_reference_depth"):
-        await restore_evaluation_attempt(
+        await restore_eval_attempt(
             result.bundle_path,
             object_store=object_store,
             limits=limits,
@@ -155,7 +155,7 @@ async def test_restoration_resolves_reused_execution_source_graph(
     )
     assert second.bundle_path is not None
 
-    restored = await restore_evaluation_attempt(
+    restored = await restore_eval_attempt(
         second.bundle_path,
         object_store=object_store,
         limits=read_limits(),
@@ -164,7 +164,7 @@ async def test_restoration_resolves_reused_execution_source_graph(
     assert isinstance(sample, EvaluatedSampleRecord)
     execution = sample.executions[0]
     assert isinstance(execution.provenance, ReusedCandidateProvenance)
-    audit = await audit_evaluation_bundle(
+    audit = await audit_eval_bundle(
         second.bundle_path,
         object_store=object_store,
         limits=read_limits(),
@@ -173,7 +173,7 @@ async def test_restoration_resolves_reused_execution_source_graph(
 
     shallow = read_limits().model_copy(update={"max_reference_depth": 2})
     with pytest.raises(ValueError, match="max_reference_depth"):
-        await restore_evaluation_attempt(
+        await restore_eval_attempt(
             second.bundle_path,
             object_store=object_store,
             limits=shallow,
@@ -204,7 +204,7 @@ async def test_stored_records_are_resolved_strictly_sequentially(
 
     gated = GatedObjectStore(object_store)
     restoring = asyncio.create_task(
-        restore_evaluation_attempt(
+        restore_eval_attempt(
             result.bundle_path,
             object_store=gated,
             limits=read_limits(),
@@ -223,12 +223,12 @@ async def test_selected_projection_rejects_unsupported_and_unbound_payloads(
 ) -> None:
     result, _ = await publish_batch(
         tmp_path,
-        projections=(ProjectionKind.EVALUATION_SAMPLES,),
+        projections=(ProjectionKind.EVAL_SAMPLES,),
     )
     assert result.bundle_path is not None
-    header, rows = read_evaluation_projection(
+    header, rows = read_eval_projection(
         result.bundle_path,
-        ProjectionKind.EVALUATION_SAMPLES,
+        ProjectionKind.EVAL_SAMPLES,
         limits=read_limits(),
     )
     publication = ArtifactBundlePublication.allocate(
@@ -251,9 +251,9 @@ async def test_selected_projection_rejects_unsupported_and_unbound_payloads(
     writer.finalize()
     publication.publish({})
     with pytest.raises(ValueError, match="source attempt"):
-        read_evaluation_projection(
+        read_eval_projection(
             publication.path,
-            ProjectionKind.EVALUATION_SAMPLES,
+            ProjectionKind.EVAL_SAMPLES,
             limits=read_limits(),
         )
 
@@ -267,8 +267,8 @@ async def test_selected_projection_rejects_unsupported_and_unbound_payloads(
     writer.finalize()
     unsupported.publish({})
     with pytest.raises(ValidationError):
-        read_evaluation_projection(
+        read_eval_projection(
             unsupported.path,
-            ProjectionKind.EVALUATION_SAMPLES,
+            ProjectionKind.EVAL_SAMPLES,
             limits=read_limits(),
         )

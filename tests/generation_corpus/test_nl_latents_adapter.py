@@ -207,7 +207,7 @@ def test_active_and_pending_select_closed_payload_branches_and_exact_prompts(
     )
     assert active.generation.date_kind == "migration_import_created_at"
     assert active.request.source_kind == "response_json"
-    assert active.old_evaluation_ready is True
+    assert active.old_eval_ready is True
 
     assert pending.generation is not None
     assert pending.request is not None
@@ -216,7 +216,7 @@ def test_active_and_pending_select_closed_payload_branches_and_exact_prompts(
     )
     assert pending.request.source_kind == "request_json"
     assert pending.request.response_json == "null"
-    assert pending.old_evaluation_ready is False
+    assert pending.old_eval_ready is False
 
 
 def test_incomplete_rows_remain_at_raw_or_encoder_only_grains(

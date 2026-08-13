@@ -13,14 +13,14 @@ from _builders import (
     task_set_coordinate,
 )
 from dr_code.evaluation import (
-    EvaluationCoordinate,
-    EvaluationPlan,
-    EvaluationSlotIdentity,
+    EvalCoordinate,
+    EvalPlan,
+    EvalSlotIdentity,
     Score,
 )
 from dr_code.metrics import MetricValueCoordinate, MetricValueUnit
 
-_GOLDEN_EVALUATION_SLOT = {
+_GOLDEN_EVAL_SLOT = {
     "task_set": {
         "task_set_id": "task-set",
         "version": "1",
@@ -32,7 +32,7 @@ _GOLDEN_EVALUATION_SLOT = {
 }
 
 # Literal keys pin persisted evaluation shapes; deriving them would hide drift.
-_GOLDEN_EVALUATION_PLAN = {
+_GOLDEN_EVAL_PLAN = {
     "plan_id": "plan",
     "version": "1",
     "task_set": {
@@ -110,8 +110,8 @@ _GOLDEN_SCORE = {
 }
 
 
-def _golden_plan() -> EvaluationPlan:
-    return EvaluationPlan(
+def _golden_plan() -> EvalPlan:
+    return EvalPlan(
         plan_id="plan",
         version="1",
         task_set=task_set(),
@@ -126,7 +126,7 @@ def _golden_score() -> Score:
         name="mean_char_count",
         value=12.5,
         unit=MetricValueUnit.COUNT,
-        evaluation=EvaluationCoordinate(
+        evaluation=EvalCoordinate(
             plan_id="plan",
             version="1",
             task_set=task_set_coordinate(),
@@ -140,26 +140,21 @@ def _golden_score() -> Score:
     )
 
 
-def test_evaluation_slot_serializes_to_the_golden_literals() -> None:
-    assert (
-        json.loads(evaluation_slot().model_dump_json())
-        == _GOLDEN_EVALUATION_SLOT
-    )
+def test_eval_slot_serializes_to_the_golden_literals() -> None:
+    assert json.loads(evaluation_slot().model_dump_json()) == _GOLDEN_EVAL_SLOT
 
 
 def test_golden_slot_literals_load_back_to_an_equal_slot() -> None:
-    restored = EvaluationSlotIdentity.model_validate(_GOLDEN_EVALUATION_SLOT)
+    restored = EvalSlotIdentity.model_validate(_GOLDEN_EVAL_SLOT)
     assert restored == evaluation_slot()
 
 
-def test_evaluation_plan_serializes_to_the_golden_literals() -> None:
-    assert (
-        json.loads(_golden_plan().model_dump_json()) == _GOLDEN_EVALUATION_PLAN
-    )
+def test_eval_plan_serializes_to_the_golden_literals() -> None:
+    assert json.loads(_golden_plan().model_dump_json()) == _GOLDEN_EVAL_PLAN
 
 
 def test_golden_plan_literals_load_back_to_an_equal_plan() -> None:
-    restored = EvaluationPlan.model_validate(_GOLDEN_EVALUATION_PLAN)
+    restored = EvalPlan.model_validate(_GOLDEN_EVAL_PLAN)
     assert restored == _golden_plan()
 
 

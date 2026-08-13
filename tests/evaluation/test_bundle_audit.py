@@ -7,7 +7,7 @@ from dr_store import BundleVerificationError
 
 from dr_code.evaluation import (
     RecordPlacement,
-    audit_evaluation_bundle,
+    audit_eval_bundle,
 )
 
 from ._bundle_builders import publish_batch, read_limits
@@ -25,7 +25,7 @@ async def test_audit_validates_closed_domain_graph_and_counts_object_reads(
 ) -> None:
     result, object_store = await publish_batch(tmp_path, placement=placement)
     assert result.bundle_path is not None
-    audit = await audit_evaluation_bundle(
+    audit = await audit_eval_bundle(
         result.bundle_path,
         object_store=object_store,
         limits=read_limits(),
@@ -46,7 +46,7 @@ async def test_audit_rejects_tampered_artifact_before_domain_validation(
     projection = result.bundle_path / "projection-scores.jsonl"
     projection.write_bytes(projection.read_bytes() + b"tampered")
     with pytest.raises(BundleVerificationError):
-        await audit_evaluation_bundle(
+        await audit_eval_bundle(
             result.bundle_path,
             object_store=object_store,
             limits=read_limits(),

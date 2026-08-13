@@ -10,7 +10,7 @@ from dr_code.evaluation import (
     AttemptLimitKind,
     AttemptLimits,
     AttemptValidity,
-    EvaluationBatchRequest,
+    EvalBatchRequest,
     WindowLimits,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
@@ -28,8 +28,8 @@ pytestmark = pytest.mark.asyncio
 
 
 def _with_two_candidates(
-    batch_request: EvaluationBatchRequest,
-) -> EvaluationBatchRequest:
+    batch_request: EvalBatchRequest,
+) -> EvalBatchRequest:
     selected_sample = batch_request.inputs[0].sample.model_copy(
         update={
             "raw_input": TextArtifact(

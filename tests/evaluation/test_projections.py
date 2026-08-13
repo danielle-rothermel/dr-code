@@ -7,7 +7,7 @@ from _executor_stubs import importable_json_executor
 from dr_code.evaluation import (
     AggregationResultProjectionRow,
     BundleRecordReference,
-    EvaluationSampleProjectionRow,
+    EvalSampleProjectionRow,
     MaterializedCandidateProjectionRow,
     MetricRecordProjectionRow,
     ProjectionKind,
@@ -71,7 +71,7 @@ async def test_public_projection_rows_pin_the_five_wire_discriminators() -> (
     assert assembly.score is not None
 
     rows = (
-        EvaluationSampleProjectionRow(
+        EvalSampleProjectionRow(
             source_attempt=batch_request.attempt,
             slot=record.slot,
             sample=record.sample,

@@ -3,18 +3,18 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from dr_code.evaluation.identity import (
-    EvaluationRuntimeIdentity,
-    EvaluationSampleIdentity,
-    EvaluationSlotIdentity,
+    EvalRuntimeIdentity,
+    EvalSampleIdentity,
+    EvalSlotIdentity,
 )
-from dr_code.evaluation.plan import EvaluationPlan
+from dr_code.evaluation.plan import EvalPlan
 from dr_code.evaluation.records import (
     CandidateJobCompleted,
-    EvaluationAttemptRecord,
-    EvaluationMemberRecord,
+    EvalAttemptRecord,
+    EvalMemberRecord,
     EvaluatedSampleRecord,
     PreprocessingAbsentSampleRecord,
-    SampleEvaluationRecord,
+    SampleEvalRecord,
 )
 from dr_code.metrics import (
     MetricQuestionCoordinate,
@@ -28,9 +28,9 @@ from dr_code.trace import (
 )
 
 
-def validate_evaluation_attempt_graph(
-    attempt: EvaluationAttemptRecord,
-    records: Sequence[SampleEvaluationRecord],
+def validate_eval_attempt_graph(
+    attempt: EvalAttemptRecord,
+    records: Sequence[SampleEvalRecord],
     /,
 ) -> None:
     """Validate one compact attempt and its ordered resolved evidence graph."""
@@ -54,18 +54,18 @@ def validate_evaluation_attempt_graph(
         )
 
 
-def validate_attempt_membership(attempt: EvaluationAttemptRecord, /) -> None:
+def validate_attempt_membership(attempt: EvalAttemptRecord, /) -> None:
     _validate_membership_order(attempt.plan, attempt.members)
 
 
 def validate_sample_record_graph(
-    record: SampleEvaluationRecord,
+    record: SampleEvalRecord,
     /,
     *,
-    slot: EvaluationSlotIdentity,
-    sample: EvaluationSampleIdentity,
-    plan: EvaluationPlan,
-    runtime: EvaluationRuntimeIdentity,
+    slot: EvalSlotIdentity,
+    sample: EvalSampleIdentity,
+    plan: EvalPlan,
+    runtime: EvalRuntimeIdentity,
     cache_namespace: str,
 ) -> None:
     """Validate all semantic links owned by one sample evidence record."""
@@ -194,8 +194,8 @@ def validate_sample_record_graph(
 
 
 def _validate_membership_order(
-    plan: EvaluationPlan,
-    members: Sequence[EvaluationMemberRecord],
+    plan: EvalPlan,
+    members: Sequence[EvalMemberRecord],
 ) -> None:
     expected_slots = plan.ordered_slots()
     positions = {slot: index for index, slot in enumerate(expected_slots)}
@@ -211,6 +211,6 @@ def _validate_membership_order(
 
 __all__ = [
     "validate_attempt_membership",
-    "validate_evaluation_attempt_graph",
+    "validate_eval_attempt_graph",
     "validate_sample_record_graph",
 ]

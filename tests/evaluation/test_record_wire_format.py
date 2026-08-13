@@ -5,14 +5,14 @@ import json
 from .test_record_models import attempt, evaluated, execution, reference
 from dr_code.evaluation import (
     CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION,
-    EVALUATION_ATTEMPT_SCHEMA_VERSION,
-    SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION,
+    EVAL_ATTEMPT_SCHEMA_VERSION,
+    SAMPLE_EVAL_RECORD_SCHEMA_VERSION,
 )
 
 
 def test_record_schema_versions_are_pinned() -> None:
-    assert EVALUATION_ATTEMPT_SCHEMA_VERSION == 3
-    assert SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION == 2
+    assert EVAL_ATTEMPT_SCHEMA_VERSION == 3
+    assert SAMPLE_EVAL_RECORD_SCHEMA_VERSION == 2
     assert CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION == 2
 
 

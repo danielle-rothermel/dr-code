@@ -16,34 +16,34 @@ from dr_code.evaluation import (
     BundleRecordReference,
     CandidateJobBudget,
     DatasetCoordinate,
-    EvaluationAttemptIdentity,
-    EvaluationBatchRequest,
-    EvaluationCandidateIdentity,
-    EvaluationProcedure,
-    EvaluationRuntimeIdentity,
-    EvaluationSample,
-    EvaluationSampleAuxiliaryArtifact,
-    EvaluationSampleIdentity,
-    EvaluationSampleMetadata,
-    EvaluationSlotIdentity,
-    EvaluationSourceIdentity,
-    FrozenCandidateEvaluationInput,
+    EvalAttemptIdentity,
+    EvalBatchRequest,
+    EvalCandidateIdentity,
+    EvalProcedure,
+    EvalRuntimeIdentity,
+    EvalSample,
+    EvalSampleAuxiliaryArtifact,
+    EvalSampleIdentity,
+    EvalSampleMetadata,
+    EvalSlotIdentity,
+    EvalSourceIdentity,
+    FrozenCandidateEvalInput,
     GeneratedSampleProvenance,
-    MaterializedEvaluationCandidate,
+    MaterializedEvalCandidate,
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
     RunGrade,
     SamplingPlan,
     SamplingPlanCoordinate,
-    SampleEvaluationInput,
+    SampleEvalInput,
     ShardLimits,
     StoredRecordReference,
     TaskSet,
     TaskSetCoordinate,
     WindowLimits,
 )
-from dr_code.evaluation.records import SampleEvaluationRecord
+from dr_code.evaluation.records import SampleEvalRecord
 from dr_code.humaneval.settings import CodeTestSettings
 from dr_code.metrics import (
     MetricName,
@@ -112,9 +112,9 @@ class BatchStore:
 
 class MemoryPlacement:
     def __init__(self) -> None:
-        self.records: list[SampleEvaluationRecord] = []
+        self.records: list[SampleEvalRecord] = []
 
-    async def place(self, record: SampleEvaluationRecord, /):  # type: ignore[no-untyped-def]
+    async def place(self, record: SampleEvalRecord, /):  # type: ignore[no-untyped-def]
         reference = BundleRecordReference(
             artifact_name="sample-records-00000000.jsonl",
             record_index=len(self.records),
@@ -132,7 +132,7 @@ class MemoryPlacement:
 
 
 class StoredMemoryPlacement(MemoryPlacement):
-    async def place(self, record: SampleEvaluationRecord, /):  # type: ignore[no-untyped-def]
+    async def place(self, record: SampleEvalRecord, /):  # type: ignore[no-untyped-def]
         self.records.append(record)
         return StoredRecordReference(
             reference=ObjectReference.for_record(
@@ -146,8 +146,8 @@ class StoredMemoryPlacement(MemoryPlacement):
 TASK_ID = candidate_job_task().task_id
 
 
-def runtime() -> EvaluationRuntimeIdentity:
-    return EvaluationRuntimeIdentity(
+def runtime() -> EvalRuntimeIdentity:
+    return EvalRuntimeIdentity(
         document=build_identity_document(
             schema="tests/evaluation-runtime",
             schema_version=1,
@@ -160,7 +160,7 @@ def sample(
     index: int,
     *,
     text: str = "def observed_load_count(_x):\n    return 1\n",
-) -> EvaluationSample:
+) -> EvalSample:
     task = candidate_job_task()
     source_reference = StoredRecordReference(
         reference=ObjectReference.for_record(
@@ -169,12 +169,12 @@ def sample(
         ),
         schema_version=1,
     )
-    return EvaluationSample(
-        metadata=EvaluationSampleMetadata(
-            identity=EvaluationSampleIdentity(sample_id=f"sample-{index}"),
+    return EvalSample(
+        metadata=EvalSampleMetadata(
+            identity=EvalSampleIdentity(sample_id=f"sample-{index}"),
             task_id=TASK_ID,
             provenance=GeneratedSampleProvenance(
-                source_identity=EvaluationSourceIdentity(
+                source_identity=EvalSourceIdentity(
                     namespace="tests",
                     value=f"input-{index}",
                 ),
@@ -184,7 +184,7 @@ def sample(
         ),
         raw_input=TextArtifact(text=text),
         auxiliary_artifacts=(
-            EvaluationSampleAuxiliaryArtifact(
+            EvalSampleAuxiliaryArtifact(
                 trace_key="task",
                 artifact=JsonArtifact(payload=task.model_dump(mode="json")),
             ),
@@ -197,11 +197,11 @@ def request(
     *,
     attempt_limits: AttemptLimits | None = None,
     window_limits: WindowLimits | None = None,
-    inputs: tuple[SampleEvaluationInput | FrozenCandidateEvaluationInput, ...]
+    inputs: tuple[SampleEvalInput | FrozenCandidateEvalInput, ...]
     | None = None,
     texts: tuple[str, ...] | None = None,
     projections: tuple[ProjectionKind, ...] = tuple(ProjectionKind),
-) -> EvaluationBatchRequest:
+) -> EvalBatchRequest:
     settings = CodeTestSettings()
     question = MetricQuestion(
         metric=MetricName.CODE_TEST,
@@ -233,8 +233,8 @@ def request(
     )
     if inputs is None:
         inputs = tuple(
-            SampleEvaluationInput(
-                slot=EvaluationSlotIdentity(
+            SampleEvalInput(
+                slot=EvalSlotIdentity(
                     task_set=task_set.coordinate,
                     sampling_plan=sampling_plan.coordinate,
                     task_id=TASK_ID,
@@ -248,14 +248,14 @@ def request(
             )
             for index in range(count)
         )
-    return EvaluationBatchRequest(
-        attempt=EvaluationAttemptIdentity(attempt_id=UUID(int=1)),
+    return EvalBatchRequest(
+        attempt=EvalAttemptIdentity(attempt_id=UUID(int=1)),
         plan={
             "plan_id": "batch",
             "version": "1",
             "task_set": task_set,
             "sampling_plan": sampling_plan,
-            "procedure": EvaluationProcedure(
+            "procedure": EvalProcedure(
                 preprocessing=EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION,
                 metrics=MetricsDefinition(
                     definition_id="batch",
@@ -308,8 +308,8 @@ def request(
 
 
 def frozen_input(
-    index: int, slot: EvaluationSlotIdentity
-) -> FrozenCandidateEvaluationInput:
+    index: int, slot: EvalSlotIdentity
+) -> FrozenCandidateEvalInput:
     selected_sample = sample(index)
     preprocessing = bind_preprocessing(
         EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
@@ -317,13 +317,13 @@ def frozen_input(
     source = CodeArtifact(
         source="def observed_load_count(_x):\n    return 1\n"
     )
-    return FrozenCandidateEvaluationInput(
+    return FrozenCandidateEvalInput(
         slot=slot,
         sample=selected_sample,
         preprocessing=preprocessing,
         candidates=(
-            MaterializedEvaluationCandidate(
-                identity=EvaluationCandidateIdentity(
+            MaterializedEvalCandidate(
+                identity=EvalCandidateIdentity(
                     sample=selected_sample.metadata.identity,
                     preprocessing=preprocessing,
                     candidate_ordinal=0,

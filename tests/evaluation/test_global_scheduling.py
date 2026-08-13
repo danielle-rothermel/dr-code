@@ -10,8 +10,8 @@ from _executor_stubs import (
 from dr_code.evaluation import (
     AttemptCompleteness,
     AttemptLimits,
-    EvaluationBatchRequest,
-    EvaluationSlotIdentity,
+    EvalBatchRequest,
+    EvalSlotIdentity,
     WindowLimits,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
@@ -33,7 +33,7 @@ def _multi_frozen_request(
     *,
     attempt_limits: AttemptLimits | None = None,
     window_limits: WindowLimits | None = None,
-) -> EvaluationBatchRequest:
+) -> EvalBatchRequest:
     base = request(
         count,
         attempt_limits=attempt_limits,
@@ -44,7 +44,7 @@ def _multi_frozen_request(
     inputs = tuple(
         frozen_input(
             index,
-            EvaluationSlotIdentity(
+            EvalSlotIdentity(
                 task_set=task_set,
                 sampling_plan=sampling_plan,
                 task_id=TASK_ID,

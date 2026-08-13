@@ -168,7 +168,7 @@ class NlLatentsAdaptedRow:
     request: RequestRecord | None
     task_mapping: NlLatentsTaskMapping
     normalized_failure_category: str | None
-    old_evaluation_ready: bool
+    old_eval_ready: bool
 
 
 def normalize_failure_category(raw: object) -> str | None:
@@ -300,7 +300,7 @@ def _validate_generation_payload(
                 f"{missing!r}"
             )
 
-    old_evaluation_ready = (
+    old_eval_ready = (
         key.status is NlLatentsStatus.ACTIVE
         and _nonblank(description)
         and _nonblank(decoded_code)
@@ -311,7 +311,7 @@ def _validate_generation_payload(
     if key.status is NlLatentsStatus.ACTIVE:
         if passed is None:
             raise ValueError("active NL Latents row lacks boolean passed")
-        if _nonblank(decoded_code) and not old_evaluation_ready:
+        if _nonblank(decoded_code) and not old_eval_ready:
             raise ValueError(
                 "active decoded NL Latents candidate lacks historical validation"
             )
@@ -353,7 +353,7 @@ def _validate_generation_payload(
         decoded_code,
         validation_json,
         detail,
-        old_evaluation_ready,
+        old_eval_ready,
     )
 
 
@@ -384,7 +384,7 @@ def adapt_nl_latents_row(
         decoded_code,
         validation_json,
         _detail,
-        old_evaluation_ready,
+        old_eval_ready,
     ) = _validate_generation_payload(payload, key)
     normalized_failure = normalize_failure_category(
         payload.get("failure_category")
@@ -413,7 +413,7 @@ def adapt_nl_latents_row(
     if has_candidate:
         lifecycle = (
             LifecycleState.EVALUATED
-            if old_evaluation_ready
+            if old_eval_ready
             else LifecycleState.PENDING_VALIDATION
         )
         stage = Stage.DECODER
@@ -595,7 +595,7 @@ def adapt_nl_latents_row(
         request=request,
         task_mapping=task_mapping,
         normalized_failure_category=normalized_failure,
-        old_evaluation_ready=old_evaluation_ready,
+        old_eval_ready=old_eval_ready,
     )
 
 
@@ -696,8 +696,8 @@ class NlLatentsAdapter:
                 writer.add_generation(adapted.generation)
                 writer.add_request(adapted.request)
                 counts["canonical"] += 1
-                if adapted.old_evaluation_ready:
-                    counts["old_evaluation_ready"] += 1
+                if adapted.old_eval_ready:
+                    counts["old_eval_ready"] += 1
             if adapted.encoder_artifact is not None:
                 writer.add_encoder_artifact(adapted.encoder_artifact)
 
@@ -706,7 +706,7 @@ class NlLatentsAdapter:
         expected_counts = {
             "raw": _ROW_COUNT,
             "canonical": 191_462,
-            "old_evaluation_ready": 191_333,
+            "old_eval_ready": 191_333,
             LifecycleState.EVALUATED.value: 191_333,
             LifecycleState.PENDING_VALIDATION.value: 129,
             LifecycleState.ENCODER_ONLY.value: 526,

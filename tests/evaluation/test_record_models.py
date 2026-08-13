@@ -25,24 +25,24 @@ from dr_code.evaluation import (
     AttemptValidity,
     BundleRecordReference,
     CandidateExecutionRecord,
-    EvaluationAttemptIdentity,
-    EvaluationAttemptRecord,
-    EvaluationMemberRecord,
-    EvaluationPlan,
-    EvaluationRuntimeIdentity,
-    EvaluationSampleMetadata,
+    EvalAttemptIdentity,
+    EvalAttemptRecord,
+    EvalMemberRecord,
+    EvalPlan,
+    EvalRuntimeIdentity,
+    EvalSampleMetadata,
     EvaluatedSampleRecord,
     ExecutedCandidateProvenance,
     ExecutorExecutionFailure,
     GeneratedSampleProvenance,
     HarnessExecutionFailure,
-    MaterializedEvaluationCandidate,
+    MaterializedEvalCandidate,
     NoCandidatesSampleRecord,
     PreprocessingAbsentSampleRecord,
     ReplayMode,
     ReplaySource,
     ReusedCandidateProvenance,
-    SAMPLE_EVALUATION_RECORD_ADAPTER,
+    SAMPLE_EVAL_RECORD_ADAPTER,
 )
 from dr_code.trace import Absent, CodeArtifact, SerializedTrace, TextArtifact
 from dr_exec import AttemptId, ExecutionId, FakeRecordReceipt, JobId
@@ -64,8 +64,8 @@ def reference(index: int = 0) -> BundleRecordReference:
     )
 
 
-def runtime() -> EvaluationRuntimeIdentity:
-    return EvaluationRuntimeIdentity(
+def runtime() -> EvalRuntimeIdentity:
+    return EvalRuntimeIdentity(
         document=IdentityDocument(
             schema="dr-code/runtime",
             schema_version=1,
@@ -74,8 +74,8 @@ def runtime() -> EvaluationRuntimeIdentity:
     )
 
 
-def metadata(**overrides: object) -> EvaluationSampleMetadata:
-    return EvaluationSampleMetadata(
+def metadata(**overrides: object) -> EvalSampleMetadata:
+    return EvalSampleMetadata(
         **{
             "identity": sample_identity(),
             "task_id": "t0",
@@ -100,8 +100,8 @@ def trace() -> SerializedTrace:
     )
 
 
-def materialized(**overrides: object) -> MaterializedEvaluationCandidate:
-    return MaterializedEvaluationCandidate(
+def materialized(**overrides: object) -> MaterializedEvalCandidate:
+    return MaterializedEvalCandidate(
         **{
             "identity": candidate(),
             "source": CodeArtifact(source=_CANDIDATE_SOURCE),
@@ -146,8 +146,8 @@ def evaluated(**overrides: object) -> EvaluatedSampleRecord:
     )
 
 
-def evaluation_plan() -> EvaluationPlan:
-    return EvaluationPlan(
+def evaluation_plan() -> EvalPlan:
+    return EvalPlan(
         plan_id="plan",
         version="1",
         task_set=task_set(),
@@ -182,9 +182,7 @@ def test_sample_terminal_variants_round_trip_by_status() -> None:
     ]
     for record in records:
         assert (
-            SAMPLE_EVALUATION_RECORD_ADAPTER.validate_json(
-                record.model_dump_json()
-            )
+            SAMPLE_EVAL_RECORD_ADAPTER.validate_json(record.model_dump_json())
             == record
         )
 
@@ -311,15 +309,15 @@ def test_attempt_limit_exhaustion_requires_observed_to_exceed_configured(
         )
 
 
-def attempt(**overrides: object) -> EvaluationAttemptRecord:
-    return EvaluationAttemptRecord(
+def attempt(**overrides: object) -> EvalAttemptRecord:
+    return EvalAttemptRecord(
         **{
-            "identity": EvaluationAttemptIdentity(attempt_id=UUID(int=2)),
+            "identity": EvalAttemptIdentity(attempt_id=UUID(int=2)),
             "plan": evaluation_plan(),
             "runtime": runtime(),
             "cache_namespace": "evaluation-v1",
             "members": (
-                EvaluationMemberRecord(
+                EvalMemberRecord(
                     slot=evaluation_slot(),
                     sample=sample_identity(),
                     record=reference(),
@@ -335,7 +333,7 @@ def attempt(**overrides: object) -> EvaluationAttemptRecord:
 
 
 def test_complete_attempt_requires_every_member_record() -> None:
-    member = EvaluationMemberRecord(
+    member = EvalMemberRecord(
         slot=evaluation_slot(), sample=sample_identity(), record=None
     )
     with pytest.raises(ValidationError, match="complete.*missing record"):
@@ -343,7 +341,7 @@ def test_complete_attempt_requires_every_member_record() -> None:
 
 
 def test_partial_attempt_is_invalid_and_names_missing_members() -> None:
-    member = EvaluationMemberRecord(
+    member = EvalMemberRecord(
         slot=evaluation_slot(), sample=sample_identity(), record=None
     )
     built = attempt(
@@ -374,7 +372,7 @@ def test_limit_exhaustion_requires_a_partial_invalid_attempt() -> None:
 
 
 def test_attempt_rejects_duplicate_slot_or_sample_identity() -> None:
-    duplicate = EvaluationMemberRecord(
+    duplicate = EvalMemberRecord(
         slot=evaluation_slot(), sample=sample_identity(), record=reference(1)
     )
     with pytest.raises(ValidationError, match="slots must be unique"):
@@ -383,7 +381,7 @@ def test_attempt_rejects_duplicate_slot_or_sample_identity() -> None:
 
 def test_replay_source_nests_attempt_identity_and_closed_mode() -> None:
     replay = ReplaySource(
-        attempt=EvaluationAttemptIdentity(attempt_id=UUID(int=3)),
+        attempt=EvalAttemptIdentity(attempt_id=UUID(int=3)),
         mode=ReplayMode.MATERIALIZED_CANDIDATES,
     )
     assert replay.mode.value == "materialized_candidates"

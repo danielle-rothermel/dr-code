@@ -13,7 +13,7 @@ from dr_code.humaneval.job import (
     HumanEvalEvaluatorSuite,
 )
 from dr_code.humaneval.settings import CodeTestSettings
-from dr_code.humaneval.task import EvaluationCaseStatus, HumanEvalTask
+from dr_code.humaneval.task import EvalCaseStatus, HumanEvalTask
 from dr_code.metrics.coordinates import MetricQuestionCoordinate
 from dr_code.metrics.names import MetricName
 from dr_code.metrics.operators.base import (
@@ -117,11 +117,11 @@ class CodeTest(MetricOperator[CodeTestSettings]):
         counts = evaluation.status_counts
         return CodeTestResult(
             total_cases=evaluation.total_cases,
-            passed_count=counts.get(EvaluationCaseStatus.PASSED.value, 0),
-            failed_count=counts.get(EvaluationCaseStatus.FAILED.value, 0),
-            error_count=counts.get(EvaluationCaseStatus.ERROR.value, 0),
+            passed_count=counts.get(EvalCaseStatus.PASSED.value, 0),
+            failed_count=counts.get(EvalCaseStatus.FAILED.value, 0),
+            error_count=counts.get(EvalCaseStatus.ERROR.value, 0),
             timeout_count=counts.get(
-                EvaluationCaseStatus.TIMEOUT.value,
+                EvalCaseStatus.TIMEOUT.value,
                 0,
             ),
             coverage_complete=evaluation.coverage_complete,

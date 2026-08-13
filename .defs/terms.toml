@@ -27,7 +27,7 @@ One planned task-and-sample position in an evaluation plan, addressed by its
 task id and its sample index within that task. It establishes expected
 membership and order without claiming that an input was observed or evaluated
 at that position."""
-exported_symbols = ["dr_code.evaluation.EvaluationSlotIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalSlotIdentity"]
 categories = ["evaluation identity", "evaluation planning"]
 part_of = ["evaluation plan"]
 
@@ -39,14 +39,14 @@ identity, task identity, and provenance. It may originate from live generation
 or a frozen historical corpus, and its relationship to an evaluation slot is
 explicit rather than reconstructed from content."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationSampleIdentity",
-  "dr_code.evaluation.EvaluationSourceIdentity",
+  "dr_code.evaluation.EvalSampleIdentity",
+  "dr_code.evaluation.EvalSourceIdentity",
   "dr_code.evaluation.GeneratedSampleProvenance",
   "dr_code.evaluation.CorpusSampleProvenance",
   "dr_code.evaluation.SyntheticSampleProvenance",
-  "dr_code.evaluation.EvaluationSampleMetadata",
-  "dr_code.evaluation.EvaluationSampleAuxiliaryArtifact",
-  "dr_code.evaluation.EvaluationSample",
+  "dr_code.evaluation.EvalSampleMetadata",
+  "dr_code.evaluation.EvalSampleAuxiliaryArtifact",
+  "dr_code.evaluation.EvalSample",
 ]
 categories = ["evaluation evidence", "evaluation identity"]
 is_a = ["evidence"]
@@ -60,8 +60,8 @@ its evaluation sample, resolved preprocessing definition, and ordered position
 after materialization. Candidate content and its hash may verify that
 occurrence but do not replace its identity."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationCandidateIdentity",
-  "dr_code.evaluation.MaterializedEvaluationCandidate",
+  "dr_code.evaluation.EvalCandidateIdentity",
+  "dr_code.evaluation.MaterializedEvalCandidate",
 ]
 categories = ["evaluation identity"]
 part_of = ["candidate execution record", "sample evaluation record"]
@@ -73,7 +73,7 @@ A caller-owned stable identity for execution behavior not fully expressed by
 an evaluation request, including behavior-changing runtime components and
 environment assumptions. It scopes persistent outcome reuse without identifying
 one machine or path."""
-exported_symbols = ["dr_code.evaluation.EvaluationRuntimeIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalRuntimeIdentity"]
 categories = ["evaluation execution", "evaluation identity"]
 part_of = ["candidate execution record", "evaluation attempt record"]
 
@@ -82,7 +82,7 @@ name = "evaluation attempt identity"
 definition = """
 An opaque identity for one evaluation attempt occurrence, distinct from its
 evaluation plan, ordered membership, and content hashes."""
-exported_symbols = ["dr_code.evaluation.EvaluationAttemptIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalAttemptIdentity"]
 categories = ["evaluation identity"]
 part_of = ["evaluation attempt record"]
 
@@ -111,7 +111,7 @@ the selected raw-input bytes, ordered materialized candidates, candidate
 execution records, and metric records, and remains evidence when no candidate
 is materialized or no candidate yields a measurement."""
 exported_symbols = [
-  "dr_code.evaluation.SampleEvaluationRecord",
+  "dr_code.evaluation.SampleEvalRecord",
   "dr_code.evaluation.PreprocessingAbsentSampleRecord",
   "dr_code.evaluation.NoCandidatesSampleRecord",
   "dr_code.evaluation.EvaluatedSampleRecord",
@@ -128,8 +128,8 @@ ordered membership, execution context, sample evaluation records,
 completeness, and validity. It is the authoritative source for publication,
 replay, comparison, and derived analysis."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationAttemptRecord",
-  "dr_code.evaluation.EvaluationMemberRecord",
+  "dr_code.evaluation.EvalAttemptRecord",
+  "dr_code.evaluation.EvalMemberRecord",
 ]
 categories = ["evaluation evidence"]
 is_a = ["evidence"]
@@ -152,7 +152,7 @@ exported_symbols = [
   "dr_code.evaluation.ReplayUnavailable",
   "dr_code.evaluation.ReplayReady",
   "dr_code.evaluation.preflight_replay",
-  "dr_code.evaluation.replay_evaluation_attempt",
+  "dr_code.evaluation.replay_eval_attempt",
 ]
 categories = ["evaluation analysis"]
 
@@ -163,9 +163,9 @@ An identity-aware comparison of two attempt records that reports membership,
 ordering, and exact changed-or-unchanged status, with denominators for supported
 projection comparisons. It makes no benchmark or statistical judgment."""
 exported_symbols = [
-  "dr_code.evaluation.StructuralEvaluationComparison",
+  "dr_code.evaluation.StructuralEvalComparison",
   "dr_code.evaluation.StructuralMemberIdentity",
-  "dr_code.evaluation.compare_evaluation_attempts",
+  "dr_code.evaluation.compare_eval_attempts",
 ]
 categories = ["evaluation analysis"]
 
@@ -206,9 +206,9 @@ artifact schemas identify one evaluation attempt record and its included
 projections. It uses portable references and relative artifact names rather
 than machine-specific paths."""
 exported_symbols = [
-  "dr_code.evaluation.read_evaluation_projection",
-  "dr_code.evaluation.restore_evaluation_attempt",
-  "dr_code.evaluation.audit_evaluation_bundle",
+  "dr_code.evaluation.read_eval_projection",
+  "dr_code.evaluation.restore_eval_attempt",
+  "dr_code.evaluation.audit_eval_bundle",
 ]
 categories = ["evaluation publication"]
 
@@ -453,7 +453,7 @@ name = "evaluation procedure"
 definition = """
 The composition of one complete preprocessing definition and one complete
 metrics definition."""
-exported_symbols = ["dr_code.evaluation.EvaluationProcedure"]
+exported_symbols = ["dr_code.evaluation.EvalProcedure"]
 part_of = ["evaluation plan"]
 
 [[terms]]
@@ -462,7 +462,7 @@ definition = """
 A versioned composition of an ordered task selection, sampling structure,
 evaluation procedure, and aggregation policy."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationPlan",
+  "dr_code.evaluation.EvalPlan",
   "dr_code.evaluation.TaskSet",
   "dr_code.evaluation.SamplingPlan",
 ]
@@ -504,7 +504,7 @@ A finite non-text measurement under an evaluation coordinate that names the
 unique metric values from which it derives."""
 exported_symbols = [
   "dr_code.evaluation.Score",
-  "dr_code.evaluation.EvaluationCoordinate",
+  "dr_code.evaluation.EvalCoordinate",
 ]
 categories = ["evaluation analysis", "metrics"]
 is_a = ["evaluation projection"]

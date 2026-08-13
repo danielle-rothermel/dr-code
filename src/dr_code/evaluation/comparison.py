@@ -11,15 +11,15 @@ from pydantic import Field, model_validator
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.batch import ProjectionKind
 from dr_code.evaluation.identity import (
-    EvaluationAttemptIdentity,
-    EvaluationSampleIdentity,
-    EvaluationSlotIdentity,
+    EvalAttemptIdentity,
+    EvalSampleIdentity,
+    EvalSlotIdentity,
 )
 from dr_code.evaluation.records import (
-    EvaluationAttemptRecord,
-    EvaluationMemberRecord,
+    EvalAttemptRecord,
+    EvalMemberRecord,
     EvaluatedSampleRecord,
-    SampleEvaluationRecord,
+    SampleEvalRecord,
 )
 from dr_code.evaluation.references import (
     BundleRecordReference,
@@ -27,10 +27,10 @@ from dr_code.evaluation.references import (
 )
 
 
-class EvaluationEvidenceResolver(Protocol):
+class EvalEvidenceResolver(Protocol):
     async def resolve(
         self, reference: EvidenceReference, /
-    ) -> SampleEvaluationRecord: ...
+    ) -> SampleEvalRecord: ...
 
 
 @verify(UNIQUE)
@@ -40,8 +40,8 @@ class ComparisonStatus(StrEnum):
 
 
 class StructuralMemberIdentity(FrozenModel):
-    slot: EvaluationSlotIdentity
-    sample: EvaluationSampleIdentity
+    slot: EvalSlotIdentity
+    sample: EvalSampleIdentity
 
 
 class StructuralRecordComparison(FrozenModel):
@@ -89,9 +89,9 @@ ProjectionComparison: TypeAlias = Annotated[
 ]
 
 
-class StructuralEvaluationComparison(FrozenModel):
-    left: EvaluationAttemptIdentity
-    right: EvaluationAttemptIdentity
+class StructuralEvalComparison(FrozenModel):
+    left: EvalAttemptIdentity
+    right: EvalAttemptIdentity
     matched: tuple[StructuralRecordComparison, ...]
     added: tuple[StructuralMemberIdentity, ...]
     removed: tuple[StructuralMemberIdentity, ...]
@@ -102,18 +102,16 @@ class StructuralEvaluationComparison(FrozenModel):
 _ProjectionDefinition: TypeAlias = tuple[
     ProjectionKind, int | None, int | None
 ]
-_MemberIdentity: TypeAlias = tuple[
-    EvaluationSlotIdentity, EvaluationSampleIdentity
-]
+_MemberIdentity: TypeAlias = tuple[EvalSlotIdentity, EvalSampleIdentity]
 
 
-async def compare_evaluation_attempts(
-    left: EvaluationAttemptRecord,
-    right: EvaluationAttemptRecord,
+async def compare_eval_attempts(
+    left: EvalAttemptRecord,
+    right: EvalAttemptRecord,
     *,
-    resolver: EvaluationEvidenceResolver,
+    resolver: EvalEvidenceResolver,
     projections: tuple[_ProjectionDefinition, ...] = (),
-) -> StructuralEvaluationComparison:
+) -> StructuralEvalComparison:
     """Compare compact attempts, resolving only changed matched evidence.
 
     Projection definitions are ``(kind, left_version, right_version)`` tuples.
@@ -167,7 +165,7 @@ async def compare_evaluation_attempts(
             statuses = _component_statuses(left_record, right_record)
             for kind in projection_changes:
                 if kind in {
-                    ProjectionKind.EVALUATION_SAMPLES,
+                    ProjectionKind.EVAL_SAMPLES,
                     ProjectionKind.MATERIALIZED_CANDIDATES,
                     ProjectionKind.METRIC_RECORDS,
                 } and not _projection_values_equal(
@@ -201,7 +199,7 @@ async def compare_evaluation_attempts(
             projections, projection_kinds, strict=True
         )
     )
-    return StructuralEvaluationComparison(
+    return StructuralEvalComparison(
         left=left.identity,
         right=right.identity,
         matched=tuple(matched),
@@ -213,13 +211,13 @@ async def compare_evaluation_attempts(
 
 
 def _index_members(
-    attempt: EvaluationAttemptRecord,
+    attempt: EvalAttemptRecord,
 ) -> tuple[
     tuple[_MemberIdentity, ...],
-    dict[_MemberIdentity, EvaluationMemberRecord],
+    dict[_MemberIdentity, EvalMemberRecord],
 ]:
     order: list[_MemberIdentity] = []
-    members: dict[_MemberIdentity, EvaluationMemberRecord] = {}
+    members: dict[_MemberIdentity, EvalMemberRecord] = {}
     for member in attempt.members:
         identity: _MemberIdentity = (member.slot, member.sample)
         if identity in members:
@@ -297,10 +295,10 @@ def _compare_projection(
 
 def _projection_values_equal(
     kind: ProjectionKind,
-    left: SampleEvaluationRecord,
-    right: SampleEvaluationRecord,
+    left: SampleEvalRecord,
+    right: SampleEvalRecord,
 ) -> bool:
-    if kind is ProjectionKind.EVALUATION_SAMPLES:
+    if kind is ProjectionKind.EVAL_SAMPLES:
         return left.status == right.status and left.sample == right.sample
     if kind is ProjectionKind.MATERIALIZED_CANDIDATES:
         return _candidates(left) == _candidates(right)
@@ -310,8 +308,8 @@ def _projection_values_equal(
 
 
 def _component_statuses(
-    left: SampleEvaluationRecord,
-    right: SampleEvaluationRecord,
+    left: SampleEvalRecord,
+    right: SampleEvalRecord,
 ) -> tuple[
     ComparisonStatus,
     ComparisonStatus,
@@ -347,21 +345,21 @@ def _comparison_status(equal: bool) -> ComparisonStatus:
 
 
 def _candidates(
-    record: SampleEvaluationRecord,
+    record: SampleEvalRecord,
 ) -> tuple[object, ...]:
     return (
         record.candidates if isinstance(record, EvaluatedSampleRecord) else ()
     )
 
 
-def _metrics(record: SampleEvaluationRecord) -> tuple[object, ...]:
+def _metrics(record: SampleEvalRecord) -> tuple[object, ...]:
     return record.metrics if isinstance(record, EvaluatedSampleRecord) else ()
 
 
 def _validate_resolved_record(
-    record: SampleEvaluationRecord,
-    member: EvaluationMemberRecord,
-    attempt: EvaluationAttemptRecord,
+    record: SampleEvalRecord,
+    member: EvalMemberRecord,
+    attempt: EvalAttemptRecord,
 ) -> None:
     from dr_code.evaluation.validation import validate_sample_record_graph
 
@@ -398,7 +396,7 @@ def _reference_content(reference: EvidenceReference) -> tuple[str, int, str]:
 
 
 def _verify_reference(
-    reference: EvidenceReference, record: SampleEvaluationRecord
+    reference: EvidenceReference, record: SampleEvalRecord
 ) -> None:
     payload = record.model_dump(mode="json")
     if isinstance(reference, BundleRecordReference):
@@ -419,11 +417,11 @@ def _verify_reference(
 __all__ = [
     "ComparableProjectionComparison",
     "ComparisonStatus",
-    "EvaluationEvidenceResolver",
+    "EvalEvidenceResolver",
     "ProjectionComparison",
     "ProjectionNotComparable",
-    "StructuralEvaluationComparison",
+    "StructuralEvalComparison",
     "StructuralMemberIdentity",
     "StructuralRecordComparison",
-    "compare_evaluation_attempts",
+    "compare_eval_attempts",
 ]

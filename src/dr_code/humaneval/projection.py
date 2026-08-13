@@ -10,8 +10,8 @@ from pydantic import Field
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.identity import (
-    EvaluationSampleIdentity,
-    MaterializedEvaluationCandidate,
+    EvalSampleIdentity,
+    MaterializedEvalCandidate,
 )
 from dr_code.evaluation.records import (
     CandidateExecutionRecord,
@@ -24,7 +24,7 @@ from dr_code.evaluation.records import (
     HarnessExecutionFailure,
     NoCandidatesSampleRecord,
     PreprocessingAbsentSampleRecord,
-    SampleEvaluationRecord,
+    SampleEvalRecord,
     failure_class_of,
 )
 from dr_code.evaluation.references import EvidenceReference
@@ -37,7 +37,7 @@ from dr_code.humaneval.profiles import (
     CandidateReduction,
     HumanEvalScoringProfile,
 )
-from dr_code.humaneval.task import EvaluationCaseStatus, EvaluationTaskResult
+from dr_code.humaneval.task import EvalCaseStatus, EvalTaskResult
 from dr_code.metrics import (
     MetricQuestionCoordinate,
     MetricsDefinitionCoordinate,
@@ -50,7 +50,7 @@ from dr_code.preprocessing import PreprocessingFailureCode
 class SubmissionOutcome(StrEnum):
     PASSED = "passed"
     TESTS_FAILED = "tests_failed"
-    EVALUATION_INCOMPLETE = "evaluation_incomplete"
+    EVAL_INCOMPLETE = "evaluation_incomplete"
     EMPTY_SUBMISSION = "empty_submission"
     EXTRACTION_FAILED = "extraction_failed"
     NO_TOP_LEVEL_FUNCTIONS = "no_top_level_functions"
@@ -58,7 +58,7 @@ class SubmissionOutcome(StrEnum):
 
 
 class HumanEvalSubmissionRequest(FrozenModel):
-    sample: EvaluationSampleIdentity
+    sample: EvalSampleIdentity
     scoring_profile: HumanEvalScoringProfile
 
 
@@ -69,18 +69,18 @@ class HarnessFailureCause(FrozenModel):
 
 class CompletedSubmissionResult(FrozenModel):
     kind: Literal["completed"] = "completed"
-    sample: EvaluationSampleIdentity
+    sample: EvalSampleIdentity
     outcome: SubmissionOutcome
     score: float
-    evaluation: EvaluationTaskResult | None
+    evaluation: EvalTaskResult | None
     scoring_profile: HumanEvalScoringProfile
     sample_record: EvidenceReference
 
 
 class HarnessFailure(FrozenModel):
     kind: Literal["harness_failure"] = "harness_failure"
-    sample: EvaluationSampleIdentity
-    evaluation: EvaluationTaskResult | None
+    sample: EvalSampleIdentity
+    evaluation: EvalTaskResult | None
     cause: HarnessFailureCause
     failure_class: FailureClass
     scoring_profile: HumanEvalScoringProfile
@@ -92,16 +92,14 @@ HumanEvalSubmissionResult: TypeAlias = Annotated[
     Field(discriminator="kind"),
 ]
 
-_ReferencedSampleRecord: TypeAlias = tuple[
-    SampleEvaluationRecord, EvidenceReference
-]
+_ReferencedSampleRecord: TypeAlias = tuple[SampleEvalRecord, EvidenceReference]
 
 
 @dataclass(frozen=True, slots=True)
 class _CandidatePairing:
     """One candidate paired with the execution record that measured it."""
 
-    candidate: MaterializedEvaluationCandidate
+    candidate: MaterializedEvalCandidate
     execution: CandidateExecutionRecord
 
 
@@ -151,7 +149,7 @@ class _CandidateHarnessFailure:
 
 
 def project_humaneval_submission(
-    record: SampleEvaluationRecord,
+    record: SampleEvalRecord,
     request: HumanEvalSubmissionRequest,
     /,
     *,
@@ -170,7 +168,7 @@ def project_humaneval_submissions_batch(
 ) -> tuple[HumanEvalSubmissionResult, ...]:
     """Derive ordered benchmark results from authoritative sample records."""
 
-    by_sample: dict[EvaluationSampleIdentity, _ReferencedSampleRecord] = {}
+    by_sample: dict[EvalSampleIdentity, _ReferencedSampleRecord] = {}
     for record, reference in records:
         identity = record.sample.identity
         if identity in by_sample:
@@ -190,7 +188,7 @@ def project_humaneval_submissions_batch(
 
 
 def score_humaneval_submission(
-    record: SampleEvaluationRecord,
+    record: SampleEvalRecord,
     request: HumanEvalSubmissionRequest,
     /,
     *,
@@ -212,7 +210,7 @@ def score_humaneval_submissions_batch(
 
 
 def _project_record(
-    record: SampleEvaluationRecord,
+    record: SampleEvalRecord,
     request: HumanEvalSubmissionRequest,
     reference: EvidenceReference,
 ) -> HumanEvalSubmissionResult:
@@ -499,7 +497,7 @@ def _slice_failure_class(execution: CandidateExecutionRecord) -> FailureClass:
 
 
 def _classify_candidate(
-    candidate: MaterializedEvaluationCandidate,
+    candidate: MaterializedEvalCandidate,
     execution: CandidateExecutionRecord,
     request: HumanEvalSubmissionRequest,
     *,
@@ -572,19 +570,17 @@ def _classify_candidate(
         )
     if any_function_group and any(
         group.cases
-        and all(
-            case.status is EvaluationCaseStatus.PASSED for case in group.cases
-        )
+        and all(case.status is EvalCaseStatus.PASSED for case in group.cases)
         for group in suite.groups
     ):
         return _CandidateOutcome(outcome=SubmissionOutcome.PASSED)
-    if any(case.status is EvaluationCaseStatus.TIMEOUT for case in cases):
+    if any(case.status is EvalCaseStatus.TIMEOUT for case in cases):
         # The candidate exhausted its wall-time budget, so every group that did
         # not pass is an unfinished measurement rather than a measured failure.
         projected = SubmissionOutcome.TIMED_OUT
     elif not cases:
-        projected = SubmissionOutcome.EVALUATION_INCOMPLETE
-    elif all(case.status is EvaluationCaseStatus.PASSED for case in cases):
+        projected = SubmissionOutcome.EVAL_INCOMPLETE
+    elif all(case.status is EvalCaseStatus.PASSED for case in cases):
         projected = SubmissionOutcome.PASSED
     else:
         projected = SubmissionOutcome.TESTS_FAILED

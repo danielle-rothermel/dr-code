@@ -14,11 +14,11 @@ from sqlalchemy.engine import Connection  # noqa: TC002
 from dr_code.evaluation.bundle import (
     SAMPLE_RECORD_OBJECT_SCHEMA,
 )
-from dr_code.evaluation.identity import EvaluationAttemptIdentity
+from dr_code.evaluation.identity import EvalAttemptIdentity
 from dr_code.evaluation.records import (
-    EVALUATION_ATTEMPT_SCHEMA_VERSION,
-    EvaluationAttemptRecord,
-    SampleEvaluationRecord,
+    EVAL_ATTEMPT_SCHEMA_VERSION,
+    EvalAttemptRecord,
+    SampleEvalRecord,
 )
 from dr_code.evaluation.references import StoredRecordReference
 from dr_code.evaluation.validation import validate_sample_record_graph
@@ -56,7 +56,7 @@ class EnlistedObjectStore(Protocol):
 
 
 def output_reference_binding_key(
-    attempt: EvaluationAttemptIdentity,
+    attempt: EvalAttemptIdentity,
     /,
 ) -> str:
     """Name the binding an attempt's published evidence resolves through."""
@@ -65,7 +65,7 @@ def output_reference_binding_key(
 
 
 def sample_record_binding_key(
-    attempt: EvaluationAttemptIdentity,
+    attempt: EvalAttemptIdentity,
     /,
     *,
     ordinal: int,
@@ -77,13 +77,13 @@ def sample_record_binding_key(
     return f"{OUTPUT_REFERENCE_BINDING_PREFIX}{attempt.attempt_id}/{ordinal}"
 
 
-def commit_evaluation_evidence(
+def commit_eval_evidence(
     connection: Connection,
     /,
     *,
     object_store: EnlistedObjectStore,
-    attempt: EvaluationAttemptRecord,
-    samples: tuple[SampleEvaluationRecord, ...],
+    attempt: EvalAttemptRecord,
+    samples: tuple[SampleEvalRecord, ...],
 ) -> StoredRecordReference:
     """Write an attempt's evidence inside the caller's open transaction.
 
@@ -169,7 +169,7 @@ def commit_evaluation_evidence(
     )
     return StoredRecordReference(
         reference=attempt_reference,
-        schema_version=EVALUATION_ATTEMPT_SCHEMA_VERSION,
+        schema_version=EVAL_ATTEMPT_SCHEMA_VERSION,
     )
 
 
@@ -177,7 +177,7 @@ __all__ = [
     "ATTEMPT_RECORD_OBJECT_SCHEMA",
     "EnlistedObjectStore",
     "OUTPUT_REFERENCE_BINDING_PREFIX",
-    "commit_evaluation_evidence",
+    "commit_eval_evidence",
     "output_reference_binding_key",
     "sample_record_binding_key",
 ]

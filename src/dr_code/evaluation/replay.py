@@ -10,33 +10,33 @@ from dr_code.core.models import FrozenModel
 from dr_code.evaluation.batch import (
     AttemptLimits,
     CandidateJobBudget,
-    EvaluationBatchRequest,
-    EvaluationBatchResult,
-    FrozenCandidateEvaluationInput,
+    EvalBatchRequest,
+    EvalBatchResult,
+    FrozenCandidateEvalInput,
     ProjectionRequest,
     RecordPlacement,
     RunGrade,
-    SampleEvaluationInput,
+    SampleEvalInput,
     ShardLimits,
     WindowLimits,
     _evaluate_batch_with_replay,
 )
-from dr_code.evaluation.bundle import RestoredEvaluationAttempt
+from dr_code.evaluation.bundle import RestoredEvalAttempt
 from dr_code.evaluation.identity import (
-    EvaluationAttemptIdentity,
-    EvaluationRuntimeIdentity,
-    EvaluationSample,
-    EvaluationSampleAuxiliaryArtifact,
+    EvalAttemptIdentity,
+    EvalRuntimeIdentity,
+    EvalSample,
+    EvalSampleAuxiliaryArtifact,
 )
-from dr_code.evaluation.plan import EvaluationPlan
+from dr_code.evaluation.plan import EvalPlan
 from dr_code.evaluation.records import (
     AttemptCompleteness,
     EvaluatedSampleRecord,
     ReplayMode,
     ReplaySource,
-    SampleEvaluationRecord,
+    SampleEvalRecord,
 )
-from dr_code.evaluation.validation import validate_evaluation_attempt_graph
+from dr_code.evaluation.validation import validate_eval_attempt_graph
 from dr_code.metrics.engine.engine import (
     _bind_questions,
     _plan_candidate_metrics,
@@ -64,7 +64,7 @@ class ReplayUnavailable(FrozenModel):
 class ReplayReady(FrozenModel):
     kind: Literal["ready"] = "ready"
     source: ReplaySource
-    request: EvaluationBatchRequest
+    request: EvalBatchRequest
 
     @model_validator(mode="after")
     def validate_new_attempt(self) -> ReplayReady:
@@ -82,12 +82,12 @@ ReplayPreflight: TypeAlias = Annotated[
 
 
 def preflight_replay(
-    restored: RestoredEvaluationAttempt,
+    restored: RestoredEvalAttempt,
     mode: ReplayMode,
     /,
     *,
-    attempt: EvaluationAttemptIdentity,
-    runtime: EvaluationRuntimeIdentity,
+    attempt: EvalAttemptIdentity,
+    runtime: EvalRuntimeIdentity,
     cache_namespace: str,
     run_grade: RunGrade,
     record_placement: RecordPlacement,
@@ -100,7 +100,7 @@ def preflight_replay(
     """Validate whole-attempt evidence and build one current batch request."""
 
     source = ReplaySource(attempt=restored.attempt.identity, mode=mode)
-    validate_evaluation_attempt_graph(restored.attempt, restored.samples)
+    validate_eval_attempt_graph(restored.attempt, restored.samples)
     if restored.attempt.completeness is not AttemptCompleteness.COMPLETE:
         return ReplayUnavailable(
             source=source,
@@ -117,7 +117,7 @@ def preflight_replay(
         _replay_input(record, restored.attempt.plan, mode=mode)
         for record in restored.samples
     )
-    request = EvaluationBatchRequest(
+    request = EvalBatchRequest(
         attempt=attempt,
         plan=restored.attempt.plan,
         runtime=runtime,
@@ -134,7 +134,7 @@ def preflight_replay(
     return ReplayReady(source=source, request=request)
 
 
-async def replay_evaluation_attempt(
+async def replay_eval_attempt(
     ready: ReplayReady,
     /,
     *,
@@ -143,7 +143,7 @@ async def replay_evaluation_attempt(
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
     pool_config: ExecutionPoolConfig,
-) -> EvaluationBatchResult:
+) -> EvalBatchResult:
     """Execute a ready replay through the standalone batch path."""
 
     return await _evaluate_batch_with_replay(
@@ -158,7 +158,7 @@ async def replay_evaluation_attempt(
 
 
 def _support_error(
-    restored: RestoredEvaluationAttempt, mode: ReplayMode
+    restored: RestoredEvalAttempt, mode: ReplayMode
 ) -> str | None:
     try:
         _bind_questions(restored.attempt.plan.procedure.metrics)
@@ -216,7 +216,7 @@ def _support_error(
                 restored.attempt.plan,
                 mode=ReplayMode.MATERIALIZED_CANDIDATES,
             )
-            assert isinstance(replay_input, FrozenCandidateEvaluationInput)
+            assert isinstance(replay_input, FrozenCandidateEvalInput)
             from dr_code.evaluation._batch import _frozen_candidate_trace
 
             trace = _frozen_candidate_trace(replay_input)
@@ -251,21 +251,21 @@ def _support_error(
 
 
 def _replay_input(
-    record: SampleEvaluationRecord,
-    plan: EvaluationPlan,
+    record: SampleEvalRecord,
+    plan: EvalPlan,
     *,
     mode: ReplayMode,
-) -> SampleEvaluationInput | FrozenCandidateEvaluationInput:
+) -> SampleEvalInput | FrozenCandidateEvalInput:
     sample = _sample_from_record(record, plan)
     if mode is ReplayMode.SAMPLES:
-        return SampleEvaluationInput(slot=record.slot, sample=sample)
+        return SampleEvalInput(slot=record.slot, sample=sample)
 
     producer = record.trace.producer
     assert isinstance(
         producer,
         PreprocessingTraceProducer | ExternalPreprocessingTraceProducer,
     )
-    return FrozenCandidateEvaluationInput(
+    return FrozenCandidateEvalInput(
         slot=record.slot,
         sample=sample,
         preprocessing=producer.definition,
@@ -278,15 +278,15 @@ def _replay_input(
 
 
 def _sample_from_record(
-    record: SampleEvaluationRecord, plan: EvaluationPlan
-) -> EvaluationSample:
+    record: SampleEvalRecord, plan: EvalPlan
+) -> EvalSample:
     raw_input = record.trace.values.get("input")
     if not isinstance(raw_input, TextArtifact):
         raise ValueError("source trace input is not a text artifact")
     step_names = {
         step.instance_name for step in plan.procedure.preprocessing.steps
     }
-    auxiliary: list[EvaluationSampleAuxiliaryArtifact] = []
+    auxiliary: list[EvalSampleAuxiliaryArtifact] = []
     for key, value in record.trace.values.items():
         if key in {"input", "output"} or key in step_names:
             continue
@@ -295,9 +295,9 @@ def _sample_from_record(
                 f"source auxiliary trace value {key!r} is not an artifact"
             )
         auxiliary.append(
-            EvaluationSampleAuxiliaryArtifact(trace_key=key, artifact=value)
+            EvalSampleAuxiliaryArtifact(trace_key=key, artifact=value)
         )
-    return EvaluationSample(
+    return EvalSample(
         metadata=record.sample,
         raw_input=raw_input,
         auxiliary_artifacts=tuple(auxiliary),
@@ -311,5 +311,5 @@ __all__ = [
     "ReplaySource",
     "ReplayUnavailable",
     "preflight_replay",
-    "replay_evaluation_attempt",
+    "replay_eval_attempt",
 ]

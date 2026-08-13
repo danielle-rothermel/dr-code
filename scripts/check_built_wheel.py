@@ -27,25 +27,25 @@ from dr_exec import ProcessExecutor
 from dr_serialize import Sha256Digest
 from dr_code.core.execution.executor import host_process_executor
 from dr_code.evaluation import (
-    EVALUATION_BUNDLE_FORMAT,
-    EVALUATION_PROJECTION_FORMAT,
-    EvaluationCandidateIdentity,
-    EvaluationBundlePayload,
-    EvaluationAttemptIdentity,
-    EvaluationSampleIdentity,
-    MaterializedEvaluationCandidate,
+    EVAL_BUNDLE_FORMAT,
+    EVAL_PROJECTION_FORMAT,
+    EvalCandidateIdentity,
+    EvalBundlePayload,
+    EvalAttemptIdentity,
+    EvalSampleIdentity,
+    MaterializedEvalCandidate,
     ProjectionArtifactHeader,
     ProjectionKind,
     ReplayReady,
-    StructuralEvaluationComparison,
-    audit_evaluation_bundle,
-    compare_evaluation_attempts,
+    StructuralEvalComparison,
+    audit_eval_bundle,
+    compare_eval_attempts,
     evaluate_batch,
     evaluate_durable_partition,
     preflight_replay,
-    read_evaluation_projection,
-    replay_evaluation_attempt,
-    restore_evaluation_attempt,
+    read_eval_projection,
+    replay_eval_attempt,
+    restore_eval_attempt,
 )
 from dr_code.humaneval import (
     HumanEvalCandidateJobRequest,
@@ -88,41 +88,41 @@ required_exports = {
         "ComparableProjectionComparison",
         "ComparisonStatus",
         "CorpusSampleProvenance",
-        "EVALUATION_ATTEMPT_SCHEMA_VERSION",
-        "EVALUATION_BUNDLE_FORMAT",
-        "EVALUATION_BUNDLE_SCHEMA_VERSION",
-        "EVALUATION_PROJECTION_FORMAT",
-        "EVALUATION_PROJECTION_SCHEMA_VERSION",
-        "EvaluationAttemptIdentity",
-        "EvaluationAttemptRecord",
-        "EvaluationBatchRequest",
-        "EvaluationBatchResult",
-        "EvaluationBundleAudit",
-        "EvaluationBundlePayload",
-        "EvaluationCandidateIdentity",
-        "EvaluationEvidenceResolver",
-        "EvaluationInput",
-        "EvaluationMemberRecord",
-        "EvaluationProjectionReference",
-        "EvaluationReadLimits",
-        "EvaluationRuntimeIdentity",
-        "EvaluationSample",
-        "EvaluationSampleAuxiliaryArtifact",
-        "EvaluationSampleIdentity",
-        "EvaluationSampleMetadata",
-        "EvaluationSampleProjectionRow",
-        "EvaluationSampleProvenance",
-        "EvaluationSlotIdentity",
-        "EvaluationSourceIdentity",
+        "EVAL_ATTEMPT_SCHEMA_VERSION",
+        "EVAL_BUNDLE_FORMAT",
+        "EVAL_BUNDLE_SCHEMA_VERSION",
+        "EVAL_PROJECTION_FORMAT",
+        "EVAL_PROJECTION_SCHEMA_VERSION",
+        "EvalAttemptIdentity",
+        "EvalAttemptRecord",
+        "EvalBatchRequest",
+        "EvalBatchResult",
+        "EvalBundleAudit",
+        "EvalBundlePayload",
+        "EvalCandidateIdentity",
+        "EvalEvidenceResolver",
+        "EvalInput",
+        "EvalMemberRecord",
+        "EvalProjectionReference",
+        "EvalReadLimits",
+        "EvalRuntimeIdentity",
+        "EvalSample",
+        "EvalSampleAuxiliaryArtifact",
+        "EvalSampleIdentity",
+        "EvalSampleMetadata",
+        "EvalSampleProjectionRow",
+        "EvalSampleProvenance",
+        "EvalSlotIdentity",
+        "EvalSourceIdentity",
         "EvaluatedSampleRecord",
         "EvidenceReference",
         "ExecutedCandidateProvenance",
         "ExecutorExecutionFailure",
-        "FrozenCandidateEvaluationInput",
+        "FrozenCandidateEvalInput",
         "GeneratedSampleProvenance",
         "HarnessExecutionFailure",
         "MaterializedCandidateProjectionRow",
-        "MaterializedEvaluationCandidate",
+        "MaterializedEvalCandidate",
         "MetricRecordProjectionRow",
         "NoCandidatesSampleRecord",
         "PreprocessingAbsentSampleRecord",
@@ -138,28 +138,28 @@ required_exports = {
         "ReplayReady",
         "ReplaySource",
         "ReplayUnavailable",
-        "RestoredEvaluationAttempt",
+        "RestoredEvalAttempt",
         "ReusedCandidateProvenance",
-        "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
+        "SAMPLE_EVAL_RECORD_SCHEMA_VERSION",
         "SAMPLE_RECORD_OBJECT_SCHEMA",
-        "SampleEvaluationInput",
-        "SampleEvaluationRecord",
+        "SampleEvalInput",
+        "SampleEvalRecord",
         "Score",
         "ScoreProjectionRow",
         "ShardLimits",
         "StoredRecordReference",
-        "StructuralEvaluationComparison",
+        "StructuralEvalComparison",
         "StructuralRecordComparison",
         "SyntheticSampleProvenance",
         "WindowLimits",
-        "audit_evaluation_bundle",
-        "compare_evaluation_attempts",
+        "audit_eval_bundle",
+        "compare_eval_attempts",
         "evaluate_batch",
         "evaluate_durable_partition",
         "preflight_replay",
-        "read_evaluation_projection",
-        "replay_evaluation_attempt",
-        "restore_evaluation_attempt",
+        "read_eval_projection",
+        "replay_eval_attempt",
+        "restore_eval_attempt",
     },
     "dr_code.humaneval": {
         "CandidateNamespaceFailure",
@@ -258,28 +258,28 @@ if not all(
     for value in (
         evaluate_batch,
         evaluate_durable_partition,
-        read_evaluation_projection,
-        restore_evaluation_attempt,
-        audit_evaluation_bundle,
+        read_eval_projection,
+        restore_eval_attempt,
+        audit_eval_bundle,
         preflight_replay,
-        replay_evaluation_attempt,
-        compare_evaluation_attempts,
+        replay_eval_attempt,
+        compare_eval_attempts,
     )
 ):
     raise SystemExit("installed wheel is missing the evaluation bundle API")
-if ReplayReady is None or StructuralEvaluationComparison is None:
+if ReplayReady is None or StructuralEvalComparison is None:
     raise SystemExit("installed wheel is missing replay or comparison models")
-bundle_attempt = EvaluationAttemptIdentity(
+bundle_attempt = EvalAttemptIdentity(
     attempt_id="00000000-0000-0000-0000-000000000001"
 )
 if (
-    EvaluationBundlePayload(attempt=bundle_attempt, projections=()).format
-    != EVALUATION_BUNDLE_FORMAT
+    EvalBundlePayload(attempt=bundle_attempt, projections=()).format
+    != EVAL_BUNDLE_FORMAT
     or ProjectionArtifactHeader(
         source_attempt=bundle_attempt,
         kind=ProjectionKind.SCORES,
     ).format
-    != EVALUATION_PROJECTION_FORMAT
+    != EVAL_PROJECTION_FORMAT
 ):
     raise SystemExit("installed wheel evaluation wire constants disagree")
 
@@ -306,9 +306,9 @@ with TemporaryDirectory(prefix="dr-code-wheel-records-") as record_root:
     source = CodeArtifact(source="def add_one(x):\n    return x + 1\n")
     settings = CodeTestSettings()
     request = HumanEvalCandidateJobRequest(
-        candidate=MaterializedEvaluationCandidate(
-            identity=EvaluationCandidateIdentity(
-                sample=EvaluationSampleIdentity(sample_id="wheel-smoke"),
+        candidate=MaterializedEvalCandidate(
+            identity=EvalCandidateIdentity(
+                sample=EvalSampleIdentity(sample_id="wheel-smoke"),
                 preprocessing=PreprocessingDefinitionCoordinate(
                     definition_id="wheel-smoke",
                     version="1",

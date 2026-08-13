@@ -21,12 +21,12 @@ from dr_code.evaluation import (
     AttemptCompleteness,
     AttemptValidity,
     BundleRecordReference,
-    EvaluationAttemptIdentity,
-    EvaluationAttemptRecord,
-    EvaluationMemberRecord,
-    EvaluationPlan,
-    EvaluationRuntimeIdentity,
-    EvaluationSampleMetadata,
+    EvalAttemptIdentity,
+    EvalAttemptRecord,
+    EvalMemberRecord,
+    EvalPlan,
+    EvalRuntimeIdentity,
+    EvalSampleMetadata,
     GeneratedSampleProvenance,
     NoCandidatesSampleRecord,
 )
@@ -46,8 +46,8 @@ def reference(index: int = 0) -> BundleRecordReference:
     )
 
 
-def runtime() -> EvaluationRuntimeIdentity:
-    return EvaluationRuntimeIdentity(
+def runtime() -> EvalRuntimeIdentity:
+    return EvalRuntimeIdentity(
         document=IdentityDocument(
             schema="dr-code/runtime",
             schema_version=1,
@@ -56,8 +56,8 @@ def runtime() -> EvaluationRuntimeIdentity:
     )
 
 
-def metadata(**overrides: object) -> EvaluationSampleMetadata:
-    return EvaluationSampleMetadata(
+def metadata(**overrides: object) -> EvalSampleMetadata:
+    return EvalSampleMetadata(
         **{
             "identity": sample_identity(),
             "task_id": "t0",
@@ -82,8 +82,8 @@ def trace() -> SerializedTrace:
     )
 
 
-def evaluation_plan() -> EvaluationPlan:
-    return EvaluationPlan(
+def evaluation_plan() -> EvalPlan:
+    return EvalPlan(
         plan_id="plan",
         version="1",
         task_set=task_set(),
@@ -101,15 +101,15 @@ def sample_record() -> NoCandidatesSampleRecord:
     )
 
 
-def attempt_record(**overrides: object) -> EvaluationAttemptRecord:
-    return EvaluationAttemptRecord(
+def attempt_record(**overrides: object) -> EvalAttemptRecord:
+    return EvalAttemptRecord(
         **{
-            "identity": EvaluationAttemptIdentity(attempt_id=_ATTEMPT_ID),
+            "identity": EvalAttemptIdentity(attempt_id=_ATTEMPT_ID),
             "plan": evaluation_plan(),
             "runtime": runtime(),
             "cache_namespace": "evaluation-v1",
             "members": (
-                EvaluationMemberRecord(
+                EvalMemberRecord(
                     slot=evaluation_slot(),
                     sample=sample_identity(),
                     record=reference(),

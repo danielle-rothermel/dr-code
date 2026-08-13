@@ -24,7 +24,7 @@ from dr_code.caching import (
     WindowedExecutionCache,
 )
 from dr_code.evaluation import (
-    EvaluationRuntimeIdentity,
+    EvalRuntimeIdentity,
     HarnessExecutionFailure,
     StoredRecordReference,
 )
@@ -111,8 +111,8 @@ class _Store:
         return statuses
 
 
-def _runtime(name: str = "runtime") -> EvaluationRuntimeIdentity:
-    return EvaluationRuntimeIdentity(
+def _runtime(name: str = "runtime") -> EvalRuntimeIdentity:
+    return EvalRuntimeIdentity(
         document=build_identity_document(
             schema="tests/runtime",
             schema_version=1,

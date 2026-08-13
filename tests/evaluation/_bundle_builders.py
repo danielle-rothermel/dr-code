@@ -12,8 +12,8 @@ from dr_store import (
 
 from _executor_stubs import importable_json_executor
 from dr_code.evaluation import (
-    EvaluationBatchRequest,
-    EvaluationReadLimits,
+    EvalBatchRequest,
+    EvalReadLimits,
     ProjectionKind,
     RecordPlacement,
     StoredRecordReference,
@@ -23,8 +23,8 @@ from dr_code.evaluation import (
 from ._batch_builders import BatchStore, cache, request
 
 
-def read_limits() -> EvaluationReadLimits:
-    return EvaluationReadLimits(
+def read_limits() -> EvalReadLimits:
+    return EvalReadLimits(
         bundle=BundleReadLimits(
             manifest_max_bytes=1_000_000,
             manifest_max_depth=100,
@@ -39,10 +39,10 @@ def read_limits() -> EvaluationReadLimits:
 
 
 async def stored_source_request(
-    batch_request: EvaluationBatchRequest,
+    batch_request: EvalBatchRequest,
     *,
     object_store: ObjectStore,
-) -> EvaluationBatchRequest:
+) -> EvalBatchRequest:
     """Store each input's source object so restoring can resolve it."""
 
     inputs = []

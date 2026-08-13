@@ -12,21 +12,21 @@ from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.identity import (
-    EvaluationAttemptIdentity,
-    EvaluationRuntimeIdentity,
-    EvaluationSample,
-    EvaluationSlotIdentity,
-    MaterializedEvaluationCandidate,
+    EvalAttemptIdentity,
+    EvalRuntimeIdentity,
+    EvalSample,
+    EvalSlotIdentity,
+    MaterializedEvalCandidate,
 )
-from dr_code.evaluation.plan import EvaluationPlan
+from dr_code.evaluation.plan import EvalPlan
 from dr_code.trace import PreprocessingDefinitionCoordinate, Trace
 
 if TYPE_CHECKING:
     from dr_code.caching import WindowedExecutionCache
-    from dr_code.evaluation._batch import _EvaluationBatchAssembly
+    from dr_code.evaluation._batch import _EvalBatchAssembly
     from dr_code.evaluation.bundle import _RecordPlacement
     from dr_code.evaluation.records import (
-        EvaluationAttemptRecord,
+        EvalAttemptRecord,
         ReplaySource,
     )
     from dr_code.evaluation.projections import ProjectionRow
@@ -82,18 +82,18 @@ class CandidateJobBudget(FrozenModel):
         return self
 
 
-class SampleEvaluationInput(FrozenModel):
+class SampleEvalInput(FrozenModel):
     kind: Literal["sample"] = "sample"
-    slot: EvaluationSlotIdentity
-    sample: EvaluationSample
+    slot: EvalSlotIdentity
+    sample: EvalSample
 
 
-class FrozenCandidateEvaluationInput(FrozenModel):
+class FrozenCandidateEvalInput(FrozenModel):
     kind: Literal["frozen_candidates"] = "frozen_candidates"
-    slot: EvaluationSlotIdentity
-    sample: EvaluationSample
+    slot: EvalSlotIdentity
+    sample: EvalSample
     preprocessing: PreprocessingDefinitionCoordinate
-    candidates: tuple[MaterializedEvaluationCandidate, ...]
+    candidates: tuple[MaterializedEvalCandidate, ...]
 
     @model_validator(mode="after")
     def validate_candidates(self) -> Self:
@@ -123,8 +123,8 @@ class FrozenCandidateEvaluationInput(FrozenModel):
         return self
 
 
-EvaluationInput: TypeAlias = Annotated[
-    SampleEvaluationInput | FrozenCandidateEvaluationInput,
+EvalInput: TypeAlias = Annotated[
+    SampleEvalInput | FrozenCandidateEvalInput,
     Field(discriminator="kind"),
 ]
 
@@ -149,7 +149,7 @@ class RunGrade(StrEnum):
 class ProjectionKind(StrEnum):
     # Never build persisted payloads by iterating this closed vocabulary.
 
-    EVALUATION_SAMPLES = "evaluation_samples"
+    EVAL_SAMPLES = "evaluation_samples"
     MATERIALIZED_CANDIDATES = "materialized_candidates"
     METRIC_RECORDS = "metric_records"
     AGGREGATION_RESULTS = "aggregation_results"
@@ -161,15 +161,15 @@ class ProjectionRequest(FrozenModel):
     definition_version: Literal[2] = 2
 
 
-class EvaluationBatchRequest(FrozenModel):
-    attempt: EvaluationAttemptIdentity
-    plan: EvaluationPlan
-    runtime: EvaluationRuntimeIdentity
+class EvalBatchRequest(FrozenModel):
+    attempt: EvalAttemptIdentity
+    plan: EvalPlan
+    runtime: EvalRuntimeIdentity
     cache_namespace: str = Field(min_length=1)
     # Required, never defaulted: a silent grade would let a trial outcome
     # serve a selection-grade run from the same cache key.
     run_grade: RunGrade
-    inputs: tuple[EvaluationInput, ...] = Field(min_length=1)
+    inputs: tuple[EvalInput, ...] = Field(min_length=1)
     record_placement: RecordPlacement
     projections: tuple[ProjectionRequest, ...]
     attempt_limits: AttemptLimits
@@ -191,7 +191,7 @@ class EvaluationBatchRequest(FrozenModel):
         frozen_candidate_count = sum(
             len(item.candidates)
             for item in self.inputs
-            if isinstance(item, FrozenCandidateEvaluationInput)
+            if isinstance(item, FrozenCandidateEvalInput)
         )
         if (
             frozen_candidate_count
@@ -278,10 +278,10 @@ class EvaluationBatchRequest(FrozenModel):
         return self
 
 
-class EvaluationProjectionReference(FrozenModel):
+class EvalProjectionReference(FrozenModel):
     kind: ProjectionKind
     definition_version: Literal[2] = 2
-    source_attempt: EvaluationAttemptIdentity
+    source_attempt: EvalAttemptIdentity
     artifact_name: str
 
     @field_validator("artifact_name")
@@ -300,25 +300,23 @@ class EvaluationProjectionReference(FrozenModel):
         return artifact_name
 
 
-class EvaluationBatchResult(FrozenModel):
-    attempt: EvaluationAttemptRecord
-    projections: tuple[EvaluationProjectionReference, ...]
+class EvalBatchResult(FrozenModel):
+    attempt: EvalAttemptRecord
+    projections: tuple[EvalProjectionReference, ...]
     bundle_path: Path | None
 
     def __init__(self, **data: object) -> None:
         if not type(self).__pydantic_complete__:
-            from dr_code.evaluation.records import EvaluationAttemptRecord
+            from dr_code.evaluation.records import EvalAttemptRecord
 
             type(self).model_rebuild(
-                _types_namespace={
-                    "EvaluationAttemptRecord": EvaluationAttemptRecord
-                }
+                _types_namespace={"EvalAttemptRecord": EvalAttemptRecord}
             )
         super().__init__(**data)
 
 
 async def evaluate_batch(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     /,
     *,
     executor: Executor,
@@ -327,7 +325,7 @@ async def evaluate_batch(
     publication: ArtifactBundlePublication | None,
     pool_config: ExecutionPoolConfig,
     preprocessed_traces: Mapping[str, Trace] | None = None,
-) -> EvaluationBatchResult:
+) -> EvalBatchResult:
     """Evaluate one bounded standalone attempt and optionally publish it.
 
     `preprocessed_traces` lets a caller that already ran the pooled
@@ -350,7 +348,7 @@ async def evaluate_batch(
 
 
 async def _evaluate_batch_with_replay(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     /,
     *,
     executor: Executor,
@@ -360,14 +358,14 @@ async def _evaluate_batch_with_replay(
     pool_config: ExecutionPoolConfig,
     preprocessed_traces: Mapping[str, Trace] | None = None,
     replay: ReplaySource | None,
-) -> EvaluationBatchResult:
+) -> EvalBatchResult:
     """Run the standalone path with attempt provenance fixed before publish."""
 
     from dr_code.evaluation._batch import _evaluate_batch_assembly
 
     async def assemble(
         placement: _RecordPlacement,
-    ) -> _EvaluationBatchAssembly:
+    ) -> _EvalBatchAssembly:
         return await _evaluate_batch_assembly(
             request,
             executor=executor,
@@ -388,21 +386,21 @@ async def _evaluate_batch_with_replay(
 
 
 async def evaluate_durable_partition(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     /,
     *,
     executor: Executor,
     execution_cache: WindowedExecutionCache,
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
-) -> EvaluationBatchResult:
+) -> EvalBatchResult:
     """Evaluate one durable partition serially without constructing a pool."""
 
     from dr_code.evaluation._batch import _evaluate_durable_partition_assembly
 
     async def assemble(
         placement: _RecordPlacement,
-    ) -> _EvaluationBatchAssembly:
+    ) -> _EvalBatchAssembly:
         return await _evaluate_durable_partition_assembly(
             request,
             executor=executor,
@@ -421,17 +419,15 @@ async def evaluate_durable_partition(
 
 
 async def _evaluate(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     *,
     execution_cache: WindowedExecutionCache,
     object_store: ObjectStore | None,
     publication: ArtifactBundlePublication | None,
-    assemble: Callable[
-        [_RecordPlacement], Awaitable[_EvaluationBatchAssembly]
-    ],
+    assemble: Callable[[_RecordPlacement], Awaitable[_EvalBatchAssembly]],
     replay: ReplaySource | None,
-) -> EvaluationBatchResult:
-    from dr_code.evaluation._batch import _EvaluationBatchAssembly
+) -> EvalBatchResult:
+    from dr_code.evaluation._batch import _EvalBatchAssembly
     from dr_code.evaluation.bundle import (
         _PROJECTION_ARTIFACT_NAMES,
         _RecordPlacement,
@@ -439,7 +435,7 @@ async def _evaluate(
         _write_projection_artifact,
         ProjectionArtifactHeader,
     )
-    from dr_code.evaluation.records import EvaluationAttemptRecord
+    from dr_code.evaluation.records import EvalAttemptRecord
 
     if request.record_placement is RecordPlacement.BUNDLE_LOCAL:
         if publication is None:
@@ -455,10 +451,10 @@ async def _evaluate(
         object_store=object_store,
     )
     assembly = await assemble(placement)
-    if not isinstance(assembly, _EvaluationBatchAssembly):
+    if not isinstance(assembly, _EvalBatchAssembly):
         raise TypeError("assembly returned an unsupported value")
     await placement.validate_bundle_reference_closure()
-    attempt = EvaluationAttemptRecord(
+    attempt = EvalAttemptRecord(
         identity=request.attempt,
         plan=request.plan,
         runtime=request.runtime,
@@ -470,7 +466,7 @@ async def _evaluate(
         replay=replay,
     )
     projections = tuple(
-        EvaluationProjectionReference(
+        EvalProjectionReference(
             kind=projection.kind,
             source_attempt=request.attempt,
             artifact_name=_PROJECTION_ARTIFACT_NAMES[projection.kind],
@@ -500,7 +496,7 @@ async def _evaluate(
             attempt=attempt,
             projections=projections,
         )
-    return EvaluationBatchResult(
+    return EvalBatchResult(
         attempt=attempt,
         projections=projections,
         bundle_path=None if publication is None else publication.path,
@@ -508,17 +504,17 @@ async def _evaluate(
 
 
 async def _projection_rows(
-    request: EvaluationBatchRequest,
+    request: EvalBatchRequest,
     *,
     placement: object,
     assembly: object,
     kind: ProjectionKind,
 ) -> AsyncIterator[ProjectionRow]:
-    from dr_code.evaluation._batch import _EvaluationBatchAssembly
+    from dr_code.evaluation._batch import _EvalBatchAssembly
     from dr_code.evaluation.bundle import _RecordPlacement
     from dr_code.evaluation.projections import (
         AggregationResultProjectionRow,
-        EvaluationSampleProjectionRow,
+        EvalSampleProjectionRow,
         MaterializedCandidateProjectionRow,
         MetricRecordProjectionRow,
         ScoreProjectionRow,
@@ -527,7 +523,7 @@ async def _projection_rows(
     from dr_code.metrics import MeasuredRecord
 
     if not isinstance(placement, _RecordPlacement) or not isinstance(
-        assembly, _EvaluationBatchAssembly
+        assembly, _EvalBatchAssembly
     ):
         raise TypeError("unsupported projection assembly")
     if kind is ProjectionKind.AGGREGATION_RESULTS:
@@ -548,8 +544,8 @@ async def _projection_rows(
 
     question_count = len(request.plan.procedure.metrics.questions)
     async for reference, record in placement.iter_records():
-        if kind is ProjectionKind.EVALUATION_SAMPLES:
-            yield EvaluationSampleProjectionRow(
+        if kind is ProjectionKind.EVAL_SAMPLES:
+            yield EvalSampleProjectionRow(
                 source_attempt=request.attempt,
                 slot=record.slot,
                 sample=record.sample,
@@ -590,16 +586,16 @@ async def _projection_rows(
 __all__ = [
     "AttemptLimits",
     "CandidateJobBudget",
-    "EvaluationBatchRequest",
-    "EvaluationBatchResult",
-    "EvaluationInput",
-    "EvaluationProjectionReference",
-    "FrozenCandidateEvaluationInput",
+    "EvalBatchRequest",
+    "EvalBatchResult",
+    "EvalInput",
+    "EvalProjectionReference",
+    "FrozenCandidateEvalInput",
     "ProjectionKind",
     "ProjectionRequest",
     "RecordPlacement",
     "RunGrade",
-    "SampleEvaluationInput",
+    "SampleEvalInput",
     "ShardLimits",
     "WindowLimits",
     "evaluate_batch",

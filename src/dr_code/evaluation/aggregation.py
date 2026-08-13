@@ -8,7 +8,7 @@ from typing import Annotated, Literal, Self, TypeAlias
 from pydantic import Field, model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.identity import EvaluationCandidateIdentity
+from dr_code.evaluation.identity import EvalCandidateIdentity
 from dr_code.evaluation.plan import (
     AggregationPolicy,
     AggregationStatistic,
@@ -29,7 +29,7 @@ from dr_code.trace import (
 
 
 class AggregationSlot(FrozenModel):
-    candidate: EvaluationCandidateIdentity
+    candidate: EvalCandidateIdentity
     record: MetricRecord | None = None
 
 
@@ -75,7 +75,7 @@ class AggregationOk(FrozenModel):
 
 class AggregationMissing(FrozenModel):
     status: Literal[AggregationStatus.MISSING] = AggregationStatus.MISSING
-    missing: tuple[EvaluationCandidateIdentity, ...]
+    missing: tuple[EvalCandidateIdentity, ...]
 
     @model_validator(mode="after")
     def validate_missing(self) -> Self:
@@ -88,7 +88,7 @@ class AggregationNotApplicable(FrozenModel):
     status: Literal[AggregationStatus.NOT_APPLICABLE] = (
         AggregationStatus.NOT_APPLICABLE
     )
-    refused: tuple[EvaluationCandidateIdentity, ...]
+    refused: tuple[EvalCandidateIdentity, ...]
 
     @model_validator(mode="after")
     def validate_refused(self) -> Self:
@@ -150,7 +150,7 @@ def aggregate(request: AggregationInput) -> AggregationResult:
     assert first_record is not None
     expected_identity = first_record.identity
     expected_unit: MetricValueUnit | None = None
-    refused: list[EvaluationCandidateIdentity] = []
+    refused: list[EvalCandidateIdentity] = []
     values: list[float] = []
     excluded = 0
     for slot in request.slots:
