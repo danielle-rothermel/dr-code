@@ -1,6 +1,6 @@
 [project]
 name = "drc-synthetic"
-version = "0.1.0"
+version = "0.2.0"
 description = "Synthetic corruption datasets for dr-code"
 license = "MIT"
 requires-python = ">=3.13"

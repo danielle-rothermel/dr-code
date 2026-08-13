@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 BASELINE_NAME="${1:-pre-106}"
 
 REVIEWED_CORPUS="${HOME}/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval"
-FIXTURE_CORPUS="${REPO_ROOT}/tests/fixtures/generation_corpus/human_eval"
+FIXTURE_CORPUS="${REPO_ROOT}/packages/drc-generation-corpus/tests/fixtures/generation_corpus/human_eval"
 REVIEWED_MANIFEST_SHA256="fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728"
 
 CORPUS_BUNDLE="${DR_CODE_GENERATION_CORPUS_BUNDLE:-${REVIEWED_CORPUS}}"

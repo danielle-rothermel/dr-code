@@ -475,7 +475,7 @@ wheels = [
 
 [[package]]
 name = "drc-generation-corpus"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/drc-generation-corpus" }
 dependencies = [
     { name = "dr-code" },
@@ -498,7 +498,7 @@ dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "drc-humaneval"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/drc-humaneval" }
 dependencies = [
     { name = "datasets" },
@@ -521,7 +521,7 @@ dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "drc-synthetic"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/drc-synthetic" }
 dependencies = [
     { name = "dr-code" },

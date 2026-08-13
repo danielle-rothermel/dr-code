@@ -28,7 +28,7 @@ dr-code-validate-testing = "dr_code.evaluation.cli:validate_testing_app"
 Repository = "https://github.com/danielle-rothermel/dr-code"
 Issues = "https://github.com/danielle-rothermel/dr-code/issues"
 Documentation = "https://danielle-rothermel.github.io/dr-code/"
-Changelog = "https://github.com/danielle-rothermel/dr-code/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/danielle-rothermel/dr-code/blob/main/packages/dr-code/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling==1.31.0"]

@@ -24,7 +24,8 @@ For routine changes, the checks below are sufficient.
 ## One-time setup
 
 ```console
-uv sync --locked
+uv sync --locked --group dev
+uv sync --locked --group dev --group addons
 uv run pre-commit install
 ```
 
@@ -39,13 +40,15 @@ scripts/pre-check.sh
 
 This runs, in order:
 
-1. `uv sync --locked`
-2. `uv run ruff format --check .`
-3. `uv run ruff check .`
-4. `uv run ty check`
-5. `.defs` schema lint (`tombi` on `terms.toml` and `contracts.toml`)
-6. `uv run pytest` (core Python suite, serial; domain extensions deselected)
-7. Viewer install, typecheck, and build (when `corepack` is available)
+1. `uv sync --locked --group dev`
+2. `uv sync --locked --group dev --group addons`
+3. `uv run ruff format --check .`
+4. `uv run ruff check .`
+5. `uv run ty check`
+6. `.defs` schema lint (`tombi` on `terms.toml` and `contracts.toml`)
+7. Core pytest with `DR_CODE_CORE_ISOLATION=1` (no `drc-*` wheels installed)
+8. `scripts/run_addon_tests.sh`
+9. Viewer install, typecheck, and build (when `corepack` is available)
 
 To apply autofixes for Ruff and ty, then rerun the checks:
 
@@ -57,13 +60,10 @@ Check output is cached under `.cache/pre-check/`.
 
 ## Python tests
 
-Pytest covers `src/dr_code/`. The default suite is the **core platform**:
-preprocessing, trace, metrics, caching, core, and generic evaluation machinery.
-Repository scripts, `.defs`, and the viewer workspace have no pytest coverage.
-
-Pytest covers the uv workspace. The default **core** suite lives in
-`packages/dr-code/tests/` and runs with only the `dr-code` wheel installed.
-Domain extensions are separate packages with their own tests:
+The repository is a **uv workspace**. Pytest covers `packages/*/tests/`.
+The default **core** suite lives in `packages/dr-code/tests/` and runs with
+only the `dr-code` wheel installed. Domain extensions are separate packages with
+their own tests:
 
 | Package | Tests | Runner |
 |---------|-------|--------|
@@ -80,8 +80,7 @@ scripts/run_addon_tests.sh
 The canonical **core** command:
 
 ```console
-uv sync --locked --group dev
-DR_CODE_CORE_ISOLATION=1 uv sync --locked --package dr-code --group dev
+uv sync --locked --package dr-code --group dev
 DR_CODE_CORE_ISOLATION=1 uv run --package dr-code --group dev pytest packages/dr-code/tests -m 'not postgres'
 ```
 
@@ -91,7 +90,7 @@ Core pytest is configured in `packages/dr-code/pyproject.toml` (import mode:
 For faster local feedback, pytest-xdist is fine locally; CI stays serial:
 
 ```console
-uv run --with pytest-xdist pytest -n 4
+uv run --with pytest-xdist pytest -n 4 packages/dr-code/tests
 ```
 
 Run a focused core subset while iterating:
@@ -149,8 +148,9 @@ requests:
   `scripts/run_addon_tests.sh`
 - **Viewer**: frozen install, typecheck, build
 
-Release tags additionally smoke-test the built wheel via
-`scripts/check_built_wheel.py`.
+Release tags additionally smoke-test the built **`dr-code`** wheel via
+`scripts/check_built_wheel.py`. Only `dr-code` is published to PyPI; addon
+wheels are built in the workspace but not uploaded.
 
 ## Manual verification (opt-in only)
 
@@ -160,9 +160,10 @@ pre-check, pytest, or CI. Run them only when the task calls for them.
 | Workflow | Entry point | Purpose |
 |----------|-------------|---------|
 | Task-difficulty baseline | `scripts/verification/task_difficulty/run_baseline.sh` | Full preprocess → sample → evaluate → summarize → export for before/after comparison |
-| Task-difficulty fixture smoke | `DR_CODE_GENERATION_CORPUS_BUNDLE=tests/fixtures/generation_corpus/human_eval DR_CODE_TASK_DIFFICULTY_RUN_DIR=/tmp/task-difficulty-fixture scripts/verification/task_difficulty/run_baseline.sh fixture-smoke` | Small end-to-end smoke of the same stages |
+| Task-difficulty fixture smoke | `DR_CODE_GENERATION_CORPUS_BUNDLE=packages/drc-generation-corpus/tests/fixtures/generation_corpus/human_eval DR_CODE_TASK_DIFFICULTY_RUN_DIR=/tmp/task-difficulty-fixture scripts/verification/task_difficulty/run_baseline.sh fixture-smoke` | Small end-to-end smoke of the same stages |
 | Preprocessing analysis | `scripts/analyze_preprocessing_success.py` | Preprocessing-only success rates on sampled tasks (`docs/verif_exps.md`) |
 | Packaged validation CLIs | `dr-code-validate-preprocessing`, `dr-code-validate-testing` | Single-request validation flows through `evaluate_batch` |
+| Addon CLIs (workspace only) | `drc-humaneval-schema`, `drc-synthetic` | HumanEval schema export and synthetic dataset CLI |
 
 ## Contract checks
 

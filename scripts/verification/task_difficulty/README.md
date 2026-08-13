@@ -6,9 +6,9 @@ Run the numbered scripts in order.
 
 These stages and [`run_baseline.sh`](run_baseline.sh) are repository
 apparatus: they run from a checkout with `uv run` and are not packaged in the
-wheel. The wheel's declared verbs are `dr-code-validate-preprocessing`,
-`dr-code-validate-testing`, `dr-code-synthetic`, and
-`dr-code-humaneval-schema`.
+wheel. The wheel's declared verbs are `dr-code-validate-preprocessing` and
+`dr-code-validate-testing`. Workspace addon CLIs are `drc-synthetic` and
+`drc-humaneval-schema`.
 
 ## Corpus input
 
@@ -18,7 +18,8 @@ See [`docs/generation_corpus.md`](../../../docs/generation_corpus.md) for the
 full build command and audited populations.
 
 By default, stage 1 uses the repo fixture at
-`tests/fixtures/generation_corpus/human_eval`. Override the bundle with either:
+`packages/drc-generation-corpus/tests/fixtures/generation_corpus/human_eval`.
+Override the bundle with either:
 
 - `DR_CODE_GENERATION_CORPUS_BUNDLE=/path/to/human_eval/bundle`, or
 - `--corpus-bundle /path/to/human_eval/bundle` on stage 1.

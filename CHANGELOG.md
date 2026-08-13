@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-13
+
+PyPI publishes **`dr-code` 0.2.0** only. The `drc-*` addon wheels remain
+workspace-local until a later release.
+
 ### Breaking changes
 
 - Split the monolithic `dr-code` wheel into a uv workspace: core
@@ -15,8 +20,6 @@
   `dr-code-synthetic` → `drc-synthetic`.
 - Core evaluation no longer ships HumanEval candidate execution types; install
   `drc-humaneval` for `code_test` metrics and candidate jobs.
-- Bump `dr-code` to **0.2.0**.
-
 - `EvalBatchRequest.preprocess_mode` is required and chooses how sample inputs
   are prepared: `process_pool` runs distinct texts through `preprocess_batch`;
   `in_process` prepares each sample on the caller thread via the bound runner.
@@ -25,6 +28,8 @@
   the flat `SampleEvalInput` / `FrozenCandidateEvalInput` union. Persisted
   request JSON now nests payload fields under `data`; inner `kind` values
   remain `"sample"` and `"frozen_candidates"`.
+
+Per-package notes live under `packages/*/CHANGELOG.md`.
 
 ## 0.1.8 - 2026-08-12
 
