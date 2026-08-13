@@ -1,6 +1,6 @@
 [project]
 name = "dr-code"
-version = "0.2.0"
+version = "0.2.1"
 description = "Python code preparation and evaluation toolkit"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
