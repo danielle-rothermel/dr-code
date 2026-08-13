@@ -339,3 +339,35 @@ def test_field_limit_clips_input_and_expected_repr_on_failed_cases() -> None:
     assert case.expected_output_repr.endswith(FIELD_TRUNCATION_MARKER)
     assert len(case.input_repr) == 64 + len(FIELD_TRUNCATION_MARKER)
     assert len(case.expected_output_repr) == 64 + len(FIELD_TRUNCATION_MARKER)
+
+
+def test_completed_humaneval_result_round_trips_through_record_json(
+    local_executor: FakeExecutor,
+) -> None:
+    from dr_code.evaluation.records import CandidateJobCompleted
+
+    record = execute_candidate_job(
+        _request("def observed_load_count(_x):\n    return 1\n"),
+        job_id=JobId(UUID("00000000-0000-0000-0000-000000000099")),
+        budget=_budget(),
+        runtime=EvalRuntimeId(
+            document=build_identity_document(
+                schema="tests/runtime",
+                schema_version=1,
+                payload={"name": "humaneval-result-round-trip"},
+            )
+        ),
+        cache_namespace="tests/candidate-job",
+        run_grade=RunGrade.TRIAL,
+        executor=local_executor,
+    )
+    assert record.outcome.kind == "completed"
+    completed = record.outcome
+    assert isinstance(completed, CandidateJobCompleted)
+    assert isinstance(completed.result, HumanEvalCandidateJobResult)
+
+    restored = CandidateJobCompleted.model_validate_json(
+        completed.model_dump_json()
+    )
+    assert isinstance(restored.result, HumanEvalCandidateJobResult)
+    assert restored.result.model_dump() == completed.result.model_dump()

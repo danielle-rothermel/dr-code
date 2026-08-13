@@ -9,11 +9,14 @@ from dr_exec import ImportableEntryPoint
 from dr_serialize import IdentityDocument, Jsonable, build_identity_document
 from pydantic import Field
 
+from pydantic import ValidationError
+
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.id import EvalCandidateId, MaterializedEvalCandidate
 from dr_code.metrics.coordinates import MetricQuestionCoordinate
 
 _CANDIDATE_JOB_BUILDER_GROUP: Final = "dr_code.candidate_job_builders"
+_CANDIDATE_JOB_RESULT_GROUP: Final = "dr_code.candidate_job_result_types"
 
 
 class CandidateJobResult(FrozenModel):
@@ -91,6 +94,47 @@ def register_candidate_job_builder(
     _CANDIDATE_JOB_BUILDERS = MappingProxyType(updated)
 
 
+_CANDIDATE_JOB_RESULT_TYPES: tuple[type[CandidateJobResult], ...] | None = None
+
+
+def _load_candidate_job_result_types() -> tuple[type[CandidateJobResult], ...]:
+    result_types: list[type[CandidateJobResult]] = []
+    for entry_point in entry_points(group=_CANDIDATE_JOB_RESULT_GROUP):
+        result_types.append(entry_point.load())
+    return tuple(result_types)
+
+
+def _candidate_job_result_types() -> tuple[type[CandidateJobResult], ...]:
+    global _CANDIDATE_JOB_RESULT_TYPES
+    if _CANDIDATE_JOB_RESULT_TYPES is None:
+        _CANDIDATE_JOB_RESULT_TYPES = _load_candidate_job_result_types()
+    return _CANDIDATE_JOB_RESULT_TYPES
+
+
+def register_candidate_job_result_type(
+    result_type: type[CandidateJobResult],
+    /,
+) -> None:
+    global _CANDIDATE_JOB_RESULT_TYPES
+    updated = list(_candidate_job_result_types())
+    if result_type not in updated:
+        updated.append(result_type)
+    _CANDIDATE_JOB_RESULT_TYPES = tuple(updated)
+
+
+def validate_candidate_job_result(value: object) -> CandidateJobResult:
+    if isinstance(value, CandidateJobResult):
+        return value
+    if not isinstance(value, dict):
+        raise TypeError("candidate job result must be a mapping")
+    for result_type in _candidate_job_result_types():
+        try:
+            return result_type.model_validate(value)
+        except ValidationError:
+            continue
+    return CandidateJobResult.model_validate(value)
+
+
 def build_candidate_job_request(
     candidate: MaterializedEvalCandidate,
     suites: tuple[CandidateEvaluatorSuite, ...],
@@ -128,4 +172,6 @@ __all__ = [
     "build_candidate_job_request",
     "candidate_request_identity_document",
     "register_candidate_job_builder",
+    "register_candidate_job_result_type",
+    "validate_candidate_job_result",
 ]

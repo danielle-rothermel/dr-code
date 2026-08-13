@@ -62,6 +62,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run ty check
+      - run: uv sync --locked --package dr-code --group dev
       - run: DR_CODE_CORE_ISOLATION=1 uv run --package dr-code --group dev pytest packages/dr-code/tests -m 'not postgres'
       - run: scripts/run_addon_tests.sh
 

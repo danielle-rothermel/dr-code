@@ -10,7 +10,14 @@ from dr_exec import (
     RecordReceipt,
 )
 from dr_serialize import Sha256Digest
-from pydantic import Field, PositiveInt, TypeAdapter, model_validator
+from pydantic import (
+    BeforeValidator,
+    Field,
+    PositiveInt,
+    SerializeAsAny,
+    TypeAdapter,
+    model_validator,
+)
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.id import (
@@ -24,7 +31,10 @@ from dr_code.evaluation.id import (
 )
 from dr_code.evaluation.plan import EvalPlan
 from dr_code.evaluation.references import EvidenceReference
-from dr_code.evaluation.candidate_job import CandidateJobResult
+from dr_code.evaluation.candidate_job import (
+    CandidateJobResult,
+    validate_candidate_job_result,
+)
 from dr_code.metrics import MetricRecord
 from dr_code.trace import Absent, SerializedTrace
 
@@ -62,7 +72,10 @@ class CandidateTerminationReason(StrEnum):
 
 class CandidateJobCompleted(FrozenModel):
     kind: Literal["completed"] = "completed"
-    result: CandidateJobResult
+    result: Annotated[
+        SerializeAsAny[CandidateJobResult],
+        BeforeValidator(validate_candidate_job_result),
+    ]
     execution_outcome: ExecutionOutcome
     attribution: ExecutionAttribution
     measurements: ExecutionMeasurements

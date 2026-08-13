@@ -461,3 +461,24 @@ def test_wall_time_and_input_bytes_carry_no_default() -> None:
         CandidateJobBudget(input_bytes=2_097_152)  # type: ignore[call-arg]
     with pytest.raises(ValidationError):
         CandidateJobBudget(wall_time_ns=5_000_000_000)  # type: ignore[call-arg]
+
+
+def test_completed_candidate_result_round_trips_through_record_json() -> None:
+    from _stubs.candidate_harness.job import StubCandidateJobResult
+
+    request = candidate_job_request(
+        "def observed_load_count(_x):\n    return 1\n",
+        candidate_job_suite("output"),
+    )
+    interpreted = interpret_candidate_execution(
+        request, _completed_candidate_execution()
+    )
+    assert isinstance(interpreted, CandidateJobCompleted)
+    assert isinstance(interpreted.result, StubCandidateJobResult)
+    assert interpreted.result.suites
+
+    restored = CandidateJobCompleted.model_validate_json(
+        interpreted.model_dump_json()
+    )
+    assert isinstance(restored.result, StubCandidateJobResult)
+    assert restored.result.model_dump() == interpreted.result.model_dump()

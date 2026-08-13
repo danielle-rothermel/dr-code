@@ -7,6 +7,7 @@ from dr_serialize import Sha256Digest
 from _stubs.candidate_harness.job import (
     DEFAULT_FIELD_LIMIT,
     StubCandidateJobRequest,
+    StubCandidateJobResult,
     StubEvaluatorSuite,
     build_candidate_job_request,
     evaluate_stub_candidate_job,
@@ -21,6 +22,7 @@ from dr_code.evaluation import (
 from dr_code.evaluation.candidate_job import (
     CandidateEvaluatorSuite,
     register_candidate_job_builder,
+    register_candidate_job_result_type,
 )
 from dr_code.metrics import MetricName, MetricQuestionCoordinate
 from dr_code.metrics.coordinates import question_settings
@@ -92,6 +94,7 @@ def candidate_job_budget() -> CandidateJobBudget:
 
 register_metric_operator(str(MetricName.CODE_TEST), StubCodeTest)
 register_candidate_job_builder("stub", build_candidate_job_request)
+register_candidate_job_result_type(StubCandidateJobResult)
 
 __all__ = [
     "DEFAULT_FIELD_LIMIT",

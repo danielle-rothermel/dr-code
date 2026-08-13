@@ -18,6 +18,9 @@ code_test = "drc_humaneval.metric_operator:CodeTest"
 [project.entry-points."dr_code.candidate_job_builders"]
 humaneval = "drc_humaneval.job:build_candidate_job_request"
 
+[project.entry-points."dr_code.candidate_job_result_types"]
+humaneval = "drc_humaneval.job:HumanEvalCandidateJobResult"
+
 [build-system]
 requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
