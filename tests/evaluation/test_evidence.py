@@ -13,7 +13,7 @@ from dr_store import (
     PutStatus,
 )
 
-from _builders import evaluation_slot, sample_identity
+from _builders import evaluation_slot, sample_id
 from _evidence_builders import (
     _ATTEMPT_ID,
     attempt_record,
@@ -27,7 +27,7 @@ from dr_code.evaluation import (
     AttemptLimitKind,
     AttemptValidity,
     EnlistedObjectStore,
-    EvalAttemptIdentity,
+    EvalAttemptId,
     EvalAttemptRecord,
     EvalMemberRecord,
     OUTPUT_REFERENCE_BINDING_PREFIX,
@@ -390,7 +390,7 @@ def test_binding_reference_resolves_the_attempt_record() -> None:
 
 
 def test_member_records_bind_under_the_attempt_prefix() -> None:
-    attempt = EvalAttemptIdentity(attempt_id=_ATTEMPT_ID)
+    attempt = EvalAttemptId(attempt_id=_ATTEMPT_ID)
     binding_key = output_reference_binding_key(attempt)
     member_key = sample_record_binding_key(attempt, ordinal=3)
 
@@ -403,7 +403,7 @@ def test_evidence_wire_literals() -> None:
         "dr-code/evaluation-attempt-record-v1"
     )
     assert OUTPUT_REFERENCE_BINDING_PREFIX == "dr-code/evaluation-attempt/"
-    attempt = EvalAttemptIdentity(attempt_id=_ATTEMPT_ID)
+    attempt = EvalAttemptId(attempt_id=_ATTEMPT_ID)
     assert output_reference_binding_key(attempt) == (
         "dr-code/evaluation-attempt/00000000-0000-0000-0000-000000000002"
     )
@@ -413,7 +413,7 @@ def test_evidence_wire_literals() -> None:
 
 
 def test_sample_record_ordinal_must_not_be_negative() -> None:
-    attempt = EvalAttemptIdentity(attempt_id=_ATTEMPT_ID)
+    attempt = EvalAttemptId(attempt_id=_ATTEMPT_ID)
     with pytest.raises(ValueError, match="must not be negative"):
         sample_record_binding_key(attempt, ordinal=-1)
 
@@ -441,12 +441,12 @@ def test_evidence_commits_only_referenced_member_records() -> None:
         members=(
             EvalMemberRecord(
                 slot=first_slot,
-                sample=sample_identity(),
+                sample=sample_id(),
                 record=reference(0),
             ),
             EvalMemberRecord(
                 slot=second_slot,
-                sample=sample_identity(sample_id="sample-1"),
+                sample=sample_id(sample_id="sample-1"),
                 record=None,
             ),
         ),
@@ -479,7 +479,7 @@ def test_evidence_rejects_misaligned_sample_records() -> None:
         members=(
             EvalMemberRecord(
                 slot=sample_record().slot,
-                sample=sample_identity(sample_id="other-sample"),
+                sample=sample_id(sample_id="other-sample"),
                 record=reference(),
             ),
         ),

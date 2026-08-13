@@ -12,18 +12,18 @@ from _builders import (
     dataset,
     evaluation_slot,
     preprocessing_coordinate,
-    sample_identity,
+    sample_id,
 )
 from dr_code.evaluation import (
     BundleRecordReference,
     CorpusSampleProvenance,
-    EvalAttemptIdentity,
-    EvalCandidateIdentity,
-    EvalRuntimeIdentity,
+    EvalAttemptId,
+    EvalCandidateId,
+    EvalRuntimeId,
     EvalSample,
     EvalSampleMetadata,
     EvalSampleProvenance,
-    EvalSourceIdentity,
+    EvalSourceId,
     GeneratedSampleProvenance,
     MaterializedEvalCandidate,
     StoredRecordReference,
@@ -53,21 +53,21 @@ def bundle_reference() -> BundleRecordReference:
     )
 
 
-def source_identity() -> EvalSourceIdentity:
-    return EvalSourceIdentity(namespace="generator", value="run-1")
+def source_id() -> EvalSourceId:
+    return EvalSourceId(namespace="generator", value="run-1")
 
 
 def generated_provenance() -> GeneratedSampleProvenance:
     return GeneratedSampleProvenance(
-        source_identity=source_identity(),
+        source_identity=source_id(),
         source_reference=bundle_reference(),
         generation_id="generation-1",
     )
 
 
-def test_slot_and_sample_identities_are_distinct_models() -> None:
+def test_slot_and_sample_ids_are_distinct_models() -> None:
     slot = evaluation_slot()
-    sample = sample_identity()
+    sample = sample_id()
     assert slot.task_id == "t0"
     assert sample.sample_id == "sample-0"
     assert set(type(slot).model_fields) == {
@@ -79,27 +79,25 @@ def test_slot_and_sample_identities_are_distinct_models() -> None:
     assert set(type(sample).model_fields) == {"sample_id"}
 
 
-def test_sample_identity_and_source_identity_require_nonempty_values() -> None:
+def test_sample_id_and_source_id_require_nonempty_values() -> None:
     with pytest.raises(ValidationError):
-        type(sample_identity())(sample_id="")
+        type(sample_id())(sample_id="")
     with pytest.raises(ValidationError):
-        EvalSourceIdentity(namespace="", value="source")
+        EvalSourceId(namespace="", value="source")
 
 
-def test_candidate_identity_nests_only_sample_identity_and_preprocessing() -> (
-    None
-):
-    candidate = EvalCandidateIdentity(
-        sample=sample_identity(),
+def test_candidate_id_nests_only_sample_id_and_preprocessing() -> None:
+    candidate = EvalCandidateId(
+        sample=sample_id(),
         preprocessing=preprocessing_coordinate(),
         candidate_ordinal=0,
     )
-    assert candidate.sample == sample_identity()
+    assert candidate.sample == sample_id()
     assert "task_set" not in candidate.model_dump()
 
 
-def test_attempt_identity_serializes_uuid_canonically() -> None:
-    identity = EvalAttemptIdentity(
+def test_attempt_id_serializes_uuid_canonically() -> None:
+    identity = EvalAttemptId(
         attempt_id=UUID("12345678-1234-5678-1234-567812345678")
     )
     assert json.loads(identity.model_dump_json()) == {
@@ -107,13 +105,13 @@ def test_attempt_identity_serializes_uuid_canonically() -> None:
     }
 
 
-def test_runtime_identity_nests_the_dependency_document() -> None:
+def test_runtime_id_nests_the_dependency_document() -> None:
     document = IdentityDocument(
         schema="dr-code/runtime",
         schema_version=1,
         payload={"python": "3.13"},
     )
-    assert EvalRuntimeIdentity(document=document).document is document
+    assert EvalRuntimeId(document=document).document is document
 
 
 def test_all_sample_provenance_variants_round_trip_by_kind() -> None:
@@ -126,13 +124,13 @@ def test_all_sample_provenance_variants_round_trip_by_kind() -> None:
     provenances = (
         generated_provenance(),
         CorpusSampleProvenance(
-            source_identity=source_identity(),
+            source_identity=source_id(),
             source_reference=stored,
             dataset=dataset(),
             row_id="row-1",
         ),
         SyntheticSampleProvenance(
-            source_identity=source_identity(),
+            source_identity=source_id(),
             source_reference=bundle_reference(),
             coordinate=SyntheticSampleCoordinate(
                 humaneval_task_id="HumanEval/0",
@@ -160,14 +158,14 @@ def test_request_sample_and_materialized_candidate_have_exact_wire_fields() -> (
     None
 ):
     metadata = EvalSampleMetadata(
-        identity=sample_identity(),
+        identity=sample_id(),
         task_id="t0",
         provenance=generated_provenance(),
     )
     sample = EvalSample(metadata=metadata, raw_input=TextArtifact(text="raw"))
     candidate = MaterializedEvalCandidate(
-        identity=EvalCandidateIdentity(
-            sample=sample_identity(),
+        identity=EvalCandidateId(
+            sample=sample_id(),
             preprocessing=preprocessing_coordinate(),
             candidate_ordinal=0,
         ),
@@ -192,8 +190,8 @@ def test_materialized_candidate_rejects_a_mismatched_source_hash() -> None:
         ValidationError, match="must match the candidate source"
     ):
         MaterializedEvalCandidate(
-            identity=EvalCandidateIdentity(
-                sample=sample_identity(),
+            identity=EvalCandidateId(
+                sample=sample_id(),
                 preprocessing=preprocessing_coordinate(),
                 candidate_ordinal=0,
             ),

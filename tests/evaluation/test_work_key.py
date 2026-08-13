@@ -84,7 +84,7 @@ def test_work_key_separates_dataset_identities() -> None:
     assert base != other_dataset
 
 
-def test_work_key_separates_tasks_and_experiment_configurations() -> None:
+def test_work_key_separates_tasks_and_experiment_configs() -> None:
     base = derive_work_key(
         evaluation_slot(), experiment_config_hash=_CONFIG_HASH
     )

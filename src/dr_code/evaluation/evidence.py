@@ -14,7 +14,7 @@ from sqlalchemy.engine import Connection  # noqa: TC002
 from dr_code.evaluation.bundle import (
     SAMPLE_RECORD_OBJECT_SCHEMA,
 )
-from dr_code.evaluation.identity import EvalAttemptIdentity
+from dr_code.evaluation.id import EvalAttemptId
 from dr_code.evaluation.records import (
     EVAL_ATTEMPT_SCHEMA_VERSION,
     EvalAttemptRecord,
@@ -56,7 +56,7 @@ class EnlistedObjectStore(Protocol):
 
 
 def output_reference_binding_key(
-    attempt: EvalAttemptIdentity,
+    attempt: EvalAttemptId,
     /,
 ) -> str:
     """Name the binding an attempt's published evidence resolves through."""
@@ -65,7 +65,7 @@ def output_reference_binding_key(
 
 
 def sample_record_binding_key(
-    attempt: EvalAttemptIdentity,
+    attempt: EvalAttemptId,
     /,
     *,
     ordinal: int,

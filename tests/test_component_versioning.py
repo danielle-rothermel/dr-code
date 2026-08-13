@@ -69,14 +69,14 @@ def _component_versions() -> dict[str, str]:
 def test_development_mode_requires_initial_version_for_every_component() -> (
     None
 ):
-    configuration = tomllib.loads(
+    config = tomllib.loads(
         (_REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["tool"]["dr-code"]["component-versioning"]
 
-    assert configuration == {
+    assert config == {
         "development-mode": True,
         "initial-version": "0",
     }
     versions = _component_versions()
     assert versions
-    assert set(versions.values()) == {configuration["initial-version"]}
+    assert set(versions.values()) == {config["initial-version"]}

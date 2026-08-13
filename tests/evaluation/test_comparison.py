@@ -6,12 +6,12 @@ from uuid import UUID
 import pytest
 from dr_serialize import Sha256Digest, canonical_json_bytes
 
-from _builders import evaluation_slot, measured, sample_identity
+from _builders import evaluation_slot, measured, sample_id
 from dr_code.evaluation import (
     BundleRecordReference,
     ComparableProjectionComparison,
     ComparisonStatus,
-    EvalAttemptIdentity,
+    EvalAttemptId,
     EvalMemberRecord,
     EvaluatedSampleRecord,
     NoCandidatesSampleRecord,
@@ -27,7 +27,7 @@ from .test_record_models import (
     evaluated,
     materialized,
     metadata,
-    record_identity,
+    record_id,
     trace,
 )
 
@@ -67,10 +67,10 @@ def _reference(
 def _record(index: int, *, output: str = "same") -> NoCandidatesSampleRecord:
     return NoCandidatesSampleRecord(
         slot=evaluation_slot(sample_index=index),
-        sample=metadata(identity=sample_identity(sample_id=f"sample-{index}")),
+        sample=metadata(identity=sample_id(sample_id=f"sample-{index}")),
         trace=SerializedTrace(
             schema_version=3,
-            producer=record_identity().producer,
+            producer=record_id().producer,
             values={
                 "input": trace().values["input"],
                 "output": CodeArtifact(source=output),
@@ -82,7 +82,7 @@ def _record(index: int, *, output: str = "same") -> NoCandidatesSampleRecord:
 def _member(index: int, reference: BundleRecordReference) -> EvalMemberRecord:
     return EvalMemberRecord(
         slot=evaluation_slot(sample_index=index),
-        sample=sample_identity(sample_id=f"sample-{index}"),
+        sample=sample_id(sample_id=f"sample-{index}"),
         record=reference,
     )
 
@@ -98,7 +98,7 @@ def _attempt(identity: int, members: tuple[EvalMemberRecord, ...]):
     )
     return base.model_copy(
         update={
-            "identity": EvalAttemptIdentity(attempt_id=UUID(int=identity)),
+            "identity": EvalAttemptId(attempt_id=UUID(int=identity)),
             "plan": plan,
             "members": members,
         }

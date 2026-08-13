@@ -8,7 +8,7 @@ from typing import Annotated, Literal, Self, TypeAlias
 from pydantic import Field, model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.identity import EvalCandidateIdentity
+from dr_code.evaluation.id import EvalCandidateId
 from dr_code.evaluation.plan import (
     AggregationPolicy,
     AggregationStatistic,
@@ -17,7 +17,7 @@ from dr_code.evaluation.plan import (
 from dr_code.metrics import (
     MeasuredRecord,
     MetricRecord,
-    MetricRecordIdentity,
+    MetricRecordId,
     MetricValueUnit,
     NotApplicableRecord,
     OperatorFailureRecord,
@@ -29,7 +29,7 @@ from dr_code.trace import (
 
 
 class AggregationSlot(FrozenModel):
-    candidate: EvalCandidateIdentity
+    candidate: EvalCandidateId
     record: MetricRecord | None = None
 
 
@@ -75,7 +75,7 @@ class AggregationOk(FrozenModel):
 
 class AggregationMissing(FrozenModel):
     status: Literal[AggregationStatus.MISSING] = AggregationStatus.MISSING
-    missing: tuple[EvalCandidateIdentity, ...]
+    missing: tuple[EvalCandidateId, ...]
 
     @model_validator(mode="after")
     def validate_missing(self) -> Self:
@@ -88,7 +88,7 @@ class AggregationNotApplicable(FrozenModel):
     status: Literal[AggregationStatus.NOT_APPLICABLE] = (
         AggregationStatus.NOT_APPLICABLE
     )
-    refused: tuple[EvalCandidateIdentity, ...]
+    refused: tuple[EvalCandidateId, ...]
 
     @model_validator(mode="after")
     def validate_refused(self) -> Self:
@@ -150,13 +150,13 @@ def aggregate(request: AggregationInput) -> AggregationResult:
     assert first_record is not None
     expected_identity = first_record.identity
     expected_unit: MetricValueUnit | None = None
-    refused: list[EvalCandidateIdentity] = []
+    refused: list[EvalCandidateId] = []
     values: list[float] = []
     excluded = 0
     for slot in request.slots:
         record = slot.record
         assert record is not None
-        _validate_record_identity(record, slot, expected_identity, policy)
+        _validate_record_id(record, slot, expected_identity, policy)
         outcome = _slot_contribution(record, policy)
         match outcome:
             case _Refused():
@@ -211,10 +211,10 @@ def _slot_contribution(
     return _measured_contribution(record, policy)
 
 
-def _validate_record_identity(
+def _validate_record_id(
     record: MetricRecord,
     slot: AggregationSlot,
-    expected: MetricRecordIdentity,
+    expected: MetricRecordId,
     policy: AggregationPolicy,
 ) -> None:
     identity = record.identity

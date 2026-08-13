@@ -27,7 +27,7 @@ One planned task-and-sample position in an evaluation plan, addressed by its
 task id and its sample index within that task. It establishes expected
 membership and order without claiming that an input was observed or evaluated
 at that position."""
-exported_symbols = ["dr_code.evaluation.EvalSlotIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalSlotId"]
 categories = ["evaluation identity", "evaluation planning"]
 part_of = ["evaluation plan"]
 
@@ -39,8 +39,8 @@ identity, task identity, and provenance. It may originate from live generation
 or a frozen historical corpus, and its relationship to an evaluation slot is
 explicit rather than reconstructed from content."""
 exported_symbols = [
-  "dr_code.evaluation.EvalSampleIdentity",
-  "dr_code.evaluation.EvalSourceIdentity",
+  "dr_code.evaluation.EvalSampleId",
+  "dr_code.evaluation.EvalSourceId",
   "dr_code.evaluation.GeneratedSampleProvenance",
   "dr_code.evaluation.CorpusSampleProvenance",
   "dr_code.evaluation.SyntheticSampleProvenance",
@@ -60,7 +60,7 @@ its evaluation sample, resolved preprocessing definition, and ordered position
 after materialization. Candidate content and its hash may verify that
 occurrence but do not replace its identity."""
 exported_symbols = [
-  "dr_code.evaluation.EvalCandidateIdentity",
+  "dr_code.evaluation.EvalCandidateId",
   "dr_code.evaluation.MaterializedEvalCandidate",
 ]
 categories = ["evaluation identity"]
@@ -73,7 +73,7 @@ A caller-owned stable identity for execution behavior not fully expressed by
 an evaluation request, including behavior-changing runtime components and
 environment assumptions. It scopes persistent outcome reuse without identifying
 one machine or path."""
-exported_symbols = ["dr_code.evaluation.EvalRuntimeIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalRuntimeId"]
 categories = ["evaluation execution", "evaluation identity"]
 part_of = ["candidate execution record", "evaluation attempt record"]
 
@@ -82,7 +82,7 @@ name = "evaluation attempt identity"
 definition = """
 An opaque identity for one evaluation attempt occurrence, distinct from its
 evaluation plan, ordered membership, and content hashes."""
-exported_symbols = ["dr_code.evaluation.EvalAttemptIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalAttemptId"]
 categories = ["evaluation identity"]
 part_of = ["evaluation attempt record"]
 
@@ -164,7 +164,7 @@ ordering, and exact changed-or-unchanged status, with denominators for supported
 projection comparisons. It makes no benchmark or statistical judgment."""
 exported_symbols = [
   "dr_code.evaluation.StructuralEvalComparison",
-  "dr_code.evaluation.StructuralMemberIdentity",
+  "dr_code.evaluation.StructuralMemberId",
   "dr_code.evaluation.compare_eval_attempts",
 ]
 categories = ["evaluation analysis"]
@@ -439,7 +439,7 @@ The self-identifying answer to one metric question: measured metric values, an
 explicit not-applicable absence, or an operator failure."""
 exported_symbols = [
   "dr_code.metrics.MetricRecord",
-  "dr_code.metrics.MetricRecordIdentity",
+  "dr_code.metrics.MetricRecordId",
   "dr_code.metrics.MeasuredRecord",
   "dr_code.metrics.NotApplicableRecord",
   "dr_code.metrics.OperatorFailureRecord",
@@ -678,7 +678,7 @@ part_of = ["generation corpus"]
 [[terms]]
 name = "request provenance record"
 definition = """
-The one-to-one request and configuration provenance record for one generation
+The one-to-one request and config provenance record for one generation
 record."""
 exported_symbols = ["dr_code.generation_corpus.RequestRecord"]
 categories = ["generation corpus"]
@@ -820,7 +820,7 @@ part_of = ["generation"]
 [[terms]]
 name = "work key"
 definition = """
-The content-addressed digest of one experiment configuration hash together
+The content-addressed digest of one experiment config hash together
 with one evaluation slot's addressing coordinates: its task set coordinate,
 its sampling plan coordinate, its task id, and its sample index. It addresses
 the work of producing one generation without naming any run, attempt, or

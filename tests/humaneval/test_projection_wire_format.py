@@ -6,7 +6,7 @@ from _candidate_job_builders import candidate_job_request, candidate_job_suite
 
 from dr_code.evaluation import (
     BundleRecordReference,
-    EvalSampleIdentity,
+    EvalSampleId,
     FailureClass,
 )
 from dr_code.humaneval import (
@@ -93,7 +93,7 @@ def test_candidate_namespace_failure_wire_keys_are_exact() -> None:
 
 def test_harness_failure_wire_keys_and_class_literal_are_exact() -> None:
     failure = HarnessFailure(
-        sample=EvalSampleIdentity(sample_id="sample-0"),
+        sample=EvalSampleId(sample_id="sample-0"),
         evaluation=None,
         cause=HarnessFailureCause(
             exception_type="MissingCandidateExecution",

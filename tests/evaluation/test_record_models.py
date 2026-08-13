@@ -13,9 +13,9 @@ from _builders import (
     measured,
     policy,
     procedure,
-    record_identity,
+    record_id,
     sampling_plan,
-    sample_identity,
+    sample_id,
     task_set,
 )
 from dr_code.evaluation import (
@@ -25,11 +25,11 @@ from dr_code.evaluation import (
     AttemptValidity,
     BundleRecordReference,
     CandidateExecutionRecord,
-    EvalAttemptIdentity,
+    EvalAttemptId,
     EvalAttemptRecord,
     EvalMemberRecord,
     EvalPlan,
-    EvalRuntimeIdentity,
+    EvalRuntimeId,
     EvalSampleMetadata,
     EvaluatedSampleRecord,
     ExecutedCandidateProvenance,
@@ -64,8 +64,8 @@ def reference(index: int = 0) -> BundleRecordReference:
     )
 
 
-def runtime() -> EvalRuntimeIdentity:
-    return EvalRuntimeIdentity(
+def runtime() -> EvalRuntimeId:
+    return EvalRuntimeId(
         document=IdentityDocument(
             schema="dr-code/runtime",
             schema_version=1,
@@ -77,7 +77,7 @@ def runtime() -> EvalRuntimeIdentity:
 def metadata(**overrides: object) -> EvalSampleMetadata:
     return EvalSampleMetadata(
         **{
-            "identity": sample_identity(),
+            "identity": sample_id(),
             "task_id": "t0",
             "provenance": GeneratedSampleProvenance(
                 source_identity={"namespace": "generator", "value": "run-1"},
@@ -92,7 +92,7 @@ def metadata(**overrides: object) -> EvalSampleMetadata:
 def trace() -> SerializedTrace:
     return SerializedTrace(
         schema_version=3,
-        producer=record_identity().producer,
+        producer=record_id().producer,
         values={
             "input": TextArtifact(text="raw input"),
             "output": CodeArtifact(source="def f(): return 1"),
@@ -241,13 +241,9 @@ def test_sample_records_require_slot_and_sample_task_ids_to_match(
         )
 
 
-def test_evaluated_record_requires_candidate_sample_identity_to_match() -> (
-    None
-):
+def test_evaluated_record_requires_candidate_sample_id_to_match() -> None:
     other_candidate = materialized(
-        identity=candidate(
-            sample=sample_identity(sample_id="different-sample")
-        )
+        identity=candidate(sample=sample_id(sample_id="different-sample"))
     )
     with pytest.raises(ValidationError, match="sample identities must match"):
         evaluated(candidates=(other_candidate,))
@@ -312,14 +308,14 @@ def test_attempt_limit_exhaustion_requires_observed_to_exceed_configured(
 def attempt(**overrides: object) -> EvalAttemptRecord:
     return EvalAttemptRecord(
         **{
-            "identity": EvalAttemptIdentity(attempt_id=UUID(int=2)),
+            "identity": EvalAttemptId(attempt_id=UUID(int=2)),
             "plan": evaluation_plan(),
             "runtime": runtime(),
             "cache_namespace": "evaluation-v1",
             "members": (
                 EvalMemberRecord(
                     slot=evaluation_slot(),
-                    sample=sample_identity(),
+                    sample=sample_id(),
                     record=reference(),
                 ),
             ),
@@ -334,7 +330,7 @@ def attempt(**overrides: object) -> EvalAttemptRecord:
 
 def test_complete_attempt_requires_every_member_record() -> None:
     member = EvalMemberRecord(
-        slot=evaluation_slot(), sample=sample_identity(), record=None
+        slot=evaluation_slot(), sample=sample_id(), record=None
     )
     with pytest.raises(ValidationError, match="complete.*missing record"):
         attempt(members=(member,))
@@ -342,7 +338,7 @@ def test_complete_attempt_requires_every_member_record() -> None:
 
 def test_partial_attempt_is_invalid_and_names_missing_members() -> None:
     member = EvalMemberRecord(
-        slot=evaluation_slot(), sample=sample_identity(), record=None
+        slot=evaluation_slot(), sample=sample_id(), record=None
     )
     built = attempt(
         members=(member,),
@@ -371,17 +367,17 @@ def test_limit_exhaustion_requires_a_partial_invalid_attempt() -> None:
         )
 
 
-def test_attempt_rejects_duplicate_slot_or_sample_identity() -> None:
+def test_attempt_rejects_duplicate_slot_or_sample_id() -> None:
     duplicate = EvalMemberRecord(
-        slot=evaluation_slot(), sample=sample_identity(), record=reference(1)
+        slot=evaluation_slot(), sample=sample_id(), record=reference(1)
     )
     with pytest.raises(ValidationError, match="slots must be unique"):
         attempt(members=(attempt().members[0], duplicate))
 
 
-def test_replay_source_nests_attempt_identity_and_closed_mode() -> None:
+def test_replay_source_nests_attempt_id_and_closed_mode() -> None:
     replay = ReplaySource(
-        attempt=EvalAttemptIdentity(attempt_id=UUID(int=3)),
+        attempt=EvalAttemptId(attempt_id=UUID(int=3)),
         mode=ReplayMode.MATERIALIZED_CANDIDATES,
     )
     assert replay.mode.value == "materialized_candidates"

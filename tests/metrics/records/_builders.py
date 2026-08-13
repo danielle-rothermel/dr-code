@@ -38,7 +38,7 @@ def _question_coordinate(metric=None, on_key="input", settings=()):
 
 def _identity(question=None, **overrides):
     from dr_code.metrics import (
-        MetricRecordIdentity,
+        MetricRecordId,
         MetricsDefinitionCoordinate,
     )
 
@@ -54,7 +54,7 @@ def _identity(question=None, **overrides):
         ),
     }
     base.update(overrides)
-    return MetricRecordIdentity(**base)
+    return MetricRecordId(**base)
 
 
 def _value(name="character_count", value=4, unit=None):

@@ -23,48 +23,48 @@ from dr_code.trace import (
 )
 
 
-class EvalSlotIdentity(FrozenModel):
+class EvalSlotId(FrozenModel):
     task_set: TaskSetCoordinate
     sampling_plan: SamplingPlanCoordinate
     task_id: str
     sample_index: int = Field(ge=0)
 
 
-class EvalSourceIdentity(FrozenModel):
+class EvalSourceId(FrozenModel):
     namespace: str = Field(min_length=1)
     value: str = Field(min_length=1)
 
 
-class EvalSampleIdentity(FrozenModel):
+class EvalSampleId(FrozenModel):
     sample_id: str = Field(min_length=1)
 
 
-class EvalCandidateIdentity(FrozenModel):
+class EvalCandidateId(FrozenModel):
     """Identifies a candidate after materialization ordering is final."""
 
-    sample: EvalSampleIdentity
+    sample: EvalSampleId
     preprocessing: PreprocessingDefinitionCoordinate
     candidate_ordinal: int = Field(ge=0)
 
 
-class EvalRuntimeIdentity(FrozenModel):
+class EvalRuntimeId(FrozenModel):
     document: IdentityDocument
 
 
-class EvalAttemptIdentity(FrozenModel):
+class EvalAttemptId(FrozenModel):
     attempt_id: UUID
 
 
 class GeneratedSampleProvenance(FrozenModel):
     kind: Literal["generated"] = "generated"
-    source_identity: EvalSourceIdentity
+    source_identity: EvalSourceId
     source_reference: EvidenceReference
     generation_id: str
 
 
 class CorpusSampleProvenance(FrozenModel):
     kind: Literal["corpus"] = "corpus"
-    source_identity: EvalSourceIdentity
+    source_identity: EvalSourceId
     source_reference: EvidenceReference
     dataset: DatasetCoordinate
     row_id: str
@@ -72,7 +72,7 @@ class CorpusSampleProvenance(FrozenModel):
 
 class SyntheticSampleProvenance(FrozenModel):
     kind: Literal["synthetic"] = "synthetic"
-    source_identity: EvalSourceIdentity
+    source_identity: EvalSourceId
     source_reference: EvidenceReference
     coordinate: SyntheticSampleCoordinate
 
@@ -86,7 +86,7 @@ EvalSampleProvenance: TypeAlias = Annotated[
 
 
 class EvalSampleMetadata(FrozenModel):
-    identity: EvalSampleIdentity
+    identity: EvalSampleId
     task_id: str
     provenance: EvalSampleProvenance
 
@@ -118,7 +118,7 @@ class EvalSample(FrozenModel):
 
 
 class MaterializedEvalCandidate(FrozenModel):
-    identity: EvalCandidateIdentity
+    identity: EvalCandidateId
     source: CodeArtifact
     source_sha256: Sha256Digest
 
@@ -134,16 +134,16 @@ class MaterializedEvalCandidate(FrozenModel):
 
 __all__ = [
     "CorpusSampleProvenance",
-    "EvalAttemptIdentity",
-    "EvalCandidateIdentity",
-    "EvalRuntimeIdentity",
+    "EvalAttemptId",
+    "EvalCandidateId",
+    "EvalRuntimeId",
     "EvalSample",
     "EvalSampleAuxiliaryArtifact",
-    "EvalSampleIdentity",
+    "EvalSampleId",
     "EvalSampleMetadata",
     "EvalSampleProvenance",
-    "EvalSlotIdentity",
-    "EvalSourceIdentity",
+    "EvalSlotId",
+    "EvalSourceId",
     "GeneratedSampleProvenance",
     "MaterializedEvalCandidate",
     "SyntheticSampleProvenance",

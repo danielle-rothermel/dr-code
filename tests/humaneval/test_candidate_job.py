@@ -10,9 +10,9 @@ from dr_code.evaluation import (
     CandidateJobBudget,
     CandidateJobTerminated,
     CandidateTerminationReason,
-    EvalCandidateIdentity,
-    EvalRuntimeIdentity,
-    EvalSampleIdentity,
+    EvalCandidateId,
+    EvalRuntimeId,
+    EvalSampleId,
     MaterializedEvalCandidate,
     RunGrade,
 )
@@ -56,8 +56,8 @@ def _task(*, support_failure: bool = False) -> HumanEvalTask:
 
 def _candidate(source: str) -> MaterializedEvalCandidate:
     return MaterializedEvalCandidate(
-        identity=EvalCandidateIdentity(
-            sample=EvalSampleIdentity(sample_id="sample"),
+        identity=EvalCandidateId(
+            sample=EvalSampleId(sample_id="sample"),
             preprocessing=PreprocessingDefinitionCoordinate(
                 definition_id="pre",
                 version="0",
@@ -182,7 +182,7 @@ def test_real_importable_json_candidate_job(
         request,
         job_id=JobId(UUID("00000000-0000-0000-0000-000000000001")),
         budget=_budget(),
-        runtime=EvalRuntimeIdentity(
+        runtime=EvalRuntimeId(
             document=build_identity_document(
                 schema="tests/runtime",
                 schema_version=1,
@@ -206,7 +206,7 @@ def test_candidate_nonzero_exit_remains_candidate_owned(
         _request("import os\nos._exit(7)\n"),
         job_id=JobId(UUID("00000000-0000-0000-0000-000000000007")),
         budget=_budget(),
-        runtime=EvalRuntimeIdentity(
+        runtime=EvalRuntimeId(
             document=build_identity_document(
                 schema="tests/runtime",
                 schema_version=1,

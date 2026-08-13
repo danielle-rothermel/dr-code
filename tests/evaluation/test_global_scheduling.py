@@ -11,7 +11,7 @@ from dr_code.evaluation import (
     AttemptCompleteness,
     AttemptLimits,
     EvalBatchRequest,
-    EvalSlotIdentity,
+    EvalSlotId,
     WindowLimits,
 )
 from dr_code.evaluation._batch import _evaluate_batch_assembly
@@ -44,7 +44,7 @@ def _multi_frozen_request(
     inputs = tuple(
         frozen_input(
             index,
-            EvalSlotIdentity(
+            EvalSlotId(
                 task_set=task_set,
                 sampling_plan=sampling_plan,
                 task_id=TASK_ID,

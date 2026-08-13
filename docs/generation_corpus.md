@@ -14,7 +14,7 @@ of validated Parquet tables plus a build manifest.
 | `source_records.parquet` | source lifecycle record | Every source row selected for the dataset, including blank, failed, seeded, and pending rows. |
 | `generations.parquet` | generation record | One row per persisted nonblank final generation output. Equal output text remains separate when it came from separate source lifecycle records. |
 | `encoder_artifacts.parquet` | encoder artifact record | Nonblank encoder outputs that are not linked to a generation record. |
-| `requests.parquet` | request provenance record | Exactly one request and configuration provenance row per generation record. |
+| `requests.parquet` | request provenance record | Exactly one request and config provenance row per generation record. |
 | `tasks.parquet` | task record | Content-addressed task material resolved from the explicit task source. |
 | `manifest.json` | build manifest | Corpus adapter identity, pool-dump manifest identity, row counts, schemas, and SHA-256 artifact hashes. |
 
@@ -89,7 +89,7 @@ logical task, so their task-record counts are twice their logical task counts.
 
 ## Evidence and re-evaluation boundary
 
-Prompt and configuration fidelity is explicit: exact persisted requests,
+Prompt and config fidelity is explicit: exact persisted requests,
 task prompts recovered from pinned task material, and unavailable request
 evidence remain distinguishable. Raw `attempt_count` is preserved, but the
 extractor does not invent per-attempt indexes or retry identities.

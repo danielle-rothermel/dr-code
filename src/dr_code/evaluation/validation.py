@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from dr_code.evaluation.identity import (
-    EvalRuntimeIdentity,
-    EvalSampleIdentity,
-    EvalSlotIdentity,
+from dr_code.evaluation.id import (
+    EvalRuntimeId,
+    EvalSampleId,
+    EvalSlotId,
 )
 from dr_code.evaluation.plan import EvalPlan
 from dr_code.evaluation.records import (
@@ -62,10 +62,10 @@ def validate_sample_record_graph(
     record: SampleEvalRecord,
     /,
     *,
-    slot: EvalSlotIdentity,
-    sample: EvalSampleIdentity,
+    slot: EvalSlotId,
+    sample: EvalSampleId,
     plan: EvalPlan,
-    runtime: EvalRuntimeIdentity,
+    runtime: EvalRuntimeId,
     cache_namespace: str,
 ) -> None:
     """Validate all semantic links owned by one sample evidence record."""

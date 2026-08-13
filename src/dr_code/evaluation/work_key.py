@@ -8,7 +8,7 @@ from dr_serialize import (
     identity_document_hash,
 )
 
-from dr_code.evaluation.identity import EvalSlotIdentity
+from dr_code.evaluation.id import EvalSlotId
 
 # Persisted identity payload keys are an explicit wire contract. Never derive
 # them from model field names, and never build this payload by iterating.
@@ -17,16 +17,16 @@ WORK_KEY_SCHEMA_VERSION: Final = 1
 
 
 def derive_work_key(
-    slot: EvalSlotIdentity,
+    slot: EvalSlotId,
     /,
     *,
     experiment_config_hash: str,
 ) -> Sha256Digest:
     """Derive the content-addressed work key for one planned generation.
 
-    The key binds an experiment configuration to the slot's addressing
+    The key binds an experiment config to the slot's addressing
     coordinates — its task set coordinate, its sampling plan coordinate, its
-    task id, and its sample index — so the same configuration addresses the
+    task id, and its sample index — so the same config addresses the
     same work under the same task set and sampling plan coordinates.
     """
 

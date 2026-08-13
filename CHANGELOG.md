@@ -204,7 +204,7 @@
   addressed by its task id and its sample index within that task. The rename
   is a hard cutover on persisted models: no aliases and no dual read.
 - `derive_work_key` computes a generation's work key from an experiment
-  configuration hash and an evaluation slot's addressing coordinates — its task
+  config hash and an evaluation slot's addressing coordinates — its task
   set coordinate, its sampling plan coordinate, its task id, and its sample
   index — over a payload of pinned literal keys. It is a pure derivation with
   no storage and no registry.
@@ -501,7 +501,7 @@
   scalar, and a unit from the closed `MetricFactUnit` enum. Every operator
   result class declares the unit of each field it emits in `UNITS`, and a
   field without a declared unit fails loudly at projection.
-- Records nest a shared `MetricRecordIdentity`: the question coordinate,
+- Records nest a shared `MetricRecordId`: the question coordinate,
   the operator version, the trace producer coordinate, and the metrics
   definition coordinate. An identity must name a question its own nested
   definition coordinate declares.

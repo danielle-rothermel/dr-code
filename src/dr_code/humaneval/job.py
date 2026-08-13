@@ -13,8 +13,8 @@ from dr_exec import ImportableEntryPoint
 from pydantic import Field, PositiveInt, model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.identity import (
-    EvalCandidateIdentity,
+from dr_code.evaluation.id import (
+    EvalCandidateId,
     MaterializedEvalCandidate,
 )
 from dr_code.humaneval.settings import CodeTestSettings
@@ -106,7 +106,7 @@ HumanEvalSuiteResult: TypeAlias = Annotated[
 
 class HumanEvalCandidateJobResult(FrozenModel):
     schema_version: Literal[2] = HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION
-    candidate: EvalCandidateIdentity
+    candidate: EvalCandidateId
     namespace: CandidateNamespaceOutcome
     suites: tuple[HumanEvalSuiteResult, ...]
 

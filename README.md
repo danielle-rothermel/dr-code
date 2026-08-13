@@ -36,7 +36,7 @@ viewer, organized into these functional areas:
 - **[Generation corpus extraction](docs/generation_corpus.md)**
   converts archived model activity into validated, content-addressed Parquet
   tables while preserving raw evidence, task material, prompts, requests, and
-  configuration provenance at their natural grains.
+  config provenance at their natural grains.
 - **[Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)**
   applies deterministic corruption recipes to known solutions for
   preprocessing and robustness experiments.
@@ -175,10 +175,10 @@ the persisted key.
 
 ```python
 from dr_code.caching import WindowedExecutionCache
-from dr_code.evaluation import EvalRuntimeIdentity
+from dr_code.evaluation import EvalRuntimeId
 from dr_serialize import build_identity_document
 
-runtime = EvalRuntimeIdentity(
+runtime = EvalRuntimeId(
     document=build_identity_document(
         schema="example/python-runtime",
         schema_version=1,
@@ -414,7 +414,7 @@ HumanEvalSubmissionResult = Annotated[
 
 
 class HumanEvalSubmissionRequest(FrozenModel):
-    sample: EvalSampleIdentity
+    sample: EvalSampleId
     scoring_profile: HumanEvalScoringProfile
 
 

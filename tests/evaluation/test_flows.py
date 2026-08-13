@@ -12,7 +12,7 @@ from dr_code.evaluation import (
     AttemptCompleteness,
     AttemptValidity,
     ComparisonStatus,
-    EvalAttemptIdentity,
+    EvalAttemptId,
     EvidenceReference,
     SampleEvalRecord,
     restore_eval_attempt,
@@ -238,7 +238,7 @@ async def test_validate_testing_compares_against_a_reference_attempt(
     )
     candidate_request = reference_request.model_copy(
         update={
-            "attempt": EvalAttemptIdentity(attempt_id=UUID(int=2)),
+            "attempt": EvalAttemptId(attempt_id=UUID(int=2)),
         }
     )
     try:

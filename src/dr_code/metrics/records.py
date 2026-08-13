@@ -57,7 +57,7 @@ class OperatorFailure(FrozenModel):
     failure_message: str
 
 
-class MetricRecordIdentity(FrozenModel):
+class MetricRecordId(FrozenModel):
     question: MetricQuestionCoordinate
     metric_version: str
     producer: TraceProducer
@@ -77,7 +77,7 @@ class MetricRecordIdentity(FrozenModel):
 class MeasuredRecord(FrozenModel):
     schema_version: Literal[1] = METRIC_RECORD_SCHEMA_VERSION
     status: Literal[RecordStatus.MEASURED] = RecordStatus.MEASURED
-    identity: MetricRecordIdentity
+    identity: MetricRecordId
     values: tuple[MetricValue, ...]
 
     @model_validator(mode="after")
@@ -93,7 +93,7 @@ class MeasuredRecord(FrozenModel):
 class NotApplicableRecord(FrozenModel):
     schema_version: Literal[1] = METRIC_RECORD_SCHEMA_VERSION
     status: Literal[RecordStatus.NOT_APPLICABLE] = RecordStatus.NOT_APPLICABLE
-    identity: MetricRecordIdentity
+    identity: MetricRecordId
     absence: Absent
 
 
@@ -102,7 +102,7 @@ class OperatorFailureRecord(FrozenModel):
     status: Literal[RecordStatus.OPERATOR_FAILURE] = (
         RecordStatus.OPERATOR_FAILURE
     )
-    identity: MetricRecordIdentity
+    identity: MetricRecordId
     failure: OperatorFailure
 
 
@@ -143,7 +143,7 @@ __all__ = [
     "MeasuredRecord",
     "MetricValue",
     "MetricRecord",
-    "MetricRecordIdentity",
+    "MetricRecordId",
     "MetricScalar",
     "NotApplicableRecord",
     "OperatorFailure",

@@ -51,8 +51,8 @@ from dr_code.evaluation.execution import (
     executed_candidate_record,
     reused_candidate_record,
 )
-from dr_code.evaluation.identity import (
-    EvalCandidateIdentity,
+from dr_code.evaluation.id import (
+    EvalCandidateId,
     MaterializedEvalCandidate,
 )
 from dr_code.evaluation.records import (
@@ -663,7 +663,7 @@ def _materialize_candidates(
     preprocessing = producer.definition
     return tuple(
         MaterializedEvalCandidate(
-            identity=EvalCandidateIdentity(
+            identity=EvalCandidateId(
                 sample=item.sample.metadata.identity,
                 preprocessing=preprocessing,
                 candidate_ordinal=ordinal,

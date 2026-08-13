@@ -6,8 +6,8 @@ from dr_serialize import Sha256Digest
 
 from dr_code.evaluation import (
     CandidateJobBudget,
-    EvalCandidateIdentity,
-    EvalSampleIdentity,
+    EvalCandidateId,
+    EvalSampleId,
     MaterializedEvalCandidate,
 )
 from dr_code.humaneval.job import (
@@ -62,8 +62,8 @@ def candidate_job_request(
     *suites: HumanEvalEvaluatorSuite,
 ) -> HumanEvalCandidateJobRequest:
     candidate = MaterializedEvalCandidate(
-        identity=EvalCandidateIdentity(
-            sample=EvalSampleIdentity(sample_id="sample"),
+        identity=EvalCandidateId(
+            sample=EvalSampleId(sample_id="sample"),
             preprocessing=PreprocessingDefinitionCoordinate(
                 definition_id="pre",
                 version="0",

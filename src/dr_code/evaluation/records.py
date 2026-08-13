@@ -13,13 +13,13 @@ from dr_serialize import Sha256Digest
 from pydantic import Field, PositiveInt, TypeAdapter, model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.identity import (
-    EvalAttemptIdentity,
-    EvalCandidateIdentity,
-    EvalRuntimeIdentity,
-    EvalSampleIdentity,
+from dr_code.evaluation.id import (
+    EvalAttemptId,
+    EvalCandidateId,
+    EvalRuntimeId,
+    EvalSampleId,
     EvalSampleMetadata,
-    EvalSlotIdentity,
+    EvalSlotId,
     MaterializedEvalCandidate,
 )
 from dr_code.evaluation.plan import EvalPlan
@@ -149,9 +149,9 @@ def outcome_is_cacheable(outcome: CandidateExecutionOutcome, /) -> bool:
 
 class CandidateExecutionRecord(FrozenModel):
     schema_version: Literal[2] = CANDIDATE_EXECUTION_RECORD_SCHEMA_VERSION
-    candidate: EvalCandidateIdentity
+    candidate: EvalCandidateId
     request_identity: Sha256Digest
-    runtime: EvalRuntimeIdentity
+    runtime: EvalRuntimeId
     cache_namespace: str
     cache_key: str
     provenance: CandidateExecutionProvenance
@@ -161,7 +161,7 @@ class CandidateExecutionRecord(FrozenModel):
 class PreprocessingAbsentSampleRecord(FrozenModel):
     schema_version: Literal[2] = SAMPLE_EVAL_RECORD_SCHEMA_VERSION
     status: Literal["preprocessing_absent"] = "preprocessing_absent"
-    slot: EvalSlotIdentity
+    slot: EvalSlotId
     sample: EvalSampleMetadata
     trace: SerializedTrace
     absence: Absent
@@ -175,7 +175,7 @@ class PreprocessingAbsentSampleRecord(FrozenModel):
 class NoCandidatesSampleRecord(FrozenModel):
     schema_version: Literal[2] = SAMPLE_EVAL_RECORD_SCHEMA_VERSION
     status: Literal["no_candidates"] = "no_candidates"
-    slot: EvalSlotIdentity
+    slot: EvalSlotId
     sample: EvalSampleMetadata
     trace: SerializedTrace
 
@@ -188,7 +188,7 @@ class NoCandidatesSampleRecord(FrozenModel):
 class EvaluatedSampleRecord(FrozenModel):
     schema_version: Literal[2] = SAMPLE_EVAL_RECORD_SCHEMA_VERSION
     status: Literal["evaluated"] = "evaluated"
-    slot: EvalSlotIdentity
+    slot: EvalSlotId
     sample: EvalSampleMetadata
     trace: SerializedTrace
     candidates: tuple[MaterializedEvalCandidate, ...]
@@ -222,7 +222,7 @@ class EvaluatedSampleRecord(FrozenModel):
 
 
 def _validate_slot_sample_task(
-    slot: EvalSlotIdentity,
+    slot: EvalSlotId,
     sample: EvalSampleMetadata,
 ) -> None:
     if slot.task_id != sample.task_id:
@@ -278,8 +278,8 @@ class AttemptLimitExhaustion(FrozenModel):
 
 
 class EvalMemberRecord(FrozenModel):
-    slot: EvalSlotIdentity
-    sample: EvalSampleIdentity
+    slot: EvalSlotId
+    sample: EvalSampleId
     record: EvidenceReference | None
 
 
@@ -290,15 +290,15 @@ class ReplayMode(StrEnum):
 
 
 class ReplaySource(FrozenModel):
-    attempt: EvalAttemptIdentity
+    attempt: EvalAttemptId
     mode: ReplayMode
 
 
 class EvalAttemptRecord(FrozenModel):
     schema_version: Literal[3] = EVAL_ATTEMPT_SCHEMA_VERSION
-    identity: EvalAttemptIdentity
+    identity: EvalAttemptId
     plan: EvalPlan
-    runtime: EvalRuntimeIdentity
+    runtime: EvalRuntimeId
     cache_namespace: str
     members: tuple[EvalMemberRecord, ...]
     completeness: AttemptCompleteness

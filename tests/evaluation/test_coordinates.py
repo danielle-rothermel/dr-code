@@ -10,15 +10,15 @@ from _builders import (
     preprocessing_coordinate,
     sampling_plan,
     sampling_plan_coordinate,
-    sample_identity,
+    sample_id,
     task_set,
     task_set_coordinate,
 )
 from dr_code.evaluation import (
     DatasetCoordinate,
-    EvalCandidateIdentity,
-    EvalSampleIdentity,
-    EvalSlotIdentity,
+    EvalCandidateId,
+    EvalSampleId,
+    EvalSlotId,
     SamplingPlan,
     SamplingPlanCoordinate,
     TaskSet,
@@ -200,14 +200,14 @@ def test_candidate_accepts_the_first_ordinal() -> None:
 
 
 def test_candidate_ordinal_documents_the_post_filter_definition() -> None:
-    doc = EvalCandidateIdentity.__doc__ or ""
+    doc = EvalCandidateId.__doc__ or ""
     assert "after" in doc
     assert "materialization" in doc
 
 
-def test_candidate_nests_sample_identity_and_preprocessing() -> None:
+def test_candidate_nests_sample_id_and_preprocessing() -> None:
     built = candidate()
-    assert built.sample == sample_identity()
+    assert built.sample == sample_id()
     assert built.preprocessing == preprocessing_coordinate()
 
 
@@ -220,9 +220,9 @@ def test_candidate_nests_sample_identity_and_preprocessing() -> None:
         (SamplingPlanCoordinate, sampling_plan_coordinate()),
         (SamplingPlan, sampling_plan()),
         (SamplingPlan, sampling_plan(seeds=(1, 2, 3, 4))),
-        (EvalSlotIdentity, evaluation_slot()),
-        (EvalSampleIdentity, sample_identity()),
-        (EvalCandidateIdentity, candidate()),
+        (EvalSlotId, evaluation_slot()),
+        (EvalSampleId, sample_id()),
+        (EvalCandidateId, candidate()),
     ],
 )
 def test_coordinate_round_trips_through_json(model, value) -> None:

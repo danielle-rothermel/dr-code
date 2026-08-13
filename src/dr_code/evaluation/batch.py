@@ -11,11 +11,11 @@ from dr_store import ArtifactBundlePublication, ObjectStore
 from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.identity import (
-    EvalAttemptIdentity,
-    EvalRuntimeIdentity,
+from dr_code.evaluation.id import (
+    EvalAttemptId,
+    EvalRuntimeId,
     EvalSample,
-    EvalSlotIdentity,
+    EvalSlotId,
     MaterializedEvalCandidate,
 )
 from dr_code.evaluation.plan import EvalPlan
@@ -84,13 +84,13 @@ class CandidateJobBudget(FrozenModel):
 
 class SampleEvalInput(FrozenModel):
     kind: Literal["sample"] = "sample"
-    slot: EvalSlotIdentity
+    slot: EvalSlotId
     sample: EvalSample
 
 
 class FrozenCandidateEvalInput(FrozenModel):
     kind: Literal["frozen_candidates"] = "frozen_candidates"
-    slot: EvalSlotIdentity
+    slot: EvalSlotId
     sample: EvalSample
     preprocessing: PreprocessingDefinitionCoordinate
     candidates: tuple[MaterializedEvalCandidate, ...]
@@ -162,9 +162,9 @@ class ProjectionRequest(FrozenModel):
 
 
 class EvalBatchRequest(FrozenModel):
-    attempt: EvalAttemptIdentity
+    attempt: EvalAttemptId
     plan: EvalPlan
-    runtime: EvalRuntimeIdentity
+    runtime: EvalRuntimeId
     cache_namespace: str = Field(min_length=1)
     # Required, never defaulted: a silent grade would let a trial outcome
     # serve a selection-grade run from the same cache key.
@@ -281,7 +281,7 @@ class EvalBatchRequest(FrozenModel):
 class EvalProjectionReference(FrozenModel):
     kind: ProjectionKind
     definition_version: Literal[2] = 2
-    source_attempt: EvalAttemptIdentity
+    source_attempt: EvalAttemptId
     artifact_name: str
 
     @field_validator("artifact_name")

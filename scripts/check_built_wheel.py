@@ -29,10 +29,10 @@ from dr_code.core.execution.executor import host_process_executor
 from dr_code.evaluation import (
     EVAL_BUNDLE_FORMAT,
     EVAL_PROJECTION_FORMAT,
-    EvalCandidateIdentity,
+    EvalCandidateId,
     EvalBundlePayload,
-    EvalAttemptIdentity,
-    EvalSampleIdentity,
+    EvalAttemptId,
+    EvalSampleId,
     MaterializedEvalCandidate,
     ProjectionArtifactHeader,
     ProjectionKind,
@@ -93,27 +93,27 @@ required_exports = {
         "EVAL_BUNDLE_SCHEMA_VERSION",
         "EVAL_PROJECTION_FORMAT",
         "EVAL_PROJECTION_SCHEMA_VERSION",
-        "EvalAttemptIdentity",
+        "EvalAttemptId",
         "EvalAttemptRecord",
         "EvalBatchRequest",
         "EvalBatchResult",
         "EvalBundleAudit",
         "EvalBundlePayload",
-        "EvalCandidateIdentity",
+        "EvalCandidateId",
         "EvalEvidenceResolver",
         "EvalInput",
         "EvalMemberRecord",
         "EvalProjectionReference",
         "EvalReadLimits",
-        "EvalRuntimeIdentity",
+        "EvalRuntimeId",
         "EvalSample",
         "EvalSampleAuxiliaryArtifact",
-        "EvalSampleIdentity",
+        "EvalSampleId",
         "EvalSampleMetadata",
         "EvalSampleProjectionRow",
         "EvalSampleProvenance",
-        "EvalSlotIdentity",
-        "EvalSourceIdentity",
+        "EvalSlotId",
+        "EvalSourceId",
         "EvaluatedSampleRecord",
         "EvidenceReference",
         "ExecutedCandidateProvenance",
@@ -269,7 +269,7 @@ if not all(
     raise SystemExit("installed wheel is missing the evaluation bundle API")
 if ReplayReady is None or StructuralEvalComparison is None:
     raise SystemExit("installed wheel is missing replay or comparison models")
-bundle_attempt = EvalAttemptIdentity(
+bundle_attempt = EvalAttemptId(
     attempt_id="00000000-0000-0000-0000-000000000001"
 )
 if (
@@ -307,8 +307,8 @@ with TemporaryDirectory(prefix="dr-code-wheel-records-") as record_root:
     settings = CodeTestSettings()
     request = HumanEvalCandidateJobRequest(
         candidate=MaterializedEvalCandidate(
-            identity=EvalCandidateIdentity(
-                sample=EvalSampleIdentity(sample_id="wheel-smoke"),
+            identity=EvalCandidateId(
+                sample=EvalSampleId(sample_id="wheel-smoke"),
                 preprocessing=PreprocessingDefinitionCoordinate(
                     definition_id="wheel-smoke",
                     version="1",

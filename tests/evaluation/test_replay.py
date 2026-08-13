@@ -10,7 +10,7 @@ from dr_store import ArtifactBundlePublication, ObjectStore
 
 from _executor_stubs import importable_json_executor, scripted_executor
 from dr_code.evaluation import (
-    EvalAttemptIdentity,
+    EvalAttemptId,
     EvaluatedSampleRecord,
     FrozenCandidateEvalInput,
     ReplayMode,
@@ -54,7 +54,7 @@ def _preflight(
     return preflight_replay(
         source,
         mode,
-        attempt=EvalAttemptIdentity(attempt_id=UUID(int=attempt_int)),
+        attempt=EvalAttemptId(attempt_id=UUID(int=attempt_int)),
         runtime=context.runtime,
         cache_namespace="tests/replay",
         run_grade=context.run_grade,

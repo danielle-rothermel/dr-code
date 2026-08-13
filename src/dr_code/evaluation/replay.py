@@ -22,9 +22,9 @@ from dr_code.evaluation.batch import (
     _evaluate_batch_with_replay,
 )
 from dr_code.evaluation.bundle import RestoredEvalAttempt
-from dr_code.evaluation.identity import (
-    EvalAttemptIdentity,
-    EvalRuntimeIdentity,
+from dr_code.evaluation.id import (
+    EvalAttemptId,
+    EvalRuntimeId,
     EvalSample,
     EvalSampleAuxiliaryArtifact,
 )
@@ -86,8 +86,8 @@ def preflight_replay(
     mode: ReplayMode,
     /,
     *,
-    attempt: EvalAttemptIdentity,
-    runtime: EvalRuntimeIdentity,
+    attempt: EvalAttemptId,
+    runtime: EvalRuntimeId,
     cache_namespace: str,
     run_grade: RunGrade,
     record_placement: RecordPlacement,

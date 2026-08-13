@@ -141,7 +141,7 @@ class NlLatentsKey(FrozenModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_stage_configuration(self) -> NlLatentsKey:
+    def _validate_stage_config(self) -> NlLatentsKey:
         if self.enc_model != self.dec_model:
             raise ValueError("encoder and decoder models differ")
         if self.enc_reasoning_effort is not self.dec_reasoning_effort:

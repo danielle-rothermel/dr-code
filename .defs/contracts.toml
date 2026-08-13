@@ -74,7 +74,7 @@ artifact-kind wiring before any input runs; declared step failures produce
 explicit absences in a complete trace, while unexpected exceptions escape
 unchanged."""
 rationale = """
-Configuration defects are wiring errors, declared candidate failures are
+Config defects are wiring errors, declared candidate failures are
 recorded as evidence, and infrastructure defects must not be mislabeled as
 candidate outcomes."""
 date = "2026-08-09"
@@ -283,7 +283,7 @@ default, and that grade joins the candidate execution cache key beside the
 request identity and the budget dimensions. A trial outcome and a
 selection-grade outcome for identical source therefore never collide and are
 never served interchangeably. Grade is a key discriminator and its
-configuration point only: it is not a cache-eviction rule, a policy engine, or
+config point only: it is not a cache-eviction rule, a policy engine, or
 a second cache, and the runtime-identity half of the persistent key is
 unchanged."""
 rationale = """
@@ -439,7 +439,7 @@ Unsupported or mismatched projection definitions and versions produce a typed
 not-comparable result. Field-level diffs and arbitrary projection comparison
 are not required."""
 rationale = """
-Position, identity, and content can change independently. Identity-aware
+Position, identity, and content can change independently. Id-aware
 alignment and explicit denominators expose those differences without turning
 the core into a general diff or analysis engine."""
 date = "2026-08-09"
@@ -462,12 +462,12 @@ answer different attribution questions. Explicit composition supports live
 generation and frozen corpora without guessing identity from equal content or
 ambient ordering."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_identity.py tests/evaluation/test_record_models.py"
+check = "uv run pytest tests/evaluation/test_id.py tests/evaluation/test_record_models.py"
 
 [[contracts]]
-title = "Work keys derive from configuration and slot addressing coordinates"
+title = "Work keys derive from config and slot addressing coordinates"
 statement = """
-A work key is the content-addressed digest of one experiment configuration
+A work key is the content-addressed digest of one experiment config
 hash together with one evaluation slot's full addressing coordinates: its task
 set coordinate, its sampling plan coordinate, its task id, and its sample
 index, over an explicit payload of pinned literal keys. The derivation is a

@@ -11,13 +11,13 @@ from _builders import (
     evaluation_slot,
     measured,
     preprocessing_coordinate,
-    record_identity,
-    sample_identity,
+    record_id,
+    sample_id,
 )
 from dr_code.evaluation import (
     CandidateJobCompleted,
     EvalMemberRecord,
-    EvalRuntimeIdentity,
+    EvalRuntimeId,
     EvaluatedSampleRecord,
     SampleEvalRecord,
 )
@@ -55,7 +55,7 @@ def test_attempt_rejects_member_slots_outside_plan() -> None:
             members=(
                 EvalMemberRecord(
                     slot=evaluation_slot(task_id="t1"),
-                    sample=sample_identity(),
+                    sample=sample_id(),
                     record=reference(),
                 ),
             )
@@ -68,12 +68,12 @@ def test_attempt_rejects_members_out_of_plan_order() -> None:
             members=(
                 EvalMemberRecord(
                     slot=evaluation_slot(sample_index=1),
-                    sample=sample_identity(sample_id="sample-1"),
+                    sample=sample_id(sample_id="sample-1"),
                     record=reference(1),
                 ),
                 EvalMemberRecord(
                     slot=evaluation_slot(sample_index=0),
-                    sample=sample_identity(sample_id="sample-0"),
+                    sample=sample_id(sample_id="sample-0"),
                     record=reference(0),
                 ),
             )
@@ -87,10 +87,10 @@ def test_graph_rejects_missing_and_wrong_metric_evidence() -> None:
     wrong_definition = MetricsDefinitionCoordinate(
         definition_id="other-metrics",
         version="0",
-        questions=(record_identity().question,),
+        questions=(record_id().question,),
     )
     wrong_metric = measured(
-        identity=record_identity(metrics_definition=wrong_definition)
+        identity=record_id(metrics_definition=wrong_definition)
     )
     with pytest.raises(ValueError, match="definition does not match"):
         _validate(evaluated(metrics=(wrong_metric,)))
@@ -122,7 +122,7 @@ def test_graph_rejects_candidate_trace_and_execution_context_mismatches() -> (
     with pytest.raises(ValueError, match="preprocessing does not match"):
         _validate(record.model_copy(update={"trace": wrong_trace}))
 
-    wrong_runtime = EvalRuntimeIdentity(
+    wrong_runtime = EvalRuntimeId(
         document=IdentityDocument(
             schema="tests/other-runtime",
             schema_version=1,

@@ -6,9 +6,9 @@ from dr_code.evaluation import (
     AggregationPolicy,
     AggregationSlot,
     AggregationStatistic,
-    EvalCandidateIdentity,
-    EvalSampleIdentity,
-    EvalSlotIdentity,
+    EvalCandidateId,
+    EvalSampleId,
+    EvalSlotId,
     DatasetCoordinate,
     EvalProcedure,
     SamplingPlan,
@@ -23,7 +23,7 @@ from dr_code.metrics import (
     MetricName,
     MetricQuestion,
     MetricQuestionCoordinate,
-    MetricRecordIdentity,
+    MetricRecordId,
     MetricsDefinition,
     MetricsDefinitionCoordinate,
     NotApplicableRecord,
@@ -90,8 +90,8 @@ def sampling_plan(**overrides: object) -> SamplingPlan:
     )
 
 
-def evaluation_slot(**overrides: object) -> EvalSlotIdentity:
-    return EvalSlotIdentity(
+def evaluation_slot(**overrides: object) -> EvalSlotId:
+    return EvalSlotId(
         **{
             "task_set": task_set_coordinate(),
             "sampling_plan": sampling_plan_coordinate(),
@@ -123,14 +123,14 @@ def preprocessing_coordinate(
     )
 
 
-def sample_identity(**overrides: object) -> EvalSampleIdentity:
-    return EvalSampleIdentity(**{"sample_id": "sample-0", **overrides})
+def sample_id(**overrides: object) -> EvalSampleId:
+    return EvalSampleId(**{"sample_id": "sample-0", **overrides})
 
 
-def candidate(**overrides: object) -> EvalCandidateIdentity:
-    return EvalCandidateIdentity(
+def candidate(**overrides: object) -> EvalCandidateId:
+    return EvalCandidateId(
         **{
-            "sample": sample_identity(),
+            "sample": sample_id(),
             "preprocessing": preprocessing_coordinate(),
             "candidate_ordinal": 0,
             **overrides,
@@ -199,9 +199,9 @@ def policy(**overrides: object) -> AggregationPolicy:
     )
 
 
-def record_identity(**overrides: object) -> MetricRecordIdentity:
+def record_id(**overrides: object) -> MetricRecordId:
     question = overrides.pop("question", question_coordinate())
-    return MetricRecordIdentity(
+    return MetricRecordId(
         **{
             "question": question,
             "metric_version": "0",
@@ -227,7 +227,7 @@ def measured(
 ) -> MeasuredRecord:
     return MeasuredRecord(
         **{
-            "identity": record_identity(),
+            "identity": record_id(),
             "values": (MetricValue(name=name, value=value, unit=unit),),
             **overrides,
         }
@@ -237,7 +237,7 @@ def measured(
 def not_applicable(**overrides: object) -> NotApplicableRecord:
     return NotApplicableRecord(
         **{
-            "identity": record_identity(),
+            "identity": record_id(),
             "absence": Absent(
                 failed_step="normalize",
                 failure_code="blank_input",
@@ -251,7 +251,7 @@ def not_applicable(**overrides: object) -> NotApplicableRecord:
 def operator_failure(**overrides: object) -> OperatorFailureRecord:
     return OperatorFailureRecord(
         **{
-            "identity": record_identity(),
+            "identity": record_id(),
             "failure": OperatorFailure(
                 failure_type="ValueError", failure_message="boom"
             ),

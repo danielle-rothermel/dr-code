@@ -18,7 +18,7 @@ from dr_code.metrics.records import (
     MeasuredRecord,
     MetricValue,
     MetricRecord,
-    MetricRecordIdentity,
+    MetricRecordId,
     NotApplicableRecord,
     OperatorFailure,
     OperatorFailureRecord,
@@ -27,7 +27,7 @@ from dr_code.metrics.registry import REGISTRY
 from dr_code.trace import Absent, Artifact, Trace, WiringError
 
 if TYPE_CHECKING:
-    from dr_code.evaluation.identity import MaterializedEvalCandidate
+    from dr_code.evaluation.id import MaterializedEvalCandidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,12 +46,12 @@ class _TraceBinding:
     planning_failure: Exception | None = None
 
 
-def _record_identity(
+def _record_id(
     definition: MetricsDefinition,
     binding: _TraceBinding,
-) -> MetricRecordIdentity:
+) -> MetricRecordId:
     question_binding = binding.question_binding
-    return MetricRecordIdentity(
+    return MetricRecordId(
         question=MetricQuestionCoordinate.of(question_binding.question),
         metric_version=question_binding.operator.VERSION,
         producer=binding.trace.producer,
@@ -274,7 +274,7 @@ def _compute_record(
     binding: _TraceBinding,
     context: _EngineContext,
 ) -> MetricRecord:
-    identity = _record_identity(definition, binding)
+    identity = _record_id(definition, binding)
     if binding.absence is not None:
         return NotApplicableRecord(identity=identity, absence=binding.absence)
     if binding.planning_failure is not None:
@@ -297,7 +297,7 @@ def _compute_record(
 
 
 def _failure_record(
-    identity: MetricRecordIdentity,
+    identity: MetricRecordId,
     failure: Exception,
 ) -> OperatorFailureRecord:
     return OperatorFailureRecord(

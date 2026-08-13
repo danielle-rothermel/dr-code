@@ -11,8 +11,8 @@ from _builders import (
     evaluation_slot,
     policy,
     procedure,
-    record_identity,
-    sample_identity,
+    record_id,
+    sample_id,
     sampling_plan,
     task_set,
 )
@@ -21,11 +21,11 @@ from dr_code.evaluation import (
     AttemptCompleteness,
     AttemptValidity,
     BundleRecordReference,
-    EvalAttemptIdentity,
+    EvalAttemptId,
     EvalAttemptRecord,
     EvalMemberRecord,
     EvalPlan,
-    EvalRuntimeIdentity,
+    EvalRuntimeId,
     EvalSampleMetadata,
     GeneratedSampleProvenance,
     NoCandidatesSampleRecord,
@@ -46,8 +46,8 @@ def reference(index: int = 0) -> BundleRecordReference:
     )
 
 
-def runtime() -> EvalRuntimeIdentity:
-    return EvalRuntimeIdentity(
+def runtime() -> EvalRuntimeId:
+    return EvalRuntimeId(
         document=IdentityDocument(
             schema="dr-code/runtime",
             schema_version=1,
@@ -59,7 +59,7 @@ def runtime() -> EvalRuntimeIdentity:
 def metadata(**overrides: object) -> EvalSampleMetadata:
     return EvalSampleMetadata(
         **{
-            "identity": sample_identity(),
+            "identity": sample_id(),
             "task_id": "t0",
             "provenance": GeneratedSampleProvenance(
                 source_identity={"namespace": "generator", "value": "run-1"},
@@ -74,7 +74,7 @@ def metadata(**overrides: object) -> EvalSampleMetadata:
 def trace() -> SerializedTrace:
     return SerializedTrace(
         schema_version=3,
-        producer=record_identity().producer,
+        producer=record_id().producer,
         values={
             "input": TextArtifact(text="raw input"),
             "output": CodeArtifact(source="def f(): return 1"),
@@ -104,14 +104,14 @@ def sample_record() -> NoCandidatesSampleRecord:
 def attempt_record(**overrides: object) -> EvalAttemptRecord:
     return EvalAttemptRecord(
         **{
-            "identity": EvalAttemptIdentity(attempt_id=_ATTEMPT_ID),
+            "identity": EvalAttemptId(attempt_id=_ATTEMPT_ID),
             "plan": evaluation_plan(),
             "runtime": runtime(),
             "cache_namespace": "evaluation-v1",
             "members": (
                 EvalMemberRecord(
                     slot=evaluation_slot(),
-                    sample=sample_identity(),
+                    sample=sample_id(),
                     record=reference(),
                 ),
             ),

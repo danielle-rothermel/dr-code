@@ -5,7 +5,7 @@ import pytest
 from ._builders import _identity, _question_coordinate
 
 
-def test_identity_carries_the_question_and_both_coordinates() -> None:
+def test_id_carries_the_question_and_both_coordinates() -> None:
     identity = _identity()
     assert identity.question.metric.value == "text_stats"
     assert identity.question.on_key == "input"
@@ -18,7 +18,7 @@ def test_identity_carries_the_question_and_both_coordinates() -> None:
     assert identity.metrics_definition.questions == (identity.question,)
 
 
-def test_identity_must_name_a_question_its_definition_declares() -> None:
+def test_id_must_name_a_question_its_definition_declares() -> None:
     from pydantic import ValidationError
 
     from dr_code.metrics import MetricName, MetricsDefinitionCoordinate
@@ -39,7 +39,7 @@ def test_identity_must_name_a_question_its_definition_declares() -> None:
         )
 
 
-def test_identity_on_key_must_match_the_declared_question() -> None:
+def test_id_on_key_must_match_the_declared_question() -> None:
     from pydantic import ValidationError
 
     from dr_code.metrics import MetricsDefinitionCoordinate
@@ -56,7 +56,7 @@ def test_identity_on_key_must_match_the_declared_question() -> None:
         )
 
 
-def test_identity_settings_must_match_the_declared_question() -> None:
+def test_id_settings_must_match_the_declared_question() -> None:
     from pydantic import ValidationError
 
     from dr_code.metrics import MetricName, MetricsDefinitionCoordinate
@@ -83,7 +83,7 @@ def test_identity_settings_must_match_the_declared_question() -> None:
         )
 
 
-def test_identity_matches_a_question_among_several() -> None:
+def test_id_matches_a_question_among_several() -> None:
     from dr_code.metrics import MetricName, MetricsDefinitionCoordinate
 
     question = _question_coordinate(metric=MetricName.TEXT_STATS)

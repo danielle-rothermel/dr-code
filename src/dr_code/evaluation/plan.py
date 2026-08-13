@@ -7,7 +7,7 @@ from pydantic import model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.coordinates import SamplingPlan, TaskSet
-from dr_code.evaluation.identity import EvalSlotIdentity
+from dr_code.evaluation.id import EvalSlotId
 from dr_code.metrics import MetricQuestionCoordinate, MetricsDefinition
 from dr_code.preprocessing import PreprocessingDefinition
 
@@ -65,7 +65,7 @@ class EvalPlan(FrozenModel):
     aggregation: AggregationPolicy
     __hash__ = None
 
-    def ordered_slots(self) -> tuple[EvalSlotIdentity, ...]:
+    def ordered_slots(self) -> tuple[EvalSlotId, ...]:
         """Return every slot the plan declares, in plan order.
 
         Each selected task contributes exactly the samples the plan declares
@@ -73,7 +73,7 @@ class EvalPlan(FrozenModel):
         """
 
         return tuple(
-            EvalSlotIdentity(
+            EvalSlotId(
                 task_set=self.task_set.coordinate,
                 sampling_plan=self.sampling_plan.coordinate,
                 task_id=task_id,
@@ -85,7 +85,7 @@ class EvalPlan(FrozenModel):
             )
         )
 
-    def declares_slot(self, slot: EvalSlotIdentity) -> bool:
+    def declares_slot(self, slot: EvalSlotId) -> bool:
         """Report whether this plan declares the given slot position."""
 
         if (

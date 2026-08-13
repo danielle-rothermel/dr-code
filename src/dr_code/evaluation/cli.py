@@ -30,7 +30,7 @@ from dr_code.evaluation.flows import (
     validate_preprocessing,
     validate_testing,
 )
-from dr_code.evaluation.identity import EvalRuntimeIdentity
+from dr_code.evaluation.id import EvalRuntimeId
 from dr_code.evaluation.records import EvalAttemptRecord
 
 CACHE_RESIDENT_ENTRIES = 4096
@@ -247,7 +247,7 @@ def _require_declared_runtime(
     outcomes under this one's digest.
     """
 
-    observed = EvalRuntimeIdentity(document=executor.runtime.describe().id_doc)
+    observed = EvalRuntimeId(document=executor.runtime.describe().id_doc)
     if observed != request.runtime:
         raise typer.BadParameter(
             "--runtime identity does not match the request's declared runtime",

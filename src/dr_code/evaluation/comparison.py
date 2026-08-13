@@ -10,10 +10,10 @@ from pydantic import Field, model_validator
 
 from dr_code.core.models import FrozenModel
 from dr_code.evaluation.batch import ProjectionKind
-from dr_code.evaluation.identity import (
-    EvalAttemptIdentity,
-    EvalSampleIdentity,
-    EvalSlotIdentity,
+from dr_code.evaluation.id import (
+    EvalAttemptId,
+    EvalSampleId,
+    EvalSlotId,
 )
 from dr_code.evaluation.records import (
     EvalAttemptRecord,
@@ -39,13 +39,13 @@ class ComparisonStatus(StrEnum):
     CHANGED = "changed"
 
 
-class StructuralMemberIdentity(FrozenModel):
-    slot: EvalSlotIdentity
-    sample: EvalSampleIdentity
+class StructuralMemberId(FrozenModel):
+    slot: EvalSlotId
+    sample: EvalSampleId
 
 
 class StructuralRecordComparison(FrozenModel):
-    identity: StructuralMemberIdentity
+    identity: StructuralMemberId
     left: EvidenceReference
     right: EvidenceReference
     sample: ComparisonStatus
@@ -90,11 +90,11 @@ ProjectionComparison: TypeAlias = Annotated[
 
 
 class StructuralEvalComparison(FrozenModel):
-    left: EvalAttemptIdentity
-    right: EvalAttemptIdentity
+    left: EvalAttemptId
+    right: EvalAttemptId
     matched: tuple[StructuralRecordComparison, ...]
-    added: tuple[StructuralMemberIdentity, ...]
-    removed: tuple[StructuralMemberIdentity, ...]
+    added: tuple[StructuralMemberId, ...]
+    removed: tuple[StructuralMemberId, ...]
     ordering_changed: bool
     projections: tuple[ProjectionComparison, ...]
 
@@ -102,7 +102,7 @@ class StructuralEvalComparison(FrozenModel):
 _ProjectionDefinition: TypeAlias = tuple[
     ProjectionKind, int | None, int | None
 ]
-_MemberIdentity: TypeAlias = tuple[EvalSlotIdentity, EvalSampleIdentity]
+_MemberId: TypeAlias = tuple[EvalSlotId, EvalSampleId]
 
 
 async def compare_eval_attempts(
@@ -126,12 +126,12 @@ async def compare_eval_attempts(
     right_order, right_members = _index_members(right)
     common = set(left_members) & set(right_members)
     removed = tuple(
-        StructuralMemberIdentity(slot=identity[0], sample=identity[1])
+        StructuralMemberId(slot=identity[0], sample=identity[1])
         for identity in left_order
         if identity not in right_members
     )
     added = tuple(
-        StructuralMemberIdentity(slot=identity[0], sample=identity[1])
+        StructuralMemberId(slot=identity[0], sample=identity[1])
         for identity in right_order
         if identity not in left_members
     )
@@ -174,7 +174,7 @@ async def compare_eval_attempts(
                     projection_changes[kind] += 1
         matched.append(
             StructuralRecordComparison(
-                identity=StructuralMemberIdentity(
+                identity=StructuralMemberId(
                     slot=left_member.slot,
                     sample=left_member.sample,
                 ),
@@ -213,13 +213,13 @@ async def compare_eval_attempts(
 def _index_members(
     attempt: EvalAttemptRecord,
 ) -> tuple[
-    tuple[_MemberIdentity, ...],
-    dict[_MemberIdentity, EvalMemberRecord],
+    tuple[_MemberId, ...],
+    dict[_MemberId, EvalMemberRecord],
 ]:
-    order: list[_MemberIdentity] = []
-    members: dict[_MemberIdentity, EvalMemberRecord] = {}
+    order: list[_MemberId] = []
+    members: dict[_MemberId, EvalMemberRecord] = {}
     for member in attempt.members:
-        identity: _MemberIdentity = (member.slot, member.sample)
+        identity: _MemberId = (member.slot, member.sample)
         if identity in members:
             raise ValueError(
                 "attempt has duplicate semantic sample membership"
@@ -421,7 +421,7 @@ __all__ = [
     "ProjectionComparison",
     "ProjectionNotComparable",
     "StructuralEvalComparison",
-    "StructuralMemberIdentity",
+    "StructuralMemberId",
     "StructuralRecordComparison",
     "compare_eval_attempts",
 ]

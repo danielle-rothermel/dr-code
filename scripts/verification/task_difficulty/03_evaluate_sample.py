@@ -28,7 +28,7 @@ from dr_code.humaneval import HumanEvalTask
 
 from corpus_loader import manifest_sha256
 from eval_batch import (
-    attempt_identity,
+    attempt_id,
     build_preflight_batch_request_for_task,
     build_task_difficulty_batch_request,
     bundle_is_complete,
@@ -38,9 +38,9 @@ from eval_batch import (
     load_run_manifest,
     manifest_matches,
     probe_runtime_packages,
-    runtime_identity_from_executor,
-    runtime_identity_json,
-    runtime_identity_with_packages,
+    runtime_id_from_executor,
+    runtime_id_json,
+    runtime_id_with_packages,
     settings_fingerprint,
     write_run_manifest,
 )
@@ -124,8 +124,8 @@ async def _preflight_runtime(
         record_directory,
         runtime_executable=runtime_executable,
     )
-    runtime = runtime_identity_with_packages(
-        runtime_identity_from_executor(executor),
+    runtime = runtime_id_with_packages(
+        runtime_id_from_executor(executor),
         probe_runtime_packages(executor),
     )
     preflight_root = paths.bundle_root / "preflight"
@@ -210,7 +210,7 @@ async def _evaluate_selected_sample(
                 selected,
                 paths.candidate_results,
                 settings=settings,
-                runtime_identity_json=runtime_json,
+                runtime_id_json=runtime_json,
                 limits=limits,
                 object_store=object_store,
             )
@@ -222,8 +222,8 @@ async def _evaluate_selected_sample(
             record_directory,
             runtime_executable=runtime_executable,
         )
-        runtime = runtime_identity_with_packages(
-            runtime_identity_from_executor(executor),
+        runtime = runtime_id_with_packages(
+            runtime_id_from_executor(executor),
             probe_runtime_packages(executor),
         )
         preflight_task = load_humaneval_tasks(
@@ -263,7 +263,7 @@ async def _evaluate_selected_sample(
                     publication_root,
                     prefix="evaluation",
                 )
-                attempt = attempt_identity(fingerprint)
+                attempt = attempt_id(fingerprint)
                 request = build_task_difficulty_batch_request(
                     selected,
                     snapshot_path=HUMANEVAL_SNAPSHOT,
@@ -304,13 +304,13 @@ async def _evaluate_selected_sample(
                     raise RuntimeError(
                         "evaluate_batch did not publish an evaluation bundle"
                     )
-                runtime_json = runtime_identity_json(runtime)
+                runtime_json = runtime_id_json(runtime)
                 export_candidate_results(
                     result.bundle_path,
                     selected,
                     paths.candidate_results,
                     settings=settings,
-                    runtime_identity_json=runtime_json,
+                    runtime_id_json=runtime_json,
                     limits=limits,
                     object_store=object_store,
                 )
@@ -356,7 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     paths.root.mkdir(parents=True, exist_ok=True)
     logger = _configure_logging(paths.evaluation_log)
     logger.info(
-        "Evaluation configuration: workers=%d timeout_seconds=%g root=%s",
+        "Eval config: workers=%d timeout_seconds=%g root=%s",
         evaluation_settings.worker_count,
         evaluation_settings.timeout_seconds,
         paths.root,

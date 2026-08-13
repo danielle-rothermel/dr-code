@@ -7,7 +7,7 @@ import dr_code.evaluation as evaluation
 from dr_code.evaluation import (
     ComparableProjectionComparison,
     ComparisonStatus,
-    EvalAttemptIdentity,
+    EvalAttemptId,
     ProjectionKind,
     ProjectionNotComparable,
     ReplayMode,
@@ -15,7 +15,7 @@ from dr_code.evaluation import (
     ReplaySource,
     ReplayUnavailable,
     StructuralRecordComparison,
-    StructuralMemberIdentity,
+    StructuralMemberId,
 )
 
 from ._batch_builders import request
@@ -24,7 +24,7 @@ from .test_record_models import reference
 
 def test_replay_preflight_wire_keys_and_discriminators_are_exact() -> None:
     source = ReplaySource(
-        attempt=EvalAttemptIdentity(attempt_id=UUID(int=2)),
+        attempt=EvalAttemptId(attempt_id=UUID(int=2)),
         mode=ReplayMode.SAMPLES,
     )
     unavailable = json.loads(
@@ -45,7 +45,7 @@ def test_replay_preflight_wire_keys_and_discriminators_are_exact() -> None:
 def test_comparison_wire_keys_and_discriminators_are_exact() -> None:
     structural = json.loads(
         StructuralRecordComparison(
-            identity=StructuralMemberIdentity(
+            identity=StructuralMemberId(
                 slot=request().inputs[0].slot,
                 sample=request().inputs[0].sample.metadata.identity,
             ),
@@ -113,7 +113,7 @@ def test_phase5_public_symbols_are_exported() -> None:
         "EvalEvidenceResolver",
         "ComparisonStatus",
         "StructuralRecordComparison",
-        "StructuralMemberIdentity",
+        "StructuralMemberId",
         "ComparableProjectionComparison",
         "ProjectionNotComparable",
         "ProjectionComparison",

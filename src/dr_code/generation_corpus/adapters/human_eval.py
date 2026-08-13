@@ -88,7 +88,7 @@ class _SourceKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class _Identity:
+class _Id:
     data_sample_id: str
     task_id: str
     source_variant: str
@@ -114,7 +114,7 @@ class _LocatedRow:
     entry: PoolManifestEntry
     line_number: int
     row: DumpedPoolRow
-    identity: _Identity
+    identity: _Id
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,7 +122,7 @@ class _BufferedDecoder:
     entry: PoolManifestEntry
     line_number: int
     row: DumpedPoolRow
-    identity: _Identity
+    identity: _Id
     decoder_output: str
 
 
@@ -293,7 +293,7 @@ class HumanEvalAdapter:
             writer.add_request(request)
 
 
-def _selected_identity(row: DumpedPoolRow) -> _Identity | None:
+def _selected_identity(row: DumpedPoolRow) -> _Id | None:
     candidates: list[tuple[str, object]] = [
         ("key_values.data_sample_id", row.key_values.get("data_sample_id")),
         (
@@ -340,7 +340,7 @@ def _selected_identity(row: DumpedPoolRow) -> _Identity | None:
         source_variant = "gt_solution"
     else:
         source_variant = f"gt_solution@{source_digest}"
-    return _Identity(selected, task_id, source_variant)
+    return _Id(selected, task_id, source_variant)
 
 
 def _stage(row: DumpedPoolRow) -> Stage:
@@ -449,7 +449,7 @@ def _source_record(
     *,
     line_number: int,
     row: DumpedPoolRow,
-    identity: _Identity,
+    identity: _Id,
 ) -> SourceRecord:
     stage = _stage(row)
     output = _response_text(row.response_json)
@@ -489,7 +489,7 @@ def _source_record(
 def _encoder_artifact(
     row: DumpedPoolRow,
     *,
-    identity: _Identity,
+    identity: _Id,
     task: TaskRecord,
     output: str,
 ) -> EncoderArtifactRecord:
@@ -526,7 +526,7 @@ def _generation_and_request(
     *,
     line_number: int,
     row: DumpedPoolRow,
-    identity: _Identity,
+    identity: _Id,
     task: TaskRecord,
     decoder_output: str,
     encoders: Mapping[_EncoderReference, _LocatedRow],
@@ -713,7 +713,7 @@ def _generation_and_request(
 def _validate_encoder_lineage(
     *,
     decoder: DumpedPoolRow,
-    decoder_identity: _Identity,
+    decoder_identity: _Id,
     encoder: _LocatedRow,
 ) -> None:
     if encoder.identity.data_sample_id != decoder_identity.data_sample_id:
@@ -910,9 +910,7 @@ def _task_prompt(task: TaskRecord) -> str:
     return prompt
 
 
-def _require_task(
-    tasks: HumanEvalTaskAdapter, identity: _Identity
-) -> TaskRecord:
+def _require_task(tasks: HumanEvalTaskAdapter, identity: _Id) -> TaskRecord:
     task = tasks.resolve(identity.data_sample_id)
     if task is None or task.task_id != identity.task_id:
         raise ValueError(

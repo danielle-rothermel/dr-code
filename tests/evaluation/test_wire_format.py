@@ -15,7 +15,7 @@ from _builders import (
 from dr_code.evaluation import (
     EvalCoordinate,
     EvalPlan,
-    EvalSlotIdentity,
+    EvalSlotId,
     Score,
 )
 from dr_code.metrics import MetricValueCoordinate, MetricValueUnit
@@ -145,7 +145,7 @@ def test_eval_slot_serializes_to_the_golden_literals() -> None:
 
 
 def test_golden_slot_literals_load_back_to_an_equal_slot() -> None:
-    restored = EvalSlotIdentity.model_validate(_GOLDEN_EVAL_SLOT)
+    restored = EvalSlotId.model_validate(_GOLDEN_EVAL_SLOT)
     assert restored == evaluation_slot()
 
 

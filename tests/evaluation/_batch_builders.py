@@ -16,17 +16,17 @@ from dr_code.evaluation import (
     BundleRecordReference,
     CandidateJobBudget,
     DatasetCoordinate,
-    EvalAttemptIdentity,
+    EvalAttemptId,
     EvalBatchRequest,
-    EvalCandidateIdentity,
+    EvalCandidateId,
     EvalProcedure,
-    EvalRuntimeIdentity,
+    EvalRuntimeId,
     EvalSample,
     EvalSampleAuxiliaryArtifact,
-    EvalSampleIdentity,
+    EvalSampleId,
     EvalSampleMetadata,
-    EvalSlotIdentity,
-    EvalSourceIdentity,
+    EvalSlotId,
+    EvalSourceId,
     FrozenCandidateEvalInput,
     GeneratedSampleProvenance,
     MaterializedEvalCandidate,
@@ -146,8 +146,8 @@ class StoredMemoryPlacement(MemoryPlacement):
 TASK_ID = candidate_job_task().task_id
 
 
-def runtime() -> EvalRuntimeIdentity:
-    return EvalRuntimeIdentity(
+def runtime() -> EvalRuntimeId:
+    return EvalRuntimeId(
         document=build_identity_document(
             schema="tests/evaluation-runtime",
             schema_version=1,
@@ -171,10 +171,10 @@ def sample(
     )
     return EvalSample(
         metadata=EvalSampleMetadata(
-            identity=EvalSampleIdentity(sample_id=f"sample-{index}"),
+            identity=EvalSampleId(sample_id=f"sample-{index}"),
             task_id=TASK_ID,
             provenance=GeneratedSampleProvenance(
-                source_identity=EvalSourceIdentity(
+                source_identity=EvalSourceId(
                     namespace="tests",
                     value=f"input-{index}",
                 ),
@@ -234,7 +234,7 @@ def request(
     if inputs is None:
         inputs = tuple(
             SampleEvalInput(
-                slot=EvalSlotIdentity(
+                slot=EvalSlotId(
                     task_set=task_set.coordinate,
                     sampling_plan=sampling_plan.coordinate,
                     task_id=TASK_ID,
@@ -249,7 +249,7 @@ def request(
             for index in range(count)
         )
     return EvalBatchRequest(
-        attempt=EvalAttemptIdentity(attempt_id=UUID(int=1)),
+        attempt=EvalAttemptId(attempt_id=UUID(int=1)),
         plan={
             "plan_id": "batch",
             "version": "1",
@@ -307,9 +307,7 @@ def request(
     )
 
 
-def frozen_input(
-    index: int, slot: EvalSlotIdentity
-) -> FrozenCandidateEvalInput:
+def frozen_input(index: int, slot: EvalSlotId) -> FrozenCandidateEvalInput:
     selected_sample = sample(index)
     preprocessing = bind_preprocessing(
         EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
@@ -323,7 +321,7 @@ def frozen_input(
         preprocessing=preprocessing,
         candidates=(
             MaterializedEvalCandidate(
-                identity=EvalCandidateIdentity(
+                identity=EvalCandidateId(
                     sample=selected_sample.metadata.identity,
                     preprocessing=preprocessing,
                     candidate_ordinal=0,

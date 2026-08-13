@@ -127,7 +127,7 @@ system monospace stack while the font loads.
 `@dr-code/gallery` is a private Vite app for visually checking every primitive
 with static fixtures. It shows light and dark presentations, all badge states,
 short and long examples in every bundled language, and changed and unchanged
-diffs in both unified and split modes. Its Vite configuration resolves the
+diffs in both unified and split modes. Its Vite config resolves the
 viewer package to `src/`, so component and style edits appear immediately
 during development without a separate viewer build.
 

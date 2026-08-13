@@ -9,8 +9,8 @@ from typing import Annotated, Literal, TypeAlias
 from pydantic import Field
 
 from dr_code.core.models import FrozenModel
-from dr_code.evaluation.identity import (
-    EvalSampleIdentity,
+from dr_code.evaluation.id import (
+    EvalSampleId,
     MaterializedEvalCandidate,
 )
 from dr_code.evaluation.records import (
@@ -58,7 +58,7 @@ class SubmissionOutcome(StrEnum):
 
 
 class HumanEvalSubmissionRequest(FrozenModel):
-    sample: EvalSampleIdentity
+    sample: EvalSampleId
     scoring_profile: HumanEvalScoringProfile
 
 
@@ -69,7 +69,7 @@ class HarnessFailureCause(FrozenModel):
 
 class CompletedSubmissionResult(FrozenModel):
     kind: Literal["completed"] = "completed"
-    sample: EvalSampleIdentity
+    sample: EvalSampleId
     outcome: SubmissionOutcome
     score: float
     evaluation: EvalTaskResult | None
@@ -79,7 +79,7 @@ class CompletedSubmissionResult(FrozenModel):
 
 class HarnessFailure(FrozenModel):
     kind: Literal["harness_failure"] = "harness_failure"
-    sample: EvalSampleIdentity
+    sample: EvalSampleId
     evaluation: EvalTaskResult | None
     cause: HarnessFailureCause
     failure_class: FailureClass
@@ -168,7 +168,7 @@ def project_humaneval_submissions_batch(
 ) -> tuple[HumanEvalSubmissionResult, ...]:
     """Derive ordered benchmark results from authoritative sample records."""
 
-    by_sample: dict[EvalSampleIdentity, _ReferencedSampleRecord] = {}
+    by_sample: dict[EvalSampleId, _ReferencedSampleRecord] = {}
     for record, reference in records:
         identity = record.sample.identity
         if identity in by_sample:

@@ -163,7 +163,7 @@ def _compression_list(value: str) -> tuple[_CompressionConfig, ...]:
         identity = (method, level)
         if identity in seen:
             raise argparse.ArgumentTypeError(
-                f"duplicate compression configuration: {entry!r}"
+                f"duplicate compression config: {entry!r}"
             )
         seen.add(identity)
         configs.append(_compression_config(method, level))
@@ -174,7 +174,7 @@ def _single_compression(value: str) -> _CompressionConfig:
     configs = _compression_list(value)
     if len(configs) != 1:
         raise argparse.ArgumentTypeError(
-            "must be one compression configuration such as zstd:3"
+            "must be one compression config such as zstd:3"
         )
     return configs[0]
 
@@ -197,7 +197,7 @@ def _resolve_ordering_config(
     return configs_by_label.get(_DEFAULT_ORDERING, configs[0])
 
 
-def _configuration_slug(configs: Sequence[_CompressionConfig]) -> str:
+def _config_slug(configs: Sequence[_CompressionConfig]) -> str:
     return "-".join(_compression_slug(config) for config in configs)
 
 
@@ -209,7 +209,7 @@ def _default_output_directory(
         _DATA_ROOT
         / now.strftime("%Y-%m-%d")
         / "figs"
-        / f"{now:%H%M}-humaneval-compression-{_configuration_slug(configs)}"
+        / f"{now:%H%M}-humaneval-compression-{_config_slug(configs)}"
     )
 
 
@@ -477,9 +477,7 @@ def _paired_ratio_differences(
         paired.height != candidate_rows.height
         or paired.height != baseline_rows.height
     ):
-        raise ValueError(
-            "compression configurations do not cover the same tasks"
-        )
+        raise ValueError("compression configs do not cover the same tasks")
     return tuple(paired.get_column("ratio_difference").to_list())
 
 
@@ -703,7 +701,7 @@ def _save_size_relationship_plots(
     configs: Sequence[_CompressionConfig],
     *,
     output_dir: Path,
-    configuration_slug: str,
+    config_slug: str,
 ) -> list[tuple[str, Path]]:
     code = _REPRESENTATIONS[0]
     colors = _compression_colors(configs)
@@ -744,7 +742,7 @@ def _save_size_relationship_plots(
 
         faceted_path = output_dir / (
             "humaneval_code_raw_bytes_vs_"
-            f"{metric.filename_slug}_faceted_{configuration_slug}.png"
+            f"{metric.filename_slug}_faceted_{config_slug}.png"
         )
         figure, axes = _faceted_figure(len(configs))
         for axis, config in zip(axes, configs, strict=False):
@@ -786,7 +784,7 @@ def _task_order_table(
         "task_rank",
         "task_id",
         "raw_bytes",
-        pl.lit(_compression_label(order_by)).alias("order_by_configuration"),
+        pl.lit(_compression_label(order_by)).alias("order_by_config"),
         pl.col("compression_ratio").alias("order_by_compression_ratio"),
         pl.col("bytes_saved").alias("order_by_bytes_saved"),
     )
@@ -845,7 +843,7 @@ def _save_ordered_comparison_plots(
     order_by: _CompressionConfig,
     *,
     output_dir: Path,
-    configuration_slug: str,
+    config_slug: str,
 ) -> list[tuple[str, Path]]:
     order_label = _compression_label(order_by)
     order_slug = _compression_slug(order_by)
@@ -854,7 +852,7 @@ def _save_ordered_comparison_plots(
     for metric in _COMPARISON_METRICS:
         path = output_dir / (
             f"humaneval_code_ordered_by_{order_slug}_"
-            f"{metric.filename_slug}_{configuration_slug}.png"
+            f"{metric.filename_slug}_{config_slug}.png"
         )
         figure, axes = _faceted_figure(len(configs))
         for axis, config in zip(axes, configs, strict=False):
@@ -952,7 +950,7 @@ def _summary_lines(
     configs: Sequence[_CompressionConfig],
 ) -> list[str]:
     lines = [
-        "Compression configurations: "
+        "Compression configs: "
         + ", ".join(_compression_label(config) for config in configs)
     ]
     for representation in _REPRESENTATIONS:
@@ -1035,7 +1033,7 @@ def main() -> int:
     summary = _summary_table(measurements, configs)
     task_order = _task_order_table(measurements, order_by)
     output_dir.mkdir(parents=True, exist_ok=True)
-    slug = _configuration_slug(configs)
+    slug = _config_slug(configs)
     measurements_path = (
         output_dir / f"humaneval_compression_measurements_bytes_{slug}.csv"
     )
@@ -1078,7 +1076,7 @@ def main() -> int:
             measurements,
             configs,
             output_dir=output_dir,
-            configuration_slug=slug,
+            config_slug=slug,
         ),
         *_save_ordered_comparison_plots(
             measurements,
@@ -1086,7 +1084,7 @@ def main() -> int:
             configs,
             order_by,
             output_dir=output_dir,
-            configuration_slug=slug,
+            config_slug=slug,
         ),
     ]
     _plot_compression_ratio_ecdfs(

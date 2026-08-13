@@ -28,7 +28,7 @@ from dr_code.evaluation.batch import (
     EvalProjectionReference,
     ProjectionKind,
 )
-from dr_code.evaluation.identity import EvalAttemptIdentity
+from dr_code.evaluation.id import EvalAttemptId
 from dr_code.evaluation.projections import ProjectionRow
 from dr_code.evaluation.records import (
     EvalAttemptRecord,
@@ -75,7 +75,7 @@ _PROJECTION_ARTIFACT_NAMES: Final = {
 class EvalBundlePayload(FrozenModel):
     format: Literal["dr-code-evaluation-bundle-v1"] = EVAL_BUNDLE_FORMAT
     schema_version: Literal[1] = EVAL_BUNDLE_SCHEMA_VERSION
-    attempt: EvalAttemptIdentity
+    attempt: EvalAttemptId
     attempt_artifact: Literal["evaluation-attempt.json"] = (
         EVAL_ATTEMPT_ARTIFACT
     )
@@ -87,7 +87,7 @@ class ProjectionArtifactHeader(FrozenModel):
         EVAL_PROJECTION_FORMAT
     )
     schema_version: Literal[2] = EVAL_PROJECTION_SCHEMA_VERSION
-    source_attempt: EvalAttemptIdentity
+    source_attempt: EvalAttemptId
     kind: ProjectionKind
     definition_version: Literal[2] = 2
 
@@ -105,7 +105,7 @@ class RestoredEvalAttempt(FrozenModel):
 
 
 class EvalBundleAudit(FrozenModel):
-    attempt: EvalAttemptIdentity
+    attempt: EvalAttemptId
     artifact_count: int = Field(ge=0)
     sample_record_count: int = Field(ge=0)
     object_read_count: int = Field(ge=0)
@@ -349,7 +349,7 @@ def _sample_reference_artifact_name(index: int) -> str:
 
 
 def _shard_header(
-    *, format: str, attempt: EvalAttemptIdentity, record_count: int
+    *, format: str, attempt: EvalAttemptId, record_count: int
 ) -> Jsonable:
     return {
         "format": format,
@@ -360,7 +360,7 @@ def _shard_header(
 
 
 def _record_shard_bytes(
-    attempt: EvalAttemptIdentity,
+    attempt: EvalAttemptId,
     records: Iterable[_EncodedRecord],
 ) -> bytes:
     rows = tuple(records)
@@ -375,7 +375,7 @@ def _record_shard_bytes(
 
 
 def _reference_shard_bytes(
-    attempt: EvalAttemptIdentity,
+    attempt: EvalAttemptId,
     references: Iterable[StoredRecordReference],
 ) -> bytes:
     rows = tuple(references)
@@ -409,7 +409,7 @@ def _write_artifact(
 
 
 def _load_authored_sample_shard(
-    path: Path, attempt: EvalAttemptIdentity
+    path: Path, attempt: EvalAttemptId
 ) -> tuple[SampleEvalRecord, ...]:
     data = path.read_bytes()
     if not data.endswith(b"\n"):
@@ -622,7 +622,7 @@ def _decode_sample_shard(
     reader: ArtifactBundleReader,
     name: str,
     *,
-    attempt: EvalAttemptIdentity,
+    attempt: EvalAttemptId,
     limits: EvalReadLimits,
 ) -> tuple[SampleEvalRecord, ...]:
     lines = _decode_canonical_lines(
@@ -647,7 +647,7 @@ def _decode_reference_shard(
     reader: ArtifactBundleReader,
     name: str,
     *,
-    attempt: EvalAttemptIdentity,
+    attempt: EvalAttemptId,
     limits: EvalReadLimits,
 ) -> tuple[StoredRecordReference, ...]:
     lines = _decode_canonical_lines(
@@ -672,7 +672,7 @@ def _validate_shard_header(
     payload: Jsonable,
     *,
     expected_format: str,
-    attempt: EvalAttemptIdentity,
+    attempt: EvalAttemptId,
 ) -> int:
     if not isinstance(payload, dict) or set(payload) != {
         "format",
@@ -686,7 +686,7 @@ def _validate_shard_header(
             "sample shard format or schema version is unsupported"
         )
     if (
-        EvalAttemptIdentity.model_validate_json(
+        EvalAttemptId.model_validate_json(
             canonical_json_bytes(payload["source_attempt"]), strict=True
         )
         != attempt
