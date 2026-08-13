@@ -2,6 +2,7 @@
 name = "dr-code"
 version = "0.2.0"
 description = "Python code preparation and evaluation toolkit"
+readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 authors = [
     { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
@@ -38,7 +39,7 @@ build-backend = "hatchling.build"
 packages = ["src/dr_code"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["src"]
+only-include = ["src", "README.md"]
 
 [dependency-groups]
 dev = [
