@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dr_exec import AutoPoolCapacity, ExecutionPoolConfig
+from dr_exec import AutoPoolCapacity, ExecutionPoolConfig, Executor
 from dr_store import (
     ArtifactBundlePublication,
     BundleReadLimits,
@@ -21,7 +21,7 @@ from dr_code.evaluation import (
     evaluate_batch,
 )
 
-from ._batch_builders import BatchStore, cache, request
+from ._batch_builders import BatchStore, cache, frozen_input, request
 
 
 def read_limits() -> EvalReadLimits:
@@ -82,27 +82,40 @@ async def publish_batch(
     root: Path,
     *,
     placement: RecordPlacement = RecordPlacement.BUNDLE_LOCAL,
-    projections: tuple[ProjectionKind, ...] = tuple(ProjectionKind),
+    projections: tuple[ProjectionKind, ...] = (),
     count: int = 1,
+    sample_inputs: bool = False,
     cache_store: BatchStore | None = None,
     object_store: ObjectStore | None = None,
+    executor: Executor | None = None,
 ):  # type: ignore[no-untyped-def]
     publication = ArtifactBundlePublication.allocate(root, prefix="evaluation")
     if object_store is None:
         object_store = ObjectStore(MemoryBackend())
+    batch_request = request(
+        count,
+        preprocess_mode=PreprocessMode.IN_PROCESS,
+        projections=projections,
+    ).model_copy(update={"record_placement": placement})
+    if not sample_inputs:
+        batch_request = batch_request.model_copy(
+            update={
+                "inputs": tuple(
+                    frozen_input(index, item.slot)
+                    for index, item in enumerate(batch_request.inputs)
+                )
+            }
+        )
     batch_request = await stored_source_request(
-        request(
-            count,
-            preprocess_mode=PreprocessMode.IN_PROCESS,
-            projections=projections,
-        ).model_copy(update={"record_placement": placement}),
+        batch_request,
         object_store=object_store,
     )
     execution_cache = cache(cache_store or BatchStore(), resident=1)
+    selected_executor = executor or importable_json_executor()
     try:
         result = await evaluate_batch(
             batch_request,
-            executor=importable_json_executor(),
+            executor=selected_executor,
             execution_cache=execution_cache,
             object_store=object_store,
             publication=publication,

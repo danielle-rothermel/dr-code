@@ -10,6 +10,7 @@ from dr_store import ArtifactBundlePublication, MemoryBackend, ObjectStore
 from _executor_stubs import importable_json_executor, scripted_executor
 from dr_code.evaluation import (
     PreprocessMode,
+    ProjectionKind,
     RecordPlacement,
     ShardLimits,
     evaluate_batch,
@@ -24,7 +25,10 @@ pytestmark = pytest.mark.asyncio
 async def test_bundle_local_publication_writes_one_terminal_closed_bundle(
     tmp_path: Path,
 ) -> None:
-    result, _ = await publish_batch(tmp_path)
+    result, _ = await publish_batch(
+        tmp_path,
+        projections=tuple(ProjectionKind),
+    )
     assert result.bundle_path is not None
     assert (result.bundle_path / "manifest.json").is_file()
     assert {path.name for path in result.bundle_path.iterdir()} == {

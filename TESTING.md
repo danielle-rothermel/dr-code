@@ -102,6 +102,19 @@ uv run pytest tests/evaluation/test_batch.py
 uv run pytest tests/preprocessing/
 ```
 
+### Evaluation test helpers
+
+Direct batch tests build requests with `request(..., preprocess_mode=...)`, which
+controls whether sample preparation uses the bound runner (`in_process`) or the
+dr-exec worker pool (`process_pool`).
+
+`publish_batch()` in `tests/evaluation/_bundle_builders.py` is a bundle fixture
+builder for reading, audit, replay, and publication tests. It defaults to
+**frozen candidate inputs** and **no projections** for speed. Pass
+`projections=(...)` when a test needs specific projection artifacts, and
+`sample_inputs=True` when the published bundle must reflect live sample
+preprocessing rather than frozen candidates.
+
 ### Opt-in PostgreSQL tests
 
 Postgres-marked tests exercise the evidence write path against a real database.

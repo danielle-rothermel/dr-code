@@ -6,6 +6,7 @@ import pytest
 from dr_store import BundleVerificationError
 
 from dr_code.evaluation import (
+    ProjectionKind,
     RecordPlacement,
     audit_eval_bundle,
 )
@@ -23,7 +24,11 @@ async def test_audit_validates_closed_domain_graph_and_counts_object_reads(
     tmp_path: Path,
     placement: RecordPlacement,
 ) -> None:
-    result, object_store = await publish_batch(tmp_path, placement=placement)
+    result, object_store = await publish_batch(
+        tmp_path,
+        placement=placement,
+        projections=tuple(ProjectionKind),
+    )
     assert result.bundle_path is not None
     audit = await audit_eval_bundle(
         result.bundle_path,
@@ -41,7 +46,10 @@ async def test_audit_validates_closed_domain_graph_and_counts_object_reads(
 async def test_audit_rejects_tampered_artifact_before_domain_validation(
     tmp_path: Path,
 ) -> None:
-    result, object_store = await publish_batch(tmp_path)
+    result, object_store = await publish_batch(
+        tmp_path,
+        projections=tuple(ProjectionKind),
+    )
     assert result.bundle_path is not None
     projection = result.bundle_path / "projection-scores.jsonl"
     projection.write_bytes(projection.read_bytes() + b"tampered")

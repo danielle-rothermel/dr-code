@@ -36,7 +36,10 @@ pytestmark = pytest.mark.asyncio
 async def test_selected_projection_reads_only_its_self_bound_artifact(
     tmp_path: Path,
 ) -> None:
-    result, _ = await publish_batch(tmp_path)
+    result, _ = await publish_batch(
+        tmp_path,
+        projections=(ProjectionKind.EVAL_SAMPLES,),
+    )
     assert result.bundle_path is not None
     (result.bundle_path / "evaluation-attempt.json").write_bytes(b"tampered")
     header, rows = read_eval_projection(
