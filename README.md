@@ -13,42 +13,45 @@
 
 **dr-code prepares, evaluates, analyzes, and visualizes Python code produced by
 language models.**
-The repository contains a Python library and a separately packaged React
-viewer, organized into these functional areas:
+The repository is a **uv workspace**: the PyPI-published **`dr-code`** wheel
+ships the core `dr_code` library; HumanEval, synthetic corruption, and
+generation-corpus tooling live in sibling **`drc-*`** packages (workspace-only
+for now). It also contains a separately packaged React viewer, organized into
+these functional areas:
 
-- **[Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing)**
+- **[Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/preprocessing)**
   turns raw model responses into inspected Python candidates through declared,
   ordered preprocessing operations.
-- **[Caching](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)**
+- **[Caching](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/caching)**
   memoizes preprocessing traces and checkpoints reusable execution outcomes
   through caller-supplied record stores.
-- **[Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)**
+- **[Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/trace)**
   preserves intermediate artifacts, structured facts, failure reasons, and
   semantic provenance so results remain explainable and serializable.
-- **[Measurement](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/metrics)
-  and [evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/evaluation)**
+- **[Measurement](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/metrics)
+  and [evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/evaluation)**
   extracts typed measurements from traces, declares evaluation plans, and
   reduces complete measurement slots into typed aggregation outcomes.
-- **[HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)**
-  loads and samples benchmark tasks, extracts candidate solutions, runs them
+- **[HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/packages/drc-humaneval/src/drc_humaneval)**
+  (`drc-humaneval` addon) loads and samples benchmark tasks, extracts candidate solutions, runs them
   through a [dr-exec](https://github.com/danielle-rothermel/dr-exec)
   executor, and reports structured outcomes.
 - **[Generation corpus extraction](docs/generation_corpus.md)**
   converts archived model activity into validated, content-addressed Parquet
   tables while preserving raw evidence, task material, prompts, requests, and
-  configuration provenance at their natural grains.
-- **[Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)**
-  applies deterministic corruption recipes to known solutions for
+  config provenance at their natural grains.
+- **[Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/packages/drc-synthetic/src/drc_synthetic)**
+  (`drc-synthetic` addon) applies deterministic corruption recipes to known solutions for
   preprocessing and robustness experiments.
 - **[Code visualization](https://github.com/danielle-rothermel/dr-code/tree/main/viewer/packages/viewer)**
   provides reusable React components for highlighted code, diffs, and status
   presentation, plus a private gallery for visual development.
 - **Infra**
-  - **[Core models](https://github.com/danielle-rothermel/dr-code/blob/main/src/dr_code/core/models.py)**
+  - **[Core models](https://github.com/danielle-rothermel/dr-code/blob/main/packages/dr-code/src/dr_code/core/models.py)**
     provide frozen boundary models shared by the functional packages.
-  - **[Source](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/source)**
+  - **[Source](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/core/source)**
     provides shared Python source inspection and transformation.
-  - **[Execution](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core/execution)**
+  - **[Execution](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/core/execution)**
     provides the shared dr-exec execution boundary.
 
 ## Functional areas
@@ -57,7 +60,7 @@ The sketches below show the current shape of the primary contracts. They are
 abridged deliberately: `...` omits validators, defaults, derived fields, and
 implementation details that belong in the linked package.
 
-### [Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/preprocessing)
+### [Candidate preparation](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/preprocessing)
 
 Preprocessing is an ordered, versioned declaration of named steps. Binding
 validates that declaration once; the resulting runner can then turn typed
@@ -91,7 +94,7 @@ def bind_preprocessing(
 ) -> BoundPreprocessingRunner: ...
 ```
 
-### [Batch preprocessing](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/caching)
+### [Batch preprocessing](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/caching)
 
 Parallel batch preprocessing runs on dr-exec's worker pool. `preprocess_batch`
 deduplicates the requested texts and runs each one as one trusted importable
@@ -175,10 +178,10 @@ the persisted key.
 
 ```python
 from dr_code.caching import WindowedExecutionCache
-from dr_code.evaluation import EvaluationRuntimeIdentity
+from dr_code.evaluation import EvalRuntimeId
 from dr_serialize import build_identity_document
 
-runtime = EvaluationRuntimeIdentity(
+runtime = EvalRuntimeId(
     document=build_identity_document(
         schema="example/python-runtime",
         schema_version=1,
@@ -207,7 +210,7 @@ coordinate one active writer for that scope. Concurrent writers are unsupported
 because this cache does not reconcile a different first-writer winner after a
 checkpoint.
 
-### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/trace)
+### [Trace capture](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/trace)
 
 A trace is a stable snapshot of typed artifacts or explicit absences, together
 with structured facts and the coordinate of the producer that made it. Public
@@ -254,10 +257,10 @@ def deserialize_trace(serialized: SerializedTrace) -> Trace: ...
 
 ### Measurement and evaluation
 
-[`dr_code.metrics`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/metrics)
+[`dr_code.metrics`](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/metrics)
 asks versioned questions of trace values and returns one typed record per
 question.
-[`dr_code.evaluation`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/evaluation)
+[`dr_code.evaluation`](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/evaluation)
 composes preprocessing and metrics into a complete plan, then reduces explicit
 measurement slots under a declared policy.
 
@@ -294,17 +297,17 @@ MetricRecord = Annotated[
 ```
 
 ```python
-class EvaluationProcedure(FrozenModel):
+class EvalProcedure(FrozenModel):
     preprocessing: PreprocessingDefinition
     metrics: MetricsDefinition
 
 
-class EvaluationPlan(FrozenModel):
+class EvalPlan(FrozenModel):
     plan_id: str
     version: str
     task_set: TaskSet
     sampling_plan: SamplingPlan
-    procedure: EvaluationProcedure
+    procedure: EvalProcedure
     aggregation: AggregationPolicy
 
 
@@ -321,11 +324,11 @@ evidence and carry their source-attempt binding.
 
 Evaluation bundles can be consumed at three grains:
 
-- `read_evaluation_projection` verifies and validates only one fixed,
+- `read_eval_projection` verifies and validates only one fixed,
   self-bound projection artifact;
-- `restore_evaluation_attempt` consumes the attempt and required record or
+- `restore_eval_attempt` consumes the attempt and required record or
   reference shards without a preliminary whole-bundle audit; and
-- `audit_evaluation_bundle` first verifies every artifact through dr-store,
+- `audit_eval_bundle` first verifies every artifact through dr-store,
   then validates the complete evaluation schema and reference graph without
   resolving external objects.
 
@@ -338,10 +341,10 @@ external records.
 `preflight_replay` reconstructs the complete ordered source attempt as frozen
 samples or frozen materialized candidates. It returns `ReplayUnavailable`
 without creating an attempt when recorded definitions or evidence are not
-supported; `replay_evaluation_attempt` sends a ready replay through the same
+supported; `replay_eval_attempt` sends a ready replay through the same
 standalone bounded batch path and records its source before publication.
 
-`compare_evaluation_attempts` aligns compact attempt membership by slot and
+`compare_eval_attempts` aligns compact attempt membership by slot and
 sample identity. Equal references or content hashes remain compact; only
 matched changed references are resolved, one pair at a time. Optional
 projection definitions are explicit `(kind, left_version, right_version)`
@@ -358,12 +361,12 @@ corpus is preprocessed once and its `PreprocessingCoverage` — texts with
 candidates, texts without candidates, texts whose preprocessing failed —
 partitions the corpus under the definition actually evaluated. A reference
 attempt plus an evidence resolver turns either flow structural, returning the
-`compare_evaluation_attempts` result. The `dr-code-validate-preprocessing` and
+`compare_eval_attempts` result. The `dr-code-validate-preprocessing` and
 `dr-code-validate-testing` verbs wrap those calls: they read one request
 document, run the flow against a caller-named run root and a Python runtime
 whose identity must match the request's, and print the verdict.
 
-### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/humaneval)
+### [HumanEval+ evaluation](https://github.com/danielle-rothermel/dr-code/tree/main/packages/drc-humaneval/src/drc_humaneval)
 
 HumanEval owns the benchmark-specific task, evaluator job, and scoring policy.
 Scoring is a projection over authoritative sample evaluation records; it never
@@ -399,7 +402,7 @@ class CandidateReduction(StrEnum):
 class SubmissionOutcome(StrEnum):
     PASSED = "passed"
     TESTS_FAILED = "tests_failed"
-    EVALUATION_INCOMPLETE = "evaluation_incomplete"
+    EVAL_INCOMPLETE = "evaluation_incomplete"
     EMPTY_SUBMISSION = "empty_submission"
     EXTRACTION_FAILED = "extraction_failed"
     NO_TOP_LEVEL_FUNCTIONS = "no_top_level_functions"
@@ -414,25 +417,25 @@ HumanEvalSubmissionResult = Annotated[
 
 
 class HumanEvalSubmissionRequest(FrozenModel):
-    sample: EvaluationSampleIdentity
+    sample: EvalSampleId
     scoring_profile: HumanEvalScoringProfile
 
 
 def project_humaneval_submissions_batch(
-    records: Sequence[tuple[SampleEvaluationRecord, EvidenceReference]],
+    records: Sequence[tuple[SampleEvalRecord, EvidenceReference]],
     requests: Sequence[HumanEvalSubmissionRequest],
 ) -> tuple[HumanEvalSubmissionResult, ...]: ...
 
 
 def project_humaneval_submission(
-    record: SampleEvaluationRecord,
+    record: SampleEvalRecord,
     request: HumanEvalSubmissionRequest,
     *,
     sample_record: EvidenceReference,
 ) -> HumanEvalSubmissionResult: ...
 ```
 
-### [Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/synthetic)
+### [Synthetic dataset generation](https://github.com/danielle-rothermel/dr-code/tree/main/packages/drc-synthetic/src/drc_synthetic)
 
 Synthetic datasets are built from versioned recipes whose corruption
 components are deterministic for a source, settings model, and random state.
@@ -509,7 +512,7 @@ interface StatusBadgeProps {
 
 ## Infrastructure
 
-[`dr_code.core`](https://github.com/danielle-rothermel/dr-code/tree/main/src/dr_code/core)
+[`dr_code.core`](https://github.com/danielle-rothermel/dr-code/tree/main/packages/dr-code/src/dr_code/core)
 contains the shared model, source, and execution foundations used across the
 functional packages. It owns reusable mechanisms, while benchmark decisions
 and measurement policy remain in their functional packages.
@@ -539,26 +542,36 @@ def host_process_executor(
 Install the locked development environment and commit hook once per clone:
 
 ```console
-uv sync --locked
+uv sync --locked --group dev
+uv sync --locked --group dev --group addons
 uv run pre-commit install
 ```
 
 The hook runs `scripts/pre-check.sh`, which verifies the locked environment,
-Ruff formatting and lint, ty, `.defs`, the local Python suite, and the viewer.
-Run `scripts/pre-check.sh --fix` explicitly when you want Ruff and ty to modify
+Ruff formatting and lint, ty, `.defs`, the core Python suite (with no `drc-*`
+wheels installed), addon tests, and the viewer typecheck/build. Run
+`scripts/pre-check.sh --fix` explicitly when you want Ruff and ty to modify
 the working tree.
 
-The canonical local Python test run is serial:
+See [`TESTING.md`](TESTING.md) for the full matrix. The canonical **core**
+pytest command is serial:
 
 ```console
-uv run pytest
+uv sync --locked --package dr-code --group dev
+DR_CODE_CORE_ISOLATION=1 uv run --package dr-code --group dev pytest packages/dr-code/tests -m 'not postgres'
 ```
 
-For faster local feedback, run the same suite with an ephemeral xdist install;
+Run addon tests after syncing the workspace:
+
+```console
+scripts/run_addon_tests.sh
+```
+
+For faster local feedback, run the core suite with an ephemeral xdist install;
 CI remains serial so its ordering and resource use stay reproducible:
 
 ```console
-uv run --with pytest-xdist pytest -n 4
+uv run --with pytest-xdist pytest -n 4 packages/dr-code/tests -m 'not postgres'
 ```
 
 Tests marked `postgres` need a live PostgreSQL-backed dr-store and are
@@ -572,5 +585,5 @@ export DR_STORE_ROOT=/path/to/dr-store
 scripts/run_postgres_tests.sh
 ```
 
-The [viewer verification guide](viewer/README.md#verification) documents its
-independent typecheck, build, and test commands.
+The [viewer verification guide](viewer/README.md#verification) documents
+typecheck, build, and gallery-based visual inspection.

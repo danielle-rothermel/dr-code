@@ -24,11 +24,11 @@ from dr_store import (
 from dr_code.caching import WindowedExecutionCache
 from dr_code.core.execution.executor import host_process_executor
 from dr_code.evaluation import AttemptCompleteness, evaluate_batch
-from dr_code.humaneval import HumanEvalTask
+from drc_humaneval import HumanEvalTask
 
 from corpus_loader import manifest_sha256
-from evaluation_batch import (
-    attempt_identity,
+from eval_batch import (
+    attempt_id,
     build_preflight_batch_request_for_task,
     build_task_difficulty_batch_request,
     bundle_is_complete,
@@ -38,23 +38,23 @@ from evaluation_batch import (
     load_run_manifest,
     manifest_matches,
     probe_runtime_packages,
-    runtime_identity_from_executor,
-    runtime_identity_json,
-    runtime_identity_with_packages,
+    runtime_id_from_executor,
+    runtime_id_json,
+    runtime_id_with_packages,
     settings_fingerprint,
     write_run_manifest,
 )
 from workflow_settings import (
     HUMANEVAL_SNAPSHOT,
     SELECTED_SAMPLE,
-    EvaluationPaths,
-    evaluation_paths,
+    EvalPaths,
+    eval_paths,
     generation_corpus_bundle_path,
-    parse_evaluation_args,
+    parse_eval_args,
     prepare_run_directory,
 )
 
-_RUNTIME_ENVIRONMENT_VARIABLE = "DR_CODE_EVALUATION_PYTHON"
+_RUNTIME_ENVIRONMENT_VARIABLE = "DR_CODE_EVAL_PYTHON"
 _PREFLIGHT_TASK_ID = "HumanEval/0"
 _CACHE_RESIDENT_ENTRIES = 256
 _CACHE_PENDING_ENTRIES = 64
@@ -112,7 +112,7 @@ async def _preflight_runtime(
     *,
     runtime_executable: Path,
     preflight_task: HumanEvalTask,
-    paths: EvaluationPaths,
+    paths: EvalPaths,
     settings,
     manifest_sha: str,
     object_store: ObjectStore,
@@ -124,8 +124,8 @@ async def _preflight_runtime(
         record_directory,
         runtime_executable=runtime_executable,
     )
-    runtime = runtime_identity_with_packages(
-        runtime_identity_from_executor(executor),
+    runtime = runtime_id_with_packages(
+        runtime_id_from_executor(executor),
         probe_runtime_packages(executor),
     )
     preflight_root = paths.bundle_root / "preflight"
@@ -158,7 +158,7 @@ async def _preflight_runtime(
 
 async def _evaluate_selected_sample(
     *,
-    paths: EvaluationPaths,
+    paths: EvalPaths,
     settings,
     logger: logging.Logger,
 ) -> Path:
@@ -210,7 +210,7 @@ async def _evaluate_selected_sample(
                 selected,
                 paths.candidate_results,
                 settings=settings,
-                runtime_identity_json=runtime_json,
+                runtime_id_json=runtime_json,
                 limits=limits,
                 object_store=object_store,
             )
@@ -222,8 +222,8 @@ async def _evaluate_selected_sample(
             record_directory,
             runtime_executable=runtime_executable,
         )
-        runtime = runtime_identity_with_packages(
-            runtime_identity_from_executor(executor),
+        runtime = runtime_id_with_packages(
+            runtime_id_from_executor(executor),
             probe_runtime_packages(executor),
         )
         preflight_task = load_humaneval_tasks(
@@ -263,7 +263,7 @@ async def _evaluate_selected_sample(
                     publication_root,
                     prefix="evaluation",
                 )
-                attempt = attempt_identity(fingerprint)
+                attempt = attempt_id(fingerprint)
                 request = build_task_difficulty_batch_request(
                     selected,
                     snapshot_path=HUMANEVAL_SNAPSHOT,
@@ -304,13 +304,13 @@ async def _evaluate_selected_sample(
                     raise RuntimeError(
                         "evaluate_batch did not publish an evaluation bundle"
                     )
-                runtime_json = runtime_identity_json(runtime)
+                runtime_json = runtime_id_json(runtime)
                 export_candidate_results(
                     result.bundle_path,
                     selected,
                     paths.candidate_results,
                     settings=settings,
-                    runtime_identity_json=runtime_json,
+                    runtime_id_json=runtime_json,
                     limits=limits,
                     object_store=object_store,
                 )
@@ -337,7 +337,7 @@ async def _evaluate_selected_sample(
 
 
 async def _async_main(
-    settings, paths: EvaluationPaths, logger: logging.Logger
+    settings, paths: EvalPaths, logger: logging.Logger
 ) -> int:
     bundle_path = await _evaluate_selected_sample(
         paths=paths,
@@ -350,13 +350,13 @@ async def _async_main(
 
 def main(argv: Sequence[str] | None = None) -> int:
     run_started = perf_counter()
-    evaluation_settings = parse_evaluation_args(__doc__, argv)
-    paths = evaluation_paths(evaluation_settings)
+    evaluation_settings = parse_eval_args(__doc__, argv)
+    paths = eval_paths(evaluation_settings)
     prepare_run_directory()
     paths.root.mkdir(parents=True, exist_ok=True)
     logger = _configure_logging(paths.evaluation_log)
     logger.info(
-        "Evaluation configuration: workers=%d timeout_seconds=%g root=%s",
+        "Eval config: workers=%d timeout_seconds=%g root=%s",
         evaluation_settings.worker_count,
         evaluation_settings.timeout_seconds,
         paths.root,

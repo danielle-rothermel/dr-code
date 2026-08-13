@@ -1,0 +1,43 @@
+[project]
+name = "drc-synthetic"
+version = "0.2.0"
+description = "Synthetic corruption datasets for dr-code"
+license = "MIT"
+requires-python = ">=3.13"
+dependencies = [
+    "dr-code",
+    "drc-humaneval",
+]
+
+[project.scripts]
+drc-synthetic = "drc_synthetic.cli:app"
+
+[build-system]
+requires = ["hatchling==1.31.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/drc_synthetic"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src"]
+
+[tool.uv.sources]
+dr-code = { workspace = true }
+drc-humaneval = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+markers = [
+    "synthetic: synthetic corruption dataset tests",
+]
+
+[tool.ruff]
+include = ["src/**/*.py", "tests/**/*.py"]
+line-length = 79

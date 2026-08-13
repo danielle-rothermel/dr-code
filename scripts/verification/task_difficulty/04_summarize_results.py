@@ -14,8 +14,8 @@ import polars as pl
 from workflow_settings import (
     PREPROCESSING_SUMMARY,
     SELECTED_SAMPLE,
-    evaluation_paths,
-    parse_evaluation_args,
+    eval_paths,
+    parse_eval_args,
     prepare_run_directory,
 )
 
@@ -165,8 +165,8 @@ def summarize_results(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    settings = parse_evaluation_args(__doc__, argv)
-    paths = evaluation_paths(settings)
+    settings = parse_eval_args(__doc__, argv)
+    paths = eval_paths(settings)
     prepare_run_directory()
     paths.root.mkdir(parents=True, exist_ok=True)
     logger = _configure_logging(paths.summary_log)

@@ -30,8 +30,8 @@ HUMANEVAL_SNAPSHOT: Final = (
     REPOSITORY_ROOT / "tests" / "corpus" / "humanevalplus_snapshot.json"
 )
 SAMPLING_SEED: Final = 42
-EVALUATION_WORKERS: Final = 16
-EVALUATION_TIMEOUT_SECONDS: Final = 120.0
+EVAL_WORKERS: Final = 16
+EVAL_TIMEOUT_SECONDS: Final = 120.0
 PREPROCESS_TIMEOUT_SECONDS_ENV: Final = "DR_CODE_PREPROCESS_TIMEOUT_SECONDS"
 PREPROCESS_TIMEOUT_SECONDS: Final = 600.0
 """Per-item preprocessing wall-time watchdog for this workflow.
@@ -136,7 +136,7 @@ def sample_tasks_per_group() -> int | None:
 
 _RUN_DIRECTORY = run_directory_path()
 RUN_DIRECTORY: Final = _RUN_DIRECTORY
-EVALUATION_RUN_ROOT: Final = _RUN_DIRECTORY / "explicit-runtime"
+EVAL_RUN_ROOT: Final = _RUN_DIRECTORY / "explicit-runtime"
 ELIGIBLE_CORPUS: Final = _RUN_DIRECTORY / "eligible_generations.parquet"
 PREPROCESSING_SUMMARY: Final = _RUN_DIRECTORY / "preprocessing_summary.parquet"
 SELECTED_SAMPLE: Final = _RUN_DIRECTORY / "selected_sample.parquet"
@@ -146,13 +146,13 @@ SAMPLING_LOG: Final = _RUN_DIRECTORY / "02_sample.log"
 
 
 @dataclass(frozen=True, slots=True)
-class EvaluationSettings:
+class EvalSettings:
     worker_count: int
     timeout_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
-class EvaluationPaths:
+class EvalPaths:
     root: Path
     bundle_root: Path
     execution_cache: Path
@@ -187,42 +187,42 @@ def _positive_timeout_seconds(value: str) -> float:
     return timeout_seconds
 
 
-def parse_evaluation_args(
+def parse_eval_args(
     description: str | None,
     argv: Sequence[str] | None = None,
-) -> EvaluationSettings:
+) -> EvalSettings:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--workers",
         type=_positive_worker_count,
-        default=EVALUATION_WORKERS,
+        default=EVAL_WORKERS,
         help=(
             "concurrent workers for preprocessing (stage 1) and candidate "
-            f"execution (stage 3 global pool capacity; default: {EVALUATION_WORKERS})"
+            f"execution (stage 3 global pool capacity; default: {EVAL_WORKERS})"
         ),
     )
     parser.add_argument(
         "--timeout-seconds",
         type=_positive_timeout_seconds,
-        default=EVALUATION_TIMEOUT_SECONDS,
+        default=EVAL_TIMEOUT_SECONDS,
         help=(
             "maximum wall time for one candidate batch "
-            f"(default: {EVALUATION_TIMEOUT_SECONDS:g})"
+            f"(default: {EVAL_TIMEOUT_SECONDS:g})"
         ),
     )
     arguments = parser.parse_args(argv)
-    return EvaluationSettings(
+    return EvalSettings(
         worker_count=arguments.workers,
         timeout_seconds=arguments.timeout_seconds,
     )
 
 
-def evaluation_paths(settings: EvaluationSettings) -> EvaluationPaths:
+def eval_paths(settings: EvalSettings) -> EvalPaths:
     timeout_label = format(settings.timeout_seconds, ".17g").replace(".", "p")
-    root = EVALUATION_RUN_ROOT / (
+    root = EVAL_RUN_ROOT / (
         f"workers-{settings.worker_count}_timeout-{timeout_label}"
     )
-    return EvaluationPaths(
+    return EvalPaths(
         root=root,
         bundle_root=root / "evaluation_bundles",
         execution_cache=root / "execution_cache.sqlite3",

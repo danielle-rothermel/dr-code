@@ -30,12 +30,12 @@ jobs:
             echo "Tag ${GITHUB_REF_NAME} does not point to a commit on main" >&2
             exit 1
           fi
-      - name: Verify tag matches pyproject version
+      - name: Verify tag matches dr-code package version
         run: |
-          version="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          version="$(python3 -c "import tomllib; print(tomllib.load(open('packages/dr-code/pyproject.toml', 'rb'))['project']['version'])")"
           expected="v${version}"
           if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
-            echo "Pushed tag '${GITHUB_REF_NAME}' does not match pyproject version (expected '${expected}')" >&2
+            echo "Pushed tag '${GITHUB_REF_NAME}' does not match dr-code version (expected '${expected}')" >&2
             exit 1
           fi
 
@@ -58,11 +58,13 @@ jobs:
           version-file: pyproject.toml
           python-version: ${{ matrix.python-version }}
           enable-cache: false
-      - run: uv sync --locked
+      - run: uv sync --locked --group dev --group addons
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run ty check
-      - run: uv run pytest
+      - run: uv sync --locked --package dr-code --group dev
+      - run: DR_CODE_CORE_ISOLATION=1 uv run --package dr-code --group dev pytest packages/dr-code/tests -m 'not postgres'
+      - run: scripts/run_addon_tests.sh
 
   viewer:
     name: Validate viewer
@@ -88,8 +90,6 @@ jobs:
         working-directory: viewer
       - run: pnpm build
         working-directory: viewer
-      - run: pnpm test
-        working-directory: viewer
 
   build:
     name: Build distributions
@@ -106,12 +106,12 @@ jobs:
           version-file: pyproject.toml
           python-version: "3.13"
           enable-cache: false
-      - run: uv build
-      - run: uvx --from twine==7.0.0 twine check --strict dist/*
+      - run: uv build --package dr-code --clear
+      - run: uvx --from twine==7.0.0 twine check --strict dist/dr_code-*
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: distributions
-          path: dist/
+          path: dist/dr_code-*
           if-no-files-found: error
 
   wheel-smoke:

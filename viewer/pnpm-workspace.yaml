@@ -1,5 +1,4 @@
 packages:
   - "packages/*"
 allowBuilds:
-  # vitest's esbuild needs its postinstall to place the binary
   esbuild: true

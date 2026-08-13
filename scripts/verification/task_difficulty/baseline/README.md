@@ -44,7 +44,7 @@ Override the bundle or manifest pin with `DR_CODE_GENERATION_CORPUS_BUNDLE` and
 ## Fixture smoke run
 
 ```bash
-DR_CODE_GENERATION_CORPUS_BUNDLE=tests/fixtures/generation_corpus/human_eval \
+DR_CODE_GENERATION_CORPUS_BUNDLE=packages/drc-generation-corpus/tests/fixtures/generation_corpus/human_eval \
 DR_CODE_TASK_DIFFICULTY_RUN_DIR=/tmp/task-difficulty-fixture \
 scripts/verification/task_difficulty/run_baseline.sh fixture-smoke
 ```

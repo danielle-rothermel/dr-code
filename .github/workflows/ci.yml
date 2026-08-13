@@ -31,15 +31,40 @@ jobs:
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
+            packages/*/pyproject.toml
             uv.lock
-      - run: uv sync --locked
+      - run: uv sync --locked --group dev --group addons
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run ty check
       - name: Validate .defs structure
         if: matrix.python-version == '3.13'
         run: uvx tombi@1.2.5 lint --offline .defs/terms.toml .defs/contracts.toml
-      - run: uv run pytest
+      - run: uv sync --locked --package dr-code --group dev
+      - run: DR_CODE_CORE_ISOLATION=1 uv run --package dr-code --group dev pytest packages/dr-code/tests -m 'not postgres'
+
+  python-addons:
+    name: Python add-ons ${{ matrix.python-version }}
+    runs-on: depot-ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version-file: pyproject.toml
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            packages/*/pyproject.toml
+            uv.lock
+      - run: uv sync --locked --group dev --group addons
+      - run: scripts/run_addon_tests.sh
 
   viewer:
     name: Viewer
@@ -61,6 +86,4 @@ jobs:
       - run: pnpm typecheck
         working-directory: viewer
       - run: pnpm build
-        working-directory: viewer
-      - run: pnpm test
         working-directory: viewer

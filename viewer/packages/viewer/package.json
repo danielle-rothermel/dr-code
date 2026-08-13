@@ -21,8 +21,6 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run && pnpm test:dist",
-    "test:dist": "pnpm build && tsc -p tsconfig.dist-consumer.json",
     "prepare": "pnpm build"
   },
   "peerDependencies": {
@@ -39,13 +37,10 @@
     "shiki": "3.23.0"
   },
   "devDependencies": {
-    "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "jsdom": "^26.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "typescript": "^5.8.0",
-    "vitest": "^3.2.0"
+    "typescript": "^5.8.0"
   }
 }

@@ -27,7 +27,7 @@ One planned task-and-sample position in an evaluation plan, addressed by its
 task id and its sample index within that task. It establishes expected
 membership and order without claiming that an input was observed or evaluated
 at that position."""
-exported_symbols = ["dr_code.evaluation.EvaluationSlotIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalSlotId"]
 categories = ["evaluation identity", "evaluation planning"]
 part_of = ["evaluation plan"]
 
@@ -39,14 +39,14 @@ identity, task identity, and provenance. It may originate from live generation
 or a frozen historical corpus, and its relationship to an evaluation slot is
 explicit rather than reconstructed from content."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationSampleIdentity",
-  "dr_code.evaluation.EvaluationSourceIdentity",
+  "dr_code.evaluation.EvalSampleId",
+  "dr_code.evaluation.EvalSourceId",
   "dr_code.evaluation.GeneratedSampleProvenance",
   "dr_code.evaluation.CorpusSampleProvenance",
   "dr_code.evaluation.SyntheticSampleProvenance",
-  "dr_code.evaluation.EvaluationSampleMetadata",
-  "dr_code.evaluation.EvaluationSampleAuxiliaryArtifact",
-  "dr_code.evaluation.EvaluationSample",
+  "dr_code.evaluation.EvalSampleMetadata",
+  "dr_code.evaluation.EvalSampleAuxiliaryArtifact",
+  "dr_code.evaluation.EvalSample",
 ]
 categories = ["evaluation evidence", "evaluation identity"]
 is_a = ["evidence"]
@@ -60,8 +60,8 @@ its evaluation sample, resolved preprocessing definition, and ordered position
 after materialization. Candidate content and its hash may verify that
 occurrence but do not replace its identity."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationCandidateIdentity",
-  "dr_code.evaluation.MaterializedEvaluationCandidate",
+  "dr_code.evaluation.EvalCandidateId",
+  "dr_code.evaluation.MaterializedEvalCandidate",
 ]
 categories = ["evaluation identity"]
 part_of = ["candidate execution record", "sample evaluation record"]
@@ -73,7 +73,7 @@ A caller-owned stable identity for execution behavior not fully expressed by
 an evaluation request, including behavior-changing runtime components and
 environment assumptions. It scopes persistent outcome reuse without identifying
 one machine or path."""
-exported_symbols = ["dr_code.evaluation.EvaluationRuntimeIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalRuntimeId"]
 categories = ["evaluation execution", "evaluation identity"]
 part_of = ["candidate execution record", "evaluation attempt record"]
 
@@ -82,7 +82,7 @@ name = "evaluation attempt identity"
 definition = """
 An opaque identity for one evaluation attempt occurrence, distinct from its
 evaluation plan, ordered membership, and content hashes."""
-exported_symbols = ["dr_code.evaluation.EvaluationAttemptIdentity"]
+exported_symbols = ["dr_code.evaluation.EvalAttemptId"]
 categories = ["evaluation identity"]
 part_of = ["evaluation attempt record"]
 
@@ -111,7 +111,7 @@ the selected raw-input bytes, ordered materialized candidates, candidate
 execution records, and metric records, and remains evidence when no candidate
 is materialized or no candidate yields a measurement."""
 exported_symbols = [
-  "dr_code.evaluation.SampleEvaluationRecord",
+  "dr_code.evaluation.SampleEvalRecord",
   "dr_code.evaluation.PreprocessingAbsentSampleRecord",
   "dr_code.evaluation.NoCandidatesSampleRecord",
   "dr_code.evaluation.EvaluatedSampleRecord",
@@ -128,8 +128,8 @@ ordered membership, execution context, sample evaluation records,
 completeness, and validity. It is the authoritative source for publication,
 replay, comparison, and derived analysis."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationAttemptRecord",
-  "dr_code.evaluation.EvaluationMemberRecord",
+  "dr_code.evaluation.EvalAttemptRecord",
+  "dr_code.evaluation.EvalMemberRecord",
 ]
 categories = ["evaluation evidence"]
 is_a = ["evidence"]
@@ -152,7 +152,7 @@ exported_symbols = [
   "dr_code.evaluation.ReplayUnavailable",
   "dr_code.evaluation.ReplayReady",
   "dr_code.evaluation.preflight_replay",
-  "dr_code.evaluation.replay_evaluation_attempt",
+  "dr_code.evaluation.replay_eval_attempt",
 ]
 categories = ["evaluation analysis"]
 
@@ -163,9 +163,9 @@ An identity-aware comparison of two attempt records that reports membership,
 ordering, and exact changed-or-unchanged status, with denominators for supported
 projection comparisons. It makes no benchmark or statistical judgment."""
 exported_symbols = [
-  "dr_code.evaluation.StructuralEvaluationComparison",
-  "dr_code.evaluation.StructuralMemberIdentity",
-  "dr_code.evaluation.compare_evaluation_attempts",
+  "dr_code.evaluation.StructuralEvalComparison",
+  "dr_code.evaluation.StructuralMemberId",
+  "dr_code.evaluation.compare_eval_attempts",
 ]
 categories = ["evaluation analysis"]
 
@@ -206,9 +206,9 @@ artifact schemas identify one evaluation attempt record and its included
 projections. It uses portable references and relative artifact names rather
 than machine-specific paths."""
 exported_symbols = [
-  "dr_code.evaluation.read_evaluation_projection",
-  "dr_code.evaluation.restore_evaluation_attempt",
-  "dr_code.evaluation.audit_evaluation_bundle",
+  "dr_code.evaluation.read_eval_projection",
+  "dr_code.evaluation.restore_eval_attempt",
+  "dr_code.evaluation.audit_eval_bundle",
 ]
 categories = ["evaluation publication"]
 
@@ -245,7 +245,7 @@ provisioning rather than another route."""
 exported_symbols = [
   "dr_code.evaluation.evaluate_batch",
   "dr_code.evaluation.evaluate_durable_partition",
-  "dr_code.humaneval.evaluate_humaneval_candidate_job",
+  "drc_humaneval.evaluate_humaneval_candidate_job",
 ]
 categories = ["evaluation execution"]
 part_of = ["evaluation batch"]
@@ -439,7 +439,7 @@ The self-identifying answer to one metric question: measured metric values, an
 explicit not-applicable absence, or an operator failure."""
 exported_symbols = [
   "dr_code.metrics.MetricRecord",
-  "dr_code.metrics.MetricRecordIdentity",
+  "dr_code.metrics.MetricRecordId",
   "dr_code.metrics.MeasuredRecord",
   "dr_code.metrics.NotApplicableRecord",
   "dr_code.metrics.OperatorFailureRecord",
@@ -453,7 +453,7 @@ name = "evaluation procedure"
 definition = """
 The composition of one complete preprocessing definition and one complete
 metrics definition."""
-exported_symbols = ["dr_code.evaluation.EvaluationProcedure"]
+exported_symbols = ["dr_code.evaluation.EvalProcedure"]
 part_of = ["evaluation plan"]
 
 [[terms]]
@@ -462,7 +462,7 @@ definition = """
 A versioned composition of an ordered task selection, sampling structure,
 evaluation procedure, and aggregation policy."""
 exported_symbols = [
-  "dr_code.evaluation.EvaluationPlan",
+  "dr_code.evaluation.EvalPlan",
   "dr_code.evaluation.TaskSet",
   "dr_code.evaluation.SamplingPlan",
 ]
@@ -504,7 +504,7 @@ A finite non-text measurement under an evaluation coordinate that names the
 unique metric values from which it derives."""
 exported_symbols = [
   "dr_code.evaluation.Score",
-  "dr_code.evaluation.EvaluationCoordinate",
+  "dr_code.evaluation.EvalCoordinate",
 ]
 categories = ["evaluation analysis", "metrics"]
 is_a = ["evaluation projection"]
@@ -515,8 +515,8 @@ definition = """
 A validated benchmark problem containing its prompt, canonical solution,
 entry point, tests, and benchmark metadata."""
 exported_symbols = [
-  "dr_code.humaneval.HumanEvalTask",
-  "dr_code.humaneval.HumanEvalPlusTask",
+  "drc_humaneval.HumanEvalTask",
+  "drc_humaneval.HumanEvalPlusTask",
 ]
 
 [[terms]]
@@ -525,15 +525,15 @@ definition = """
 A benchmark-specific evaluation projection that separates a completed
 submission outcome and score from evaluation-harness failure."""
 exported_symbols = [
-  "dr_code.humaneval.HumanEvalSubmissionResult",
-  "dr_code.humaneval.HumanEvalSubmissionRequest",
-  "dr_code.humaneval.CompletedSubmissionResult",
-  "dr_code.humaneval.HarnessFailure",
-  "dr_code.humaneval.SubmissionOutcome",
-  "dr_code.humaneval.project_humaneval_submission",
-  "dr_code.humaneval.project_humaneval_submissions_batch",
-  "dr_code.humaneval.score_humaneval_submission",
-  "dr_code.humaneval.score_humaneval_submissions_batch",
+  "drc_humaneval.HumanEvalSubmissionResult",
+  "drc_humaneval.HumanEvalSubmissionRequest",
+  "drc_humaneval.CompletedSubmissionResult",
+  "drc_humaneval.HarnessFailure",
+  "drc_humaneval.SubmissionOutcome",
+  "drc_humaneval.project_humaneval_submission",
+  "drc_humaneval.project_humaneval_submissions_batch",
+  "drc_humaneval.score_humaneval_submission",
+  "drc_humaneval.score_humaneval_submissions_batch",
 ]
 categories = ["benchmark evaluation", "evaluation analysis"]
 is_a = ["evaluation projection"]
@@ -543,7 +543,7 @@ name = "synthetic corruption"
 definition = """
 A versioned deterministic source transformation parameterized by validated
 settings and random state."""
-exported_symbols = ["dr_code.synthetic.Corruption"]
+exported_symbols = ["drc_synthetic.Corruption"]
 part_of = ["synthetic recipe"]
 
 [[terms]]
@@ -551,8 +551,8 @@ name = "synthetic recipe"
 definition = """
 A versioned ordered composition of registered synthetic corruptions."""
 exported_symbols = [
-  "dr_code.synthetic.Recipe",
-  "dr_code.synthetic.apply_recipe",
+  "drc_synthetic.Recipe",
+  "drc_synthetic.apply_recipe",
 ]
 
 [[terms]]
@@ -562,10 +562,10 @@ An evaluation sample pairing a known solution with corrupted source and
 identified by its HumanEval task, complete recipe coordinate, and generation
 seed."""
 exported_symbols = [
-  "dr_code.synthetic.models.SyntheticSample",
-  "dr_code.synthetic.models.SyntheticSampleCoordinate",
-  "dr_code.synthetic.build_sample",
-  "dr_code.synthetic.build_dataset",
+  "drc_synthetic.models.SyntheticSample",
+  "drc_synthetic.models.SyntheticSampleCoordinate",
+  "drc_synthetic.build_sample",
+  "drc_synthetic.build_dataset",
 ]
 categories = ["evaluation evidence", "synthetic data"]
 is_a = ["evaluation sample"]
@@ -591,14 +591,14 @@ records, and request provenance records retain their distinct analytical
 grains. These archival records are distinct from evaluation evidence until
 re-evaluation binds them."""
 exported_symbols = [
-  "dr_code.generation_corpus.GenerationRecord",
-  "dr_code.generation_corpus.SourceRecord",
-  "dr_code.generation_corpus.EncoderArtifactRecord",
-  "dr_code.generation_corpus.RequestRecord",
-  "dr_code.generation_corpus.TaskRecord",
-  "dr_code.generation_corpus.build_generation_corpus",
-  "dr_code.generation_corpus.BuildManifest",
-  "dr_code.generation_corpus.CorpusWriter",
+  "drc_generation_corpus.GenerationRecord",
+  "drc_generation_corpus.SourceRecord",
+  "drc_generation_corpus.EncoderArtifactRecord",
+  "drc_generation_corpus.RequestRecord",
+  "drc_generation_corpus.TaskRecord",
+  "drc_generation_corpus.build_generation_corpus",
+  "drc_generation_corpus.BuildManifest",
+  "drc_generation_corpus.CorpusWriter",
 ]
 categories = ["generation corpus"]
 
@@ -608,10 +608,10 @@ definition = """
 An archived export of raw pool rows and its manifest, selected as the immutable
 input to one generation-corpus build."""
 exported_symbols = [
-  "dr_code.generation_corpus.SourceManifest",
-  "dr_code.generation_corpus.DumpedPoolRow",
-  "dr_code.generation_corpus.read_manifest",
-  "dr_code.generation_corpus.iter_pool_rows",
+  "drc_generation_corpus.SourceManifest",
+  "drc_generation_corpus.DumpedPoolRow",
+  "drc_generation_corpus.read_manifest",
+  "drc_generation_corpus.iter_pool_rows",
 ]
 categories = ["generation corpus"]
 
@@ -621,9 +621,9 @@ definition = """
 One atomically published generation-corpus directory: validated Parquet tables,
 a build manifest, and content hashes for every artifact."""
 exported_symbols = [
-  "dr_code.generation_corpus.BuildManifest",
-  "dr_code.generation_corpus.CorpusWriter",
-  "dr_code.generation_corpus.build_generation_corpus",
+  "drc_generation_corpus.BuildManifest",
+  "drc_generation_corpus.CorpusWriter",
+  "drc_generation_corpus.build_generation_corpus",
 ]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
@@ -634,7 +634,7 @@ definition = """
 A dataset-specific extraction boundary that maps one pool dump into validated
 generation-corpus tables through a corpus adapter name and version recorded in
 the build manifest."""
-exported_symbols = ["dr_code.generation_corpus.adapters.base.CorpusAdapter"]
+exported_symbols = ["drc_generation_corpus.adapters.base.CorpusAdapter"]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
 
@@ -643,7 +643,7 @@ name = "task adapter"
 definition = """
 A dataset-specific boundary that resolves persisted task identities to exact,
 content-addressed task material stored as task records."""
-exported_symbols = ["dr_code.generation_corpus.tasks.base.TaskAdapter"]
+exported_symbols = ["drc_generation_corpus.tasks.base.TaskAdapter"]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
 
@@ -653,7 +653,7 @@ definition = """
 The persisted corpus row for one generation's final output at decoder stage.
 It stores generation output and provenance; code candidates are extracted
 separately during evaluation."""
-exported_symbols = ["dr_code.generation_corpus.GenerationRecord"]
+exported_symbols = ["drc_generation_corpus.GenerationRecord"]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
 
@@ -662,7 +662,7 @@ name = "source lifecycle record"
 definition = """
 One raw pool row preserved at full lifecycle grain, including blank, failed,
 pending, encoder-only, and seeded states."""
-exported_symbols = ["dr_code.generation_corpus.SourceRecord"]
+exported_symbols = ["drc_generation_corpus.SourceRecord"]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
 
@@ -671,16 +671,16 @@ name = "encoder artifact record"
 definition = """
 One persisted nonblank encoder output that has no explicit link to a generation
 record."""
-exported_symbols = ["dr_code.generation_corpus.EncoderArtifactRecord"]
+exported_symbols = ["drc_generation_corpus.EncoderArtifactRecord"]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
 
 [[terms]]
 name = "request provenance record"
 definition = """
-The one-to-one request and configuration provenance record for one generation
+The one-to-one request and config provenance record for one generation
 record."""
-exported_symbols = ["dr_code.generation_corpus.RequestRecord"]
+exported_symbols = ["drc_generation_corpus.RequestRecord"]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
 
@@ -689,7 +689,7 @@ name = "task record"
 definition = """
 Content-addressed task and evaluator material at a dataset's natural task grain,
 resolved through a task adapter."""
-exported_symbols = ["dr_code.generation_corpus.TaskRecord"]
+exported_symbols = ["drc_generation_corpus.TaskRecord"]
 categories = ["generation corpus"]
 part_of = ["generation corpus"]
 
@@ -698,7 +698,7 @@ name = "prompt fidelity"
 definition = """
 An explicit classification of whether a persisted prompt is exact request
 evidence, recovered from pinned task material, or unavailable."""
-exported_symbols = ["dr_code.generation_corpus.PromptFidelity"]
+exported_symbols = ["drc_generation_corpus.PromptFidelity"]
 categories = ["generation corpus"]
 part_of = ["request provenance record", "generation record"]
 
@@ -707,7 +707,7 @@ name = "task material fidelity"
 definition = """
 An explicit classification of whether task material is pinned snapshot evidence,
 persisted row-local material, or unavailable."""
-exported_symbols = ["dr_code.generation_corpus.TaskMaterialFidelity"]
+exported_symbols = ["drc_generation_corpus.TaskMaterialFidelity"]
 categories = ["generation corpus"]
 part_of = ["task record"]
 
@@ -716,7 +716,7 @@ name = "source lifecycle state"
 definition = """
 The declared terminal or in-progress state of one source lifecycle record, such
 as evaluated, pending validation, encoder-only, or failed."""
-exported_symbols = ["dr_code.generation_corpus.LifecycleState"]
+exported_symbols = ["drc_generation_corpus.LifecycleState"]
 categories = ["generation corpus"]
 part_of = ["source lifecycle record"]
 
@@ -820,7 +820,7 @@ part_of = ["generation"]
 [[terms]]
 name = "work key"
 definition = """
-The content-addressed digest of one experiment configuration hash together
+The content-addressed digest of one experiment config hash together
 with one evaluation slot's addressing coordinates: its task set coordinate,
 its sampling plan coordinate, its task id, and its sample index. It addresses
 the work of producing one generation without naming any run, attempt, or

@@ -1,0 +1,51 @@
+[project]
+name = "drc-humaneval"
+version = "0.2.0"
+description = "HumanEval+ benchmark adapter for dr-code"
+license = "MIT"
+requires-python = ">=3.13"
+dependencies = [
+    "dr-code",
+    "datasets>=3.0,<4",
+]
+
+[project.scripts]
+drc-humaneval-schema = "drc_humaneval.schema_cli:app"
+
+[project.entry-points."dr_code.metric_operators"]
+code_test = "drc_humaneval.metric_operator:CodeTest"
+
+[project.entry-points."dr_code.candidate_job_builders"]
+humaneval = "drc_humaneval.job:build_candidate_job_request"
+
+[project.entry-points."dr_code.candidate_job_result_types"]
+humaneval = "drc_humaneval.job:HumanEvalCandidateJobResult"
+
+[build-system]
+requires = ["hatchling==1.31.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/drc_humaneval"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src"]
+
+[tool.uv.sources]
+dr-code = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+markers = [
+    "humaneval: HumanEval+ benchmark adapter tests",
+]
+
+[tool.ruff]
+include = ["src/**/*.py", "tests/**/*.py"]
+line-length = 79

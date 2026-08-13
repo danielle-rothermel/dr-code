@@ -1,51 +1,13 @@
 [project]
-name = "dr-code"
-version = "0.1.8"
-description = "Python code preparation and evaluation toolkit with HumanEval+ execution and synthetic corruption datasets"
+name = "dr-code-workspace"
+version = "0.2.0"
+description = "dr-code monorepo workspace"
 readme = "README.md"
-license = "MIT"
-authors = [
-    { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
-]
 requires-python = ">=3.13"
-dependencies = [
-    "datasets>=3.0,<4",
-    "dr-exec==0.1.10",
-    "dr-serialize==0.1.2",
-    "dr-store==0.2.3",
-    "numpy>=2.1,<3",
-    "polars>=1.43.2",
-    "pydantic>=2.13.4",
-    "python-minifier==3.2.0",
-    "sqlalchemy>=2.0",
-    "typer>=0.26.7",
-    "zstandard>=0.25.0",
-]
-
-[project.scripts]
-dr-code-humaneval-schema = "dr_code.humaneval.schema_cli:app"
-dr-code-synthetic = "dr_code.synthetic.cli:app"
-dr-code-validate-preprocessing = "dr_code.evaluation.cli:validate_preprocessing_app"
-dr-code-validate-testing = "dr_code.evaluation.cli:validate_testing_app"
-
-[project.urls]
-Repository = "https://github.com/danielle-rothermel/dr-code"
-Issues = "https://github.com/danielle-rothermel/dr-code/issues"
-Documentation = "https://danielle-rothermel.github.io/dr-code/"
-Changelog = "https://github.com/danielle-rothermel/dr-code/blob/main/CHANGELOG.md"
-
-[build-system]
-requires = ["hatchling==1.31.0"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/dr_code"]
-
-[tool.hatch.build.targets.sdist]
-only-include = ["src"]
 
 [dependency-groups]
 dev = [
+    "dr-code",
     "matplotlib>=3.10.8",
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
@@ -53,34 +15,40 @@ dev = [
     "ruff>=0.15.18",
     "ty>=0.0.51",
 ]
+addons = [
+    "drc-generation-corpus",
+    "drc-humaneval",
+    "drc-synthetic",
+]
 
 [tool.uv]
 required-version = ">=0.12.0"
+package = false
 
-# Development mode pins every component to initial-version. Only repository
-# contract tests read this marker; runtime code does not, and persisted
-# artifacts do not record it.
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+dr-code = { workspace = true }
+drc-generation-corpus = { workspace = true }
+drc-humaneval = { workspace = true }
+drc-synthetic = { workspace = true }
+
 [tool.dr-code.component-versioning]
 development-mode = true
 initial-version = "0"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-# Test directories carry no package markers, so mirrored basenames
-# (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
-# need importlib import mode rather than sys.path insertion.
-addopts = "--import-mode=importlib -m 'not postgres'"
-markers = [
-    # Opt-in: needs a live PostgreSQL server via DR_STORE_POSTGRES_DSN. Set
-    # DR_STORE_ROOT to a dr-store checkout and run:
-    #   scripts/run_postgres_tests.sh
-    "postgres: requires a PostgreSQL-backed dr-store",
-]
-
 [tool.ruff]
-include = ["scripts/**/*.py", "src/**/*.py", "tests/**/*.py"]
+include = [
+    "packages/**/src/**/*.py",
+    "packages/**/tests/**/*.py",
+    "scripts/**/*.py",
+]
 line-length = 79
 
 [tool.ty.src]
-include = ["scripts", "src"]
-exclude = ["nbs", "tests"]
+include = ["packages/*/src", "scripts"]
+exclude = ["nbs"]
+
+[tool.ty.environment]
+extra-paths = ["packages/dr-code/src"]

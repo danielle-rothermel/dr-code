@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+import random
+from typing import ClassVar, Final
+
+from drc_synthetic.models import CorruptedSample
+from drc_synthetic.names import CorruptionName
+from drc_synthetic.corruptions.base import Corruption
+from dr_code.core.source.text_transforms import DEFAULT_TAB_WIDTH
+
+_TAB: Final[str] = "\t"
+
+
+def _spaces_to_tabs(source: str, tab_width: int) -> str:
+    out_lines: list[str] = []
+    for line in source.splitlines(keepends=True):
+        i = 0
+        while i < len(line) and line[i] == " ":
+            i += 1
+        if i == 0:
+            out_lines.append(line)
+            continue
+        n_tabs = i // tab_width
+        n_spaces = i % tab_width
+        out_lines.append(_TAB * n_tabs + " " * n_spaces + line[i:])
+    return "".join(out_lines)
+
+
+class AddTabs(Corruption):
+    NAME: ClassVar[CorruptionName] = CorruptionName.ADD_TABS
+    VERSION: ClassVar[str] = "0"
+
+    def apply(self, source: str, rng: random.Random) -> CorruptedSample:
+        return CorruptedSample(
+            corrupted_source=_spaces_to_tabs(source, DEFAULT_TAB_WIDTH),
+        )

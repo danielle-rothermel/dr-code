@@ -11,52 +11,35 @@ from pathlib import Path
 _ROOT = Path(__file__).parents[1]
 _SMOKE_PROGRAM = r"""
 from importlib.metadata import entry_points, version
-import hashlib
 import importlib
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import sys
 
 import dr_code.caching
 import dr_code.evaluation
 import dr_code.metrics
 import dr_code.preprocessing
-import dr_code.synthetic
 import dr_code.trace
-from dr_exec import ProcessExecutor
-from dr_serialize import Sha256Digest
-from dr_code.core.execution.executor import host_process_executor
 from dr_code.evaluation import (
-    EVALUATION_BUNDLE_FORMAT,
-    EVALUATION_PROJECTION_FORMAT,
-    EvaluationCandidateIdentity,
-    EvaluationBundlePayload,
-    EvaluationAttemptIdentity,
-    EvaluationSampleIdentity,
-    MaterializedEvaluationCandidate,
+    EVAL_BUNDLE_FORMAT,
+    EVAL_PROJECTION_FORMAT,
+    EvalCandidateId,
+    EvalBundlePayload,
+    EvalAttemptId,
+    EvalSampleId,
+    MaterializedEvalCandidate,
     ProjectionArtifactHeader,
     ProjectionKind,
     ReplayReady,
-    StructuralEvaluationComparison,
-    audit_evaluation_bundle,
-    compare_evaluation_attempts,
+    StructuralEvalComparison,
+    audit_eval_bundle,
+    compare_eval_attempts,
     evaluate_batch,
     evaluate_durable_partition,
     preflight_replay,
-    read_evaluation_projection,
-    replay_evaluation_attempt,
-    restore_evaluation_attempt,
+    read_eval_projection,
+    replay_eval_attempt,
+    restore_eval_attempt,
 )
-from dr_code.humaneval import (
-    HumanEvalCandidateJobRequest,
-    HumanEvalCandidateJobResult,
-    HumanEvalEvaluatorSuite,
-    HumanEvalTask,
-    evaluate_humaneval_candidate_job,
-)
-from dr_code.humaneval.settings import CodeTestSettings
-from dr_code.metrics import MetricName, MetricQuestionCoordinate
-from dr_code.metrics.coordinates import question_settings
 from dr_code.trace import CodeArtifact, PreprocessingDefinitionCoordinate
 
 required_exports = {
@@ -88,46 +71,45 @@ required_exports = {
         "ComparableProjectionComparison",
         "ComparisonStatus",
         "CorpusSampleProvenance",
-        "EVALUATION_ATTEMPT_SCHEMA_VERSION",
-        "EVALUATION_BUNDLE_FORMAT",
-        "EVALUATION_BUNDLE_SCHEMA_VERSION",
-        "EVALUATION_PROJECTION_FORMAT",
-        "EVALUATION_PROJECTION_SCHEMA_VERSION",
-        "EvaluationAttemptIdentity",
-        "EvaluationAttemptRecord",
-        "EvaluationBatchRequest",
-        "EvaluationBatchResult",
-        "EvaluationBundleAudit",
-        "EvaluationBundlePayload",
-        "EvaluationCandidateIdentity",
-        "EvaluationEvidenceResolver",
-        "EvaluationInput",
-        "EvaluationMemberRecord",
-        "EvaluationProjectionReference",
-        "EvaluationReadLimits",
-        "EvaluationRuntimeIdentity",
-        "EvaluationSample",
-        "EvaluationSampleAuxiliaryArtifact",
-        "EvaluationSampleIdentity",
-        "EvaluationSampleMetadata",
-        "EvaluationSampleProjectionRow",
-        "EvaluationSampleProvenance",
-        "EvaluationSlotIdentity",
-        "EvaluationSourceIdentity",
+        "EVAL_ATTEMPT_SCHEMA_VERSION",
+        "EVAL_BUNDLE_FORMAT",
+        "EVAL_BUNDLE_SCHEMA_VERSION",
+        "EVAL_PROJECTION_FORMAT",
+        "EVAL_PROJECTION_SCHEMA_VERSION",
+        "EvalAttemptId",
+        "EvalAttemptRecord",
+        "EvalBatchRequest",
+        "EvalBatchResult",
+        "EvalBundleAudit",
+        "EvalBundlePayload",
+        "EvalCandidateId",
+        "EvalEvidenceResolver",
+        "EvalMemberRecord",
+        "EvalProjectionReference",
+        "EvalReadLimits",
+        "EvalRuntimeId",
+        "EvalSample",
+        "EvalSampleAuxiliaryArtifact",
+        "EvalSampleId",
+        "EvalSampleMetadata",
+        "EvalSampleProjectionRow",
+        "EvalSampleProvenance",
+        "EvalSlotId",
+        "EvalSourceId",
         "EvaluatedSampleRecord",
         "EvidenceReference",
         "ExecutedCandidateProvenance",
         "ExecutorExecutionFailure",
-        "FrozenCandidateEvaluationInput",
         "GeneratedSampleProvenance",
         "HarnessExecutionFailure",
         "MaterializedCandidateProjectionRow",
-        "MaterializedEvaluationCandidate",
+        "MaterializedEvalCandidate",
         "MetricRecordProjectionRow",
         "NoCandidatesSampleRecord",
         "PreprocessingAbsentSampleRecord",
         "ProjectionArtifactHeader",
         "ProjectionComparison",
+        "PreprocessMode",
         "ProjectionKind",
         "ProjectionNotComparable",
         "ProjectionRequest",
@@ -138,53 +120,30 @@ required_exports = {
         "ReplayReady",
         "ReplaySource",
         "ReplayUnavailable",
-        "RestoredEvaluationAttempt",
+        "RestoredEvalAttempt",
         "ReusedCandidateProvenance",
-        "SAMPLE_EVALUATION_RECORD_SCHEMA_VERSION",
+        "SAMPLE_EVAL_RECORD_SCHEMA_VERSION",
         "SAMPLE_RECORD_OBJECT_SCHEMA",
-        "SampleEvaluationInput",
-        "SampleEvaluationRecord",
+        "SampleData",
+        "SampleEvalRecord",
+        "SampleWithCandidatesData",
         "Score",
         "ScoreProjectionRow",
         "ShardLimits",
+        "SlotData",
         "StoredRecordReference",
-        "StructuralEvaluationComparison",
+        "StructuralEvalComparison",
         "StructuralRecordComparison",
         "SyntheticSampleProvenance",
         "WindowLimits",
-        "audit_evaluation_bundle",
-        "compare_evaluation_attempts",
+        "audit_eval_bundle",
+        "compare_eval_attempts",
         "evaluate_batch",
         "evaluate_durable_partition",
         "preflight_replay",
-        "read_evaluation_projection",
-        "replay_evaluation_attempt",
-        "restore_evaluation_attempt",
-    },
-    "dr_code.humaneval": {
-        "CandidateNamespaceFailure",
-        "CandidateNamespaceLoaded",
-        "CandidateNamespaceOutcome",
-        "CompletedSubmissionResult",
-        "HUMANEVAL_CANDIDATE_ENTRY_POINT",
-        "HUMANEVAL_CANDIDATE_JOB_SCHEMA_VERSION",
-        "HarnessFailure",
-        "HarnessFailureCause",
-        "HumanEvalCandidateJobRequest",
-        "HumanEvalCandidateJobResult",
-        "HumanEvalEvaluatorSuite",
-        "HumanEvalFunctionGroupResult",
-        "HumanEvalSubmissionRequest",
-        "HumanEvalSubmissionResult",
-        "HumanEvalSuiteCompleted",
-        "HumanEvalSuiteHarnessFailure",
-        "HumanEvalSuiteResult",
-        "SubmissionOutcome",
-        "evaluate_humaneval_candidate_job",
-        "project_humaneval_submission",
-        "project_humaneval_submissions_batch",
-        "score_humaneval_submission",
-        "score_humaneval_submissions_batch",
+        "read_eval_projection",
+        "replay_eval_attempt",
+        "restore_eval_attempt",
     },
     "dr_code.metrics": {
         "MeasuredRecord",
@@ -216,8 +175,6 @@ for module_name, expected in required_exports.items():
         )
 
 expected_console_scripts = {
-    "dr-code-humaneval-schema": "dr_code.humaneval.schema_cli:app",
-    "dr-code-synthetic": "dr_code.synthetic.cli:app",
     "dr-code-validate-preprocessing": (
         "dr_code.evaluation.cli:validate_preprocessing_app"
     ),
@@ -251,102 +208,44 @@ if installed_version != expected_version:
         f"installed dr-code version {installed_version!r} does not match "
         f"{expected_version!r}"
     )
-if not callable(evaluate_humaneval_candidate_job):
-    raise SystemExit("installed wheel is missing the HumanEval entry point")
 if not all(
     callable(value)
     for value in (
         evaluate_batch,
         evaluate_durable_partition,
-        read_evaluation_projection,
-        restore_evaluation_attempt,
-        audit_evaluation_bundle,
+        read_eval_projection,
+        restore_eval_attempt,
+        audit_eval_bundle,
         preflight_replay,
-        replay_evaluation_attempt,
-        compare_evaluation_attempts,
+        replay_eval_attempt,
+        compare_eval_attempts,
     )
 ):
     raise SystemExit("installed wheel is missing the evaluation bundle API")
-if ReplayReady is None or StructuralEvaluationComparison is None:
+if ReplayReady is None or StructuralEvalComparison is None:
     raise SystemExit("installed wheel is missing replay or comparison models")
-bundle_attempt = EvaluationAttemptIdentity(
+bundle_attempt = EvalAttemptId(
     attempt_id="00000000-0000-0000-0000-000000000001"
 )
 if (
-    EvaluationBundlePayload(attempt=bundle_attempt, projections=()).format
-    != EVALUATION_BUNDLE_FORMAT
+    EvalBundlePayload(attempt=bundle_attempt, projections=()).format
+    != EVAL_BUNDLE_FORMAT
     or ProjectionArtifactHeader(
         source_attempt=bundle_attempt,
         kind=ProjectionKind.SCORES,
     ).format
-    != EVALUATION_PROJECTION_FORMAT
+    != EVAL_PROJECTION_FORMAT
 ):
     raise SystemExit("installed wheel evaluation wire constants disagree")
-
-with TemporaryDirectory(prefix="dr-code-wheel-records-") as record_root:
-    executor = host_process_executor(
-        Path(record_root),
-        runtime_executable=Path(sys.executable),
-    )
-    if not isinstance(executor, ProcessExecutor):
-        raise SystemExit("production executor is not a ProcessExecutor")
-    task = HumanEvalTask(
-        task_id="wheel-smoke",
-        prompt="def add_one(x):\n",
-        canonical_solution="    return x + 1\n",
-        entry_point="add_one",
-        test=(
-            "def check(candidate):\n"
-            "    inputs = [(1,)]\n"
-            "    results = [2]\n"
-            "    for inp, expected in zip(inputs, results):\n"
-            "        assertion(candidate(*inp), expected)\n"
-        ),
-    )
-    source = CodeArtifact(source="def add_one(x):\n    return x + 1\n")
-    settings = CodeTestSettings()
-    request = HumanEvalCandidateJobRequest(
-        candidate=MaterializedEvaluationCandidate(
-            identity=EvaluationCandidateIdentity(
-                sample=EvaluationSampleIdentity(sample_id="wheel-smoke"),
-                preprocessing=PreprocessingDefinitionCoordinate(
-                    definition_id="wheel-smoke",
-                    version="1",
-                    steps=(),
-                ),
-                candidate_ordinal=0,
-            ),
-            source=source,
-            source_sha256=Sha256Digest(
-                hashlib.sha256(source.source.encode()).hexdigest()
-            ),
-        ),
-        suites=(
-            HumanEvalEvaluatorSuite(
-                question=MetricQuestionCoordinate(
-                    metric=MetricName.CODE_TEST,
-                    on_key="output",
-                    settings=question_settings(settings),
-                ),
-                task=task,
-                settings=settings,
-            ),
-        ),
-    )
-    result = HumanEvalCandidateJobResult.model_validate(
-        evaluate_humaneval_candidate_job(
-            request.model_dump(mode="json", exclude_computed_fields=True)
-        )
-    )
-    if result.namespace.kind != "loaded" or len(result.suites) != 1:
-        raise SystemExit(f"installed-wheel execution failed: {result!r}")
 
 print(f"installed wheel smoke passed for dr-code {installed_version}")
 """
 
 
 def _project_version() -> str:
-    with (_ROOT / "pyproject.toml").open("rb") as file:
+    with (_ROOT / "packages" / "dr-code" / "pyproject.toml").open(
+        "rb"
+    ) as file:
         document = tomllib.load(file)
     project = document.get("project")
     if not isinstance(project, dict):
@@ -369,6 +268,11 @@ def _built_wheel(version: str) -> Path:
 
 def main() -> int:
     version = _project_version()
+    subprocess.run(
+        ["uv", "build", "--package", "dr-code"],
+        cwd=_ROOT,
+        check=True,
+    )
     wheel = _built_wheel(version)
     with tempfile.TemporaryDirectory(
         prefix="dr-code-installed-wheel-"

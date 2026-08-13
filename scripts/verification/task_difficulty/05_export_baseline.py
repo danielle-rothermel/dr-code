@@ -22,9 +22,9 @@ from workflow_settings import (
     SAMPLING_LOG,
     SELECTED_SAMPLE,
     baseline_directory,
-    evaluation_paths,
+    eval_paths,
     generation_corpus_bundle_path,
-    parse_evaluation_args,
+    parse_eval_args,
     run_directory_path,
 )
 
@@ -112,7 +112,7 @@ def _sampling_results() -> dict[str, object] | None:
     return payload
 
 
-def _evaluation_results(paths) -> dict[str, object] | None:  # noqa: ANN001
+def _eval_results(paths) -> dict[str, object] | None:  # noqa: ANN001
     if not paths.task_results.is_file():
         return None
     tasks = pl.read_parquet(paths.task_results)
@@ -151,12 +151,12 @@ def export_baseline(
     settings=None,  # noqa: ANN001
 ) -> dict[str, object]:
     if settings is None:
-        settings = parse_evaluation_args(None)
+        settings = parse_eval_args(None)
     export_dir = baseline_directory(name)
     export_dir.mkdir(parents=True, exist_ok=True)
 
     run_dir = run_directory_path()
-    paths = evaluation_paths(settings)
+    paths = eval_paths(settings)
     bundle_dir = generation_corpus_bundle_path()
     manifest_summary = load_manifest_summary(bundle_dir)
     stages = _stage_status(run_dir, paths)
@@ -196,7 +196,7 @@ def export_baseline(
         "stages_completed": [stage for stage, done in stages.items() if done],
         "preprocessing": _preprocessing_results(),
         "sampling": _sampling_results(),
-        "evaluation": _evaluation_results(paths),
+        "evaluation": _eval_results(paths),
     }
     payload = {"run_config": run_config, "results": results}
 
@@ -283,7 +283,7 @@ def _parse_args(
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments, remaining = _parse_args(argv)
-    settings = parse_evaluation_args(None, remaining)
+    settings = parse_eval_args(None, remaining)
     payload = export_baseline(arguments.baseline_name, settings=settings)
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0

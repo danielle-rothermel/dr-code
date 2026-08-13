@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 BASELINE_NAME="${1:-pre-106}"
 
 REVIEWED_CORPUS="${HOME}/drotherm/data/code-comp/generation-corpora/2026-08-08-reviewed/human_eval"
-FIXTURE_CORPUS="${REPO_ROOT}/tests/fixtures/generation_corpus/human_eval"
+FIXTURE_CORPUS="${REPO_ROOT}/packages/drc-generation-corpus/tests/fixtures/generation_corpus/human_eval"
 REVIEWED_MANIFEST_SHA256="fc6a3e6bb33d446d3ccf98bd33a44b7c05225a79340c643859b0d68f9d3d0728"
 
 CORPUS_BUNDLE="${DR_CODE_GENERATION_CORPUS_BUNDLE:-${REVIEWED_CORPUS}}"
@@ -21,11 +21,11 @@ else
 fi
 RUN_DIR="${DR_CODE_TASK_DIFFICULTY_RUN_DIR:-${HOME}/drotherm/data/.codex/dr-code/task-difficulty-directional/runs/${BASELINE_NAME}}"
 EXPORT_DIR="${REPO_ROOT}/scripts/verification/task_difficulty/baseline/${BASELINE_NAME}"
-WORKERS="${DR_CODE_EVALUATION_WORKERS:-16}"
-TIMEOUT="${DR_CODE_EVALUATION_TIMEOUT_SECONDS:-120}"
+WORKERS="${DR_CODE_EVAL_WORKERS:-16}"
+TIMEOUT="${DR_CODE_EVAL_TIMEOUT_SECONDS:-120}"
 PREPROCESS_TIMEOUT="${DR_CODE_PREPROCESS_TIMEOUT_SECONDS:-600}"
 TASKS_PER_GROUP="${DR_CODE_SAMPLE_TASKS_PER_GROUP:-40}"
-EVALUATION_VENV="${DR_CODE_EVALUATION_VENV:-${REPO_ROOT}/.evaluation-venv}"
+EVAL_VENV="${DR_CODE_EVAL_VENV:-${REPO_ROOT}/.evaluation-venv}"
 
 usage() {
   cat <<EOF
@@ -53,12 +53,12 @@ Environment overrides:
   DR_CODE_GENERATION_CORPUS_BUNDLE
   DR_CODE_EXPECTED_MANIFEST_SHA256
   DR_CODE_TASK_DIFFICULTY_RUN_DIR
-  DR_CODE_EVALUATION_WORKERS
-  DR_CODE_EVALUATION_TIMEOUT_SECONDS
+  DR_CODE_EVAL_WORKERS
+  DR_CODE_EVAL_TIMEOUT_SECONDS
   DR_CODE_PREPROCESS_TIMEOUT_SECONDS (per-item stage-1 watchdog; 0/none disables)
   DR_CODE_SAMPLE_TASKS_PER_GROUP (stage-2 tasks per group; 0/all keeps every task)
-  DR_CODE_EVALUATION_PYTHON
-  DR_CODE_EVALUATION_VENV
+  DR_CODE_EVAL_PYTHON
+  DR_CODE_EVAL_VENV
 EOF
 }
 
@@ -106,16 +106,16 @@ uv run python scripts/verification/task_difficulty/02_select_balanced_sample.py 
   --tasks-per-group "${TASKS_PER_GROUP}" \
   2>&1 | tee -a "${RUN_LOG}"
 
-if [[ -z "${DR_CODE_EVALUATION_PYTHON:-}" ]]; then
-  if [[ ! -x "${EVALUATION_VENV}/bin/python3" ]]; then
-    echo "Creating evaluation venv at ${EVALUATION_VENV}" | tee -a "${RUN_LOG}"
-    python3 -m venv --copies "${EVALUATION_VENV}"
-    uv pip install --python "${EVALUATION_VENV}/bin/python3" .
+if [[ -z "${DR_CODE_EVAL_PYTHON:-}" ]]; then
+  if [[ ! -x "${EVAL_VENV}/bin/python3" ]]; then
+    echo "Creating evaluation venv at ${EVAL_VENV}" | tee -a "${RUN_LOG}"
+    python3 -m venv --copies "${EVAL_VENV}"
+    uv pip install --python "${EVAL_VENV}/bin/python3" .
   fi
-  export DR_CODE_EVALUATION_PYTHON="${EVALUATION_VENV}/bin/python3"
+  export DR_CODE_EVAL_PYTHON="${EVAL_VENV}/bin/python3"
 fi
 
-echo "Stage 3: evaluate sample with ${DR_CODE_EVALUATION_PYTHON}" | tee -a "${RUN_LOG}"
+echo "Stage 3: evaluate sample with ${DR_CODE_EVAL_PYTHON}" | tee -a "${RUN_LOG}"
 uv run python scripts/verification/task_difficulty/03_evaluate_sample.py \
   --workers "${WORKERS}" \
   --timeout-seconds "${TIMEOUT}" \

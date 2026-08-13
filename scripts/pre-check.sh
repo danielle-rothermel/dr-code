@@ -27,7 +27,10 @@ run_viewer() {
 }
 
 run_report "locked environment" "${CACHE_DIR}/uv-sync.txt" \
-    uv sync --locked
+    uv sync --locked --group dev
+
+run_report "addon environment" "${CACHE_DIR}/uv-sync-addons.txt" \
+    uv sync --locked --group dev --group addons
 
 case "${1:-}" in
     "") ;;
@@ -55,8 +58,11 @@ run_report "ty check" "${CACHE_DIR}/ty-check.txt" \
 run_report ".defs schema lint" "${CACHE_DIR}/defs-lint.txt" \
     uvx tombi@1.2.5 lint --offline \
         .defs/terms.toml .defs/contracts.toml || status=1
-run_report "Python tests" "${CACHE_DIR}/pytest.txt" \
-    uv run pytest || status=1
+run_report "Python core tests" "${CACHE_DIR}/pytest-core.txt" \
+    uv sync --locked --package dr-code --group dev && \
+    DR_CODE_CORE_ISOLATION=1 uv run --package dr-code --group dev pytest packages/dr-code/tests -m 'not postgres' || status=1
+run_report "Python addon tests" "${CACHE_DIR}/pytest-addons.txt" \
+    scripts/run_addon_tests.sh || status=1
 
 if command -v corepack >/dev/null 2>&1; then
     run_report "viewer install" "${CACHE_DIR}/viewer-install.txt" \
@@ -65,8 +71,6 @@ if command -v corepack >/dev/null 2>&1; then
         run_viewer typecheck || status=1
     run_report "viewer build" "${CACHE_DIR}/viewer-build.txt" \
         run_viewer build || status=1
-    run_report "viewer tests" "${CACHE_DIR}/viewer-test.txt" \
-        run_viewer test || status=1
 else
     printf '\n==> viewer checks failed (corepack not found)\n' >&2
     status=1
