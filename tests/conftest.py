@@ -17,6 +17,25 @@ _TESTS_ROOT = str(Path(__file__).resolve().parent)
 if _TESTS_ROOT not in sys.path:
     sys.path.insert(0, _TESTS_ROOT)
 
+_ADDON_MARKERS: tuple[tuple[str, str], ...] = (
+    ("humaneval", "humaneval"),
+    ("synthetic", "synthetic"),
+    ("generation_corpus", "generation_corpus"),
+)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    tests_root = Path(_TESTS_ROOT)
+    for item in items:
+        try:
+            relative = item.path.relative_to(tests_root).as_posix()
+        except ValueError:
+            continue
+        for prefix, marker_name in _ADDON_MARKERS:
+            if relative == prefix or relative.startswith(f"{prefix}/"):
+                item.add_marker(getattr(pytest.mark, marker_name))
+                break
+
 
 def _bounded_environment() -> dict[str, str]:
     environment = os.environ.copy()

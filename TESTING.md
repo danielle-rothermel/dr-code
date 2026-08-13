@@ -44,7 +44,7 @@ This runs, in order:
 3. `uv run ruff check .`
 4. `uv run ty check`
 5. `.defs` schema lint (`tombi` on `terms.toml` and `contracts.toml`)
-6. `uv run pytest` (full Python suite, serial)
+6. `uv run pytest` (core Python suite, serial; domain extensions deselected)
 7. Viewer install, typecheck, and build (when `corepack` is available)
 
 To apply autofixes for Ruff and ty, then rerun the checks:
@@ -57,12 +57,26 @@ Check output is cached under `.cache/pre-check/`.
 
 ## Python tests
 
-Pytest covers `src/dr_code/` only. Repository scripts under `scripts/`, repo
-metadata under `.defs/`, and the viewer workspace have no pytest coverage in
-`tests/`. Scripts and the task-difficulty workflow are verified manually when
-needed.
+Pytest covers `src/dr_code/`. The default suite is the **core platform**:
+preprocessing, trace, metrics, caching, core, and generic evaluation machinery.
+Repository scripts, `.defs`, and the viewer workspace have no pytest coverage.
 
-The canonical Python command is serial pytest:
+Three **domain extensions** stay in the repository but are opt-in via pytest
+markers:
+
+| Marker | Package | Default suite | Runner |
+|--------|---------|---------------|--------|
+| `humaneval` | `src/dr_code/humaneval/` | deselected | `scripts/run_humaneval_tests.sh` |
+| `synthetic` | `src/dr_code/synthetic/` | deselected | `scripts/run_synthetic_tests.sh` |
+| `generation_corpus` | `src/dr_code/generation_corpus/` | deselected | `scripts/run_generation_corpus_tests.sh` |
+
+Run every extension test with:
+
+```console
+scripts/run_addon_tests.sh
+```
+
+The canonical **core** command is serial pytest:
 
 ```console
 uv run pytest
@@ -72,7 +86,8 @@ Pytest is configured in `pyproject.toml`:
 
 - Test root: `tests/`
 - Import mode: `importlib`
-- Tests marked `postgres` are **deselected by default** (`-m 'not postgres'`)
+- Default marker expression deselects `postgres`, `humaneval`, `synthetic`, and
+  `generation_corpus`
 
 For faster local feedback, pytest-xdist is fine locally; CI stays serial:
 
@@ -80,7 +95,7 @@ For faster local feedback, pytest-xdist is fine locally; CI stays serial:
 uv run --with pytest-xdist pytest -n 4
 ```
 
-Run a focused subset while iterating:
+Run a focused core subset while iterating:
 
 ```console
 uv run pytest tests/evaluation/test_batch.py
@@ -117,8 +132,9 @@ corepack pnpm --filter @dr-code/gallery dev
 GitHub Actions (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull
 requests:
 
-- **Python** (3.13 and 3.14): locked sync, ruff format/check, ty, `.defs` lint
-  on 3.13 only, serial `uv run pytest`
+- **Python core** (3.13 and 3.14): locked sync, ruff format/check, ty, `.defs`
+  lint on 3.13 only, serial `uv run pytest` (extensions deselected)
+- **Python add-ons** (3.13 and 3.14): `scripts/run_addon_tests.sh`
 - **Viewer**: frozen install, typecheck, build
 
 Release tags additionally smoke-test the built wheel via

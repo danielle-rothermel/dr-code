@@ -153,7 +153,7 @@ execution record. Declaring the reduction on the profile keeps the reduction a
 named, versioned part of the scoring identity rather than a wired-in default
 that silently decides what a recorded score means."""
 date = "2026-08-09"
-check = "uv run pytest tests/humaneval/test_projection.py tests/humaneval/test_metric_operator.py"
+check = "uv run pytest -m humaneval tests/humaneval/test_projection.py tests/humaneval/test_metric_operator.py"
 
 [[contracts]]
 title = "Synthetic coordinates determine sample identity"
@@ -164,7 +164,7 @@ recipe cannot claim the same identity."""
 rationale = """
 Recorded identities, not ambient registry state, make datasets reproducible."""
 date = "2026-08-09"
-check = "uv run pytest tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
+check = "uv run pytest -m synthetic tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
 
 [[contracts]]
 title = "Candidate execution jobs are bounded and outcome mapping is closed"
@@ -192,7 +192,7 @@ candidate's evidence is what later reflection reads, and it should survive by
 default rather than because one script happened to name a bound; wall time and
 input size stay explicit because only the caller knows its workload."""
 date = "2026-08-09"
-check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
+check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
 title = "Parallel preprocessing runs on the dr-exec worker pool"
@@ -273,7 +273,7 @@ rationale = """
 One execution boundary prevents script-specific process behavior and unbounded
 concurrency while preserving named failure attribution."""
 date = "2026-08-09"
-check = "uv run pytest tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py tests/evaluation/test_batch.py"
+check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py tests/evaluation/test_batch.py"
 
 [[contracts]]
 title = "Run grade joins the candidate execution cache key"
@@ -335,7 +335,7 @@ The union arms already separate the three owners structurally; naming them
 gives the shared attribution channel typed domain values that survive
 serialization instead of a free-form string that only a reader can interpret."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_candidate_execution.py tests/humaneval/test_projection_wire_format.py"
+check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' tests/evaluation/test_candidate_execution.py tests/humaneval/test_projection_wire_format.py"
 
 [[contracts]]
 title = "Evaluation batches bound resident and aggregate work"
@@ -622,7 +622,7 @@ Collapsing incomplete records, encoder outputs, generation records, or task
 versions into one row grain invents joins and corrupts analysis denominators;
 derived retry identities similarly overstate flattened historical evidence."""
 date = "2026-08-08"
-check = "uv run pytest tests/generation_corpus"
+check = "uv run pytest -m generation_corpus tests/generation_corpus"
 
 [[contracts]]
 title = "Evidence writes join the caller's transaction"

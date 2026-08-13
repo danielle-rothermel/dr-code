@@ -63,6 +63,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ty check
       - run: uv run pytest
+      - run: scripts/run_addon_tests.sh
 
   viewer:
     name: Validate viewer

@@ -69,12 +69,17 @@ testpaths = ["tests"]
 # Test directories carry no package markers, so mirrored basenames
 # (tests/metrics/test_definition.py, tests/preprocessing/test_definition.py)
 # need importlib import mode rather than sys.path insertion.
-addopts = "--import-mode=importlib -m 'not postgres'"
+addopts = "--import-mode=importlib -m 'not postgres and not humaneval and not synthetic and not generation_corpus'"
 markers = [
     # Opt-in: needs a live PostgreSQL server via DR_STORE_POSTGRES_DSN. Set
     # DR_STORE_ROOT to a dr-store checkout and run:
     #   scripts/run_postgres_tests.sh
     "postgres: requires a PostgreSQL-backed dr-store",
+    # Opt-in domain extensions. Run via scripts/run_*_tests.sh or
+    # scripts/run_addon_tests.sh.
+    "humaneval: HumanEval+ benchmark adapter tests",
+    "synthetic: synthetic corruption dataset tests",
+    "generation_corpus: generation corpus extraction tests",
 ]
 
 [tool.ruff]
