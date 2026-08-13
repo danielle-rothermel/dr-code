@@ -57,7 +57,8 @@ from dr_code.evaluation import (
     EvalSampleMetadata,
     EvalSlotId,
     EvalSourceId,
-    FrozenCandidateEvalInput,
+    SampleWithCandidatesData,
+    SlotData,
     MaterializedEvalCandidate,
     MetricRecordProjectionRow,
     ProjectionKind,
@@ -415,7 +416,7 @@ def build_task_difficulty_batch_request(
     tasks = load_humaneval_tasks(snapshot_path, task_ids)
     preprocessing = _exhaustive_preprocessing_coordinate()
 
-    inputs: list[FrozenCandidateEvalInput] = []
+    inputs: list[SlotData] = []
     total_candidates = 0
     for task_id in task_ids:
         task = tasks[task_id]
@@ -454,16 +455,18 @@ def build_task_difficulty_batch_request(
             )
             total_candidates += len(candidates)
             inputs.append(
-                FrozenCandidateEvalInput(
+                SlotData(
                     slot=EvalSlotId(
                         task_set=plan.task_set.coordinate,
                         sampling_plan=plan.sampling_plan.coordinate,
                         task_id=task_id,
                         sample_index=sample_index,
                     ),
-                    sample=sample,
-                    preprocessing=preprocessing,
-                    candidates=candidates,
+                    data=SampleWithCandidatesData(
+                        sample=sample,
+                        preprocessing=preprocessing,
+                        candidates=candidates,
+                    ),
                 )
             )
 
@@ -532,16 +535,18 @@ def build_preflight_batch_request_for_task(
         cache_namespace=_WORKFLOW_CACHE_NAMESPACE,
         run_grade=RunGrade.SELECTION,
         inputs=(
-            FrozenCandidateEvalInput(
+            SlotData(
                 slot=EvalSlotId(
                     task_set=plan.task_set.coordinate,
                     sampling_plan=plan.sampling_plan.coordinate,
                     task_id=task.task_id,
                     sample_index=0,
                 ),
-                sample=sample,
-                preprocessing=preprocessing,
-                candidates=candidates,
+                data=SampleWithCandidatesData(
+                    sample=sample,
+                    preprocessing=preprocessing,
+                    candidates=candidates,
+                ),
             ),
         ),
         record_placement=RecordPlacement.OBJECT_STORE,

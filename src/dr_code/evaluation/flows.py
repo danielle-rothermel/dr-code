@@ -11,7 +11,7 @@ from dr_code.evaluation._batch import trace_candidate_sources
 from dr_code.evaluation.batch import (
     EvalBatchRequest,
     EvalBatchResult,
-    SampleEvalInput,
+    SampleData,
     evaluate_batch,
 )
 from dr_code.evaluation.comparison import (
@@ -168,9 +168,9 @@ def _corpus_texts(request: EvalBatchRequest) -> tuple[str, ...]:
 
     return tuple(
         dict.fromkeys(
-            item.sample.raw_input.text
+            item.data.sample.raw_input.text
             for item in request.inputs
-            if isinstance(item, SampleEvalInput)
+            if isinstance(item.data, SampleData)
         )
     )
 
@@ -187,8 +187,8 @@ def _request_without_texts(
         item
         for item in request.inputs
         if not (
-            isinstance(item, SampleEvalInput)
-            and item.sample.raw_input.text in excluded_texts
+            isinstance(item.data, SampleData)
+            and item.data.sample.raw_input.text in excluded_texts
         )
     )
     if not filtered:

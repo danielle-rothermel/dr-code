@@ -30,7 +30,7 @@ pytestmark = pytest.mark.asyncio
 def _with_two_candidates(
     batch_request: EvalBatchRequest,
 ) -> EvalBatchRequest:
-    selected_sample = batch_request.inputs[0].sample.model_copy(
+    selected_sample = batch_request.inputs[0].data.sample.model_copy(
         update={
             "raw_input": TextArtifact(
                 text=(
@@ -40,11 +40,16 @@ def _with_two_candidates(
             )
         }
     )
+    input_item = batch_request.inputs[0]
     return batch_request.model_copy(
         update={
             "inputs": (
-                batch_request.inputs[0].model_copy(
-                    update={"sample": selected_sample}
+                input_item.model_copy(
+                    update={
+                        "data": input_item.data.model_copy(
+                            update={"sample": selected_sample}
+                        )
+                    }
                 ),
             )
         }

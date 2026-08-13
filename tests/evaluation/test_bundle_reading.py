@@ -91,7 +91,7 @@ async def test_publication_rejects_an_unclosed_nested_bundle_reference(
 ) -> None:
     batch_request = request(projections=())
     item = batch_request.inputs[0]
-    provenance = item.sample.metadata.provenance.model_copy(
+    provenance = item.data.sample.metadata.provenance.model_copy(
         update={
             "source_reference": BundleRecordReference(
                 artifact_name="inputs-0.json",
@@ -102,16 +102,24 @@ async def test_publication_rejects_an_unclosed_nested_bundle_reference(
             )
         }
     )
-    selected_sample = item.sample.model_copy(
+    selected_sample = item.data.sample.model_copy(
         update={
-            "metadata": item.sample.metadata.model_copy(
+            "metadata": item.data.sample.metadata.model_copy(
                 update={"provenance": provenance}
             )
         }
     )
     batch_request = batch_request.model_copy(
         update={
-            "inputs": (item.model_copy(update={"sample": selected_sample}),)
+            "inputs": (
+                item.model_copy(
+                    update={
+                        "data": item.data.model_copy(
+                            update={"sample": selected_sample}
+                        )
+                    }
+                ),
+            )
         }
     )
     execution_cache = cache(BatchStore())

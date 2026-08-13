@@ -49,9 +49,9 @@ async def stored_source_request(
     for item in batch_request.inputs:
         source_object, _ = await object_store.put(
             "tests/input",
-            {"sample_id": item.sample.metadata.identity.sample_id},
+            {"sample_id": item.data.sample.metadata.identity.sample_id},
         )
-        provenance = item.sample.metadata.provenance.model_copy(
+        provenance = item.data.sample.metadata.provenance.model_copy(
             update={
                 "source_reference": StoredRecordReference(
                     reference=source_object,
@@ -59,11 +59,21 @@ async def stored_source_request(
                 )
             }
         )
-        metadata = item.sample.metadata.model_copy(
+        metadata = item.data.sample.metadata.model_copy(
             update={"provenance": provenance}
         )
-        selected_sample = item.sample.model_copy(update={"metadata": metadata})
-        inputs.append(item.model_copy(update={"sample": selected_sample}))
+        selected_sample = item.data.sample.model_copy(
+            update={"metadata": metadata}
+        )
+        inputs.append(
+            item.model_copy(
+                update={
+                    "data": item.data.model_copy(
+                        update={"sample": selected_sample}
+                    )
+                }
+            )
+        )
     return batch_request.model_copy(update={"inputs": tuple(inputs)})
 
 

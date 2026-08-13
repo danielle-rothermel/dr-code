@@ -40,10 +40,10 @@ from dr_code.evaluation.aggregation import (
 )
 from dr_code.evaluation.batch import (
     EvalBatchRequest,
-    EvalInput,
-    FrozenCandidateEvalInput,
     ProjectionKind,
-    SampleEvalInput,
+    SampleData,
+    SampleWithCandidatesData,
+    SlotData,
 )
 from dr_code.evaluation.execution import (
     build_candidate_execution_job,
@@ -137,7 +137,7 @@ class _RecordPlacementSink(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class _PreparedInput:
-    input: EvalInput
+    input: SlotData
     trace: Trace
     absence: Absent | None
     candidates: tuple[MaterializedEvalCandidate, ...]
@@ -300,15 +300,15 @@ async def _assemble(
 ) -> _EvalBatchAssembly:
     runner = (
         bind_preprocessing(request.plan.procedure.preprocessing)
-        if any(isinstance(item, SampleEvalInput) for item in request.inputs)
+        if any(isinstance(item.data, SampleData) for item in request.inputs)
         else None
     )
     traces_by_text: Mapping[str, Trace] = preprocessed_traces or {}
     if runner is not None and preprocessed_traces is None:
         sample_texts = [
-            item.sample.raw_input.text
+            item.data.sample.raw_input.text
             for item in request.inputs
-            if isinstance(item, SampleEvalInput)
+            if isinstance(item.data, SampleData)
         ]
         if sample_texts:
             traces_by_text = await preprocess_batch(
@@ -419,7 +419,7 @@ async def _place_prepared_inputs(
         if prepared.absence is not None:
             record: SampleEvalRecord = PreprocessingAbsentSampleRecord(
                 slot=prepared.input.slot,
-                sample=prepared.input.sample.metadata,
+                sample=prepared.input.data.sample.metadata,
                 trace=serialize_trace(prepared.trace),
                 absence=prepared.absence,
             )
@@ -427,7 +427,7 @@ async def _place_prepared_inputs(
         elif not prepared.candidates:
             record = NoCandidatesSampleRecord(
                 slot=prepared.input.slot,
-                sample=prepared.input.sample.metadata,
+                sample=prepared.input.data.sample.metadata,
                 trace=serialize_trace(prepared.trace),
             )
             execution = _ExecutionWindow((), (), 0, None)
@@ -452,7 +452,7 @@ async def _place_prepared_inputs(
             )
             record = EvaluatedSampleRecord(
                 slot=prepared.input.slot,
-                sample=prepared.input.sample.metadata,
+                sample=prepared.input.data.sample.metadata,
                 trace=serialize_trace(prepared.trace),
                 candidates=prepared.candidates,
                 executions=execution.records,
@@ -506,7 +506,7 @@ async def _place_prepared_inputs(
     members.extend(
         EvalMemberRecord(
             slot=item.slot,
-            sample=item.sample.metadata.identity,
+            sample=item.data.sample.metadata.identity,
             record=None,
         )
         for item in request.inputs[len(members) :]
@@ -538,22 +538,22 @@ async def _place_prepared_inputs(
 
 def _prepare_input(
     request: EvalBatchRequest,
-    item: EvalInput,
+    item: SlotData,
     *,
     runner: BoundPreprocessingRunner | None,
     traces_by_text: Mapping[str, Trace] | None = None,
 ) -> _PreparedInput:
-    if isinstance(item, FrozenCandidateEvalInput):
-        trace = _frozen_candidate_trace(item)
-        candidates = item.candidates
+    if isinstance(item.data, SampleWithCandidatesData):
+        trace = _frozen_candidate_trace(item.data)
+        candidates = item.data.candidates
         absence = None
     else:
         assert runner is not None
-        text = item.sample.raw_input.text
+        text = item.data.sample.raw_input.text
         precomputed = (traces_by_text or {}).get(text)
         if precomputed is not None:
             trace_input = precomputed.values.get("input")
-            if trace_input != item.sample.raw_input:
+            if trace_input != item.data.sample.raw_input:
                 raise ValueError(
                     "preprocessed trace input does not match the sample "
                     "raw_input"
@@ -561,14 +561,14 @@ def _prepare_input(
         raw_trace = (
             precomputed
             if precomputed is not None
-            else runner.run(item.sample.raw_input)
+            else runner.run(item.data.sample.raw_input)
         )
         trace = Trace(
             values={
                 **dict(raw_trace.values),
                 **{
                     auxiliary.trace_key: auxiliary.artifact
-                    for auxiliary in item.sample.auxiliary_artifacts
+                    for auxiliary in item.data.sample.auxiliary_artifacts
                 },
             },
             producer=raw_trace.producer,
@@ -577,7 +577,9 @@ def _prepare_input(
         output = trace.value(OUTPUT_KEY)
         absence = output if isinstance(output, Absent) else None
         candidates = (
-            () if absence is not None else _materialize_candidates(item, trace)
+            ()
+            if absence is not None
+            else _materialize_candidates(item.data, trace)
         )
     plans = tuple(
         _plan_candidate_metrics(
@@ -600,22 +602,22 @@ def _prepare_input(
     )
 
 
-def _frozen_candidate_trace(item: FrozenCandidateEvalInput) -> Trace:
+def _frozen_candidate_trace(data: SampleWithCandidatesData) -> Trace:
     return Trace(
         values={
-            "input": item.sample.raw_input,
+            "input": data.sample.raw_input,
             "output": (
-                item.candidates[0].source
-                if item.candidates
-                else item.sample.raw_input
+                data.candidates[0].source
+                if data.candidates
+                else data.sample.raw_input
             ),
             **{
                 auxiliary.trace_key: auxiliary.artifact
-                for auxiliary in item.sample.auxiliary_artifacts
+                for auxiliary in data.sample.auxiliary_artifacts
             },
         },
         producer=ExternalPreprocessingTraceProducer(
-            definition=item.preprocessing
+            definition=data.preprocessing
         ),
     )
 
@@ -646,7 +648,7 @@ def trace_candidate_sources(
 
 
 def _materialize_candidates(
-    item: EvalInput,
+    data: SampleData,
     trace: Trace,
 ) -> tuple[MaterializedEvalCandidate, ...]:
     sources = trace_candidate_sources(trace)
@@ -664,7 +666,7 @@ def _materialize_candidates(
     return tuple(
         MaterializedEvalCandidate(
             identity=EvalCandidateId(
-                sample=item.sample.metadata.identity,
+                sample=data.sample.metadata.identity,
                 preprocessing=preprocessing,
                 candidate_ordinal=ordinal,
             ),

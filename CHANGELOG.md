@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Restructured evaluation batch inputs into nested `SlotData` with
+  discriminated `SampleData` or `SampleWithCandidatesData` payloads, replacing
+  the flat `SampleEvalInput` / `FrozenCandidateEvalInput` union. Persisted
+  request JSON now nests payload fields under `data`; inner `kind` values
+  remain `"sample"` and `"frozen_candidates"`.
+
 ## 0.1.8 - 2026-08-12
 
 - Refreshed all direct `dr-*` dependency pins to their latest releases:

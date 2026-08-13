@@ -12,12 +12,13 @@ from dr_code.evaluation.batch import (
     CandidateJobBudget,
     EvalBatchRequest,
     EvalBatchResult,
-    FrozenCandidateEvalInput,
     ProjectionRequest,
     RecordPlacement,
     RunGrade,
-    SampleEvalInput,
+    SampleData,
+    SampleWithCandidatesData,
     ShardLimits,
+    SlotData,
     WindowLimits,
     _evaluate_batch_with_replay,
 )
@@ -216,10 +217,10 @@ def _support_error(
                 restored.attempt.plan,
                 mode=ReplayMode.MATERIALIZED_CANDIDATES,
             )
-            assert isinstance(replay_input, FrozenCandidateEvalInput)
+            assert isinstance(replay_input.data, SampleWithCandidatesData)
             from dr_code.evaluation._batch import _frozen_candidate_trace
 
-            trace = _frozen_candidate_trace(replay_input)
+            trace = _frozen_candidate_trace(replay_input.data)
             try:
                 plans = tuple(
                     _plan_candidate_metrics(
@@ -227,7 +228,7 @@ def _support_error(
                         trace,
                         candidate,
                     )
-                    for candidate in replay_input.candidates
+                    for candidate in replay_input.data.candidates
                 )
             except (TypeError, ValueError, WiringError) as error:
                 return f"recorded candidate evidence is unsupported: {error}"
@@ -255,24 +256,29 @@ def _replay_input(
     plan: EvalPlan,
     *,
     mode: ReplayMode,
-) -> SampleEvalInput | FrozenCandidateEvalInput:
+) -> SlotData:
     sample = _sample_from_record(record, plan)
     if mode is ReplayMode.SAMPLES:
-        return SampleEvalInput(slot=record.slot, sample=sample)
+        return SlotData(
+            slot=record.slot,
+            data=SampleData(sample=sample),
+        )
 
     producer = record.trace.producer
     assert isinstance(
         producer,
         PreprocessingTraceProducer | ExternalPreprocessingTraceProducer,
     )
-    return FrozenCandidateEvalInput(
+    return SlotData(
         slot=record.slot,
-        sample=sample,
-        preprocessing=producer.definition,
-        candidates=(
-            record.candidates
-            if isinstance(record, EvaluatedSampleRecord)
-            else ()
+        data=SampleWithCandidatesData(
+            sample=sample,
+            preprocessing=producer.definition,
+            candidates=(
+                record.candidates
+                if isinstance(record, EvaluatedSampleRecord)
+                else ()
+            ),
         ),
     )
 

@@ -12,11 +12,11 @@ from _executor_stubs import importable_json_executor, scripted_executor
 from dr_code.evaluation import (
     EvalAttemptId,
     EvaluatedSampleRecord,
-    FrozenCandidateEvalInput,
     ReplayMode,
     ReplayReady,
     ReplaySource,
-    SampleEvalInput,
+    SampleData,
+    SampleWithCandidatesData,
     preflight_replay,
     replay_eval_attempt,
     restore_eval_attempt,
@@ -76,14 +76,14 @@ async def test_sample_replay_reconstructs_raw_input_and_auxiliary_artifacts(
 
     assert isinstance(preflight, ReplayReady)
     replay_input = preflight.request.inputs[0]
-    assert isinstance(replay_input, SampleEvalInput)
+    assert isinstance(replay_input.data, SampleData)
     assert (
-        replay_input.sample.raw_input
+        replay_input.data.sample.raw_input
         == source.samples[0].trace.values["input"]
     )
     assert tuple(
         artifact.trace_key
-        for artifact in replay_input.sample.auxiliary_artifacts
+        for artifact in replay_input.data.sample.auxiliary_artifacts
     ) == ("task",)
 
     replay_root = tmp_path / "replay"
@@ -114,9 +114,9 @@ async def test_materialized_candidate_replay_bypasses_preprocessing_and_persists
     preflight = _preflight(source, ReplayMode.MATERIALIZED_CANDIDATES)
     assert isinstance(preflight, ReplayReady)
     replay_input = preflight.request.inputs[0]
-    assert isinstance(replay_input, FrozenCandidateEvalInput)
+    assert isinstance(replay_input.data, SampleWithCandidatesData)
     assert isinstance(source.samples[0], EvaluatedSampleRecord)
-    assert replay_input.candidates == source.samples[0].candidates
+    assert replay_input.data.candidates == source.samples[0].candidates
 
     def reject_preprocessing(*args: object, **kwargs: object) -> object:
         raise AssertionError("candidate replay must bypass preprocessing")

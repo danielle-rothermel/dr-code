@@ -137,7 +137,7 @@ async def _two_candidate_record(
     """Evaluate one sample whose submission yields two ordered candidates."""
 
     batch_request = request()
-    selected_sample = batch_request.inputs[0].sample.model_copy(
+    selected_sample = batch_request.inputs[0].data.sample.model_copy(
         update={
             "raw_input": TextArtifact(
                 text=(
@@ -147,11 +147,16 @@ async def _two_candidate_record(
             )
         }
     )
+    input_item = batch_request.inputs[0]
     batch_request = batch_request.model_copy(
         update={
             "inputs": (
-                batch_request.inputs[0].model_copy(
-                    update={"sample": selected_sample}
+                input_item.model_copy(
+                    update={
+                        "data": input_item.data.model_copy(
+                            update={"sample": selected_sample}
+                        )
+                    }
                 ),
             )
         }
@@ -177,14 +182,19 @@ async def _one_candidate_record(
     """Evaluate one sample whose submission yields exactly one candidate."""
 
     batch_request = request()
-    selected_sample = batch_request.inputs[0].sample.model_copy(
+    selected_sample = batch_request.inputs[0].data.sample.model_copy(
         update={"raw_input": TextArtifact(text=f"```python\n{source}\n```")}
     )
+    input_item = batch_request.inputs[0]
     batch_request = batch_request.model_copy(
         update={
             "inputs": (
-                batch_request.inputs[0].model_copy(
-                    update={"sample": selected_sample}
+                input_item.model_copy(
+                    update={
+                        "data": input_item.data.model_copy(
+                            update={"sample": selected_sample}
+                        )
+                    }
                 ),
             )
         }
@@ -499,8 +509,12 @@ async def test_blank_and_unextractable_submissions_score_zero_under_every_reduct
     inputs = tuple(
         item.model_copy(
             update={
-                "sample": item.sample.model_copy(
-                    update={"raw_input": TextArtifact(text=text)}
+                "data": item.data.model_copy(
+                    update={
+                        "sample": item.data.sample.model_copy(
+                            update={"raw_input": TextArtifact(text=text)}
+                        )
+                    }
                 )
             }
         )

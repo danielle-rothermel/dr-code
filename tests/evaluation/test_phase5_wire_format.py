@@ -47,7 +47,7 @@ def test_comparison_wire_keys_and_discriminators_are_exact() -> None:
         StructuralRecordComparison(
             identity=StructuralMemberId(
                 slot=request().inputs[0].slot,
-                sample=request().inputs[0].sample.metadata.identity,
+                sample=request().inputs[0].data.sample.metadata.identity,
             ),
             left=reference(),
             right=reference(1),

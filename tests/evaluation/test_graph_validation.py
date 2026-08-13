@@ -176,7 +176,7 @@ async def test_graph_rejects_completed_result_candidate_mismatch() -> None:
         validate_sample_record_graph(
             record.model_copy(update={"executions": (wrong_execution,)}),
             slot=batch_request.inputs[0].slot,
-            sample=batch_request.inputs[0].sample.metadata.identity,
+            sample=batch_request.inputs[0].data.sample.metadata.identity,
             plan=batch_request.plan,
             runtime=batch_request.runtime,
             cache_namespace=batch_request.cache_namespace,

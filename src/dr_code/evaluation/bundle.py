@@ -158,7 +158,7 @@ class _RecordPlacement:
         validate_sample_record_graph(
             record,
             slot=expected.slot,
-            sample=expected.sample.metadata.identity,
+            sample=expected.data.sample.metadata.identity,
             plan=self._request.plan,
             runtime=self._request.runtime,
             cache_namespace=self._request.cache_namespace,

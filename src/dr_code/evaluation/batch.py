@@ -82,15 +82,13 @@ class CandidateJobBudget(FrozenModel):
         return self
 
 
-class SampleEvalInput(FrozenModel):
+class SampleData(FrozenModel):
     kind: Literal["sample"] = "sample"
-    slot: EvalSlotId
     sample: EvalSample
 
 
-class FrozenCandidateEvalInput(FrozenModel):
+class SampleWithCandidatesData(FrozenModel):
     kind: Literal["frozen_candidates"] = "frozen_candidates"
-    slot: EvalSlotId
     sample: EvalSample
     preprocessing: PreprocessingDefinitionCoordinate
     candidates: tuple[MaterializedEvalCandidate, ...]
@@ -123,10 +121,15 @@ class FrozenCandidateEvalInput(FrozenModel):
         return self
 
 
-EvalInput: TypeAlias = Annotated[
-    SampleEvalInput | FrozenCandidateEvalInput,
+SlotPayload: TypeAlias = Annotated[
+    SampleData | SampleWithCandidatesData,
     Field(discriminator="kind"),
 ]
+
+
+class SlotData(FrozenModel):
+    slot: EvalSlotId
+    data: SlotPayload
 
 
 @verify(UNIQUE)
@@ -169,7 +172,7 @@ class EvalBatchRequest(FrozenModel):
     # Required, never defaulted: a silent grade would let a trial outcome
     # serve a selection-grade run from the same cache key.
     run_grade: RunGrade
-    inputs: tuple[EvalInput, ...] = Field(min_length=1)
+    inputs: tuple[SlotData, ...] = Field(min_length=1)
     record_placement: RecordPlacement
     projections: tuple[ProjectionRequest, ...]
     attempt_limits: AttemptLimits
@@ -189,9 +192,9 @@ class EvalBatchRequest(FrozenModel):
             raise ValueError("input slot count exceeds max_slots")
 
         frozen_candidate_count = sum(
-            len(item.candidates)
+            len(item.data.candidates)
             for item in self.inputs
-            if isinstance(item, FrozenCandidateEvalInput)
+            if isinstance(item.data, SampleWithCandidatesData)
         )
         if (
             frozen_candidate_count
@@ -202,13 +205,15 @@ class EvalBatchRequest(FrozenModel):
             )
 
         slots = tuple(item.slot for item in self.inputs)
-        samples = tuple(item.sample.metadata.identity for item in self.inputs)
+        samples = tuple(
+            item.data.sample.metadata.identity for item in self.inputs
+        )
         if len(set(slots)) != len(slots):
             raise ValueError("evaluation input slots must be unique")
         if len(set(samples)) != len(samples):
             raise ValueError("evaluation input samples must be unique")
         if any(
-            item.slot.task_id != item.sample.metadata.task_id
+            item.slot.task_id != item.data.sample.metadata.task_id
             for item in self.inputs
         ):
             raise ValueError("input sample task_id must match its slot")
@@ -219,7 +224,7 @@ class EvalBatchRequest(FrozenModel):
         for item in self.inputs:
             collisions = preprocessing_keys & {
                 auxiliary.trace_key
-                for auxiliary in item.sample.auxiliary_artifacts
+                for auxiliary in item.data.sample.auxiliary_artifacts
             }
             if collisions:
                 raise ValueError(
@@ -588,15 +593,16 @@ __all__ = [
     "CandidateJobBudget",
     "EvalBatchRequest",
     "EvalBatchResult",
-    "EvalInput",
     "EvalProjectionReference",
-    "FrozenCandidateEvalInput",
     "ProjectionKind",
     "ProjectionRequest",
     "RecordPlacement",
     "RunGrade",
-    "SampleEvalInput",
+    "SampleData",
+    "SampleWithCandidatesData",
     "ShardLimits",
+    "SlotData",
+    "SlotPayload",
     "WindowLimits",
     "evaluate_batch",
     "evaluate_durable_partition",

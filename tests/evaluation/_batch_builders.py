@@ -27,18 +27,19 @@ from dr_code.evaluation import (
     EvalSampleMetadata,
     EvalSlotId,
     EvalSourceId,
-    FrozenCandidateEvalInput,
     GeneratedSampleProvenance,
     MaterializedEvalCandidate,
     ProjectionKind,
     ProjectionRequest,
     RecordPlacement,
     RunGrade,
+    SampleData,
+    SampleWithCandidatesData,
+    ShardLimits,
+    SlotData,
+    StoredRecordReference,
     SamplingPlan,
     SamplingPlanCoordinate,
-    SampleEvalInput,
-    ShardLimits,
-    StoredRecordReference,
     TaskSet,
     TaskSetCoordinate,
     WindowLimits,
@@ -192,13 +193,55 @@ def sample(
     )
 
 
+def sample_data(
+    index: int,
+    *,
+    text: str = "def observed_load_count(_x):\n    return 1\n",
+) -> SampleData:
+    return SampleData(sample=sample(index, text=text))
+
+
+def sample_with_candidates_data(
+    index: int,
+) -> SampleWithCandidatesData:
+    selected_sample = sample(index)
+    preprocessing = bind_preprocessing(
+        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
+    ).producer.definition
+    source = CodeArtifact(
+        source="def observed_load_count(_x):\n    return 1\n"
+    )
+    return SampleWithCandidatesData(
+        sample=selected_sample,
+        preprocessing=preprocessing,
+        candidates=(
+            MaterializedEvalCandidate(
+                identity=EvalCandidateId(
+                    sample=selected_sample.metadata.identity,
+                    preprocessing=preprocessing,
+                    candidate_ordinal=0,
+                ),
+                source=source,
+                source_sha256=Sha256Digest(
+                    hashlib.sha256(source.source.encode()).hexdigest()
+                ),
+            ),
+        ),
+    )
+
+
+def slot_data(
+    slot: EvalSlotId, data: SampleData | SampleWithCandidatesData
+) -> SlotData:
+    return SlotData(slot=slot, data=data)
+
+
 def request(
     count: int = 1,
     *,
     attempt_limits: AttemptLimits | None = None,
     window_limits: WindowLimits | None = None,
-    inputs: tuple[SampleEvalInput | FrozenCandidateEvalInput, ...]
-    | None = None,
+    inputs: tuple[SlotData, ...] | None = None,
     texts: tuple[str, ...] | None = None,
     projections: tuple[ProjectionKind, ...] = tuple(ProjectionKind),
 ) -> EvalBatchRequest:
@@ -233,17 +276,19 @@ def request(
     )
     if inputs is None:
         inputs = tuple(
-            SampleEvalInput(
-                slot=EvalSlotId(
+            slot_data(
+                EvalSlotId(
                     task_set=task_set.coordinate,
                     sampling_plan=sampling_plan.coordinate,
                     task_id=TASK_ID,
                     sample_index=index,
                 ),
-                sample=(
-                    sample(index)
-                    if texts is None
-                    else sample(index, text=texts[index])
+                SampleData(
+                    sample=(
+                        sample(index)
+                        if texts is None
+                        else sample(index, text=texts[index])
+                    )
                 ),
             )
             for index in range(count)
@@ -307,32 +352,8 @@ def request(
     )
 
 
-def frozen_input(index: int, slot: EvalSlotId) -> FrozenCandidateEvalInput:
-    selected_sample = sample(index)
-    preprocessing = bind_preprocessing(
-        EXHAUSTIVE_FUNCTION_CANDIDATES_DEFINITION
-    ).producer.definition
-    source = CodeArtifact(
-        source="def observed_load_count(_x):\n    return 1\n"
-    )
-    return FrozenCandidateEvalInput(
-        slot=slot,
-        sample=selected_sample,
-        preprocessing=preprocessing,
-        candidates=(
-            MaterializedEvalCandidate(
-                identity=EvalCandidateId(
-                    sample=selected_sample.metadata.identity,
-                    preprocessing=preprocessing,
-                    candidate_ordinal=0,
-                ),
-                source=source,
-                source_sha256=Sha256Digest(
-                    hashlib.sha256(source.source.encode()).hexdigest()
-                ),
-            ),
-        ),
-    )
+def frozen_input(index: int, slot: EvalSlotId) -> SlotData:
+    return slot_data(slot, sample_with_candidates_data(index))
 
 
 def cache(store: BatchStore, *, resident: int = 4) -> WindowedExecutionCache:
