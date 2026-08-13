@@ -146,15 +146,23 @@ corepack pnpm --filter @dr-code/gallery build
 
 ## Verification
 
-Run the complete workspace checks from `viewer/`:
+The viewer workspace has no automated test suite. After component or style
+changes, keep the package functional through visual inspection in the gallery.
+
+From `viewer/`, install dependencies, typecheck, and build:
 
 ```bash
 CI=1 corepack pnpm install --frozen-lockfile
 corepack pnpm typecheck
 corepack pnpm build
-corepack pnpm test
 ```
 
-The recursive typecheck and build commands cover both the publishable package
-and the gallery. After component or style changes, also run the gallery and
-inspect both theme columns in a browser.
+Then start the gallery, open it in a browser, and inspect both theme columns
+across the bundled fixtures:
+
+```bash
+corepack pnpm --filter @dr-code/gallery dev
+```
+
+Check every primitive you touched: highlighted code, diff modes, badge states,
+loading fallbacks, and long examples in the languages you changed.

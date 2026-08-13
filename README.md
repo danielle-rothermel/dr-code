@@ -544,8 +544,8 @@ uv run pre-commit install
 ```
 
 The hook runs `scripts/pre-check.sh`, which verifies the locked environment,
-Ruff formatting and lint, ty, `.defs`, the local Python suite, and the viewer.
-Run `scripts/pre-check.sh --fix` explicitly when you want Ruff and ty to modify
+Ruff formatting and lint, ty, `.defs`, the local Python suite, and the viewer
+typecheck/build. Run `scripts/pre-check.sh --fix` explicitly when you want Ruff and ty to modify
 the working tree.
 
 The canonical local Python test run is serial:
@@ -572,5 +572,5 @@ export DR_STORE_ROOT=/path/to/dr-store
 scripts/run_postgres_tests.sh
 ```
 
-The [viewer verification guide](viewer/README.md#verification) documents its
-independent typecheck, build, and test commands.
+The [viewer verification guide](viewer/README.md#verification) documents
+typecheck, build, and gallery-based visual inspection.

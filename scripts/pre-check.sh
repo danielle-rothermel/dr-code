@@ -65,8 +65,6 @@ if command -v corepack >/dev/null 2>&1; then
         run_viewer typecheck || status=1
     run_report "viewer build" "${CACHE_DIR}/viewer-build.txt" \
         run_viewer build || status=1
-    run_report "viewer tests" "${CACHE_DIR}/viewer-test.txt" \
-        run_viewer test || status=1
 else
     printf '\n==> viewer checks failed (corepack not found)\n' >&2
     status=1

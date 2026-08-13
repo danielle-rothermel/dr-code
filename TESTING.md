@@ -45,7 +45,7 @@ This runs, in order:
 4. `uv run ty check`
 5. `.defs` schema lint (`tombi` on `terms.toml` and `contracts.toml`)
 6. `uv run pytest` (full Python suite, serial)
-7. Viewer install, typecheck, build, and test (when `corepack` is available)
+7. Viewer install, typecheck, and build (when `corepack` is available)
 
 To apply autofixes for Ruff and ty, then rerun the checks:
 
@@ -56,6 +56,11 @@ scripts/pre-check.sh --fix
 Check output is cached under `.cache/pre-check/`.
 
 ## Python tests
+
+Pytest covers `src/dr_code/` only. Repository scripts under `scripts/`, repo
+metadata under `.defs/`, and the viewer workspace have no pytest coverage in
+`tests/`. Scripts and the task-difficulty workflow are verified manually when
+needed.
 
 The canonical Python command is serial pytest:
 
@@ -96,17 +101,16 @@ Pass additional pytest arguments to target specific files or tests.
 
 ## Viewer
 
-From `viewer/`:
+The viewer workspace has no automated test suite. After viewer changes,
+typecheck and build from `viewer/`, then verify behavior visually in the
+gallery (`viewer/README.md#verification`).
 
 ```console
 CI=1 corepack pnpm install --frozen-lockfile
 corepack pnpm typecheck
 corepack pnpm build
-corepack pnpm test
+corepack pnpm --filter @dr-code/gallery dev
 ```
-
-See [viewer/README.md](viewer/README.md#verification) for gallery/browser checks
-after UI changes.
 
 ## CI
 
@@ -115,7 +119,7 @@ requests:
 
 - **Python** (3.13 and 3.14): locked sync, ruff format/check, ty, `.defs` lint
   on 3.13 only, serial `uv run pytest`
-- **Viewer**: frozen install, typecheck, build, test
+- **Viewer**: frozen install, typecheck, build
 
 Release tags additionally smoke-test the built wheel via
 `scripts/check_built_wheel.py`.
@@ -131,11 +135,6 @@ pre-check, pytest, or CI. Run them only when the task calls for them.
 | Task-difficulty fixture smoke | `DR_CODE_GENERATION_CORPUS_BUNDLE=tests/fixtures/generation_corpus/human_eval DR_CODE_TASK_DIFFICULTY_RUN_DIR=/tmp/task-difficulty-fixture scripts/verification/task_difficulty/run_baseline.sh fixture-smoke` | Small end-to-end smoke of the same stages |
 | Preprocessing analysis | `scripts/analyze_preprocessing_success.py` | Preprocessing-only success rates on sampled tasks (`docs/verif_exps.md`) |
 | Packaged validation CLIs | `dr-code-validate-preprocessing`, `dr-code-validate-testing` | Single-request validation flows through `evaluate_batch` |
-
-Workflow logic for task-difficulty stages is covered by unit tests in
-`tests/scripts/test_task_difficulty_verification.py` using the small fixture
-corpus at `tests/fixtures/generation_corpus/human_eval/`. That is the
-appropriate automated coverage; it does not run the production corpus sweep.
 
 ## Contract checks
 
