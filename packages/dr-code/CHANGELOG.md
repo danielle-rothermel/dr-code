@@ -2,6 +2,13 @@
 
 All notable changes to the `dr-code` core wheel are documented here.
 
+## 0.2.1 - 2026-08-13
+
+### Fixed
+
+- Restore PyPI package metadata by adding `packages/dr-code/README.md`, so
+  release `twine check --strict` passes again after the workspace split.
+
 ## 0.2.0 - 2026-08-13
 
 ### Breaking changes
