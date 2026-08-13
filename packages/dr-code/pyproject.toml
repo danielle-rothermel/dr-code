@@ -1,0 +1,62 @@
+[project]
+name = "dr-code"
+version = "0.2.0"
+description = "Python code preparation and evaluation toolkit"
+license = "MIT"
+authors = [
+    { name = "Danielle Rothermel", email = "danielle.rothermel@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "dr-exec==0.1.10",
+    "dr-serialize==0.1.2",
+    "dr-store==0.2.3",
+    "numpy>=2.1,<3",
+    "polars>=1.43.2",
+    "pydantic>=2.13.4",
+    "python-minifier==3.2.0",
+    "sqlalchemy>=2.0",
+    "typer>=0.26.7",
+    "zstandard>=0.25.0",
+]
+
+[project.scripts]
+dr-code-validate-preprocessing = "dr_code.evaluation.cli:validate_preprocessing_app"
+dr-code-validate-testing = "dr_code.evaluation.cli:validate_testing_app"
+
+[project.urls]
+Repository = "https://github.com/danielle-rothermel/dr-code"
+Issues = "https://github.com/danielle-rothermel/dr-code/issues"
+Documentation = "https://danielle-rothermel.github.io/dr-code/"
+Changelog = "https://github.com/danielle-rothermel/dr-code/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling==1.31.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dr_code"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib -m 'not postgres'"
+markers = [
+    "postgres: requires a PostgreSQL-backed dr-store",
+]
+
+[tool.ruff]
+include = ["src/**/*.py", "tests/**/*.py"]
+line-length = 79
+
+[tool.ty.src]
+include = ["src"]
+exclude = ["tests"]

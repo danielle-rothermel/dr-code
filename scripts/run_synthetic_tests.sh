@@ -7,11 +7,10 @@ usage() {
 Usage:
   scripts/run_synthetic_tests.sh [PYTEST_ARG...]
 
-Runs dr-code's opt-in synthetic dataset tests (pytest marker: synthetic).
+Runs drc-synthetic tests.
 
 Example:
   scripts/run_synthetic_tests.sh
-  scripts/run_synthetic_tests.sh tests/synthetic/test_corruptions.py
 USAGE
 }
 
@@ -25,10 +24,9 @@ cd -- "${repo_root}"
 
 declare -a pytest_args=("$@")
 if [[ "${#pytest_args[@]}" -eq 0 ]]; then
-    pytest_args=(tests/synthetic)
+    pytest_args=(packages/drc-synthetic/tests)
 fi
 
-exec uv run pytest -q \
+exec uv run --package drc-synthetic pytest -q \
     -o addopts='--import-mode=importlib' \
-    -m synthetic \
     "${pytest_args[@]}"

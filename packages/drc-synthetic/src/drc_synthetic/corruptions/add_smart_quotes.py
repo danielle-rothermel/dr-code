@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+import random
+from typing import ClassVar
+
+from drc_synthetic.models import CorruptedSample
+from drc_synthetic.names import CorruptionName
+from drc_synthetic.corruptions.base import Corruption
+from dr_code.core.source.text_transforms import SMART_QUOTES
+
+
+def _replace_smart(source: str) -> str:
+    out: list[str] = []
+    open_single = True
+    open_double = True
+    for ch in source:
+        if ch == "'":
+            left, right = SMART_QUOTES["'"]
+            out.append(left if open_single else right)
+            open_single = not open_single
+        elif ch == '"':
+            left, right = SMART_QUOTES['"']
+            out.append(left if open_double else right)
+            open_double = not open_double
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+class AddSmartQuotes(Corruption):
+    NAME: ClassVar[CorruptionName] = CorruptionName.ADD_SMART_QUOTES
+    VERSION: ClassVar[str] = "0"
+
+    def apply(self, source: str, rng: random.Random) -> CorruptedSample:
+        return CorruptedSample(
+            corrupted_source=_replace_smart(source),
+        )

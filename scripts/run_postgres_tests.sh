@@ -47,7 +47,7 @@ cd -- "${repo_root}"
 
 declare -a pytest_args=("$@")
 if [[ "${#pytest_args[@]}" -eq 0 ]]; then
-    pytest_args=(tests/evaluation/test_evidence_postgres.py)
+    pytest_args=(packages/dr-code/tests/evaluation/test_evidence_postgres.py)
 fi
 
 exec "${scratch}" -- uv run pytest -q -m postgres "${pytest_args[@]}"

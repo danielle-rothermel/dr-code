@@ -8,13 +8,13 @@ import argparse
 from pathlib import Path
 from typing import Final
 
-from dr_code.generation_corpus import (
+from drc_generation_corpus import (
     BuildManifest,
     CorpusPopulation,
     DatasetName,
     build_generation_corpus,
 )
-from dr_code.generation_corpus.adapters import (
+from drc_generation_corpus.adapters import (
     BigCodeBenchLiteProCodeCompAdapter,
     ClassEvalCodeCompAdapter,
     HumanEvalAdapter,
@@ -22,8 +22,8 @@ from dr_code.generation_corpus.adapters import (
     MbppProCodeCompAdapter,
     NlLatentsAdapter,
 )
-from dr_code.generation_corpus.adapters.base import CorpusAdapter
-from dr_code.generation_corpus.tasks import HumanEvalTaskAdapter
+from drc_generation_corpus.adapters.base import CorpusAdapter
+from drc_generation_corpus.tasks import HumanEvalTaskAdapter
 
 _EXPECTED_POPULATIONS: Final = {
     DatasetName.HUMAN_EVAL: CorpusPopulation(

@@ -21,8 +21,8 @@ from dr_code.core.source.python_analysis import (
     extract_docstrings,
     extract_hash_comments,
 )
-from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
-from dr_code.humaneval.sampling import load_humaneval_rows
+from drc_humaneval import HumanEvalTask, parse_humaneval_dataset
+from drc_humaneval.sampling import load_humaneval_rows
 
 matplotlib.use("Agg")
 from matplotlib.collections import PolyCollection  # noqa: E402

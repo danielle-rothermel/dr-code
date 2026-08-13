@@ -13,7 +13,7 @@ Component coordinates already persist. Independently chosen pre-experiment
 versions would imply compatibility distinctions that the repository does not
 yet support."""
 date = "2026-08-05"
-check = "uv run pytest tests/test_component_versioning.py"
+check = "uv run pytest packages/dr-code/tests/test_component_versioning.py"
 
 [[contracts]]
 title = "Releases come from validated immutable main commits"
@@ -28,7 +28,7 @@ Main ancestry retains the pull-request boundary, installed-wheel execution
 checks the artifact that is uploaded, and the environment and tag restrictions
 keep publication from bypassing or changing that provenance."""
 date = "2026-08-06"
-check = "uv build && uv run python scripts/check_built_wheel.py"
+check = "uv build --package dr-code && uv run python scripts/check_built_wheel.py"
 
 [[contracts]]
 title = "Core depends on no functional package"
@@ -39,7 +39,7 @@ rationale = """
 Benchmark and measurement policy depend on reusable infrastructure; allowing
 that dependency to reverse would make shared mechanisms domain-specific."""
 date = "2026-08-05"
-check = "uv run pytest tests/core/test_package_layout.py"
+check = "uv run pytest packages/dr-code/tests/core/test_package_layout.py"
 
 [[contracts]]
 title = "Traces are complete defensive evidence"
@@ -51,7 +51,7 @@ rationale = """
 Missing wiring must remain distinguishable from failed computation, and
 caller mutation must not rewrite evidence after capture."""
 date = "2026-08-09"
-check = "uv run pytest tests/trace/test_trace.py tests/trace/test_facts.py"
+check = "uv run pytest packages/dr-code/tests/trace/test_trace.py tests/trace/test_facts.py"
 
 [[contracts]]
 title = "Persisted evidence is self-describing"
@@ -64,7 +64,7 @@ Recorded evidence must remain interpretable after registries or accepted
 settings change. Resolving persisted identity through live registries would
 make history depend on current code."""
 date = "2026-08-09"
-check = "uv run pytest tests/trace/test_serialization.py tests/metrics/records/test_record_wire_format.py"
+check = "uv run pytest packages/dr-code/tests/trace/test_serialization.py tests/metrics/records/test_record_wire_format.py"
 
 [[contracts]]
 title = "Preprocessing validates composition before execution"
@@ -78,7 +78,7 @@ Config defects are wiring errors, declared candidate failures are
 recorded as evidence, and infrastructure defects must not be mislabeled as
 candidate outcomes."""
 date = "2026-08-09"
-check = "uv run pytest tests/preprocessing/test_definition.py tests/preprocessing/test_runner.py tests/preprocessing/steps/test_conformance.py"
+check = "uv run pytest packages/dr-code/tests/preprocessing/test_definition.py tests/preprocessing/test_runner.py tests/preprocessing/steps/test_conformance.py"
 
 [[contracts]]
 title = "Metric outcomes are explicit records"
@@ -91,7 +91,7 @@ rationale = """
 Zero, inapplicability, and computation failure have different meanings and
 cannot share a sentinel without corrupting downstream interpretation."""
 date = "2026-08-09"
-check = "uv run pytest tests/metrics/test_definition.py tests/metrics/records tests/metrics/engine"
+check = "uv run pytest packages/dr-code/tests/metrics/test_definition.py tests/metrics/records tests/metrics/engine"
 
 [[contracts]]
 title = "Evaluation plans are internally complete"
@@ -107,7 +107,7 @@ than a set of references resolved against mutable registries. Per-task sample
 counts keep declared membership equal to real membership, so a plan cannot
 declare slots that no member can ever fill."""
 date = "2026-08-05"
-check = "uv run pytest tests/evaluation/test_plan.py tests/evaluation/test_wire_format.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_plan.py tests/evaluation/test_wire_format.py"
 
 [[contracts]]
 title = "Aggregation is deterministic over explicit slots"
@@ -121,7 +121,7 @@ Exceptional outcomes are evaluation data, not ambiguous numbers or incidental
 exceptions. Classifying the result as a projection keeps the metric records
 from which it derives authoritative."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_aggregation.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_aggregation.py"
 
 [[contracts]]
 title = "HumanEval projections preserve failure attribution"
@@ -153,7 +153,7 @@ execution record. Declaring the reduction on the profile keeps the reduction a
 named, versioned part of the scoring identity rather than a wired-in default
 that silently decides what a recorded score means."""
 date = "2026-08-09"
-check = "uv run pytest -m humaneval tests/humaneval/test_projection.py tests/humaneval/test_metric_operator.py"
+check = "uv run pytest -m humaneval packages/dr-code/tests/humaneval/test_projection.py tests/humaneval/test_metric_operator.py"
 
 [[contracts]]
 title = "Synthetic coordinates determine sample identity"
@@ -164,7 +164,7 @@ recipe cannot claim the same identity."""
 rationale = """
 Recorded identities, not ambient registry state, make datasets reproducible."""
 date = "2026-08-09"
-check = "uv run pytest -m synthetic tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
+check = "uv run pytest -m synthetic packages/dr-code/tests/synthetic/test_dataset_builder.py tests/synthetic/test_corruption_recipes.py tests/synthetic/test_corruptions.py"
 
 [[contracts]]
 title = "Candidate execution jobs are bounded and outcome mapping is closed"
@@ -192,7 +192,7 @@ candidate's evidence is what later reflection reads, and it should survive by
 default rather than because one script happened to name a bound; wall time and
 input size stay explicit because only the caller knows its workload."""
 date = "2026-08-09"
-check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
+check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' packages/dr-code/tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
 title = "Parallel preprocessing runs on the dr-exec worker pool"
@@ -231,7 +231,7 @@ no principled runtime ceiling, so the library declares none and each workflow
 sets a value far above any healthy input's cost, where a wedged worker would
 otherwise stall a corpus-scale run indefinitely."""
 date = "2026-08-11"
-check = "uv run pytest tests/caching/test_preprocess_batch.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
+check = "uv run pytest packages/dr-code/tests/caching/test_preprocess_batch.py tests/evaluation/test_preprocess_prepare.py tests/preprocessing/test_job.py"
 
 [[contracts]]
 title = "Execution cache persistence is scoped and checkpointed"
@@ -256,7 +256,7 @@ reuse across ambient behavior changes, strict restoration prevents malformed
 data from becoming evidence, and bounded best-effort checkpointing cannot turn
 storage failure into memory growth or evaluation failure."""
 date = "2026-08-09"
-check = "uv run pytest tests/caching/test_execution_cache.py"
+check = "uv run pytest packages/dr-code/tests/caching/test_execution_cache.py"
 
 [[contracts]]
 title = "Evaluation uses one bounded execution path"
@@ -277,7 +277,7 @@ rationale = """
 One execution boundary prevents script-specific process behavior and unbounded
 concurrency while preserving named failure attribution."""
 date = "2026-08-09"
-check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py tests/evaluation/test_batch.py"
+check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' packages/dr-code/tests/humaneval/test_candidate_job.py tests/evaluation/test_candidate_execution.py tests/evaluation/test_batch.py"
 
 [[contracts]]
 title = "Run grade joins the candidate execution cache key"
@@ -296,7 +296,7 @@ same key, which is precisely the confusion the grade exists to prevent, and
 requiring the caller to name the grade keeps the choice visible at every
 entry point."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_candidate_execution.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_candidate_execution.py"
 
 [[contracts]]
 title = "Only candidate-owned outcomes enter the execution cache"
@@ -323,7 +323,7 @@ as though the candidate had produced it, which is the one thing attribution
 exists to prevent, and a caller who wants a deliberate re-run needs a way to
 say so that does not depend on guessing key structure."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_cache_policy.py tests/caching/test_execution_cache.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_cache_policy.py tests/caching/test_execution_cache.py"
 
 [[contracts]]
 title = "Failure attribution is a named three-way class"
@@ -339,7 +339,7 @@ The union arms already separate the three owners structurally; naming them
 gives the shared attribution channel typed domain values that survive
 serialization instead of a free-form string that only a reader can interpret."""
 date = "2026-08-12"
-check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' tests/evaluation/test_candidate_execution.py tests/humaneval/test_projection_wire_format.py"
+check = "uv run pytest -m 'humaneval or (not humaneval and not synthetic and not generation_corpus and not postgres)' packages/dr-code/tests/evaluation/test_candidate_execution.py tests/humaneval/test_projection_wire_format.py"
 
 [[contracts]]
 title = "Evaluation batches bound resident and aggregate work"
@@ -361,7 +361,7 @@ Finite per-job budgets and execution concurrency do not bound aggregate work or
 memory. Explicit attempt limits and bounded windows keep a reusable primitive
 safe when applications evaluate large memberships."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_batch_limits.py tests/evaluation/test_resident_bounds.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_batch_limits.py tests/evaluation/test_resident_bounds.py"
 
 [[contracts]]
 title = "Evaluation attempt records are authoritative"
@@ -378,7 +378,7 @@ Projections intentionally discard structure. Keeping them derivable prevents
 publication formats from becoming lossy domain contracts without embedding
 executable algorithms or supporting every historical version indefinitely."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_record_wire_format.py tests/evaluation/test_projections.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_record_wire_format.py tests/evaluation/test_projections.py"
 
 [[contracts]]
 title = "Evaluation bundles are portable and closed"
@@ -407,7 +407,7 @@ The storage envelope proves byte integrity and completeness, not evaluation
 meaning; versioned domain schemas and portable references make restored
 artifacts interpretable without eager full-record reads."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_bundle_wire_format.py tests/evaluation/test_bundle_reading.py tests/evaluation/test_bundle_audit.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_bundle_wire_format.py tests/evaluation/test_bundle_reading.py tests/evaluation/test_bundle_audit.py"
 
 [[contracts]]
 title = "Evaluation replay preserves provenance"
@@ -426,7 +426,7 @@ rationale = """
 Explicit source, mode, and current context distinguish re-execution from result
 reuse without requiring legacy implementation or environment archives."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_replay.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_replay.py"
 
 [[contracts]]
 title = "Structural comparison matches semantic identities"
@@ -447,7 +447,7 @@ Position, identity, and content can change independently. Id-aware
 alignment and explicit denominators expose those differences without turning
 the core into a general diff or analysis engine."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_comparison.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_comparison.py"
 
 [[contracts]]
 title = "Evaluation identity distinguishes plans from samples"
@@ -466,7 +466,7 @@ answer different attribution questions. Explicit composition supports live
 generation and frozen corpora without guessing identity from equal content or
 ambient ordering."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_id.py tests/evaluation/test_record_models.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_id.py tests/evaluation/test_record_models.py"
 
 [[contracts]]
 title = "Work keys derive from config and slot addressing coordinates"
@@ -483,7 +483,7 @@ Deriving the key from what a slot actually carries keeps it computable from
 one slot without a lookup, and pinning the payload keys as literals keeps
 stored identity from drifting when model field names change."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_work_key.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_work_key.py"
 
 [[contracts]]
 title = "Candidate execution records preserve execution provenance"
@@ -499,7 +499,7 @@ Scores omit what ran, under which context, and how outcomes were attributed.
 The execution record preserves those bindings independently of projections
 without duplicating referenced data."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_candidate_execution.py tests/caching/test_execution_cache.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_candidate_execution.py tests/caching/test_execution_cache.py"
 
 [[contracts]]
 title = "Every selected input has a sample evaluation record"
@@ -519,7 +519,7 @@ Flattening only successful measurements silently changes membership and
 denominators. Complete typed records retain attribution through every expected
 and exceptional evaluation outcome."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_record_models.py tests/evaluation/test_batch.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_record_models.py tests/evaluation/test_batch.py"
 
 [[contracts]]
 title = "Evaluation attempt completeness and validity are explicit"
@@ -538,7 +538,7 @@ Evidence can be complete about a failed evaluation without supporting a score.
 Separating completeness, validity, and candidate behavior prevents missing work
 or broken infrastructure from being counted as experimental outcomes."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_record_models.py tests/evaluation/test_batch_limits.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_record_models.py tests/evaluation/test_batch_limits.py"
 
 [[contracts]]
 title = "Cancellation is not an evaluation outcome"
@@ -554,7 +554,7 @@ evaluation evidence. Translating it would misattribute interrupted work;
 requiring synchronous terminal publication would add lifecycle machinery not
 owned by the evaluation core."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_candidate_execution.py -k cancellation"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_candidate_execution.py -k cancellation"
 
 [[contracts]]
 title = "Execution composition preserves interpretation"
@@ -574,7 +574,7 @@ time, randomness, environment, or contention. Preserving interpretation keeps
 local and durable evidence comparable without requiring deterministic
 execution."""
 date = "2026-08-09"
-check = "uv run pytest tests/evaluation/test_batch.py tests/evaluation/test_durable_partition.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_batch.py tests/evaluation/test_durable_partition.py"
 
 [[contracts]]
 title = "Evaluation core excludes experiment and workflow policy"
@@ -590,7 +590,7 @@ Keeping provider, optimizer, statistical, and scheduling policy with existing
 owners preserves reusable evaluation semantics and prevents another experiment
 framework."""
 date = "2026-08-09"
-check = "uv run pytest tests/core/test_package_layout.py"
+check = "uv run pytest packages/dr-code/tests/core/test_package_layout.py"
 
 [[contracts]]
 title = "One generation is one evaluation attempt"
@@ -610,7 +610,7 @@ already lives in the application's queue concurrency across attempts. Naming
 which leg each caller binds keeps the two entry points from drifting into one
 configurable path with a scheduler inside it."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_durable_partition.py tests/evaluation/test_flows.py"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_durable_partition.py tests/evaluation/test_flows.py"
 
 [[contracts]]
 title = "Generation corpus evidence keeps its natural grain"
@@ -626,7 +626,7 @@ Collapsing incomplete records, encoder outputs, generation records, or task
 versions into one row grain invents joins and corrupts analysis denominators;
 derived retry identities similarly overstate flattened historical evidence."""
 date = "2026-08-08"
-check = "uv run pytest -m generation_corpus tests/generation_corpus"
+check = "uv run pytest -m generation_corpus packages/dr-code/tests/generation_corpus"
 
 [[contracts]]
 title = "Evidence writes join the caller's transaction"
@@ -662,4 +662,4 @@ collision refusal are properties of the database rather than of the call shape,
 so they are pinned against a real PostgreSQL-backed store in addition to the
 fake that covers the call seam."""
 date = "2026-08-12"
-check = "uv run pytest tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py && DR_STORE_ROOT=\"${DR_STORE_ROOT:?set DR_STORE_ROOT to a dr-store checkout}\" scripts/run_postgres_tests.sh"
+check = "uv run pytest packages/dr-code/tests/evaluation/test_evidence.py tests/caching/test_execution_cache.py && DR_STORE_ROOT=\"${DR_STORE_ROOT:?set DR_STORE_ROOT to a dr-store checkout}\" scripts/run_postgres_tests.sh"

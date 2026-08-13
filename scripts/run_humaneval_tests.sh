@@ -7,11 +7,10 @@ usage() {
 Usage:
   scripts/run_humaneval_tests.sh [PYTEST_ARG...]
 
-Runs dr-code's opt-in HumanEval+ adapter tests (pytest marker: humaneval).
+Runs drc-humaneval tests.
 
 Example:
   scripts/run_humaneval_tests.sh
-  scripts/run_humaneval_tests.sh tests/humaneval/test_sampling.py
 USAGE
 }
 
@@ -25,10 +24,9 @@ cd -- "${repo_root}"
 
 declare -a pytest_args=("$@")
 if [[ "${#pytest_args[@]}" -eq 0 ]]; then
-    pytest_args=(tests/humaneval)
+    pytest_args=(packages/drc-humaneval/tests)
 fi
 
-exec uv run pytest -q \
+exec uv run --package drc-humaneval pytest -q \
     -o addopts='--import-mode=importlib' \
-    -m humaneval \
     "${pytest_args[@]}"

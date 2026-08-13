@@ -78,9 +78,9 @@ from dr_code.evaluation import (
 )
 from dr_code.evaluation.batch import EvalBatchResult, ShardLimits
 from dr_code.evaluation.plan import EvalPlan
-from dr_code.humaneval import HumanEvalTask, parse_humaneval_dataset
-from dr_code.humaneval.sampling import load_humaneval_rows
-from dr_code.humaneval.settings import CodeTestSettings
+from drc_humaneval import HumanEvalTask, parse_humaneval_dataset
+from drc_humaneval.sampling import load_humaneval_rows
+from drc_humaneval.settings import CodeTestSettings
 from dr_code.metrics import (
     MetricName,
     MetricQuestion,

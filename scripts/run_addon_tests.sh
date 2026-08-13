@@ -7,8 +7,7 @@ usage() {
 Usage:
   scripts/run_addon_tests.sh [PYTEST_ARG...]
 
-Runs all opt-in domain-extension tests: humaneval, synthetic, and
-generation_corpus.
+Runs all opt-in domain-extension tests in the drc_* packages.
 
 Example:
   scripts/run_addon_tests.sh
@@ -23,12 +22,17 @@ fi
 repo_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "${repo_root}"
 
+uv sync --locked --group dev --group addons >/dev/null
+
 declare -a pytest_args=("$@")
 if [[ "${#pytest_args[@]}" -eq 0 ]]; then
-    pytest_args=(tests/humaneval tests/synthetic tests/generation_corpus)
+    pytest_args=(
+        packages/drc-humaneval/tests
+        packages/drc-synthetic/tests
+        packages/drc-generation-corpus/tests
+    )
 fi
 
 exec uv run pytest -q \
     -o addopts='--import-mode=importlib' \
-    -m "humaneval or synthetic or generation_corpus" \
     "${pytest_args[@]}"

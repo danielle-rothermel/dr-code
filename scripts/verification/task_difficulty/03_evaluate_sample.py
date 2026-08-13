@@ -24,7 +24,7 @@ from dr_store import (
 from dr_code.caching import WindowedExecutionCache
 from dr_code.core.execution.executor import host_process_executor
 from dr_code.evaluation import AttemptCompleteness, evaluate_batch
-from dr_code.humaneval import HumanEvalTask
+from drc_humaneval import HumanEvalTask
 
 from corpus_loader import manifest_sha256
 from eval_batch import (

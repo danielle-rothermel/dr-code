@@ -61,14 +61,15 @@ Pytest covers `src/dr_code/`. The default suite is the **core platform**:
 preprocessing, trace, metrics, caching, core, and generic evaluation machinery.
 Repository scripts, `.defs`, and the viewer workspace have no pytest coverage.
 
-Three **domain extensions** stay in the repository but are opt-in via pytest
-markers:
+Pytest covers the uv workspace. The default **core** suite lives in
+`packages/dr-code/tests/` and runs with only the `dr-code` wheel installed.
+Domain extensions are separate packages with their own tests:
 
-| Marker | Package | Default suite | Runner |
-|--------|---------|---------------|--------|
-| `humaneval` | `src/dr_code/humaneval/` | deselected | `scripts/run_humaneval_tests.sh` |
-| `synthetic` | `src/dr_code/synthetic/` | deselected | `scripts/run_synthetic_tests.sh` |
-| `generation_corpus` | `src/dr_code/generation_corpus/` | deselected | `scripts/run_generation_corpus_tests.sh` |
+| Package | Tests | Runner |
+|---------|-------|--------|
+| `drc-humaneval` | `packages/drc-humaneval/tests/` | `scripts/run_humaneval_tests.sh` |
+| `drc-synthetic` | `packages/drc-synthetic/tests/` | `scripts/run_synthetic_tests.sh` |
+| `drc-generation-corpus` | `packages/drc-generation-corpus/tests/` | `scripts/run_generation_corpus_tests.sh` |
 
 Run every extension test with:
 
@@ -76,18 +77,16 @@ Run every extension test with:
 scripts/run_addon_tests.sh
 ```
 
-The canonical **core** command is serial pytest:
+The canonical **core** command:
 
 ```console
-uv run pytest
+uv sync --locked --group dev
+DR_CODE_CORE_ISOLATION=1 uv sync --locked --package dr-code --group dev
+DR_CODE_CORE_ISOLATION=1 uv run --package dr-code --group dev pytest packages/dr-code/tests -m 'not postgres'
 ```
 
-Pytest is configured in `pyproject.toml`:
-
-- Test root: `tests/`
-- Import mode: `importlib`
-- Default marker expression deselects `postgres`, `humaneval`, `synthetic`, and
-  `generation_corpus`
+Core pytest is configured in `packages/dr-code/pyproject.toml` (import mode:
+`importlib`; postgres tests remain opt-in).
 
 For faster local feedback, pytest-xdist is fine locally; CI stays serial:
 
@@ -98,8 +97,7 @@ uv run --with pytest-xdist pytest -n 4
 Run a focused core subset while iterating:
 
 ```console
-uv run pytest tests/evaluation/test_batch.py
-uv run pytest tests/preprocessing/
+uv run --package dr-code --group dev pytest packages/dr-code/tests/evaluation/test_batch.py
 ```
 
 ### Evaluation test helpers
@@ -108,7 +106,7 @@ Direct batch tests build requests with `request(..., preprocess_mode=...)`, whic
 controls whether sample preparation uses the bound runner (`in_process`) or the
 dr-exec worker pool (`process_pool`).
 
-`publish_batch()` in `tests/evaluation/_bundle_builders.py` is a bundle fixture
+`publish_batch()` in `packages/dr-code/tests/evaluation/_bundle_builders.py` is a bundle fixture
 builder for reading, audit, replay, and publication tests. It defaults to
 **frozen candidate inputs** and **no projections** for speed. Pass
 `projections=(...)` when a test needs specific projection artifacts, and
@@ -145,9 +143,10 @@ corepack pnpm --filter @dr-code/gallery dev
 GitHub Actions (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull
 requests:
 
-- **Python core** (3.13 and 3.14): locked sync, ruff format/check, ty, `.defs`
-  lint on 3.13 only, serial `uv run pytest` (extensions deselected)
-- **Python add-ons** (3.13 and 3.14): `scripts/run_addon_tests.sh`
+- **Python core** (3.13 and 3.14): locked sync (`--group dev`), ruff, ty, `.defs`
+  lint on 3.13 only, core pytest from `packages/dr-code/tests`
+- **Python add-ons** (3.13 and 3.14): `uv sync --group dev --group addons` then
+  `scripts/run_addon_tests.sh`
 - **Viewer**: frozen install, typecheck, build
 
 Release tags additionally smoke-test the built wheel via

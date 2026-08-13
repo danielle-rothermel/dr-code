@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Split the monolithic `dr-code` wheel into a uv workspace: core
+  [`dr-code`](packages/dr-code) (`dr_code`) plus addon wheels
+  [`drc-humaneval`](packages/drc-humaneval), [`drc-synthetic`](packages/drc-synthetic),
+  and [`drc-generation-corpus`](packages/drc-generation-corpus).
+- Domain imports moved to top-level addon modules:
+  `dr_code.humaneval` → `drc_humaneval`, `dr_code.synthetic` → `drc_synthetic`,
+  `dr_code.generation_corpus` → `drc_generation_corpus`.
+- Console scripts renamed: `dr-code-humaneval-schema` → `drc-humaneval-schema`,
+  `dr-code-synthetic` → `drc-synthetic`.
+- Core evaluation no longer ships HumanEval candidate execution types; install
+  `drc-humaneval` for `code_test` metrics and candidate jobs.
+- Bump `dr-code` to **0.2.0**.
+
 - `EvalBatchRequest.preprocess_mode` is required and chooses how sample inputs
   are prepared: `process_pool` runs distinct texts through `preprocess_batch`;
   `in_process` prepares each sample on the caller thread via the bound runner.

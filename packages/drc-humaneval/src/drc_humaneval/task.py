@@ -1,0 +1,509 @@
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from enum import StrEnum
+from functools import cached_property
+from types import MappingProxyType
+from typing import Annotated, Any, Literal, Self
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    model_validator,
+)
+
+from dr_code.core.models import FrozenModel
+from drc_humaneval.parsed_code import ParsedCode, parse_code
+from drc_humaneval.parsed_tests import (
+    HumanEvalTestCaseKind,
+    ParsedTests,
+    SingleCaseCheck,
+    parse_humaneval_tests,
+)
+
+
+class EvalCaseStatus(StrEnum):
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+    TIMEOUT = "timeout"
+
+
+class HumanEvalTask(FrozenModel):
+    """A HumanEval task whose parses derive from its source and test fields."""
+
+    task_id: str
+    prompt: str
+    canonical_solution: str
+    entry_point: str
+    test: str
+    notes: tuple[str, ...] = ()
+
+    @computed_field
+    @property
+    def ground_truth_code(self) -> str:
+        return self.prompt + self.canonical_solution
+
+    @computed_field
+    @property
+    def ground_truth_code_without_comments(self) -> str:
+        return self.parsed.code_without_comments
+
+    @computed_field(exclude_if=lambda _value: True)
+    @cached_property
+    def parsed(self) -> ParsedCode:
+        return parse_code(
+            display_title=self.task_id,
+            code_str=self.ground_truth_code,
+        )
+
+    @computed_field(exclude_if=lambda _value: True)
+    @cached_property
+    def parsed_tests(self) -> ParsedTests:
+        """Reparse the raw test field; in-memory tuples never cross JSON."""
+
+        return parse_humaneval_tests(self.test)
+
+    @model_validator(mode="after")
+    def parse_code(self) -> Self:
+        _ = self.parsed
+        _ = self.parsed_tests
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class EvalCaseResult:
+    task_id: str
+    case_id: str
+    function_name: str
+    status: EvalCaseStatus
+    test_type: HumanEvalTestCaseKind
+    message: str = ""
+    input_repr: str = ""
+    expected_output_repr: str = ""
+    actual_output_repr: str = ""
+    elapsed_seconds: float | None = None
+    timeout_seconds: float | None = None
+
+    def to_summary(self) -> EvalCaseSummary:
+        return EvalCaseSummary(
+            task_id=self.task_id,
+            case_id=self.case_id,
+            function_name=self.function_name,
+            status=self.status,
+            message=self.message,
+            test_type=self.test_type,
+            input_repr=self.input_repr,
+            expected_output_repr=self.expected_output_repr,
+            actual_output_repr=self.actual_output_repr,
+            elapsed_seconds=self.elapsed_seconds,
+            timeout_seconds=self.timeout_seconds,
+        )
+
+
+class EvalCaseSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    case_id: str
+    function_name: str
+    status: EvalCaseStatus
+    message: str = ""
+    test_type: HumanEvalTestCaseKind
+    input_repr: str = ""
+    expected_output_repr: str = ""
+    actual_output_repr: str = ""
+    elapsed_seconds: float | None = None
+    timeout_seconds: float | None = None
+
+
+def _results_for_function(
+    results: list[EvalCaseResult],
+    function_name: str,
+) -> list[EvalCaseResult]:
+    return [
+        result for result in results if result.function_name == function_name
+    ]
+
+
+def select_best_function_name(
+    *,
+    function_names: list[str],
+    entry_point: str,
+    results: list[EvalCaseResult],
+) -> str | None:
+    if not function_names:
+        return None
+    return max(
+        function_names,
+        key=lambda function_name: (
+            sum(
+                1
+                for result in results
+                if result.function_name == function_name
+                and result.status is EvalCaseStatus.PASSED
+            ),
+            function_name == entry_point,
+            -function_names.index(function_name),
+        ),
+    )
+
+
+class EvalTaskResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    entry_point: str
+    function_names: list[str]
+    total_cases: int
+    results: list[EvalCaseResult] = Field(default_factory=list)
+
+    @computed_field(exclude_if=lambda _value: True)
+    @property
+    def best_function_name(self) -> str | None:
+        return select_best_function_name(
+            function_names=self.function_names,
+            entry_point=self.entry_point,
+            results=self.results,
+        )
+
+    @computed_field(exclude_if=lambda _value: True)
+    @property
+    def failures(self) -> list[EvalCaseResult]:
+        best_function_name = self.best_function_name
+        if best_function_name is None:
+            return []
+        return [
+            result
+            for result in self.results
+            if result.function_name == best_function_name
+            and result.status is not EvalCaseStatus.PASSED
+        ]
+
+    @computed_field(exclude_if=lambda _value: True)
+    @property
+    def coverage_complete(self) -> bool:
+        best_function_name = self.best_function_name
+        if best_function_name is None:
+            return False
+        function_results = _results_for_function(
+            self.results,
+            best_function_name,
+        )
+        return len(function_results) == self.total_cases
+
+    @computed_field(exclude_if=lambda _value: True)
+    @property
+    def passed(self) -> bool:
+        best_function_name = self.best_function_name
+        if best_function_name is None:
+            return False
+        function_results = _results_for_function(
+            self.results,
+            best_function_name,
+        )
+        if not self.coverage_complete:
+            return False
+        return all(
+            result.status is EvalCaseStatus.PASSED
+            for result in function_results
+        )
+
+    @computed_field(exclude_if=lambda _value: True)
+    @property
+    def status_counts(self) -> dict[str, int]:
+        best_function_name = self.best_function_name
+        if best_function_name is None:
+            return {}
+        return dict(
+            Counter(
+                result.status.value
+                for result in self.results
+                if result.function_name == best_function_name
+            )
+        )
+
+    def to_summary(self) -> EvalTaskSummary:
+        return EvalTaskSummary(
+            task_id=self.task_id,
+            entry_point=self.entry_point,
+            function_names=self.function_names,
+            best_function_name=self.best_function_name,
+            total_cases=self.total_cases,
+            results=[result.to_summary() for result in self.results],
+            passed=self.passed,
+            failure_count=len(self.failures),
+            status_counts=self.status_counts,
+        )
+
+
+class EvalTaskSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    entry_point: str
+    function_names: list[str]
+    best_function_name: str | None = None
+    total_cases: int
+    results: list[EvalCaseSummary] = Field(default_factory=list)
+    passed: bool
+    failure_count: int
+    status_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class HumanEvalRunnerPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    candidate_code: str
+    support_code: str
+    function_name: str
+    test_type: HumanEvalTestCaseKind
+    checks: list[SingleCaseCheck]
+
+
+class HumanEvalRunnerCaseOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    status: EvalCaseStatus
+    message: str = ""
+    input_repr: str = ""
+    expected_output_repr: str = ""
+    actual_output_repr: str = ""
+    elapsed_seconds: float | None = None
+    timeout_seconds: float | None = None
+
+
+class HumanEvalRunnerCaseResults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["case_results"] = "case_results"
+    results: list[HumanEvalRunnerCaseOutput]
+
+
+class HumanEvalRunnerCandidateFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["candidate_failure"] = "candidate_failure"
+    message: str
+    elapsed_seconds: float
+
+
+class HumanEvalRunnerHarnessFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["harness_failure"] = "harness_failure"
+    message: str
+    elapsed_seconds: float
+
+
+HumanEvalRunnerOutput = Annotated[
+    HumanEvalRunnerCaseResults
+    | HumanEvalRunnerCandidateFailure
+    | HumanEvalRunnerHarnessFailure,
+    Field(discriminator="kind"),
+]
+
+
+class EvalHarnessError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        case_results: Iterable[EvalCaseResult] = (),
+        evaluation: EvalTaskResult | None = None,
+        cause: BaseException | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.case_results = list(case_results)
+        self.evaluation = evaluation
+        self.cause = cause
+
+
+class HumanEvalTestReplacement(FrozenModel):
+    old: str
+    replacement: str
+
+
+class HumanEvalOverride(FrozenModel):
+    notes: tuple[str, ...] = ()
+    canonical_solution: str | None = None
+    test_replacements: tuple[HumanEvalTestReplacement, ...] = ()
+
+
+class HumanEvalOverrideEntry(FrozenModel):
+    task_id: str
+    override: HumanEvalOverride
+
+
+class HumanEvalOverrideSetCoordinate(FrozenModel):
+    override_set_id: str
+    version: str
+    entries: tuple[HumanEvalOverrideEntry, ...]
+
+
+HUMANEVAL_OVERRIDE_SET_ID = "humaneval-overrides"
+HUMANEVAL_OVERRIDE_SET_VERSION = "0"
+
+
+HUMANEVAL_OVERRIDE_SET = HumanEvalOverrideSetCoordinate(
+    override_set_id=HUMANEVAL_OVERRIDE_SET_ID,
+    version=HUMANEVAL_OVERRIDE_SET_VERSION,
+    entries=(
+        HumanEvalOverrideEntry(
+            task_id="HumanEval/32",
+            override=HumanEvalOverride(
+                notes=(
+                    "Fixed the benchmark test assertion to evaluate the polynomial at "
+                    "the returned root with a scaled residual tolerance, and replaced "
+                    "the Newton-only canonical solution with a hybrid "
+                    "Newton/bisection method.",
+                ),
+                canonical_solution="""
+
+    dxs = [xs[i] * i for i in range(1, len(xs))]
+
+    def func(x):
+        return poly(xs, x)
+
+    def derivative(x):
+        return poly(dxs, x)
+
+    x = 0.0
+    last_step = None
+    for _ in range(1000):
+        fx = func(x)
+        dfx = derivative(x)
+        if abs(fx) < 1e-5:
+            return x
+        if dfx == 0:
+            break
+        last_step = fx / dfx
+        x = x - last_step
+
+    if last_step is not None and abs(last_step) <= 1e-7 * max(1.0, abs(x)):
+        return x
+
+    lo, hi = -1.0, 1.0
+    flo, fhi = func(lo), func(hi)
+    for _ in range(200):
+        if flo == 0:
+            return lo
+        if fhi == 0:
+            return hi
+        if (flo < 0 < fhi) or (fhi < 0 < flo):
+            break
+        lo *= 2.0
+        hi *= 2.0
+        flo, fhi = func(lo), func(hi)
+
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        fm = func(mid)
+        if fm == 0 or abs(hi - lo) <= 1e-12 * max(1.0, abs(mid)):
+            return mid
+        if (flo < 0 < fm) or (fm < 0 < flo):
+            hi, fhi = mid, fm
+        else:
+            lo, flo = mid, fm
+
+    return (lo + hi) / 2.0
+""",
+                test_replacements=(
+                    HumanEvalTestReplacement(
+                        old="assert _poly(*candidate(*inp), inp) <= 0.0001",
+                        replacement=(
+                            "assert abs(_poly(*inp, (out := candidate(*inp)))) <= max("
+                            "1e-4, "
+                            "1e-12 * sum("
+                            "abs(coeff) * max(1.0, abs(out)) ** j "
+                            "for j, coeff in enumerate(inp[0])"
+                            ")"
+                            ")"
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    ),
+)
+
+_OVERRIDE_SETS = MappingProxyType(
+    {
+        (
+            HUMANEVAL_OVERRIDE_SET.override_set_id,
+            HUMANEVAL_OVERRIDE_SET.version,
+        ): HUMANEVAL_OVERRIDE_SET
+    }
+)
+
+
+def resolve_humaneval_override_set(
+    *, override_set_id: str, override_set_version: str
+) -> HumanEvalOverrideSetCoordinate:
+    override_set = _OVERRIDE_SETS.get((override_set_id, override_set_version))
+    if override_set is None:
+        raise ValueError(
+            "unsupported HumanEval override set: "
+            f"{override_set_id}@{override_set_version}"
+        )
+    return override_set
+
+
+def parse_humaneval_dataset(
+    rows: Iterable[Mapping[str, Any]],
+) -> list[HumanEvalTask]:
+    return _parse_humaneval_dataset(rows, HUMANEVAL_OVERRIDE_SET)
+
+
+def _parse_humaneval_dataset(
+    rows: Iterable[Mapping[str, Any]],
+    override_set: HumanEvalOverrideSetCoordinate,
+) -> list[HumanEvalTask]:
+    registered = resolve_humaneval_override_set(
+        override_set_id=override_set.override_set_id,
+        override_set_version=override_set.version,
+    )
+    if override_set != registered:
+        raise ValueError(
+            "override set does not match its registered coordinate: "
+            f"{override_set.override_set_id}@{override_set.version}"
+        )
+    overrides = {entry.task_id: entry.override for entry in registered.entries}
+    return [
+        HumanEvalTask(**_apply_humaneval_override(row, overrides))
+        for row in rows
+    ]
+
+
+def _apply_humaneval_override(
+    row: Mapping[str, Any],
+    overrides: Mapping[str, HumanEvalOverride],
+) -> dict[str, Any]:
+    task_id = str(row["task_id"])
+    override = overrides.get(task_id)
+    if override is None:
+        return dict(row)
+
+    updated = dict(row)
+    if override.canonical_solution is not None:
+        updated["canonical_solution"] = override.canonical_solution
+    test = str(updated["test"])
+    for test_replacement in override.test_replacements:
+        if test_replacement.old not in test:
+            raise ValueError(
+                f"Override replacement text not found for {task_id}"
+            )
+        test = test.replace(
+            test_replacement.old,
+            test_replacement.replacement,
+            1,
+        )
+    updated["test"] = test
+    updated["notes"] = [*updated.get("notes", []), *override.notes]
+    return updated

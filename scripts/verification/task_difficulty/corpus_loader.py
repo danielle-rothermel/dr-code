@@ -8,7 +8,7 @@ from pathlib import Path
 
 import polars as pl
 
-from dr_code.generation_corpus.models import BuildManifest
+from drc_generation_corpus.models import BuildManifest
 
 _MANIFEST_NAME = "manifest.json"
 _GENERATIONS_NAME = "generations.parquet"

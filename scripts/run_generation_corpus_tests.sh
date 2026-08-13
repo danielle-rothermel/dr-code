@@ -5,14 +5,12 @@ set -euo pipefail
 usage() {
     cat <<'USAGE'
 Usage:
-  scripts/run_generation_corpus_tests.sh [PYTEST_ARG...]
+  scripts/run_synthetic_tests.sh [PYTEST_ARG...]
 
-Runs dr-code's opt-in generation corpus extraction tests (pytest marker:
-generation_corpus).
+Runs drc-generation-corpus tests.
 
 Example:
   scripts/run_generation_corpus_tests.sh
-  scripts/run_generation_corpus_tests.sh tests/generation_corpus/test_writer.py
 USAGE
 }
 
@@ -26,10 +24,9 @@ cd -- "${repo_root}"
 
 declare -a pytest_args=("$@")
 if [[ "${#pytest_args[@]}" -eq 0 ]]; then
-    pytest_args=(tests/generation_corpus)
+    pytest_args=(packages/drc-generation-corpus/tests)
 fi
 
-exec uv run pytest -q \
+exec uv run --package drc-generation-corpus pytest -q \
     -o addopts='--import-mode=importlib' \
-    -m generation_corpus \
     "${pytest_args[@]}"

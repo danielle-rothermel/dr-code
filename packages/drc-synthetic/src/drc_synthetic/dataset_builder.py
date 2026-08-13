@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import hashlib
+import random
+from collections.abc import Iterable, Iterator
+from pathlib import Path
+
+from dr_code.core.source.python_transforms import strip_docstrings
+from drc_humaneval.plus_dataset import (
+    HumanEvalPlusTask,
+    load_humaneval_plus,
+)
+from drc_synthetic.corruption_recipes import (
+    RECIPES,
+    Recipe,
+    apply_recipe,
+    recipe_coordinate,
+)
+from drc_synthetic.models import (
+    SyntheticSample,
+    SyntheticSampleCoordinate,
+)
+
+
+class InapplicableRecipeError(ValueError):
+    """The recipe did not alter this sample's ground-truth source."""
+
+
+def build_sample(
+    task: HumanEvalPlusTask,
+    recipe: Recipe,
+    seed: int,
+) -> SyntheticSample:
+    ground_truth = strip_docstrings(task.full_source)
+    coordinate = SyntheticSampleCoordinate(
+        humaneval_task_id=task.task_id,
+        ground_truth_source_sha256=hashlib.sha256(
+            ground_truth.encode("utf-8")
+        ).hexdigest(),
+        generation_seed=seed,
+        recipe=recipe_coordinate(recipe),
+    )
+    rng = random.Random(coordinate.model_dump_json())
+    corrupted = apply_recipe(recipe, ground_truth, rng)
+    if recipe.corruptions and corrupted.corrupted_source == ground_truth:
+        raise InapplicableRecipeError(
+            f"synthetic recipe {recipe.name}@{recipe.version} is not "
+            f"applicable to {task.task_id}"
+        )
+    return SyntheticSample(
+        sample_id=SyntheticSample.make_id(coordinate),
+        coordinate=coordinate,
+        ground_truth_source=ground_truth,
+        corrupted_source=corrupted.corrupted_source,
+    )
+
+
+def iter_dataset(
+    tasks: Iterable[HumanEvalPlusTask],
+    recipes: Iterable[Recipe] = RECIPES,
+    seed: int = 0,
+) -> Iterator[SyntheticSample]:
+    recipes_list = list(recipes)
+    for task in tasks:
+        for recipe in recipes_list:
+            try:
+                yield build_sample(task, recipe, seed)
+            except InapplicableRecipeError:
+                continue
+
+
+def build_dataset(
+    tasks: Iterable[HumanEvalPlusTask] | None = None,
+    recipes: Iterable[Recipe] = RECIPES,
+    seed: int = 0,
+    *,
+    snapshot_path: Path | None = None,
+) -> list[SyntheticSample]:
+    if tasks is not None and snapshot_path is not None:
+        raise ValueError("tasks and snapshot_path are mutually exclusive")
+
+    if tasks is None:
+        tasks_iter: Iterable[HumanEvalPlusTask] = load_humaneval_plus(
+            prefer_snapshot=snapshot_path is not None,
+            snapshot_path=snapshot_path,
+        )
+    else:
+        tasks_iter = tasks
+    return list(iter_dataset(tasks_iter, recipes, seed))
+
+
+def save_dataset(samples: Iterable[SyntheticSample], path: Path) -> int:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with path.open("w", encoding="utf-8") as fh:
+        for sample in samples:
+            fh.write(sample.model_dump_json())
+            fh.write("\n")
+            count += 1
+    return count
+
+
+def load_dataset(path: Path) -> list[SyntheticSample]:
+    samples: list[SyntheticSample] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            samples.append(SyntheticSample.model_validate_json(line))
+    return samples
+
+
+__all__ = [
+    "InapplicableRecipeError",
+    "build_dataset",
+    "build_sample",
+    "load_dataset",
+    "save_dataset",
+]
